@@ -1,0 +1,92 @@
+@attribute [StreamRendering]
+@using System.Xml
+@using System.Xml.Linq
+@using System.Xml.Serialization
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@inject IFeedClient feedClient
+@inject ILogger<Posts> logger
+
+@rendermode InteractiveServer // needed for onclick
+
+@if (posts == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>&nbsp;</th><th>Post</th><th>Comments</th><th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            <Virtualize Items="posts" Context="post" TItem="NewsFeedItem">
+                <tr>
+                    <td><button class="btn-link" @onclick="() => Hide(post.Id)">Hide</button></td>
+                    <td class="col-8">
+                        <a href="@post.Href">@post.Title</a> - @this.GetRootDomain(post.Href) (@post.FeedUrl)
+                    </td>
+                    <td>
+
+                        @if (post.CommentsHref != null)
+                        {
+                            <a href="@post.CommentsHref">Comments</a>
+                        }
+                        else
+                        {
+
+                        }
+                    </td>
+                    <td>@post.ParsedDate?.ToString("f")</td>
+
+                    <div id="@post.Id" style="display:none;">@post.Content</div>
+                </tr>
+            </Virtualize>
+        </tbody>
+    </table>
+
+    <button class="btn-link" @onclick="() => Prev()">Prev</button>
+    <button class="btn-link" @onclick="() => Next()">Next</button>
+}
+
+@code {
+    private int page = 0;
+    private ICollection<NewsFeedItem> posts;
+    
+    [CascadingParameter]
+    public Func<IFeedClient, int, Task<IEnumerable<NewsFeedItem>>> GetFeed { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        this.posts = (await this.GetFeed(this.feedClient, this.page))?.ToList() ?? new List<NewsFeedItem>();
+    }
+
+    private async Task Hide(string postId)
+    {
+        this.feedClient.HidePost(postId);
+        await this.OnInitializedAsync();
+    }
+
+    private async Task Prev()
+    {
+        if (this.page == 0)
+        {
+            return;
+        }
+        
+        this.page -= 1;
+        await this.OnInitializedAsync();
+    }
+
+    private async Task Next()
+    {
+        this.page += 1;
+        await this.OnInitializedAsync();
+    }
+
+    private string GetRootDomain(string url)
+    {
+        return new Uri(url).Authority;
+    }
+}

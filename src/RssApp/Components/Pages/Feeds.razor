@@ -1,0 +1,76 @@
+@page "/"
+@attribute [StreamRendering]
+@inject PersistedFeeds feedStore
+@rendermode InteractiveServer // needed for onclick
+
+<PageTitle>Feeds</PageTitle>
+
+<h1>Feeds</h1>
+
+<p>Browse your RSS feeds here.</p>
+
+@if (feeds == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Feeds</th>
+                <th>&nbsp;;</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (string feed in feeds)
+            {
+                <tr>
+                    <td><a href="posts?FeedUrl=@feed">@feed</a></td>
+                    <td><button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed)">Delete</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <form method="post" @onsubmit="SubmitAsync" @formname="newfeed">
+        <AntiforgeryToken />
+        <div>
+            <InputText @bind-Value="NewFeedUrl" placeholder="Feed URL" />
+        </div>
+        <div>
+            <button type="submit">Add feed</button>
+        </div>
+    </form>
+}
+
+@code {
+    private IEnumerable<string> feeds;
+
+    [SupplyParameterFromForm]
+    private string NewFeedUrl { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        this.feeds = this.GetFeedUrls();
+        NewFeedUrl = "";
+        return Task.CompletedTask;
+    }
+    private async Task SubmitAsync()
+    {
+        this.feedStore.AddFeed(NewFeedUrl);
+        await this.OnInitializedAsync();
+    }
+
+    private async Task DeleteAsync(string feed)
+    {
+        this.feedStore.DeleteFeed(feed);
+        await this.OnInitializedAsync();
+    }
+
+    private IEnumerable<string> GetFeedUrls()
+    {
+        return this.feedStore.GetFeeds();
+    }
+
+}

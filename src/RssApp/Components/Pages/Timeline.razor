@@ -1,0 +1,34 @@
+@page "/timeline"
+@attribute [StreamRendering]
+@inject PersistedFeeds feedStore
+@inject ILogger<Timeline> logger
+@rendermode InteractiveServer // needed for onclick
+
+<PageTitle>Timeline</PageTitle>
+
+<h1>Timeline</h1>
+
+<CascadingValue Value="GetRssFeeds">
+    <PostTable />
+</CascadingValue>
+
+@code {
+    private IEnumerable<string> feeds;
+
+    protected override Task OnInitializedAsync()
+    {
+        this.feeds = this.GetFeedUrls();
+        return Task.CompletedTask;
+    }
+
+    private async Task<IEnumerable<NewsFeedItem>> GetRssFeeds(IFeedClient feedClient, int page)
+    {
+        return await feedClient.GetFeedItems(this.feeds, page);
+    }
+
+    private IEnumerable<string> GetFeedUrls()
+    {
+        return this.feedStore.GetFeeds();
+    }
+
+}

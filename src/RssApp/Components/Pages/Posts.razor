@@ -1,0 +1,29 @@
+﻿@page "/posts"
+@attribute [StreamRendering]
+@using System.Xml
+@using System.Xml.Linq
+@using System.Xml.Serialization
+@inject ILogger<Posts> logger
+
+@rendermode InteractiveServer // needed for onclick
+
+<PageTitle>Posts</PageTitle>
+
+<h1>Posts</h1>
+
+<p>Browse Posts in the RSS feed here.</p>
+
+<CascadingValue Value="GetRssFeed">
+    <PostTable />
+</CascadingValue>
+
+@code {
+
+    [SupplyParameterFromQuery]
+    public string FeedUrl { get; set; }
+
+    private async Task<IEnumerable<NewsFeedItem>> GetRssFeed(IFeedClient feedClient, int page)
+    {
+        return await feedClient.GetFeedItems(this.FeedUrl, page);
+    }
+}
