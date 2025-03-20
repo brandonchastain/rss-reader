@@ -19,10 +19,16 @@ builder.Services.AddSingleton<IPersistedFeeds>(sb =>
     return new SqlLitePersistedFeeds("Data Source=feeds.db", sb.GetRequiredService<ILogger<SqlLitePersistedFeeds>>());
 });
 builder.Services.AddSingleton<PersistedHiddenItems>();
+builder.Services.AddSingleton<INewsFeedItemStore>(sb =>
+{
+    return new SQLiteNewsFeedItemStore("Data Source=newsFeedItems.db", sb.GetRequiredService<ILogger<SQLiteNewsFeedItemStore>>());
+});
 builder.Services.AddSingleton<IFeedClient, FeedClient>();
 builder.Services.AddSingleton<RssDeserializer>();
-
 var app = builder.Build();
+
+// instantiate feed client to trigger the cache reload time
+app.Services.GetRequiredService<IFeedClient>();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

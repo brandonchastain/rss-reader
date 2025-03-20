@@ -13,17 +13,10 @@
 </CascadingValue>
 
 @code {
-    private IEnumerable<string> feeds;
-
-    protected override Task OnInitializedAsync()
-    {
-        this.feeds = this.GetFeedUrls();
-        return Task.CompletedTask;
-    }
 
     private async Task<IEnumerable<NewsFeedItem>> GetRssFeeds(IFeedClient feedClient, int page)
     {
-        return await feedClient.GetFeedItems(this.feeds, page);
+        return await feedClient.GetFeedItems(this.GetFeedUrls(), page);
     }
 
     private IEnumerable<string> GetFeedUrls()

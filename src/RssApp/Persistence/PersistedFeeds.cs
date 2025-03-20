@@ -5,6 +5,7 @@ public class PersistedFeeds : IPersistedFeeds
 {
     private static readonly string FileName = "feeds.csv";
     private List<string> feeds;
+    
     public PersistedFeeds()
     {
         if (!File.Exists(FileName))

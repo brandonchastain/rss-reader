@@ -3,3 +3,6 @@
 **/obj
 **/bin/*
 **/*/obj/
+
+src/RssApp/hidden.csv
+**/*.db

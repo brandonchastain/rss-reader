@@ -9,6 +9,6 @@ public interface IFeedClient
 {
     Task<IEnumerable<NewsFeedItem>> GetFeedItems(IEnumerable<string> urls, int page);
     Task<IEnumerable<NewsFeedItem>> GetFeedItems(string url, int page);
-    void HidePost(string id);
-
+    void HidePost(string href);
+    Task ReloadCachedItems(string url);
 }

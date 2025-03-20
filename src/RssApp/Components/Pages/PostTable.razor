@@ -23,13 +23,17 @@ else
         <tbody>
             <Virtualize Items="posts" Context="post" TItem="NewsFeedItem">
                 <tr>
-                    <td><button class="btn-link" @onclick="() => Hide(post.Id)">Hide</button></td>
+                    <td><button class="btn-link" @onclick="() => Hide(post.Href)">Hide</button></td>
                     <td class="col-8">
-                        <a href="@post.Href">@post.Title</a> - @this.GetRootDomain(post.Href) (@post.FeedUrl)
+                        <a href="@post.Href">@post.Title</a> -
+                        @this.GetRootDomain(post.Href) -
+                        <a href="/posts?feedUrl=@post.FeedUrl">
+                            Feed
+                        </a>
                     </td>
                     <td>
 
-                        @if (post.CommentsHref != null)
+                        @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
                         {
                             <a href="@post.CommentsHref">Comments</a>
                         }
