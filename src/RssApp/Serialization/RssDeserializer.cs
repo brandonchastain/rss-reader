@@ -38,7 +38,7 @@ public class RssDeserializer
         }
         catch (Exception ex)
         {
-            this.logger.LogInformation(responseContent);
+            this.logger.LogError(ex, "rss entry deserialization exception");
             throw;
         }
     }

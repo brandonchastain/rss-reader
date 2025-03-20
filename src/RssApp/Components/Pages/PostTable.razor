@@ -59,11 +59,11 @@ else
     private ICollection<NewsFeedItem> posts;
     
     [CascadingParameter]
-    public Func<IFeedClient, int, Task<IEnumerable<NewsFeedItem>>> GetFeed { get; set; }
+    public Func<IFeedClient, int, IEnumerable<NewsFeedItem>> GetFeed { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        this.posts = (await this.GetFeed(this.feedClient, this.page))?.ToList() ?? new List<NewsFeedItem>();
+        this.posts = this.GetFeed(this.feedClient, this.page)?.ToList() ?? new List<NewsFeedItem>();
     }
 
     private async Task Hide(string postId)

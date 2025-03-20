@@ -7,8 +7,8 @@ namespace RssApp.RssClient;
 
 public interface IFeedClient
 {
-    Task<IEnumerable<NewsFeedItem>> GetFeedItems(IEnumerable<string> urls, int page);
-    Task<IEnumerable<NewsFeedItem>> GetFeedItems(string url, int page);
+    IEnumerable<NewsFeedItem> GetFeedItems(IEnumerable<string> urls, int page);
+    IEnumerable<NewsFeedItem> GetFeedItems(string url, int page);
     void HidePost(string href);
-    Task ReloadCachedItems(string url);
+    Task ReloadCachedItemsAsync(string url);
 }

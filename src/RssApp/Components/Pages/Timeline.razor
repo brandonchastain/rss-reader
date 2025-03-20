@@ -14,9 +14,9 @@
 
 @code {
 
-    private async Task<IEnumerable<NewsFeedItem>> GetRssFeeds(IFeedClient feedClient, int page)
+    private IEnumerable<NewsFeedItem> GetRssFeeds(IFeedClient feedClient, int page)
     {
-        return await feedClient.GetFeedItems(this.GetFeedUrls(), page);
+        return feedClient.GetFeedItems(this.GetFeedUrls(), page);
     }
 
     private IEnumerable<string> GetFeedUrls()

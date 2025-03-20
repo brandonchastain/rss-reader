@@ -40,27 +40,27 @@ public class FeedClient : IFeedClient
         this.timer = new Timer(this.ReloadCache, null, CacheReloadStartupDelay, CacheReloadInterval);
     }
 
-    public async Task<IEnumerable<NewsFeedItem>> GetFeedItems(IEnumerable<string> urls, int page)
+    public IEnumerable<NewsFeedItem> GetFeedItems(IEnumerable<string> urls, int page)
     {
         var items = new List<NewsFeedItem>();
         foreach (var url in urls)
         {
-            items.AddRange(await this.GetFeedItems(url));
+            items.AddRange(this.GetFeedItemsHelper(url));
         }
         
         var sorted = items.DistinctBy(i => i.GetHashCode()).OrderByDescending(i => i.ParsedDate);
         return sorted.Skip(page * PageSize).Take(PageSize);
     }
 
-    public async Task<IEnumerable<NewsFeedItem>> GetFeedItems(string url, int page)
+    public IEnumerable<NewsFeedItem> GetFeedItems(string url, int page)
     {
-        var items = await this.GetFeedItems(url);
+        var items = this.GetFeedItemsHelper(url);
         return items
             .Skip(page * PageSize)
             .Take(PageSize);
     }
 
-    private async Task<IEnumerable<NewsFeedItem>> GetFeedItems(string url)
+    private IEnumerable<NewsFeedItem> GetFeedItemsHelper(string url)
     {
         if (!feedCache.TryGetValue(url, out ISet<NewsFeedItem> response))
         {
@@ -83,19 +83,28 @@ public class FeedClient : IFeedClient
         this.hiddenItems.HidePost(id);
     }
 
+#pragma warning disable VSTHRD100 // Avoid async void methods
     private async void ReloadCache(object state)
     {
-        _ = state;
-        
-        var urls = this.persistedFeeds.GetFeeds();
-
-        foreach (var url in urls)
+        try
         {
-            await this.ReloadCachedItems(url);
+            _ = state;
+            
+            var urls = this.persistedFeeds.GetFeeds();
+
+            foreach (var url in urls)
+            {
+                await this.ReloadCachedItemsAsync(url);
+            }
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogError(ex, "Error reloading cache");
         }
     }
+#pragma warning restore VSTHRD100 // Avoid async void methods
 
-    public async Task ReloadCachedItems(string url)
+    public async Task ReloadCachedItemsAsync(string url)
     {
         try
         {

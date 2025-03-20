@@ -32,7 +32,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
         }
     }
 
-    public bool Equals(NewsFeedItem? other)
+    public bool Equals(NewsFeedItem other)
     {
         if (other == null)
         {
