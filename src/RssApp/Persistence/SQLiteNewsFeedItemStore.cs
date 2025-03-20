@@ -33,6 +33,7 @@ public class SQLiteNewsFeedItemStore : INewsFeedItemStore
                     Title TEXT,
                     PublishDate TEXT,
                     Content TEXT,
+                    IsRead BOOLEAN DEFAULT 0,
                     UNIQUE(FeedUrl, NewsFeedItemId, Href)
                 )";
             command.ExecuteNonQuery();
@@ -59,9 +60,12 @@ public class SQLiteNewsFeedItemStore : INewsFeedItemStore
                     var publishDate = reader.IsDBNull(reader.GetOrdinal("PublishDate")) ? "" : reader.GetString(reader.GetOrdinal("PublishDate"));
                     var content = reader.IsDBNull(reader.GetOrdinal("Content")) ? "" : reader.GetString(reader.GetOrdinal("Content"));
                     var url = reader.IsDBNull(reader.GetOrdinal("FeedUrl")) ? "" : reader.GetString(reader.GetOrdinal("FeedUrl"));
+                    var isRead = reader.IsDBNull(reader.GetOrdinal("IsRead")) ? false : reader.GetBoolean(reader.GetOrdinal("IsRead"));
+                    
                     var item = new NewsFeedItem(id, title, href, commentsHref, publishDate, content)
                     {
                         FeedUrl = url,
+                        IsRead = isRead
                     };
 
                     //this.logger.LogInformation($"[DATABASE] returning item {item.Id}, {item.Href} feedUrl {item.FeedUrl}.");
@@ -102,5 +106,24 @@ public class SQLiteNewsFeedItemStore : INewsFeedItemStore
             //var res = this.GetItems(item.FeedUrl);
             //this.logger.LogInformation($"[DATABASE] contains item {item.Id}? {res?.Contains(item)}");
         }
+    }
+
+    public void MarkAsRead(NewsFeedItem item, bool isRead)
+    {
+        using (var connection = new SQLiteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                UPDATE NewsFeedItems
+                SET IsRead = @isRead
+                WHERE FeedUrl = @feedUrl AND Href = @href";
+            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
+            command.Parameters.AddWithValue("@href", item.Href);
+            command.Parameters.AddWithValue("@isRead", isRead);
+            command.ExecuteNonQuery();
+            this.logger.LogInformation($"[DATABASE] marked item {item.Id} with feedUrl {item.FeedUrl} as {(isRead ? "read" : "unread")}.");
+        }
+
     }
 }

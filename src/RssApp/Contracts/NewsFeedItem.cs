@@ -20,6 +20,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
     public string PublishDate { get; set; }
     public string Id { get; set; }
     public string Content { get; set; }
+    public bool IsRead { get; set; }
     public DateTime? ParsedDate {
         get
         {

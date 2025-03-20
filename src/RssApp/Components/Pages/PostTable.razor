@@ -5,6 +5,8 @@
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @inject IFeedClient feedClient
 @inject ILogger<Posts> logger
+@inject NavigationManager NavigationManager
+@implements IDisposable
 
 @rendermode InteractiveServer // needed for onclick
 
@@ -14,16 +16,22 @@
 }
 else
 {
+    <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as read</button>
     <table class="table">
         <thead>
             <tr>
-                <th>&nbsp;</th><th>Post</th><th>Comments</th><th>Date</th>
+                <th>&nbsp;</th><th>&nbsp;</th><th>Post</th><th>Comments</th><th>Date</th>
             </tr>
         </thead>
         <tbody>
             <Virtualize Items="posts" Context="post" TItem="NewsFeedItem">
-                <tr>
-                    <td><button class="btn-link" @onclick="() => Hide(post.Href)">Hide</button></td>
+                <tr style="background-color: @(post.IsRead ? "white" : "#fff9c4")">
+                    <td>
+                        <button class="btn-link" @onclick="() => MarkAsRead(post)">Read</button>
+                    </td>
+                    <td>
+                        <button class="btn-link" @onclick="() => Hide(post.Href)">Hide</button>
+                    </td>
                     <td class="col-8">
                         <a href="@post.Href">@post.Title</a> -
                         @this.GetRootDomain(post.Href) -
@@ -57,18 +65,49 @@ else
 @code {
     private int page = 0;
     private ICollection<NewsFeedItem> posts;
+    private Timer timer;
     
     [CascadingParameter]
     public Func<IFeedClient, int, IEnumerable<NewsFeedItem>> GetFeed { get; set; }
 
-    protected override void OnInitialized()
+    public void Dispose()
+    {
+        this.timer?.Dispose();
+        this.timer = null;
+    }
+
+    protected override Task OnInitializedAsync()
     {
         this.posts = this.GetFeed(this.feedClient, this.page)?.ToList() ?? new List<NewsFeedItem>();
+        //this.timer ??= new Timer(this.HandleTimerEvent, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        return Task.CompletedTask;
+    }
+
+    private async void HandleTimerEvent(object state)
+    {
+        this.posts = this.GetFeed(this.feedClient, this.page)?.ToList() ?? new List<NewsFeedItem>();
+        this.logger.LogInformation("Timer event fired");
+        await this.InvokeAsync(async () => await this.OnInitializedAsync());
     }
 
     private async Task Hide(string postId)
     {
         this.feedClient.HidePost(postId);
+        await this.OnInitializedAsync();
+    }
+
+    private async Task MarkAllAsRead()
+    {
+        foreach (var post in this.posts)
+        {
+            await this.feedClient.MarkAsReadAsync(post, true);
+        }
+        await this.OnInitializedAsync();
+    }
+
+    private async Task MarkAsRead(NewsFeedItem item)
+    {
+        await this.feedClient.MarkAsReadAsync(item, !item.IsRead);
         await this.OnInitializedAsync();
     }
 

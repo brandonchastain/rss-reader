@@ -2,6 +2,7 @@ using Microsoft.Extensions.Caching.Memory;
 using RssApp.Contracts;
 using RssApp.Serialization;
 using RssApp.Persistence;
+using System.Threading.Tasks;
 
 namespace RssApp.RssClient;
 
@@ -9,7 +10,7 @@ public class FeedClient : IFeedClient
 {
     private const int PageSize = 10;
     private static readonly TimeSpan CacheReloadInterval = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan CacheReloadStartupDelay = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan CacheReloadStartupDelay = TimeSpan.FromMinutes(1);
     private static readonly bool EnableHttpLookup = true;
 
     private IMemoryCache feedCache;
@@ -60,6 +61,19 @@ public class FeedClient : IFeedClient
             .Take(PageSize);
     }
 
+    public void HidePost(string id)
+    {
+        this.hiddenItems.HidePost(id);
+    }
+
+    public async Task MarkAsReadAsync(NewsFeedItem item, bool isRead)
+    {
+        await Task.Yield();
+        this.newsFeedItemStore.MarkAsRead(item, isRead);
+        this.feedCache.Remove(item.FeedUrl);
+        this.ClearCachedItemsForFeed(item.FeedUrl);
+    }
+
     private IEnumerable<NewsFeedItem> GetFeedItemsHelper(string url)
     {
         if (!feedCache.TryGetValue(url, out ISet<NewsFeedItem> response))
@@ -67,7 +81,6 @@ public class FeedClient : IFeedClient
             response = this.newsFeedItemStore.GetItems(url).ToHashSet();
         }
 
-        // this.logger.LogInformation(response);
         var hidden = this.hiddenItems.GetHidden();
         var items = response.ToList();
 
@@ -78,13 +91,9 @@ public class FeedClient : IFeedClient
         return result;
     }
 
-    public void HidePost(string id)
-    {
-        this.hiddenItems.HidePost(id);
-    }
-
 #pragma warning disable VSTHRD100 // Avoid async void methods
     private async void ReloadCache(object state)
+#pragma warning restore VSTHRD100 // Avoid async void methods
     {
         try
         {
@@ -95,6 +104,7 @@ public class FeedClient : IFeedClient
             foreach (var url in urls)
             {
                 await this.ReloadCachedItemsAsync(url);
+                await Task.Delay(10000);
             }
         }
         catch (Exception ex)
@@ -102,9 +112,13 @@ public class FeedClient : IFeedClient
             this.logger.LogError(ex, "Error reloading cache");
         }
     }
-#pragma warning restore VSTHRD100 // Avoid async void methods
 
-    public async Task ReloadCachedItemsAsync(string url)
+    private void ClearCachedItemsForFeed(string url)
+    {
+        feedCache.Set(url, this.newsFeedItemStore.GetItems(url).ToHashSet());
+    }
+
+    private async Task ReloadCachedItemsAsync(string url)
     {
         try
         {
@@ -141,7 +155,7 @@ public class FeedClient : IFeedClient
             }
 
             cachedItems.UnionWith(freshItems);
-            feedCache.Set(url, cachedItems);
+            feedCache.Set(url, cachedItems, TimeSpan.FromMinutes(5));
         }
         catch (Exception ex)
         {

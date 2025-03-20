@@ -1,4 +1,6 @@
+using System.Data.Entity.Core.Metadata.Edm;
 using System.Data.SQLite;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace RssApp.Persistence;
 
@@ -6,11 +8,13 @@ public class SqlLitePersistedFeeds : IPersistedFeeds
 {
     private readonly string connectionString;
     private readonly ILogger<SqlLitePersistedFeeds> logger;
+    private List<string> cachedFeeds;
 
     public SqlLitePersistedFeeds(string connectionString, ILogger<SqlLitePersistedFeeds> logger)
     {
         this.connectionString = connectionString;
         this.logger = logger;
+        this.cachedFeeds = new List<string>();
 
         this.InitializeDatabase();
     }
@@ -32,6 +36,16 @@ public class SqlLitePersistedFeeds : IPersistedFeeds
 
     public IEnumerable<string> GetFeeds()
     {
+        if (this.cachedFeeds.Any())
+        {
+            foreach (var feed in this.cachedFeeds)
+            {
+                yield return feed;
+            }
+
+            yield break;
+        }
+
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();
@@ -41,7 +55,9 @@ public class SqlLitePersistedFeeds : IPersistedFeeds
             {
                 while (reader.Read())
                 {
-                    yield return reader.GetString(0);
+                    var response = reader.GetString(0);
+                    this.cachedFeeds.Add(response);
+                    yield return response;
                 }
             }
         }
@@ -57,6 +73,8 @@ public class SqlLitePersistedFeeds : IPersistedFeeds
             command.Parameters.AddWithValue("@url", url);
             command.ExecuteNonQuery();
         }
+
+        this.cachedFeeds = new List<string>();
     }
 
     public void DeleteFeed(string url)
@@ -69,5 +87,7 @@ public class SqlLitePersistedFeeds : IPersistedFeeds
             command.Parameters.AddWithValue("@url", url);
             command.ExecuteNonQuery();
         }
+
+        this.cachedFeeds = new List<string>();
     }
 }
