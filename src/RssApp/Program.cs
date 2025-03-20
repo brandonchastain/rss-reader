@@ -14,18 +14,11 @@ builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddSingleton<PersistedFeeds>();
+builder.Services.AddSingleton<IPersistedFeeds>(sb =>
+{
+    return new SqlLitePersistedFeeds("Data Source=feeds.db", sb.GetRequiredService<ILogger<SqlLitePersistedFeeds>>());
+});
 builder.Services.AddSingleton<PersistedHiddenItems>();
-// builder.Services.AddSingleton<IFeedClient>(sb =>
-// {
-//     return new RefreshingFeedClient(
-//         sb.GetRequiredService<IMemoryCache>(),
-//         sb.GetRequiredService<HttpClient>(),
-//         sb.GetRequiredService<RssDeserializer>(),
-//         sb.GetRequiredService<PersistedHiddenItems>(),
-//         sb.GetRequiredService<ILogger<RefreshingFeedClient>>(),
-//         cancellationTokenSource.Token);
-// });
 builder.Services.AddSingleton<IFeedClient, FeedClient>();
 builder.Services.AddSingleton<RssDeserializer>();
 

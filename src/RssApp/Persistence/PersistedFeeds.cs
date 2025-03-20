@@ -1,7 +1,7 @@
 
 namespace RssApp.Persistence;
 
-public class PersistedFeeds
+public class PersistedFeeds : IPersistedFeeds
 {
     private static readonly string FileName = "feeds.csv";
     private List<string> feeds;
