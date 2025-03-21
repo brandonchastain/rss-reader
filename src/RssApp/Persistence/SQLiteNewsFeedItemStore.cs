@@ -8,12 +8,15 @@ public class SQLiteNewsFeedItemStore : INewsFeedItemStore
 {
     private readonly string connectionString;
     private readonly ILogger<SQLiteNewsFeedItemStore> logger;
+    private readonly IPersistedFeeds feedStore;
 
-    public SQLiteNewsFeedItemStore(string connectionString, ILogger<SQLiteNewsFeedItemStore> logger)
+    public SQLiteNewsFeedItemStore(string connectionString,
+    ILogger<SQLiteNewsFeedItemStore> logger,
+    IPersistedFeeds feedStore)
     {
         this.connectionString = connectionString;
         this.logger = logger;
-        
+        this.feedStore = feedStore;
         this.InitializeDatabase();
     }
 
@@ -40,8 +43,10 @@ public class SQLiteNewsFeedItemStore : INewsFeedItemStore
         }
     }
 
-    public IEnumerable<NewsFeedItem> GetItems(string feedUrl)
+    public IEnumerable<NewsFeedItem> GetItems(NewsFeed feed)
     {
+        var feedUrl = feed.FeedUrl;
+        var updatedFeed = this.feedStore.GetFeeds().FirstOrDefault(f => f.FeedUrl == feedUrl);
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();
@@ -67,6 +72,11 @@ public class SQLiteNewsFeedItemStore : INewsFeedItemStore
                         FeedUrl = url,
                         IsRead = isRead
                     };
+                    
+                    if (updatedFeed.IsPaywalled)
+                    {
+                        item.IsPaywalled = true;
+                    }
 
                     //this.logger.LogInformation($"[DATABASE] returning item {item.Id}, {item.Href} feedUrl {item.FeedUrl}.");
                     yield return item;

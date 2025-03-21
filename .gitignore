@@ -1,8 +1,8 @@
+.DS_Store
 .vscode
 **/bin
 **/obj
-**/bin/*
-**/*/obj/
 
-src/RssApp/hidden.csv
+**/*.log
+**/*.csv
 **/*.db

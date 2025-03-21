@@ -33,7 +33,7 @@ else
                         <button class="btn-link" @onclick="() => Hide(post.Href)">Hide</button>
                     </td>
                     <td class="col-8">
-                        <a href="@post.Href">@post.Title</a> -
+                        <a href="@this.GetEffectiveHref(post)">@post.Title</a> -
                         @this.GetRootDomain(post.Href) -
                         <a href="/posts?feedUrl=@post.FeedUrl">
                             Feed
@@ -131,5 +131,15 @@ else
     private string GetRootDomain(string url)
     {
         return new Uri(url).Authority;
+    }
+
+    private string GetEffectiveHref(NewsFeedItem post)
+    {
+        if (post.IsPaywalled)
+        {
+            return "https://archive.is/" + post.Href;
+        }
+
+        return post.Href;
     }
 }

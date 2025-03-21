@@ -1,12 +1,16 @@
 
+using RssApp.Contracts;
+
 namespace RssApp.Persistence;
 
 public interface IPersistedFeeds
 {
 
-    IEnumerable<string> GetFeeds();
+    IEnumerable<NewsFeed> GetFeeds();
 
-    void AddFeed(string url);
+    void AddFeed(NewsFeed feed);
+
+    void Update(NewsFeed feed);
 
     void DeleteFeed(string url);
 }

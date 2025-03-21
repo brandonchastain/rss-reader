@@ -41,21 +41,21 @@ public class FeedClient : IFeedClient
         this.timer = new Timer(this.ReloadCache, null, CacheReloadStartupDelay, CacheReloadInterval);
     }
 
-    public IEnumerable<NewsFeedItem> GetFeedItems(IEnumerable<string> urls, int page)
+    public IEnumerable<NewsFeedItem> GetFeedItems(IEnumerable<NewsFeed> feeds, int page)
     {
         var items = new List<NewsFeedItem>();
-        foreach (var url in urls)
+        foreach (var feed in feeds)
         {
-            items.AddRange(this.GetFeedItemsHelper(url));
+            items.AddRange(this.GetFeedItemsHelper(feed));
         }
         
         var sorted = items.DistinctBy(i => i.GetHashCode()).OrderByDescending(i => i.ParsedDate);
         return sorted.Skip(page * PageSize).Take(PageSize);
     }
 
-    public IEnumerable<NewsFeedItem> GetFeedItems(string url, int page)
+    public IEnumerable<NewsFeedItem> GetFeedItems(NewsFeed feed, int page)
     {
-        var items = this.GetFeedItemsHelper(url);
+        var items = this.GetFeedItemsHelper(feed);
         return items
             .Skip(page * PageSize)
             .Take(PageSize);
@@ -71,14 +71,15 @@ public class FeedClient : IFeedClient
         await Task.Yield();
         this.newsFeedItemStore.MarkAsRead(item, isRead);
         this.feedCache.Remove(item.FeedUrl);
-        this.ClearCachedItemsForFeed(item.FeedUrl);
+        this.ClearCachedItemsForFeed(new NewsFeed(item.FeedUrl));
     }
 
-    private IEnumerable<NewsFeedItem> GetFeedItemsHelper(string url)
+    private IEnumerable<NewsFeedItem> GetFeedItemsHelper(NewsFeed feed)
     {
+        var url = feed.FeedUrl;
         if (!feedCache.TryGetValue(url, out ISet<NewsFeedItem> response))
         {
-            response = this.newsFeedItemStore.GetItems(url).ToHashSet();
+            response = this.newsFeedItemStore.GetItems(feed).ToHashSet();
         }
 
         var hidden = this.hiddenItems.GetHidden();
@@ -99,11 +100,11 @@ public class FeedClient : IFeedClient
         {
             _ = state;
             
-            var urls = this.persistedFeeds.GetFeeds();
+            var feeds = this.persistedFeeds.GetFeeds();
 
-            foreach (var url in urls)
+            foreach (var feed in feeds)
             {
-                await this.ReloadCachedItemsAsync(url);
+                await this.ReloadCachedItemsAsync(feed);
                 await Task.Delay(10000);
             }
         }
@@ -113,18 +114,19 @@ public class FeedClient : IFeedClient
         }
     }
 
-    private void ClearCachedItemsForFeed(string url)
+    private void ClearCachedItemsForFeed(NewsFeed feed)
     {
-        feedCache.Set(url, this.newsFeedItemStore.GetItems(url).ToHashSet());
+        feedCache.Set(feed.FeedUrl, this.newsFeedItemStore.GetItems(feed).ToHashSet());
     }
 
-    private async Task ReloadCachedItemsAsync(string url)
+    private async Task ReloadCachedItemsAsync(NewsFeed feed)
     {
+        var url = feed.FeedUrl;
         try
         {
             if (!feedCache.TryGetValue(url, out ISet<NewsFeedItem> cachedItems))
             {
-                cachedItems = this.newsFeedItemStore.GetItems(url).ToHashSet();
+                cachedItems = this.newsFeedItemStore.GetItems(feed).ToHashSet();
             }
 
             var freshItems = new HashSet<NewsFeedItem>();

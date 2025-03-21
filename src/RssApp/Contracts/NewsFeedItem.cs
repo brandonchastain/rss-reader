@@ -21,6 +21,10 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
     public string Id { get; set; }
     public string Content { get; set; }
     public bool IsRead { get; set; }
+
+    // ignore for serialization
+    public bool IsPaywalled { get; set; }
+    
     public DateTime? ParsedDate {
         get
         {
@@ -53,5 +57,45 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
     public override string ToString()
     {
         return $"{this.Title} ({this.PublishDate})";
+    }
+
+    public static async Task WriteCsvHeaderAsync(StreamWriter writer)
+    {
+        await writer.WriteLineAsync(
+            $"{nameof(Id)},{nameof(IsRead)},{nameof(FeedUrl)},{nameof(Title)},{nameof(Href)},{nameof(CommentsHref)},{nameof(PublishDate)},{nameof(Content)}");
+    }
+
+    public async Task WriteCsvAsync(StreamWriter writer)
+    {
+        await writer.WriteAsync($"{this.Id},");
+        await writer.WriteAsync($"{this.IsRead},");
+        await writer.WriteAsync($"{this.FeedUrl},");
+        await writer.WriteAsync($"{this.Title.Replace(",", "🙈")},");
+        await writer.WriteAsync($"{this.Href},");
+        await writer.WriteAsync($"{this.CommentsHref},");
+        await writer.WriteAsync($"{this.PublishDate.Replace(",", "🙈")},");
+        await writer.WriteAsync($"{this.Content.Replace(",", "🙈").ReplaceLineEndings("🫡")}" + Environment.NewLine);
+    }
+
+    public static NewsFeedItem ReadFromCsv(string csvLine)
+    {
+        var values = csvLine.Split(',');
+        if (values.Length != 8)
+        {
+            Console.WriteLine(csvLine);
+            throw new ArgumentException("Invalid CSV line");
+        }
+
+        return new NewsFeedItem(
+            id: values[0],
+            title: values[3].Replace("🙈", ","),
+            href: values[4],
+            commentsHref: values[5],
+            publishDate: values[6].Replace("🙈", ","),
+            content: values[7].Replace("🫡", Environment.NewLine).Replace("🙈", ","))
+        {
+            IsRead = bool.Parse(values[1]),
+            FeedUrl = values[2]
+        };
     }
 }

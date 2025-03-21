@@ -20,14 +20,25 @@ else
             <tr>
                 <th>Feeds</th>
                 <th>&nbsp;</th>
+                <th>&nbsp;</th>
             </tr>
         </thead>
         <tbody>
-            @foreach (string feed in feeds)
+            @foreach (NewsFeed feed in feeds)
             {
                 <tr>
-                    <td><a href="posts?FeedUrl=@feed">@feed</a></td>
-                    <td><button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed)">Delete</button></td>
+                    <td><a href="posts?FeedUrl=@feed.FeedUrl">@feed.FeedUrl</a></td>
+                    <td><button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed.FeedUrl)">Delete</button></td>
+                    <td>
+                        @if (feed.IsPaywalled)
+                        {
+                            <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Paywalled</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Not paywalled</button>
+                        }
+                    </td>
                 </tr>
             }
         </tbody>
@@ -45,7 +56,7 @@ else
 }
 
 @code {
-    private IEnumerable<string> feeds;
+    private IEnumerable<NewsFeed> feeds;
 
     [SupplyParameterFromForm]
     private string NewFeedUrl { get; set; }
@@ -58,7 +69,7 @@ else
     }
     private async Task SubmitAsync()
     {
-        this.feedStore.AddFeed(NewFeedUrl);
+        this.feedStore.AddFeed(new NewsFeed(NewFeedUrl));
         await this.OnInitializedAsync();
     }
 
@@ -68,9 +79,15 @@ else
         await this.OnInitializedAsync();
     }
 
-    private IEnumerable<string> GetFeedUrls()
+    private IEnumerable<NewsFeed> GetFeedUrls()
     {
         return this.feedStore.GetFeeds();
+    }
+
+    private void TogglePaywalledAsync(NewsFeed feed)
+    {
+        feed.IsPaywalled = !feed.IsPaywalled;
+        this.feedStore.Update(feed);
     }
 
 }

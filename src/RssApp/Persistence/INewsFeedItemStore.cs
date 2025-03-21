@@ -5,7 +5,7 @@ namespace RssApp.Persistence;
 
 public interface INewsFeedItemStore
 {
-    IEnumerable<NewsFeedItem> GetItems(string url);
+    IEnumerable<NewsFeedItem> GetItems(NewsFeed feed);
 
     void AddItem(NewsFeedItem item);
 

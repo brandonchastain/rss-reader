@@ -24,6 +24,6 @@
 
     private IEnumerable<NewsFeedItem> GetRssFeed(IFeedClient fc, int page)
     {
-        return fc.GetFeedItems(this.FeedUrl, page);
+        return fc.GetFeedItems(new NewsFeed(FeedUrl), page);
     }
 }

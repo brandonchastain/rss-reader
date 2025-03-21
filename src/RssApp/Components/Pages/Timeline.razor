@@ -13,7 +13,7 @@
 </CascadingValue>
 
 @code {
-    private IEnumerable<string> feeds;
+    private IEnumerable<NewsFeed> feeds;
 
     protected override Task OnInitializedAsync()
     {
@@ -26,7 +26,7 @@
         return feedClient.GetFeedItems(this.feeds, page);
     }
 
-    private IEnumerable<string> GetFeedUrls()
+    private IEnumerable<NewsFeed> GetFeedUrls()
     {
         return this.feedStore.GetFeeds();
     }

@@ -21,7 +21,10 @@ builder.Services.AddSingleton<IPersistedFeeds>(sb =>
 builder.Services.AddSingleton<PersistedHiddenItems>();
 builder.Services.AddSingleton<INewsFeedItemStore>(sb =>
 {
-    return new SQLiteNewsFeedItemStore("Data Source=newsFeedItems.db", sb.GetRequiredService<ILogger<SQLiteNewsFeedItemStore>>());
+    return new SQLiteNewsFeedItemStore(
+        "Data Source=newsFeedItems.db",
+        sb.GetRequiredService<ILogger<SQLiteNewsFeedItemStore>>(),
+        sb.GetRequiredService<IPersistedFeeds>());
 });
 builder.Services.AddSingleton<IFeedClient, FeedClient>();
 builder.Services.AddSingleton<RssDeserializer>();
