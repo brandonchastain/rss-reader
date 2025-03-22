@@ -15,13 +15,13 @@ builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IFeedRepository>(sb =>
 {
-    return new SQLiteFeedRepository("Data Source=../RssApp/feeds.db", sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
+    return new SQLiteFeedRepository("Data Source=../feeds.db", sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
 });
 builder.Services.AddSingleton<PersistedHiddenItems>();
 builder.Services.AddSingleton<IItemRepository>(sb =>
 {
     return new SQLiteItemRepository(
-        "Data Source=../RssApp/newsFeedItems.db",
+        "Data Source=../newsFeedItems.db",
         sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
         sb.GetRequiredService<IFeedRepository>());
 });

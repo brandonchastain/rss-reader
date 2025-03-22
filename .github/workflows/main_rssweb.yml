@@ -29,6 +29,14 @@ jobs:
       - name: dotnet publish
         run: dotnet publish src/RssApp/RssApp.csproj -c Release -o "${{env.DOTNET_ROOT}}\RssApp"
 
+
+
+      - name: Build with dotnet
+        run: dotnet build src/DataImport/DataImport.csproj --configuration Release
+
+      - name: dotnet publish
+        run: dotnet publish src/DataImport/DataImport.csproj -c Release -o "${{env.DOTNET_ROOT}}\RssApp\DataImport"
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
