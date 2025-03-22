@@ -42,6 +42,13 @@ jobs:
         with:
           name: .net-app
           path: ${{env.DOTNET_ROOT}}\RssApp
+      
+      
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: .net-app
+          path: ${{env.DOTNET_ROOT}}\RssApp\DataImport
 
   deploy:
     runs-on: windows-latest
