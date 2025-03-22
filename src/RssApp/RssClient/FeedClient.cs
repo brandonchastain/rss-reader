@@ -2,7 +2,6 @@ using Microsoft.Extensions.Caching.Memory;
 using RssApp.Contracts;
 using RssApp.Serialization;
 using RssApp.Persistence;
-using System.Threading.Tasks;
 
 namespace RssApp.RssClient;
 
@@ -10,7 +9,7 @@ public class FeedClient : IFeedClient
 {
     private const int PageSize = 10;
     private static readonly TimeSpan CacheReloadInterval = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan CacheReloadStartupDelay = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan CacheReloadStartupDelay = TimeSpan.FromSeconds(1);//TimeSpan.FromMinutes(1);
     private static readonly bool EnableHttpLookup = true;
 
     private IMemoryCache feedCache;
@@ -18,9 +17,9 @@ public class FeedClient : IFeedClient
     private readonly RssDeserializer deserializer;
     private readonly ILogger<FeedClient> logger;
     private readonly PersistedHiddenItems hiddenItems;
-    private readonly IPersistedFeeds persistedFeeds;
+    private readonly IFeedRepository persistedFeeds;
     private readonly Timer timer;
-    private readonly INewsFeedItemStore newsFeedItemStore;
+    private readonly IItemRepository newsFeedItemStore;
 
     public FeedClient(
         IMemoryCache cache,
@@ -28,8 +27,8 @@ public class FeedClient : IFeedClient
         RssDeserializer deserializer,
         PersistedHiddenItems hiddenItems,
         ILogger<FeedClient> logger,
-        IPersistedFeeds persistedFeeds,
-        INewsFeedItemStore newsFeedItemStore)
+        IFeedRepository persistedFeeds,
+        IItemRepository newsFeedItemStore)
     {
         this.feedCache = cache;
         this.httpClient = httpClient;
@@ -92,9 +91,7 @@ public class FeedClient : IFeedClient
         return result;
     }
 
-#pragma warning disable VSTHRD100 // Avoid async void methods
     private async void ReloadCache(object state)
-#pragma warning restore VSTHRD100 // Avoid async void methods
     {
         try
         {

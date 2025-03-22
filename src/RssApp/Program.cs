@@ -14,17 +14,17 @@ builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddSingleton<IPersistedFeeds>(sb =>
+builder.Services.AddSingleton<IFeedRepository>(sb =>
 {
-    return new SqlLitePersistedFeeds("Data Source=feeds.db", sb.GetRequiredService<ILogger<SqlLitePersistedFeeds>>());
+    return new SQLiteFeedRepository("Data Source=feeds.db", sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
 });
 builder.Services.AddSingleton<PersistedHiddenItems>();
-builder.Services.AddSingleton<INewsFeedItemStore>(sb =>
+builder.Services.AddSingleton<IItemRepository>(sb =>
 {
-    return new SQLiteNewsFeedItemStore(
+    return new SQLiteItemRepository(
         "Data Source=newsFeedItems.db",
-        sb.GetRequiredService<ILogger<SQLiteNewsFeedItemStore>>(),
-        sb.GetRequiredService<IPersistedFeeds>());
+        sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
+        sb.GetRequiredService<IFeedRepository>());
 });
 builder.Services.AddSingleton<IFeedClient, FeedClient>();
 builder.Services.AddSingleton<RssDeserializer>();

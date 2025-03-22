@@ -3,7 +3,7 @@ using RssApp.Contracts;
 
 namespace RssApp.Persistence;
 
-public interface INewsFeedItemStore
+public interface IItemRepository
 {
     IEnumerable<NewsFeedItem> GetItems(NewsFeed feed);
 

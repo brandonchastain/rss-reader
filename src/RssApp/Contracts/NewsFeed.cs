@@ -1,6 +1,6 @@
 namespace RssApp.Contracts;
 
-public class NewsFeed
+public class NewsFeed : IEquatable<NewsFeed>
 {
 
     public NewsFeed(string url, bool isPaywalled = false)
@@ -34,5 +34,20 @@ public class NewsFeed
         }
 
         return new NewsFeed(values[0], bool.Parse(values[1]));
+    }
+
+    public bool Equals(NewsFeed other)
+    {
+        if (other == null)
+        {
+            return false;
+        }
+
+        return string.Equals(this.FeedUrl, other.FeedUrl, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public override int GetHashCode()
+    {
+        return this.FeedUrl?.GetHashCode() ?? 0;
     }
 }

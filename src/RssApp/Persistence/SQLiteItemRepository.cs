@@ -4,15 +4,15 @@ using RssApp.Contracts;
 
 namespace RssApp.Persistence;
 
-public class SQLiteNewsFeedItemStore : INewsFeedItemStore
+public class SQLiteItemRepository : IItemRepository
 {
     private readonly string connectionString;
-    private readonly ILogger<SQLiteNewsFeedItemStore> logger;
-    private readonly IPersistedFeeds feedStore;
+    private readonly ILogger<SQLiteItemRepository> logger;
+    private readonly IFeedRepository feedStore;
 
-    public SQLiteNewsFeedItemStore(string connectionString,
-    ILogger<SQLiteNewsFeedItemStore> logger,
-    IPersistedFeeds feedStore)
+    public SQLiteItemRepository(string connectionString,
+    ILogger<SQLiteItemRepository> logger,
+    IFeedRepository feedStore)
     {
         this.connectionString = connectionString;
         this.logger = logger;

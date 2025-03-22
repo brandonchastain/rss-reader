@@ -1,6 +1,6 @@
 @page "/timeline"
 @attribute [StreamRendering]
-@inject IPersistedFeeds feedStore
+@inject IFeedRepository feedStore
 @inject ILogger<Timeline> logger
 @rendermode InteractiveServer // needed for onclick
 
