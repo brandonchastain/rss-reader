@@ -39,7 +39,7 @@ jobs:
       - name: Build with dotnet
         run: dotnet build src/DataImport/DataImport.csproj --configuration Release
       - name: dotnet publish
-        run: dotnet publish src/DataImport/DataImport -c Release -o ${{env.DOTNET_ROOT}}/DataImport
+        run: dotnet publish src/DataImport/DataImport.csproj -c Release -o ${{env.DOTNET_ROOT}}/DataImport
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
