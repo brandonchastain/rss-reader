@@ -13,22 +13,25 @@ Console.CancelKeyPress += delegate {
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
-builder.Services.AddSingleton<IPersistedFeeds>(sb =>
+builder.Services.AddSingleton<IFeedRepository>(sb =>
 {
-    return new SqlLitePersistedFeeds("Data Source=../RssApp/feeds.db", sb.GetRequiredService<ILogger<SqlLitePersistedFeeds>>());
+    return new SQLiteFeedRepository("Data Source=../RssApp/feeds.db", sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
 });
 builder.Services.AddSingleton<PersistedHiddenItems>();
-builder.Services.AddSingleton<INewsFeedItemStore>(sb =>
+builder.Services.AddSingleton<IItemRepository>(sb =>
 {
-    return new SQLiteNewsFeedItemStore("Data Source=../RssApp/newsFeedItems.db", sb.GetRequiredService<ILogger<SQLiteNewsFeedItemStore>>());
+    return new SQLiteItemRepository(
+        "Data Source=../RssApp/newsFeedItems.db",
+        sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
+        sb.GetRequiredService<IFeedRepository>());
 });
 //builder.Services.AddSingleton<IFeedClient, FeedClient>();
 builder.Services.AddSingleton<RssDeserializer>();
 var app = builder.Build();
 
 // do the export
-var feedStore = app.Services.GetRequiredService<IPersistedFeeds>();
-var itemStore = app.Services.GetRequiredService<INewsFeedItemStore>();
+var feedStore = app.Services.GetRequiredService<IFeedRepository>();
+var itemStore = app.Services.GetRequiredService<IItemRepository>();
 var feeds = feedStore.GetFeeds();
 
 var feedCsvFileName = "../feeds.csv";
@@ -53,7 +56,7 @@ try
         await NewsFeedItem.WriteCsvHeaderAsync(writer);
         foreach (var feed in feeds)
         {
-            var items = itemStore.GetItems(feed.FeedUrl);
+            var items = itemStore.GetItems(feed);
 
             foreach (var item in items)
             {
