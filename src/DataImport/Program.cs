@@ -20,7 +20,10 @@ builder.Services.AddSingleton<IFeedRepository>(sb =>
 builder.Services.AddSingleton<PersistedHiddenItems>();
 builder.Services.AddSingleton<IItemRepository>(sb =>
 {
-    return new SQLiteItemRepository("Data Source=../RssApp/newsFeedItems.db", sb.GetRequiredService<ILogger<SQLiteItemRepository>>());
+    return new SQLiteItemRepository(
+        "Data Source=../RssApp/newsFeedItems.db",
+        sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
+        sb.GetRequiredService<IFeedRepository>());
 });
 //builder.Services.AddSingleton<IFeedClient, FeedClient>();
 builder.Services.AddSingleton<RssDeserializer>();
