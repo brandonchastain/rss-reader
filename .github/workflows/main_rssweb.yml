@@ -28,24 +28,11 @@ jobs:
       - name: dotnet publish
         run: dotnet publish src/RssApp/RssApp.csproj -c Release -o ${{env.DOTNET_ROOT}}/RssApp
 
-      - name: Build with dotnet
-        run: dotnet build src/DataExport/DataExport.csproj --configuration Release
-      - name: dotnet publish
-        run: dotnet publish src/DataExport/DataExport.csproj -c Release -o ${{env.DOTNET_ROOT}}/DataExport
-      
-      - name: Build with dotnet
-        run: dotnet build src/DataImport/DataImport.csproj --configuration Release
-      - name: dotnet publish
-        run: dotnet publish src/DataImport/DataImport.csproj -c Release -o ${{env.DOTNET_ROOT}}/DataImport
-
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: .net-app
-          path: |
-            ${{env.DOTNET_ROOT}}/RssApp
-            ${{env.DOTNET_ROOT}}/DataExport
-            ${{env.DOTNET_ROOT}}/DataImport
+          path: ${{env.DOTNET_ROOT}}/RssApp
 
   deploy:
     runs-on: windows-latest
