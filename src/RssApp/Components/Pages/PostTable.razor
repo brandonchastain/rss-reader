@@ -33,7 +33,7 @@ else
                         <button class="btn-link" @onclick="() => Hide(post.Href)">Hide</button>
                     </td>
                     <td class="col-8">
-                        <a href="@this.GetEffectiveHref(post)">@post.Title</a> -
+                        <a href="@this.GetEffectiveHref(post)" target="_blank" @onclick="() => MarkAsRead(post, true)">@post.Title</a> -
                         @this.GetRootDomain(post.Href) -
                         <a href="/posts?feedUrl=@post.FeedUrl">
                             Feed
@@ -105,9 +105,9 @@ else
         await this.OnInitializedAsync();
     }
 
-    private async Task MarkAsRead(NewsFeedItem item)
+    private async Task MarkAsRead(NewsFeedItem item, bool? isRead = null)
     {
-        await this.feedClient.MarkAsReadAsync(item, !item.IsRead);
+        await this.feedClient.MarkAsReadAsync(item, isRead ?? !item.IsRead);
         await this.OnInitializedAsync();
     }
 

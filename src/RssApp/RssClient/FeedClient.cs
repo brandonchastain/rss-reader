@@ -8,8 +8,8 @@ namespace RssApp.RssClient;
 public class FeedClient : IFeedClient
 {
     private const int PageSize = 10;
-    private static readonly TimeSpan CacheReloadInterval = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan CacheReloadStartupDelay = TimeSpan.FromSeconds(1);//TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan CacheReloadInterval = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan CacheReloadStartupDelay = TimeSpan.FromMinutes(1);
     private static readonly bool EnableHttpLookup = true;
 
     private IMemoryCache feedCache;
