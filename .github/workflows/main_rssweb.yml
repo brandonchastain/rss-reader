@@ -25,14 +25,15 @@ jobs:
 
       - name: Build with dotnet
         run: dotnet build src/RssApp/RssApp.csproj --configuration Release
+
       - name: dotnet publish
-        run: dotnet publish src/RssApp/RssApp.csproj -c Release -o ${{env.DOTNET_ROOT}}/RssApp
+        run: dotnet publish src/RssApp/RssApp.csproj -c Release -o "${{env.DOTNET_ROOT}}\RssApp"
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: .net-app
-          path: ${{env.DOTNET_ROOT}}/RssApp
+          path: ${{env.DOTNET_ROOT}}\RssApp
 
   deploy:
     runs-on: windows-latest
