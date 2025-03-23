@@ -1,13 +1,3 @@
-using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Identity.Web;
-using Microsoft.Identity.Web.UI;
 using RssApp.Components;
 using RssApp.Persistence;
 using RssApp.RssClient;
@@ -54,17 +44,6 @@ builder.Services.AddSingleton<IItemRepository>(sb =>
 });
 builder.Services.AddSingleton<IFeedClient, FeedClient>();
 builder.Services.AddSingleton<RssDeserializer>();
-builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
-    .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"));
-builder.Services.AddAuthorization(options =>
-{
-    options.FallbackPolicy = options.DefaultPolicy;
-});
-
-builder.Services.AddRazorPages()
-    .AddMicrosoftIdentityUI();
-builder.Services.AddServerSideBlazor()
-    .AddMicrosoftIdentityConsentHandler();
 var app = builder.Build();
 
 // instantiate feed client to trigger the cache reload time
