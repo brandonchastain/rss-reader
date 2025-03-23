@@ -40,6 +40,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
 builder.Services.AddSingleton<IFeedRepository>(sb =>
 {
     return new SQLiteFeedRepository($"Data Source={feedDb}", sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
@@ -54,17 +55,19 @@ builder.Services.AddSingleton<IItemRepository>(sb =>
 });
 builder.Services.AddSingleton<IFeedClient, FeedClient>();
 builder.Services.AddSingleton<RssDeserializer>();
-builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
-    .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"));
-builder.Services.AddAuthorization(options =>
-{
-    options.FallbackPolicy = options.DefaultPolicy;
-});
 
-builder.Services.AddRazorPages()
-    .AddMicrosoftIdentityUI();
-builder.Services.AddServerSideBlazor()
-    .AddMicrosoftIdentityConsentHandler();
+// builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
+//     .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"));
+// builder.Services.AddAuthorization(options =>
+// {
+//     options.FallbackPolicy = options.DefaultPolicy;
+// });
+
+// builder.Services.AddRazorPages()
+//     .AddMicrosoftIdentityUI();
+// builder.Services.AddServerSideBlazor()
+//     .AddMicrosoftIdentityConsentHandler();
+
 var app = builder.Build();
 
 // instantiate feed client to trigger the cache reload time
@@ -81,11 +84,10 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseAntiforgery();
-app.UseAuthentication();
-app.UseAuthorization();
+//app.UseAuthentication();
+//app.UseAuthorization();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
-
 
 app.Run();
