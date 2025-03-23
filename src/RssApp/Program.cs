@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Caching.Memory;
 using RssApp.Components;
 using RssApp.Persistence;
 using RssApp.RssClient;
@@ -9,6 +8,23 @@ Console.CancelKeyPress += delegate {
         cancellationTokenSource.Cancel();
 };
 
+const string feedDbVar = "RSS_BC_FEED_DB";
+const string itemDbVar = "RSS_BC_ITEM_DB";
+var feedDb = "C:\\home\\data\\feeds.db";
+var itemDb = "C:\\home\\data\\newsFeedItems.db";
+
+// read feedDb from environment variable if set
+if (Environment.GetEnvironmentVariable(feedDbVar) != null)
+{
+    feedDb = Environment.GetEnvironmentVariable(feedDbVar);
+}
+
+// read itemDb from environment variable if set
+if (Environment.GetEnvironmentVariable(itemDbVar) != null)
+{
+    itemDb = Environment.GetEnvironmentVariable(itemDbVar);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
@@ -16,13 +32,13 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddSingleton<IFeedRepository>(sb =>
 {
-    return new SQLiteFeedRepository("Data Source=C:\\home\\data\\feeds.db", sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
+    return new SQLiteFeedRepository($"Data Source={feedDb}", sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
 });
 builder.Services.AddSingleton<PersistedHiddenItems>();
 builder.Services.AddSingleton<IItemRepository>(sb =>
 {
     return new SQLiteItemRepository(
-        "Data Source=C:\\home\\data\\newsFeedItems.db",
+        $"Data Source={itemDb}",
         sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
         sb.GetRequiredService<IFeedRepository>());
 });

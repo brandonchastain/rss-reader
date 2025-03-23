@@ -40,6 +40,8 @@ public class FeedClient : IFeedClient
         this.timer = new Timer(this.ReloadCache, null, CacheReloadStartupDelay, CacheReloadInterval);
     }
 
+    public bool IsFilterUnread { get; set; } = false;
+
     public IEnumerable<NewsFeedItem> GetFeedItems(IEnumerable<NewsFeed> feeds, int page)
     {
         var items = new List<NewsFeedItem>();
@@ -48,8 +50,13 @@ public class FeedClient : IFeedClient
             items.AddRange(this.GetFeedItemsHelper(feed));
         }
         
-        var sorted = items.DistinctBy(i => i.GetHashCode()).OrderByDescending(i => i.ParsedDate);
-        return sorted.Skip(page * PageSize).Take(PageSize);
+        var sorted = items
+            .DistinctBy(i => i.GetHashCode())
+            .OrderByDescending(i => i.ParsedDate);
+
+        return sorted
+            .Skip(page * PageSize)
+            .Take(PageSize);
     }
 
     public IEnumerable<NewsFeedItem> GetFeedItems(NewsFeed feed, int page)
@@ -86,7 +93,8 @@ public class FeedClient : IFeedClient
 
         var result = items.DistinctBy(i => i.Href)
             .OrderByDescending(i => i.ParsedDate)
-            .Where(i => !hidden.Contains(i.Href));
+            .Where(i => !hidden.Contains(i.Href))
+            .Where(i => !this.IsFilterUnread || !i.IsRead);
 
         return result;
     }
