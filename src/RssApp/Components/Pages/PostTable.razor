@@ -22,7 +22,7 @@ else
         <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as read</button>
         <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.feedClient.IsFilterUnread ? "[Show all]" : "[Show unread only]")</button>
     </div>
-    <table class="table">
+    <table id="post-table" class="table">
         <thead>
             <tr>
                 <th>Post</th><th>&nbsp;</th><th>Actions</th><th>Date</th>
@@ -30,7 +30,7 @@ else
         </thead>
         <tbody>
             <Virtualize Items="posts" Context="post" TItem="NewsFeedItem">
-                <tr style="background-color: @(post.IsRead ? "white" : "#fff9c4")">
+                <tr class="@(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPostAsync(post)">
                     <td>
                         @{
                             var thumbnailUrl = post.GetThumbnailUrl();
@@ -44,8 +44,6 @@ else
                         <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick="() => MarkAsRead(post, true)">@post.Title</a>
                         @this.GetRootDomain(post.Href)
                         &nbsp;
-                        <br/>
-                        <a href="/posts?feedUrl=@post.FeedUrl">[feed]</a>
                         &nbsp;
                         @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
                         {
@@ -59,8 +57,8 @@ else
                         </span>
                     </td>
                     <td>
-                        <button @onclick="() => PreviewPostAsync(post)">Preview</button>
-                        <button class="btn-link" @onclick="() => Hide(post.Href)">Hide</button>
+                        <a href="/posts?feedUrl=@post.FeedUrl" onclick="event.stopPropagation()">[feed]</a>
+                        <button class="link" @onclick="() => Hide(post.Href)">[hide]</button>
                     </td>
                     <td>@post.ParsedDate?.ToString("f")</td>
                 </tr>

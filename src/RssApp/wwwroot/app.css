@@ -6,6 +6,27 @@ html, body {
     height: 100%;
 }
 
+#post-table tr.post-read {
+    background-color: white;
+}
+
+#post-table tr.post-unread {
+    background-color: #fff9c4;
+}
+
+#post-table tr.post-read:hover, #post-table tr.post-unread:hover {
+    background-color: #eeeeee; /* Light yellow for white rows */
+    cursor: pointer;
+}
+
+button.link {
+    background: none;
+    border: none;
+    color: #006bb7;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
 .thumbnail {
     padding: 0;
     margin: 0;
@@ -16,7 +37,8 @@ html, body {
 #postContent {
     max-width: 100%; /* Set your desired max-width */
     margin: 0 auto; /* Center the container */
-    padding: 0 1rem; /* Add some padding for better appearance */
+    /*padding: 0 1rem; /* Add some padding for better appearance */
+    padding: 0;
 }
 
 #postContent img {
