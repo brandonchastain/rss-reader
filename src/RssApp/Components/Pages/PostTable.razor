@@ -16,11 +16,11 @@
 }
 else
 {
-    <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as read</button>
+    <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.feedClient.IsFilterUnread ? "[All]" : "[Unread only]")</button>
     <table class="table">
         <thead>
             <tr>
-                <th>&nbsp;</th><th>&nbsp;</th><th>Post</th><th>Comments</th><th>Date</th>
+                <th>&nbsp;</th><th>Post</th><th>Comments</th><th>&nbsp;</th><th>Date</th>
             </tr>
         </thead>
         <tbody>
@@ -28,9 +28,6 @@ else
                 <tr style="background-color: @(post.IsRead ? "white" : "#fff9c4")">
                     <td>
                         <button class="btn-link" @onclick="() => MarkAsRead(post)">Read</button>
-                    </td>
-                    <td>
-                        <button class="btn-link" @onclick="() => Hide(post.Href)">Hide</button>
                     </td>
                     <td class="col-8">
                         <a href="@this.GetEffectiveHref(post)" target="_blank" @onclick="() => MarkAsRead(post, true)">@post.Title</a> -
@@ -50,7 +47,11 @@ else
 
                         }
                     </td>
+                    <td>
+                        <button class="btn-link" @onclick="() => Hide(post.Href)">Hide</button>
+                    </td>
                     <td>@post.ParsedDate?.ToString("f")</td>
+                    
 
                     <div id="@post.Id" style="display:none;">@post.Content</div>
                 </tr>
@@ -60,6 +61,8 @@ else
 
     <button class="btn-link" @onclick="() => Prev()">Prev</button>
     <button class="btn-link" @onclick="() => Next()">Next</button>
+    <br/>
+    <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as read</button>
 }
 
 @code {
@@ -108,6 +111,12 @@ else
     private async Task MarkAsRead(NewsFeedItem item, bool? isRead = null)
     {
         await this.feedClient.MarkAsReadAsync(item, isRead ?? !item.IsRead);
+        await this.OnInitializedAsync();
+    }
+
+    private async Task ToggleUnreadFilterAsync()
+    {
+        this.feedClient.IsFilterUnread = !this.feedClient.IsFilterUnread;
         await this.OnInitializedAsync();
     }
 

@@ -11,4 +11,5 @@ public interface IFeedClient
     IEnumerable<NewsFeedItem> GetFeedItems(NewsFeed feed, int page);
     void HidePost(string href);
     Task MarkAsReadAsync(NewsFeedItem item, bool isRead);
+    bool IsFilterUnread { get; set; }
 }
