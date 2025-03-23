@@ -16,44 +16,53 @@
 }
 else
 {
-    <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.feedClient.IsFilterUnread ? "[All]" : "[Unread only]")</button>
+    <div style="float: inline-start;">
+    </div>
+    <div style="float:inline-end;">
+        <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as read</button>
+        <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.feedClient.IsFilterUnread ? "[Show all]" : "[Show unread only]")</button>
+    </div>
     <table class="table">
         <thead>
             <tr>
-                <th>&nbsp;</th><th>Post</th><th>Comments</th><th>&nbsp;</th><th>Date</th>
+                <th>Post</th><th>&nbsp;</th><th>Actions</th><th>Date</th>
             </tr>
         </thead>
         <tbody>
             <Virtualize Items="posts" Context="post" TItem="NewsFeedItem">
                 <tr style="background-color: @(post.IsRead ? "white" : "#fff9c4")">
                     <td>
-                        <button class="btn-link" @onclick="() => MarkAsRead(post)">Read</button>
+                        @{
+                            var thumbnailUrl = post.GetThumbnailUrl();
+                            if (!String.IsNullOrWhiteSpace(thumbnailUrl))
+                            {
+                                <img src="@post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" />
+                            }
+                        }
                     </td>
                     <td class="col-8">
-                        <a href="@this.GetEffectiveHref(post)" target="_blank" @onclick="() => MarkAsRead(post, true)">@post.Title</a> -
-                        @this.GetRootDomain(post.Href) -
-                        <a href="/posts?feedUrl=@post.FeedUrl">
-                            Feed
-                        </a>
-                    </td>
-                    <td>
-
+                        <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick="() => MarkAsRead(post, true)">@post.Title</a>
+                        @this.GetRootDomain(post.Href)
+                        &nbsp;
+                        <br/>
+                        <a href="/posts?feedUrl=@post.FeedUrl">[feed]</a>
+                        &nbsp;
                         @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
                         {
-                            <a href="@post.CommentsHref">Comments</a>
+                            <a href="@post.CommentsHref">[comments]</a>
                         }
-                        else
-                        {
 
-                        }
+                        <span hidden=@(!post.IsBeingPreviewed)>
+                            <CascadingValue Value="@post">
+                                <Content/>
+                            </CascadingValue>
+                        </span>
                     </td>
                     <td>
+                        <button @onclick="() => PreviewPostAsync(post)">Preview</button>
                         <button class="btn-link" @onclick="() => Hide(post.Href)">Hide</button>
                     </td>
                     <td>@post.ParsedDate?.ToString("f")</td>
-                    
-
-                    <div id="@post.Id" style="display:none;">@post.Content</div>
                 </tr>
             </Virtualize>
         </tbody>
@@ -61,8 +70,6 @@ else
 
     <button class="btn-link" @onclick="() => Prev()">Prev</button>
     <button class="btn-link" @onclick="() => Next()">Next</button>
-    <br/>
-    <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as read</button>
 }
 
 @code {
@@ -78,7 +85,7 @@ else
         this.timer?.Dispose();
         this.timer = null;
     }
-
+    
     protected override Task OnInitializedAsync()
     {
         this.posts = this.GetFeed(this.feedClient, this.page)?.ToList() ?? new List<NewsFeedItem>();
@@ -103,6 +110,13 @@ else
     {
         foreach (var post in this.posts)
         {
+            post.IsRead = true;
+        }
+
+        this.StateHasChanged();
+
+        foreach (var post in this.posts)
+        {
             await this.feedClient.MarkAsReadAsync(post, true);
         }
         await this.OnInitializedAsync();
@@ -110,14 +124,24 @@ else
 
     private async Task MarkAsRead(NewsFeedItem item, bool? isRead = null)
     {
-        await this.feedClient.MarkAsReadAsync(item, isRead ?? !item.IsRead);
-        await this.OnInitializedAsync();
+        bool val = isRead ?? !item.IsRead;
+        item.IsRead = val;
+        await this.feedClient.MarkAsReadAsync(item, val);
+        this.StateHasChanged();
     }
 
     private async Task ToggleUnreadFilterAsync()
     {
         this.feedClient.IsFilterUnread = !this.feedClient.IsFilterUnread;
         await this.OnInitializedAsync();
+    }
+
+    private async Task PreviewPostAsync(NewsFeedItem post)
+    {
+        post.IsBeingPreviewed = !post.IsBeingPreviewed;
+        this.StateHasChanged();
+
+        await MarkAsRead(post, true);
     }
 
     private async Task Prev()

@@ -99,7 +99,9 @@ public class FeedClient : IFeedClient
         return result;
     }
 
+#pragma warning disable VSTHRD100 // Avoid async void methods
     private async void ReloadCache(object state)
+#pragma warning restore VSTHRD100 // Avoid async void methods
     {
         try
         {
