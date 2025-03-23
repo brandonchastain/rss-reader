@@ -1,5 +1,27 @@
 html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.thumbnail {
+    padding: 0;
+    margin: 0;
+    border: none;
+    max-height: 50px;
+}
+
+#postContent {
+    max-width: 100%; /* Set your desired max-width */
+    margin: 0 auto; /* Center the container */
+    padding: 0 1rem; /* Add some padding for better appearance */
+}
+
+#postContent img {
+    max-width: 50%;
+    height: auto;
 }
 
 a, .btn-link {

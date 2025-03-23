@@ -24,6 +24,8 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
 
     // ignore for serialization
     public bool IsPaywalled { get; set; }
+
+    public bool IsBeingPreviewed { get; set; }
     
     public DateTime? ParsedDate {
         get
@@ -46,6 +48,30 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
 
         return string.Equals(this.FeedUrl, other.FeedUrl, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(this.Href, other.Href, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public string GetThumbnailUrl()
+    {
+        if (string.IsNullOrEmpty(this.Content))
+        {
+            return null;
+        }
+
+        var doc = new HtmlAgilityPack.HtmlDocument();
+        doc.LoadHtml(this.Content);
+        var img = doc.DocumentNode.SelectSingleNode("//img");
+        if (img == null)
+        {
+            return null;
+        }
+
+        var src = img.GetAttributeValue("src", null);
+        if (string.IsNullOrEmpty(src))
+        {
+            return null;
+        }
+
+        return src;
     }
 
     public override int GetHashCode()

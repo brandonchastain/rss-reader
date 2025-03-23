@@ -9,9 +9,7 @@
 
 <PageTitle>Posts</PageTitle>
 
-<h1>Posts from @FeedUrl</h1>
-
-<p>Browse Posts in the RSS feed here.</p>
+<h1>Posts from @(FeedUrl == null ? string.Empty : new Uri(FeedUrl).Authority)</h1>
 
 <CascadingValue Value="GetRssFeed">
     <PostTable />

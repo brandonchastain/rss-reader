@@ -58,20 +58,7 @@ public class SQLiteItemRepository : IItemRepository
             {
                 while (reader.Read())
                 {
-                    var id = reader.IsDBNull(reader.GetOrdinal("NewFeedItemId")) ? "" : reader.GetString(reader.GetOrdinal("NewsFeedItemId"));
-                    var href = reader.IsDBNull(reader.GetOrdinal("Href")) ? "" : reader.GetString(reader.GetOrdinal("Href"));
-                    var commentsHref = reader.IsDBNull(reader.GetOrdinal("CommentsHref")) ? "" : reader.GetString(reader.GetOrdinal("CommentsHref"));
-                    var title = reader.IsDBNull(reader.GetOrdinal("Title")) ? "" : reader.GetString(reader.GetOrdinal("Title"));
-                    var publishDate = reader.IsDBNull(reader.GetOrdinal("PublishDate")) ? "" : reader.GetString(reader.GetOrdinal("PublishDate"));
-                    var content = reader.IsDBNull(reader.GetOrdinal("Content")) ? "" : reader.GetString(reader.GetOrdinal("Content"));
-                    var url = reader.IsDBNull(reader.GetOrdinal("FeedUrl")) ? "" : reader.GetString(reader.GetOrdinal("FeedUrl"));
-                    var isRead = reader.IsDBNull(reader.GetOrdinal("IsRead")) ? false : reader.GetBoolean(reader.GetOrdinal("IsRead"));
-                    
-                    var item = new NewsFeedItem(id, title, href, commentsHref, publishDate, content)
-                    {
-                        FeedUrl = url,
-                        IsRead = isRead
-                    };
+                    var item = this.ReadItemFromResults(reader);
                     
                     if (updatedFeed.IsPaywalled)
                     {
@@ -81,6 +68,48 @@ public class SQLiteItemRepository : IItemRepository
                     //this.logger.LogInformation($"[DATABASE] returning item {item.Id}, {item.Href} feedUrl {item.FeedUrl}.");
                     yield return item;
                 }
+            }
+        }
+    }
+
+    private NewsFeedItem ReadItemFromResults(SQLiteDataReader reader)
+    {
+        var id = reader.IsDBNull(reader.GetOrdinal("NewFeedItemId")) ? "" : reader.GetString(reader.GetOrdinal("NewsFeedItemId"));
+        var href = reader.IsDBNull(reader.GetOrdinal("Href")) ? "" : reader.GetString(reader.GetOrdinal("Href"));
+        var commentsHref = reader.IsDBNull(reader.GetOrdinal("CommentsHref")) ? "" : reader.GetString(reader.GetOrdinal("CommentsHref"));
+        var title = reader.IsDBNull(reader.GetOrdinal("Title")) ? "" : reader.GetString(reader.GetOrdinal("Title"));
+        var publishDate = reader.IsDBNull(reader.GetOrdinal("PublishDate")) ? "" : reader.GetString(reader.GetOrdinal("PublishDate"));
+        var content = reader.IsDBNull(reader.GetOrdinal("Content")) ? "" : reader.GetString(reader.GetOrdinal("Content"));
+        var url = reader.IsDBNull(reader.GetOrdinal("FeedUrl")) ? "" : reader.GetString(reader.GetOrdinal("FeedUrl"));
+        var isRead = reader.IsDBNull(reader.GetOrdinal("IsRead")) ? false : reader.GetBoolean(reader.GetOrdinal("IsRead"));
+        
+        var item = new NewsFeedItem(id, title, href, commentsHref, publishDate, content)
+        {
+            FeedUrl = url,
+            IsRead = isRead
+        };
+
+        return item;
+    }
+
+    public NewsFeedItem GetItem(string href)
+    {
+        using (var connection = new SQLiteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT * FROM NewsFeedItems WHERE Href = @href";
+            command.Parameters.AddWithValue("@href", href);
+
+            using (var reader = command.ExecuteReader())
+            {
+                if (!reader.Read())
+                {
+                    return null;
+                }
+                
+                var item = this.ReadItemFromResults(reader);
+                return item;
             }
         }
     }

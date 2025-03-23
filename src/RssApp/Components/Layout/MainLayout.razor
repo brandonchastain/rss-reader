@@ -1,13 +1,15 @@
 ﻿@inherits LayoutComponentBase
 
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
 
     <main>
         <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+            <NavLink class="nav-link" href="/timeline">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Timeline
+            </NavLink>
+            <NavLink class="nav-link" href="/">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Feeds
+            </NavLink>
         </div>
 
         <article class="content px-4">
