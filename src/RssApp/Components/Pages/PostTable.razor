@@ -2,11 +2,13 @@
 @using System.Xml
 @using System.Xml.Linq
 @using System.Xml.Serialization
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @inject IFeedClient feedClient
 @inject ILogger<Posts> logger
 @inject NavigationManager NavigationManager
 @implements IDisposable
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 @rendermode InteractiveServer // needed for onclick
 Username: @username
@@ -87,8 +89,12 @@ else
     
     protected override async Task OnInitializedAsync()
     {
-        this.username = (await feedClient.GetLoggedInUserAsync()).Username;
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        this.logger.LogInformation("User: {user}", user.Identity.Name);
+        this.username = user.FindFirst(u => u.Type.Contains("nameidentifier"))?.Value;
+        await this.feedClient.RegisterUserAsync(this.username);
         this.posts = (await this.GetFeed(this.feedClient, this.page))?.ToList() ?? new List<NewsFeedItem>();
+        this.StateHasChanged();
     }
 
     private async Task Hide(string postId)

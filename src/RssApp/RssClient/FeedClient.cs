@@ -37,7 +37,6 @@ public class FeedClient : IFeedClient, IDisposable
 
     public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
     {
-        this.loggedInUser ??= await this.GetLoggedInUserAsync();
         var feeds = this.persistedFeeds.GetFeeds(this.loggedInUser);
         return feeds;
     }
@@ -84,7 +83,7 @@ public class FeedClient : IFeedClient, IDisposable
         this.httpClient.Dispose();
     }
 
-    public async Task<RssUser> GetLoggedInUserAsync()
+    public async Task<RssUser> RegisterUserAsync(string username)
     {
         // send http request to /auth/.me endpoint for azure app service easy auth
         // and get the username/email frmo response
@@ -92,9 +91,6 @@ public class FeedClient : IFeedClient, IDisposable
 
         try
         {
-            var resp = await this.httpClient.GetAsync("https://reader.brandonchastain.com/.auth/me");
-            this.logger.LogInformation($"[LOGIN] Response: {resp.StatusCode}");
-            var username = await resp.Content.ReadAsStringAsync();
             this.logger.LogInformation($"[LOGIN] Username: {username}");
             user = this.userStore.GetUserByName(username);
 
@@ -113,12 +109,12 @@ public class FeedClient : IFeedClient, IDisposable
             user = this.userStore.GetUserByName("defaultuser") ?? this.userStore.AddUser("defaultuser");
         }
 
+        this.loggedInUser = user;
         return user;
     }
 
     private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed)
     {
-        this.loggedInUser ??= await this.GetLoggedInUserAsync();
         var url = feed.FeedUrl;
 
         var response = this.newsFeedItemStore.GetItems(feed).ToHashSet();

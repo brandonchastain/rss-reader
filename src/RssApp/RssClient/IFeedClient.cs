@@ -9,5 +9,5 @@ public interface IFeedClient
     void HidePost(string href);
     void MarkAsRead(NewsFeedItem item, bool isRead);
     bool IsFilterUnread { get; set; }
-    Task<RssUser> GetLoggedInUserAsync();
+    Task<RssUser> RegisterUserAsync(string username);
 }

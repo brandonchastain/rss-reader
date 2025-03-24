@@ -3,8 +3,10 @@
 @using System.Xml
 @using System.Xml.Linq
 @using System.Xml.Serialization
+@using Microsoft.AspNetCore.Components.Authorization
 @inject ILogger<Posts> logger
 @inject IFeedClient feedClient
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 @rendermode InteractiveServer // needed for onclick
 
@@ -23,7 +25,9 @@
 
     private async Task<IEnumerable<NewsFeedItem>> GetRssFeed(IFeedClient fc, int page)
     {
-        var user = await feedClient.GetLoggedInUserAsync();
+        var tempUser = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        var username = tempUser.FindFirst(u => u.Type.Contains("nameidentifier"))?.Value;
+        var user = await this.feedClient.RegisterUserAsync(username);
         return await fc.GetFeedItemsAsync(new NewsFeed(FeedUrl, user.Id), page);
     }
 }

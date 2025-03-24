@@ -1,7 +1,9 @@
 @page "/"
+@using Microsoft.AspNetCore.Components.Authorization
 @attribute [StreamRendering]
 @inject IFeedRepository feedStore
 @inject IFeedClient feedClient
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @rendermode InteractiveServer // needed for onclick
 
 <PageTitle>Feeds</PageTitle>
@@ -65,7 +67,9 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        this.user = await this.feedClient.GetLoggedInUserAsync();
+        var tempUser = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        var username = tempUser.FindFirst(u => u.Type.Contains("nameidentifier"))?.Value;
+        this.user = await this.feedClient.RegisterUserAsync(username);
         this.feeds = this.GetFeedUrls();
         NewFeedUrl = "";
     }
