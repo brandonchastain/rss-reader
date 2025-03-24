@@ -3,9 +3,10 @@ namespace RssApp.Contracts;
 public class NewsFeedItem : IEquatable<NewsFeedItem>
 {
 
-    public NewsFeedItem(string id, string title, string href, string commentsHref, string publishDate, string content)
+    public NewsFeedItem(string id, int userId, string title, string href, string commentsHref, string publishDate, string content)
     {
         this.Id = id;
+        this.UserId = userId;
         this.Title = title;
         this.Href = href;
         this.CommentsHref = commentsHref;
@@ -14,6 +15,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
     }
 
     public string FeedUrl { get; set; }
+    public int UserId { get; set; }
     public string Title { get; set; }
     public string Href { get; set; }
     public string CommentsHref { get; set; }
@@ -88,7 +90,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
     public static async Task WriteCsvHeaderAsync(StreamWriter writer)
     {
         await writer.WriteLineAsync(
-            $"{nameof(Id)},{nameof(IsRead)},{nameof(FeedUrl)},{nameof(Title)},{nameof(Href)},{nameof(CommentsHref)},{nameof(PublishDate)},{nameof(Content)}");
+            $"{nameof(Id)},{nameof(IsRead)},{nameof(FeedUrl)},{nameof(Title)},{nameof(Href)},{nameof(CommentsHref)},{nameof(PublishDate)},{nameof(Content)},{nameof(UserId)}");
     }
 
     public async Task WriteCsvAsync(StreamWriter writer)
@@ -100,13 +102,14 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
         await writer.WriteAsync($"{this.Href},");
         await writer.WriteAsync($"{this.CommentsHref},");
         await writer.WriteAsync($"{this.PublishDate.Replace(",", "🙈")},");
-        await writer.WriteAsync($"{this.Content.Replace(",", "🙈").ReplaceLineEndings("🫡")}" + Environment.NewLine);
+        await writer.WriteAsync($"{this.Content.Replace(",", "🙈").ReplaceLineEndings("🫡")},");
+        await writer.WriteAsync($"{this.UserId}" + Environment.NewLine);
     }
 
     public static NewsFeedItem ReadFromCsv(string csvLine)
     {
         var values = csvLine.Split(',');
-        if (values.Length != 8)
+        if (values.Length != 9)
         {
             Console.WriteLine(csvLine);
             throw new ArgumentException("Invalid CSV line");
@@ -114,6 +117,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
 
         return new NewsFeedItem(
             id: values[0],
+            userId: int.Parse(values[8]),
             title: values[3].Replace("🙈", ","),
             href: values[4],
             commentsHref: values[5],

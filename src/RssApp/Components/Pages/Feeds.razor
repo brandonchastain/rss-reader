@@ -1,6 +1,7 @@
 @page "/"
 @attribute [StreamRendering]
 @inject IFeedRepository feedStore
+@inject IFeedClient feedClient
 @rendermode InteractiveServer // needed for onclick
 
 <PageTitle>Feeds</PageTitle>
@@ -57,31 +58,32 @@ else
 
 @code {
     private IEnumerable<NewsFeed> feeds;
+    private RssUser user;
 
     [SupplyParameterFromForm]
     private string NewFeedUrl { get; set; }
 
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
+        this.user = await this.feedClient.GetLoggedInUserAsync();
         this.feeds = this.GetFeedUrls();
         NewFeedUrl = "";
-        return Task.CompletedTask;
     }
     private async Task SubmitAsync()
     {
-        this.feedStore.AddFeed(new NewsFeed(NewFeedUrl));
+        this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.user.Id));
         await this.OnInitializedAsync();
     }
 
     private async Task DeleteAsync(string feed)
     {
-        this.feedStore.DeleteFeed(feed);
+        this.feedStore.DeleteFeed(this.user, feed);
         await this.OnInitializedAsync();
     }
 
     private IEnumerable<NewsFeed> GetFeedUrls()
     {
-        return this.feedStore.GetFeeds();
+        return this.feedStore.GetFeeds(this.user);
     }
 
     private void TogglePaywalledAsync(NewsFeed feed)

@@ -30,41 +30,53 @@ public class SQLiteFeedRepository : IFeedRepository
                 CREATE TABLE IF NOT EXISTS Feeds (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Url TEXT NOT NULL UNIQUE,
-                    IsPaywalled BOOLEAN NOT NULL DEFAULT 0
+                    IsPaywalled BOOLEAN NOT NULL DEFAULT 0,
+                    UserId INTEGER NOT NULL,
+                    FOREIGN KEY (UserId) REFERENCES Users(Id)
                 )";
             command.ExecuteNonQuery();
         }
     }
 
-    public IEnumerable<NewsFeed> GetFeeds()
+    public IEnumerable<NewsFeed> GetFeeds(RssUser user)
     {
-        if (this.cachedFeeds.Count == 0)
+        if (this.cachedFeeds.Count > 0)
         {
-            List<NewsFeed> feeds = new List<NewsFeed>();
-            using (var connection = new SQLiteConnection(this.connectionString))
+            foreach (var feed in this.cachedFeeds)
             {
-                connection.Open();
-                var command = connection.CreateCommand();
-                command.CommandText = "SELECT * FROM Feeds";
-                using (var reader = command.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        var url = reader.IsDBNull(1) ? "" : reader.GetString(1);
-                        var isPaywalled = reader.FieldCount < 2 || reader.IsDBNull(2) ? false : reader.GetBoolean(2);
-                        var res = new NewsFeed(url, isPaywalled);
-                        feeds.Add(res);
-                    }
-                }
+                yield return feed;
             }
-            foreach (var feed in feeds)
-            {
-                this.cachedFeeds.Add(feed);
-            }
+
+            yield break;
         }
         
-        foreach (var feed in this.cachedFeeds)
+        List<NewsFeed> feeds = new List<NewsFeed>();
+
+        using (var connection = new SQLiteConnection(this.connectionString))
         {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT * FROM Feeds
+                WHERE UserId = @userId
+            """;
+            command.Parameters.AddWithValue("@userId", user.Id);
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    var url = reader.IsDBNull(1) ? "" : reader.GetString(1);
+                    var userId = reader.IsDBNull(reader.GetOrdinal("UserId")) ? 1 : reader.GetInt32(reader.GetOrdinal("UserId"));
+                    var isPaywalled = reader.IsDBNull(reader.GetOrdinal("IsPaywalled")) ? false : reader.GetBoolean(reader.GetOrdinal("IsPaywalled"));
+                    var res = new NewsFeed(url, userId, isPaywalled);
+                    feeds.Add(res);
+                }
+            }
+        }
+
+        foreach (var feed in feeds)
+        {
+            this.cachedFeeds.Add(feed);
             yield return feed;
         }
     }
@@ -75,12 +87,12 @@ public class SQLiteFeedRepository : IFeedRepository
         {
             connection.Open();
             var command = connection.CreateCommand();
-            command.CommandText = "INSERT INTO Feeds (Url) VALUES (@url)";
+            command.CommandText = "INSERT INTO Feeds (Url, UserId) VALUES (@url, @userId)";
             command.Parameters.AddWithValue("@url", feed.FeedUrl);
+            command.Parameters.AddWithValue("@userId", feed.UserId);
             command.ExecuteNonQuery();
         }
 
-        this.logger.LogInformation("add getting lock");
         this.cachedFeeds.Add(feed);
     }
 
@@ -90,30 +102,35 @@ public class SQLiteFeedRepository : IFeedRepository
         {
             connection.Open();
             var command = connection.CreateCommand();
-            command.CommandText = "UPDATE Feeds SET IsPaywalled = @isPaywalled WHERE Url = @url";
+            command.CommandText = """
+                UPDATE Feeds
+                SET IsPaywalled = @isPaywalled
+                WHERE Url = @url AND UserId = @userId
+            """;
             command.Parameters.AddWithValue("@isPaywalled", feed.IsPaywalled);
             command.Parameters.AddWithValue("@url", feed.FeedUrl);
+            command.Parameters.AddWithValue("@userId", feed.UserId);
             command.ExecuteNonQuery();
         }
-        this.logger.LogInformation("Updated feed {Url} in the database", feed.FeedUrl);
 
-        this.logger.LogInformation("update getting lock");
         this.cachedFeeds.Clear();
     }
 
-    public void DeleteFeed(string url)
+    public void DeleteFeed(RssUser user, string url)
     {
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM Feeds WHERE Url = @url";
+            command.CommandText = """
+                DELETE FROM Feeds
+                WHERE Url = @url AND UserId = @userId
+            """;
             command.Parameters.AddWithValue("@url", url);
+            command.Parameters.AddWithValue("@userId", user.Id);
             command.ExecuteNonQuery();
         }
-        this.logger.LogInformation("Deleted feed {Url} from the database", url);
 
-        this.logger.LogInformation("delete getting lock");
         this.cachedFeeds.Clear();
     }
 }

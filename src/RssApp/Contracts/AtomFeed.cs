@@ -34,7 +34,7 @@ public class AtomEntry
     [XmlElement("summary")]
     public string Summary { get; set; }
 
-[XmlElement("content")]
+    [XmlElement("content")]
     public AtomContent Content { get; set; }
 }
 
@@ -49,14 +49,13 @@ public class AtomContent
     [XmlAnyElement]
     public XmlElement[] Elements { get; set; }
     
-    // Convert the content to string regardless of how it was stored
     public override string ToString()
     {
-        // If we have direct text content (including CDATA), use that
+        // If text or CDATA, use that
         if (!string.IsNullOrEmpty(Text))
             return Text;
             
-        // If we have XML elements, convert them to string
+        // If we have nested XML elements, convert them to a string
         if (Elements != null && Elements.Length > 0)
             return string.Join("", Elements.Select(e => e.OuterXml));
             

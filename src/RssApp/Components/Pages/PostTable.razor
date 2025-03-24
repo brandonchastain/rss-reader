@@ -9,7 +9,7 @@
 @implements IDisposable
 
 @rendermode InteractiveServer // needed for onclick
-
+Username: @username
 @if (posts == null)
 {
     <p><em>Loading...</em></p>
@@ -30,7 +30,7 @@ else
         </thead>
         <tbody>
             <Virtualize Items="posts" Context="post" TItem="NewsFeedItem">
-                <tr class="@(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPostAsync(post)">
+                <tr class="@(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)">
                     <td>
                         @{
                             var thumbnailUrl = post.GetThumbnailUrl();
@@ -74,9 +74,10 @@ else
     private int page = 0;
     private ICollection<NewsFeedItem> posts;
     private Timer timer;
+    private string username;
     
     [CascadingParameter]
-    public Func<IFeedClient, int, IEnumerable<NewsFeedItem>> GetFeed { get; set; }
+    public Func<IFeedClient, int, Task<IEnumerable<NewsFeedItem>>> GetFeed { get; set; }
 
     public void Dispose()
     {
@@ -84,18 +85,10 @@ else
         this.timer = null;
     }
     
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
-        this.posts = this.GetFeed(this.feedClient, this.page)?.ToList() ?? new List<NewsFeedItem>();
-        //this.timer ??= new Timer(this.HandleTimerEvent, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
-        return Task.CompletedTask;
-    }
-
-    private async void HandleTimerEvent(object state)
-    {
-        this.posts = this.GetFeed(this.feedClient, this.page)?.ToList() ?? new List<NewsFeedItem>();
-        this.logger.LogInformation("Timer event fired");
-        await this.InvokeAsync(async () => await this.OnInitializedAsync());
+        this.username = (await feedClient.GetLoggedInUserAsync()).Username;
+        this.posts = (await this.GetFeed(this.feedClient, this.page))?.ToList() ?? new List<NewsFeedItem>();
     }
 
     private async Task Hide(string postId)
@@ -115,16 +108,16 @@ else
 
         foreach (var post in this.posts)
         {
-            await this.feedClient.MarkAsReadAsync(post, true);
+            this.feedClient.MarkAsRead(post, true);
         }
         await this.OnInitializedAsync();
     }
 
-    private async Task MarkAsRead(NewsFeedItem item, bool? isRead = null)
+    private void MarkAsRead(NewsFeedItem item, bool? isRead = null)
     {
         bool val = isRead ?? !item.IsRead;
         item.IsRead = val;
-        await this.feedClient.MarkAsReadAsync(item, val);
+        this.feedClient.MarkAsRead(item, val);
         this.StateHasChanged();
     }
 
@@ -134,12 +127,12 @@ else
         await this.OnInitializedAsync();
     }
 
-    private async Task PreviewPostAsync(NewsFeedItem post)
+    private void PreviewPost(NewsFeedItem post)
     {
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
         this.StateHasChanged();
 
-        await MarkAsRead(post, true);
+        MarkAsRead(post, true);
     }
 
     private async Task Prev()

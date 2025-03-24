@@ -9,14 +9,18 @@ public class SQLiteItemRepository : IItemRepository
     private readonly string connectionString;
     private readonly ILogger<SQLiteItemRepository> logger;
     private readonly IFeedRepository feedStore;
+    private readonly IUserRepository userStore;
 
-    public SQLiteItemRepository(string connectionString,
-    ILogger<SQLiteItemRepository> logger,
-    IFeedRepository feedStore)
+    public SQLiteItemRepository(
+        string connectionString,
+        ILogger<SQLiteItemRepository> logger,
+        IFeedRepository feedStore,
+        IUserRepository userStore)
     {
         this.connectionString = connectionString;
         this.logger = logger;
         this.feedStore = feedStore;
+        this.userStore = userStore;
         this.InitializeDatabase();
     }
 
@@ -37,6 +41,8 @@ public class SQLiteItemRepository : IItemRepository
                     PublishDate TEXT,
                     Content TEXT,
                     IsRead BOOLEAN DEFAULT 0,
+                    UserId INTEGER NOT NULL,
+                    FOREIGN KEY (UserId) REFERENCES Users(Id),
                     UNIQUE(FeedUrl, NewsFeedItemId, Href)
                 )";
             command.ExecuteNonQuery();
@@ -45,15 +51,22 @@ public class SQLiteItemRepository : IItemRepository
 
     public IEnumerable<NewsFeedItem> GetItems(NewsFeed feed)
     {
+        this.logger.LogInformation($"[DATABASE] getting items for feed {feed.FeedUrl}.");
+        this.logger.LogInformation($"[DATABASE] getting items for user {feed.UserId}.");
+        var user = this.userStore.GetUserById(feed.UserId);
+
+        
+        this.logger.LogInformation($"[DATABASE] getting items for user {feed.UserId} {user.Username}.");
         var feedUrl = feed.FeedUrl;
-        var updatedFeed = this.feedStore.GetFeeds().FirstOrDefault(f => f.FeedUrl == feedUrl);
+        var updatedFeed = this.feedStore.GetFeeds(user).FirstOrDefault(f => f.FeedUrl == feedUrl);
+
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
-            command.CommandText = "SELECT * FROM NewsFeedItems WHERE FeedUrl = @feedUrl";
+            command.CommandText = "SELECT * FROM NewsFeedItems WHERE FeedUrl = @feedUrl AND UserId = @userId";
             command.Parameters.AddWithValue("@feedUrl", feedUrl);
-
+            command.Parameters.AddWithValue("@userId", user.Id);
             using (var reader = command.ExecuteReader())
             {
                 while (reader.Read())
@@ -65,7 +78,6 @@ public class SQLiteItemRepository : IItemRepository
                         item.IsPaywalled = true;
                     }
 
-                    //this.logger.LogInformation($"[DATABASE] returning item {item.Id}, {item.Href} feedUrl {item.FeedUrl}.");
                     yield return item;
                 }
             }
@@ -75,6 +87,7 @@ public class SQLiteItemRepository : IItemRepository
     private NewsFeedItem ReadItemFromResults(SQLiteDataReader reader)
     {
         var id = reader.IsDBNull(reader.GetOrdinal("NewFeedItemId")) ? "" : reader.GetString(reader.GetOrdinal("NewsFeedItemId"));
+        var userId = reader.IsDBNull(reader.GetOrdinal("UserId")) ? 1 : reader.GetInt32(reader.GetOrdinal("UserId"));
         var href = reader.IsDBNull(reader.GetOrdinal("Href")) ? "" : reader.GetString(reader.GetOrdinal("Href"));
         var commentsHref = reader.IsDBNull(reader.GetOrdinal("CommentsHref")) ? "" : reader.GetString(reader.GetOrdinal("CommentsHref"));
         var title = reader.IsDBNull(reader.GetOrdinal("Title")) ? "" : reader.GetString(reader.GetOrdinal("Title"));
@@ -83,7 +96,7 @@ public class SQLiteItemRepository : IItemRepository
         var url = reader.IsDBNull(reader.GetOrdinal("FeedUrl")) ? "" : reader.GetString(reader.GetOrdinal("FeedUrl"));
         var isRead = reader.IsDBNull(reader.GetOrdinal("IsRead")) ? false : reader.GetBoolean(reader.GetOrdinal("IsRead"));
         
-        var item = new NewsFeedItem(id, title, href, commentsHref, publishDate, content)
+        var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content)
         {
             FeedUrl = url,
             IsRead = isRead
@@ -92,14 +105,15 @@ public class SQLiteItemRepository : IItemRepository
         return item;
     }
 
-    public NewsFeedItem GetItem(string href)
+    public NewsFeedItem GetItem(RssUser user, string href)
     {
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
-            command.CommandText = "SELECT * FROM NewsFeedItems WHERE Href = @href";
+            command.CommandText = "SELECT * FROM NewsFeedItems WHERE Href = @href AND UserId = @userId";
             command.Parameters.AddWithValue("@href", href);
+            command.Parameters.AddWithValue("@userId", user.Id);
 
             using (var reader = command.ExecuteReader())
             {
@@ -129,9 +143,10 @@ public class SQLiteItemRepository : IItemRepository
                     CommentsHref,
                     Title,
                     PublishDate,
-                    Content
+                    Content,
+                    UserId
                 ) 
-                VALUES (@feedUrl, @newsFeedItemId, @href, @commentsHref, @title, @publishDate, @content)";
+                VALUES (@feedUrl, @newsFeedItemId, @href, @commentsHref, @title, @publishDate, @content, @userId)";
             command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
             command.Parameters.AddWithValue("@newsFeedItemId", item.Id);
             command.Parameters.AddWithValue("@href", item.Href);
@@ -139,11 +154,8 @@ public class SQLiteItemRepository : IItemRepository
             command.Parameters.AddWithValue("@title", item.Title);
             command.Parameters.AddWithValue("@publishDate", item.PublishDate);
             command.Parameters.AddWithValue("@content", item.Content);
+            command.Parameters.AddWithValue("@userId", item.UserId);
             command.ExecuteNonQuery();
-            
-            //this.logger.LogInformation($"[DATABASE] added item {item.Id} with feedUrl {item.FeedUrl}.");
-            //var res = this.GetItems(item.FeedUrl);
-            //this.logger.LogInformation($"[DATABASE] contains item {item.Id}? {res?.Contains(item)}");
         }
     }
 
@@ -156,13 +168,12 @@ public class SQLiteItemRepository : IItemRepository
             command.CommandText = @"
                 UPDATE NewsFeedItems
                 SET IsRead = @isRead
-                WHERE FeedUrl = @feedUrl AND Href = @href";
+                WHERE FeedUrl = @feedUrl AND Href = @href AND UserId = @userId";
             command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
             command.Parameters.AddWithValue("@href", item.Href);
             command.Parameters.AddWithValue("@isRead", isRead);
+            command.Parameters.AddWithValue("@userId", item.UserId);
             command.ExecuteNonQuery();
-            this.logger.LogInformation($"[DATABASE] marked item {item.Id} with feedUrl {item.FeedUrl} as {(isRead ? "read" : "unread")}.");
         }
-
     }
 }

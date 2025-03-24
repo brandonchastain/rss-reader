@@ -13,22 +13,9 @@
 </CascadingValue>
 
 @code {
-    private IEnumerable<NewsFeed> feeds;
-
-    protected override Task OnInitializedAsync()
+    private async Task<IEnumerable<NewsFeedItem>> GetRssFeeds(IFeedClient feedClient, int page)
     {
-        this.feeds = this.GetFeedUrls();
-        return Task.CompletedTask;
-    }
-
-    private IEnumerable<NewsFeedItem> GetRssFeeds(IFeedClient feedClient, int page)
-    {
-        return feedClient.GetFeedItems(this.feeds, page);
-    }
-
-    private IEnumerable<NewsFeed> GetFeedUrls()
-    {
-        return this.feedStore.GetFeeds();
+        return await feedClient.GetTimelineAsync(page);
     }
 
 }

@@ -1,15 +1,13 @@
-using Microsoft.Extensions.Caching.Memory;
 using RssApp.Contracts;
-using RssApp.Serialization;
-using RssApp.Persistence;
 
 namespace RssApp.RssClient;
 
 public interface IFeedClient
 {
-    IEnumerable<NewsFeedItem> GetFeedItems(IEnumerable<NewsFeed> urls, int page);
-    IEnumerable<NewsFeedItem> GetFeedItems(NewsFeed feed, int page);
+    Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page);
+    Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page);
     void HidePost(string href);
-    Task MarkAsReadAsync(NewsFeedItem item, bool isRead);
+    void MarkAsRead(NewsFeedItem item, bool isRead);
     bool IsFilterUnread { get; set; }
+    Task<RssUser> GetLoggedInUserAsync();
 }

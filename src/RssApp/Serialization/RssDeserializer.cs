@@ -12,7 +12,7 @@ public class RssDeserializer
         this.logger = logger;
     }
 
-    public IEnumerable<NewsFeedItem> FromString(string responseContent)
+    public IEnumerable<NewsFeedItem> FromString(string responseContent, RssUser user)
     {
         try
         {
@@ -22,14 +22,14 @@ public class RssDeserializer
                 XmlSerializer xs = new XmlSerializer(typeof(RssDocument));
                 var reader = new StringReader(responseContent);
                 RssDocument rssFeedModel = (RssDocument)xs.Deserialize(reader);
-                return rssFeedModel.Feed.Entries.Select(x => new NewsFeedItem(x.Id, x.Title, x.Link.Href, x.CommentsLink?.Href, x.PublishDate, x.Description));
+                return rssFeedModel.Feed.Entries.Select(x => new NewsFeedItem(x.Id, user.Id, x.Title, x.Link.Href, x.CommentsLink?.Href, x.PublishDate, x.Description));
             }
             else if (responseContent.Contains("<feed"))
             {
                 XmlSerializer xs = new XmlSerializer(typeof(AtomFeed));
                 var reader = new StringReader(responseContent);
                 AtomFeed rssFeedModel = (AtomFeed)xs.Deserialize(reader);
-                return rssFeedModel.Entries.Select(x => new NewsFeedItem(x.Id, x.Title, x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href, null, x.PublishDate, x.Content.ToString()));
+                return rssFeedModel.Entries.Select(x => new NewsFeedItem(x.Id, user.Id, x.Title, x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href, null, x.PublishDate, x.Content.ToString()));
             }
             else
             {

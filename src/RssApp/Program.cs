@@ -8,46 +8,57 @@ Console.CancelKeyPress += delegate {
         cancellationTokenSource.Cancel();
 };
 
+const string userDbVar = "RSS_BC_USER_DB";
 const string feedDbVar = "RSS_BC_FEED_DB";
 const string itemDbVar = "RSS_BC_ITEM_DB";
-var feedDb = "C:\\home\\data\\feeds.db";
-var itemDb = "C:\\home\\data\\newsFeedItems.db";
-
-// read feedDb from environment variable if set
-if (Environment.GetEnvironmentVariable(feedDbVar) != null)
-{
-    feedDb = Environment.GetEnvironmentVariable(feedDbVar);
-}
-
-// read itemDb from environment variable if set
-if (Environment.GetEnvironmentVariable(itemDbVar) != null)
-{
-    itemDb = Environment.GetEnvironmentVariable(itemDbVar);
-}
+const string testUserEnabledVar = "RSS_BC_ENABLE_TEST_USER";
+var userDb = Environment.GetEnvironmentVariable(userDbVar) ?? "C:\\home\\data\\users.db";
+var itemDb = Environment.GetEnvironmentVariable(itemDbVar) ?? "C:\\home\\data\\newsFeedItems.db";
+var feedDb = Environment.GetEnvironmentVariable(feedDbVar) ?? "C:\\home\\data\\feeds.db";
+var isTestUserEnabled = Environment.GetEnvironmentVariable(testUserEnabledVar) ?? "false";
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddSingleton<IUserRepository>(sb =>
+{
+    return new SQLiteUserRepository($"Data Source={userDb}", sb.GetRequiredService<ILogger<SQLiteUserRepository>>());
+});
 builder.Services.AddSingleton<IFeedRepository>(sb =>
 {
     return new SQLiteFeedRepository($"Data Source={feedDb}", sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
 });
+
 builder.Services.AddSingleton<PersistedHiddenItems>();
 builder.Services.AddSingleton<IItemRepository>(sb =>
 {
     return new SQLiteItemRepository(
         $"Data Source={itemDb}",
         sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
-        sb.GetRequiredService<IFeedRepository>());
+        sb.GetRequiredService<IFeedRepository>(),
+        sb.GetRequiredService<IUserRepository>());
 });
-builder.Services.AddSingleton<IFeedClient, FeedClient>();
+
 builder.Services.AddSingleton<RssDeserializer>();
+builder.Services.AddSingleton<FeedRefresher>();
+builder.Services.AddTransient<IFeedClient>(sp =>
+{
+    var httpClient = sp.GetRequiredService<HttpClient>();
+    var hiddenItems = sp.GetRequiredService<PersistedHiddenItems>();
+    var logger = sp.GetRequiredService<ILogger<FeedClient>>();
+    var persistedFeeds = sp.GetRequiredService<IFeedRepository>();
+    var newsFeedItemStore = sp.GetRequiredService<IItemRepository>();
+    var userStore = sp.GetRequiredService<IUserRepository>();
+    return new FeedClient(httpClient, hiddenItems, logger, persistedFeeds, newsFeedItemStore, userStore, bool.Parse(isTestUserEnabled));
+});
+
 var app = builder.Build();
 
 // instantiate feed client to trigger the cache reload time
-app.Services.GetRequiredService<IFeedClient>();
+var refresher = app.Services.GetRequiredService<FeedRefresher>();
+await refresher.StartAsync(cancellationTokenSource.Token);
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

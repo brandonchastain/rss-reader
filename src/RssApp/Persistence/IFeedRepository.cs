@@ -6,11 +6,11 @@ namespace RssApp.Persistence;
 public interface IFeedRepository
 {
 
-    IEnumerable<NewsFeed> GetFeeds();
+    IEnumerable<NewsFeed> GetFeeds(RssUser user);
 
     void AddFeed(NewsFeed feed);
 
     void Update(NewsFeed feed);
 
-    void DeleteFeed(string url);
+    void DeleteFeed(RssUser user, string url);
 }
