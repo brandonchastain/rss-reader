@@ -99,6 +99,11 @@ public class FeedClient : IFeedClient, IDisposable
             var username = await resp.Content.ReadAsStringAsync();
             this.logger.LogInformation($"[LOGIN] Username: {username}");
             user = this.userStore.GetUserByName(username);
+
+            if (user == null)
+            {
+                user = this.userStore.AddUser(username);
+            }
         }
         catch (Exception ex)
         {
