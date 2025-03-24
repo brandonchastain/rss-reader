@@ -9,7 +9,7 @@ public class FeedClient : IFeedClient
 {
     private const int PageSize = 10;
     private static readonly TimeSpan CacheReloadInterval = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan CacheReloadStartupDelay = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan CacheReloadStartupDelay = TimeSpan.FromMinutes(0);
     private static readonly bool EnableHttpLookup = true;
 
     private IMemoryCache feedCache;

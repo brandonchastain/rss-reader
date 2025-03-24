@@ -1,4 +1,5 @@
 
+using System.Xml;
 using System.Xml.Serialization;
 
 namespace RssApp.Contracts;
@@ -33,8 +34,34 @@ public class AtomEntry
     [XmlElement("summary")]
     public string Summary { get; set; }
 
-    [XmlElement("content")]
-    public string Content { get; set; }
+[XmlElement("content")]
+    public AtomContent Content { get; set; }
+}
+
+public class AtomContent
+{
+    [XmlAttribute("type")]
+    public string Type { get; set; }
+    
+    [XmlText]
+    public string Text { get; set; }
+    
+    [XmlAnyElement]
+    public XmlElement[] Elements { get; set; }
+    
+    // Convert the content to string regardless of how it was stored
+    public override string ToString()
+    {
+        // If we have direct text content (including CDATA), use that
+        if (!string.IsNullOrEmpty(Text))
+            return Text;
+            
+        // If we have XML elements, convert them to string
+        if (Elements != null && Elements.Length > 0)
+            return string.Join("", Elements.Select(e => e.OuterXml));
+            
+        return string.Empty;
+    }
 }
 
 [XmlRoot("link")]

@@ -29,7 +29,7 @@ public class RssDeserializer
                 XmlSerializer xs = new XmlSerializer(typeof(AtomFeed));
                 var reader = new StringReader(responseContent);
                 AtomFeed rssFeedModel = (AtomFeed)xs.Deserialize(reader);
-                return rssFeedModel.Entries.Select(x => new NewsFeedItem(x.Id, x.Title, x.AltLink.Href, null, x.PublishDate, x.Content));
+                return rssFeedModel.Entries.Select(x => new NewsFeedItem(x.Id, x.Title, x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href, null, x.PublishDate, x.Content.ToString()));
             }
             else
             {
