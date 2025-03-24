@@ -1,6 +1,4 @@
-using Microsoft.Extensions.Caching.Memory;
 using RssApp.Contracts;
-using RssApp.Serialization;
 using RssApp.Persistence;
 
 namespace RssApp.RssClient;
