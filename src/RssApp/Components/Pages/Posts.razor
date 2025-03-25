@@ -23,8 +23,7 @@
 
 <script>
     async function getUsername() {
-        const response = await fetch('/.auth/me');  
-        console.log("sending request...");
+        const response = await fetch('/.auth/me');
         // convert to JSON  
         const json = await response.json();  
         // ensure clientPrincipal and userDetails exist  
@@ -43,11 +42,25 @@
 
     [SupplyParameterFromQuery]
     public string FeedUrl { get; set; }
+    private RssUser user;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var username = await this.GetUsernameAsync();
+            user = await this.feedClient.RegisterUserAsync(username);
+            this.StateHasChanged();
+        }
+    }
 
     private async Task<IEnumerable<NewsFeedItem>> GetRssFeed(IFeedClient fc, int page)
     {
-        var username = await this.GetUsernameAsync();
-        var user = await this.feedClient.RegisterUserAsync(username);
+        if (user == null)
+        {
+            return Enumerable.Empty<NewsFeedItem>();
+        }
+
         return await fc.GetFeedItemsAsync(new NewsFeed(FeedUrl, user.Id), page);
     }
 
