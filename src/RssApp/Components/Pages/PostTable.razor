@@ -114,10 +114,9 @@ else
             this.username = await this.GetUsernameAsync();
             this.logger.LogInformation("[DEBUG] username: {username}", this.username);
             await this.feedClient.RegisterUserAsync(this.username);
+            this.posts = (await this.GetFeed(this.feedClient, this.page))?.ToList() ?? new List<NewsFeedItem>();
+            this.StateHasChanged();
         }
-
-        this.posts = (await this.GetFeed(this.feedClient, this.page))?.ToList() ?? new List<NewsFeedItem>();
-        this.StateHasChanged();
     }
 
     private async Task<string> GetUsernameAsync()

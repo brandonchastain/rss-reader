@@ -55,7 +55,6 @@
     {
         // invoke a javascript function to get the username
         var username = await jsRuntime.InvokeAsync<string>("getUsername");
-        this.logger.LogInformation("[USERNAME]: {username}", username);
         return username;
     }
 }
