@@ -91,7 +91,7 @@ else
 
 @code {
     private int page = 0;
-    private ICollection<NewsFeedItem> posts;
+    private ICollection<NewsFeedItem> posts = new List<NewsFeedItem>();
     private Timer timer;
     private string username;
     
@@ -102,15 +102,6 @@ else
     {
         this.timer?.Dispose();
         this.timer = null;
-    }
-    
-    protected override async Task OnInitializedAsync()
-    {
-        if (posts == null)
-        {
-            this.posts = new List<NewsFeedItem>();
-        }
-        this.StateHasChanged();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
