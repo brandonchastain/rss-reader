@@ -18,6 +18,14 @@ var feedDb = Environment.GetEnvironmentVariable(feedDbVar) ?? "C:\\home\\data\\f
 var isTestUserEnabled = Environment.GetEnvironmentVariable(testUserEnabledVar) ?? "false";
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddLogging(loggingBuilder =>
+{
+    loggingBuilder.ClearProviders();
+    loggingBuilder.AddConsole();
+    loggingBuilder.AddDebug();
+});
+
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddRazorComponents()

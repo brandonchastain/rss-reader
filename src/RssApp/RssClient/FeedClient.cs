@@ -97,18 +97,20 @@ public class FeedClient : IFeedClient, IDisposable
 
             if (user == null)
             {
-                user = this.userStore.AddUser(username);
+                if (this.isTestUserEnabled)
+                {
+                    this.logger.LogWarning("Test user enabled, creating default user");
+                    user = this.userStore.GetUserByName("defaultuser") ?? this.userStore.AddUser("defaultuser");
+                }
+                else
+                {
+                    user = this.userStore.AddUser(username);
+                }
             }
         }
         catch (Exception ex)
         {
             this.logger.LogError(ex, "Error getting logged in user");
-        }
-
-        if (user == null && this.isTestUserEnabled)
-        {
-            this.logger.LogWarning("Test user enabled, creating default user");
-            user = this.userStore.GetUserByName("defaultuser") ?? this.userStore.AddUser("defaultuser");
         }
 
         this.loggedInUser = user;

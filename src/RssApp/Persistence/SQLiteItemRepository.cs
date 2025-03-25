@@ -55,7 +55,6 @@ public class SQLiteItemRepository : IItemRepository
         this.logger.LogInformation($"[DATABASE] getting items for user {feed.UserId}.");
         var user = this.userStore.GetUserById(feed.UserId);
 
-        
         this.logger.LogInformation($"[DATABASE] getting items for user {feed.UserId} {user.Username}.");
         var feedUrl = feed.FeedUrl;
         var updatedFeed = this.feedStore.GetFeeds(user).FirstOrDefault(f => f.FeedUrl == feedUrl);
