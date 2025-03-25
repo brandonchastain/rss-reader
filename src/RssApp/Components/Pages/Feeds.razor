@@ -4,6 +4,7 @@
 @inject IFeedRepository feedStore
 @inject IFeedClient feedClient
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime jsRuntime
 @rendermode InteractiveServer // needed for onclick
 
 <PageTitle>Feeds</PageTitle>
@@ -65,14 +66,24 @@ else
     [SupplyParameterFromForm]
     private string NewFeedUrl { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        var tempUser = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
-        var username = tempUser.FindFirst(u => u.Type.Contains("nameidentifier"))?.Value;
-        this.user = await this.feedClient.RegisterUserAsync(username);
-        this.feeds = this.GetFeedUrls();
-        NewFeedUrl = "";
+        if (firstRender)
+        {
+            var username = await this.GetUsernameAsync();
+            user = await this.feedClient.RegisterUserAsync(username);
+            this.feeds = this.GetFeedUrls();
+            this.StateHasChanged();
+        }
     }
+
+    private async Task<string> GetUsernameAsync()
+    {
+        // invoke a javascript function to get the username
+        var username = await jsRuntime.InvokeAsync<string>("getUsername");
+        return username;
+    }
+
     private async Task SubmitAsync()
     {
         this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.user.Id));
