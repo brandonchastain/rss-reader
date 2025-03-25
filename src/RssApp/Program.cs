@@ -76,4 +76,14 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+if (app.Environment.IsDevelopment())
+{
+    app.MapGet("/.auth/me", () => new
+    {
+        clientPrincipal = new {
+            userDetails = "defaultuser"
+        }
+    });
+}
+
 app.Run();

@@ -7,6 +7,7 @@
 @inject IFeedClient feedClient
 @inject ILogger<Posts> logger
 @inject NavigationManager NavigationManager
+@inject IJSRuntime jsRuntime
 @implements IDisposable
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
@@ -72,6 +73,22 @@ else
     <button class="btn-link" @onclick="() => Next()">Next</button>
 }
 
+<script>
+    async function getUsername() {
+        const response = await fetch('/.auth/me');  
+        // convert to JSON  
+        const json = await response.json();  
+        // ensure clientPrincipal and userDetails exist  
+        if(json.clientPrincipal && json.clientPrincipal.userDetails) {  
+            // return userDetails (the username)  
+            return json.clientPrincipal.userDetails;  
+        } else {  
+            // return null if anonymous  
+            return null;  
+        }
+    }
+</script>
+
 @code {
     private int page = 0;
     private ICollection<NewsFeedItem> posts;
@@ -89,12 +106,31 @@ else
     
     protected override async Task OnInitializedAsync()
     {
-        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
-        this.logger.LogInformation("User: {user}", user.Identity.Name);
-        this.username = user.FindFirst(u => u.Type.Contains("nameidentifier"))?.Value;
-        await this.feedClient.RegisterUserAsync(this.username);
-        this.posts = (await this.GetFeed(this.feedClient, this.page))?.ToList() ?? new List<NewsFeedItem>();
+        if (posts == null)
+        {
+            this.posts = new List<NewsFeedItem>();
+        }
         this.StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            this.logger.LogInformation("[DEBUG] firstrender");
+            this.username = await this.GetUsernameAsync();
+            this.logger.LogInformation("[DEBUG] username: {username}", this.username);
+            await this.feedClient.RegisterUserAsync(this.username);
+            this.posts = (await this.GetFeed(this.feedClient, this.page))?.ToList() ?? new List<NewsFeedItem>();
+            this.StateHasChanged();
+        }
+    }
+
+    private async Task<string> GetUsernameAsync()
+    {
+        // invoke a javascript function to get the username
+        var username = await jsRuntime.InvokeAsync<string>("getUsername");
+        return username;
     }
 
     private async Task Hide(string postId)
