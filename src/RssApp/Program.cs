@@ -24,6 +24,7 @@ builder.Services.AddLogging(loggingBuilder =>
     loggingBuilder.ClearProviders();
     loggingBuilder.AddConsole();
     loggingBuilder.AddDebug();
+    loggingBuilder.AddAzureWebAppDiagnostics();
 });
 
 builder.Services.AddHttpClient();
