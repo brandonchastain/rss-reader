@@ -3,6 +3,7 @@
 @attribute [StreamRendering]
 @inject IFeedRepository feedStore
 @inject IFeedClient feedClient
+@inject ILogger<Feeds> logger
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IJSRuntime jsRuntime
 @rendermode InteractiveServer // needed for onclick
@@ -62,17 +63,32 @@ else
 @code {
     private IEnumerable<NewsFeed> feeds;
     private RssUser user;
+    private DateTime lastCheck;
 
     [SupplyParameterFromForm]
     private string NewFeedUrl { get; set; }
 
+    protected override async Task OnInitializedAsync()
+    {
+        if (user != null)
+        {
+            feeds = this.GetFeedUrls();
+        }
+        else
+        {
+            feeds = Enumerable.Empty<NewsFeed>();
+        }
+        this.StateHasChanged();
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (firstRender || user == null)
         {
+            lastCheck = DateTime.UtcNow;
             var username = await this.GetUsernameAsync();
             user = await this.feedClient.RegisterUserAsync(username);
-            this.feeds = this.GetFeedUrls();
+            feeds = this.GetFeedUrls();
             this.StateHasChanged();
         }
     }

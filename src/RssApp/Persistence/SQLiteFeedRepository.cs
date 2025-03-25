@@ -8,7 +8,6 @@ public class SQLiteFeedRepository : IFeedRepository
 {
     private readonly string connectionString;
     private readonly ILogger<SQLiteFeedRepository> logger;
-    private ConcurrentBag<NewsFeed> cachedFeeds;
 
     public SQLiteFeedRepository(
         string connectionString,
@@ -16,7 +15,6 @@ public class SQLiteFeedRepository : IFeedRepository
     {
         this.connectionString = connectionString;
         this.logger = logger;
-        this.cachedFeeds = new ConcurrentBag<NewsFeed>();
         this.InitializeDatabase();
     }
 
@@ -40,16 +38,6 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public IEnumerable<NewsFeed> GetFeeds(RssUser user)
     {
-        if (this.cachedFeeds.Count > 0)
-        {
-            foreach (var feed in this.cachedFeeds)
-            {
-                yield return feed;
-            }
-
-            yield break;
-        }
-        
         List<NewsFeed> feeds = new List<NewsFeed>();
 
         using (var connection = new SQLiteConnection(this.connectionString))
@@ -76,7 +64,6 @@ public class SQLiteFeedRepository : IFeedRepository
 
         foreach (var feed in feeds)
         {
-            this.cachedFeeds.Add(feed);
             yield return feed;
         }
     }
@@ -92,8 +79,6 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@userId", feed.UserId);
             command.ExecuteNonQuery();
         }
-
-        this.cachedFeeds.Add(feed);
     }
 
     public void Update(NewsFeed feed)
@@ -112,8 +97,6 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@userId", feed.UserId);
             command.ExecuteNonQuery();
         }
-
-        this.cachedFeeds.Clear();
     }
 
     public void DeleteFeed(RssUser user, string url)
@@ -130,7 +113,5 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@userId", user.Id);
             command.ExecuteNonQuery();
         }
-
-        this.cachedFeeds.Clear();
     }
 }
