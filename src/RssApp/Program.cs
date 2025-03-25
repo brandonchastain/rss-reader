@@ -78,10 +78,11 @@ app.MapRazorComponents<App>()
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapGet("/.auth/me", () => new
+    app.MapGet("/.auth/me", () => new []
     {
-        clientPrincipal = new {
-            userDetails = "defaultuser"
+        new
+        {
+            user_id = "defaultuser"
         }
     });
 }
