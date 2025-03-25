@@ -51,11 +51,7 @@ public class SQLiteItemRepository : IItemRepository
 
     public IEnumerable<NewsFeedItem> GetItems(NewsFeed feed)
     {
-        this.logger.LogInformation($"[DATABASE] getting items for feed {feed.FeedUrl}.");
-        this.logger.LogInformation($"[DATABASE] getting items for user {feed.UserId}.");
         var user = this.userStore.GetUserById(feed.UserId);
-
-        this.logger.LogInformation($"[DATABASE] getting items for user {feed.UserId} {user.Username}.");
         var feedUrl = feed.FeedUrl;
         var updatedFeed = this.feedStore.GetFeeds(user).FirstOrDefault(f => f.FeedUrl == feedUrl);
 
@@ -72,7 +68,7 @@ public class SQLiteItemRepository : IItemRepository
                 {
                     var item = this.ReadItemFromResults(reader);
                     
-                    if (updatedFeed.IsPaywalled)
+                    if (updatedFeed?.IsPaywalled == true)
                     {
                         item.IsPaywalled = true;
                     }

@@ -100,15 +100,7 @@ public class FeedClient : IFeedClient, IDisposable
             {
 
                 this.logger.LogInformation($"Adding {username}");
-                if (this.isTestUserEnabled)
-                {
-                    this.logger.LogWarning("Test user enabled, creating default user");
-                    user = this.userStore.GetUserByName("defaultuser") ?? this.userStore.AddUser("defaultuser");
-                }
-                else
-                {
-                    user = this.userStore.AddUser(username);
-                }
+                user = this.userStore.AddUser(username);
             }
 
             this.logger.LogInformation($"User {username} registered. Id: {user.Id}");

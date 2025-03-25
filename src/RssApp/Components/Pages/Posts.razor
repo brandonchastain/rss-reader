@@ -12,37 +12,42 @@
 @rendermode InteractiveServer // needed for onclick
 
 <PageTitle>Posts</PageTitle>
-
+Username: @(user == null ? "loading" : user.Username)
 <h1>Posts from @(FeedUrl == null ? string.Empty : new Uri(FeedUrl).Authority)</h1>
 
-<CascadingValue Value="GetRssFeed">
-    <PostTable />
+<CascadingValue Value="@Page" Name="Page">
+    <CascadingValue Value="@Items" Name="Posts">
+        <PostTable OnPageChanged="UpdatePage" />
+    </CascadingValue>
 </CascadingValue>
 
 @code {
 
     [SupplyParameterFromQuery]
     public string FeedUrl { get; set; }
+    public int Page { get; set; } = 0;
+    
+    public ICollection<NewsFeedItem> Items { get; set; }
     private RssUser user;
+
+
+    private async Task UpdatePage(int newValue)
+    {
+        Page = newValue;
+        Items = (await this.feedClient.GetFeedItemsAsync(new NewsFeed(FeedUrl, user.Id), Page)).ToList();
+        StateHasChanged(); // Refresh the parent component
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            var username = await this.GetUsernameAsync();
-            user = await this.feedClient.RegisterUserAsync(username);
-            this.StateHasChanged();
-        }
-    }
-
-    private async Task<IEnumerable<NewsFeedItem>> GetRssFeed(IFeedClient fc, int page)
-    {
         if (user == null)
         {
-            return Enumerable.Empty<NewsFeedItem>();
+            this.logger.LogInformation("User is null, trying to register user");
+            var username = await this.GetUsernameAsync();
+            user = await this.feedClient.RegisterUserAsync(username);
+            Items = (await this.feedClient.GetFeedItemsAsync(new NewsFeed(FeedUrl, user.Id), Page)).ToList();
+            this.StateHasChanged();
         }
-
-        return await fc.GetFeedItemsAsync(new NewsFeed(FeedUrl, user.Id), page);
     }
 
     private async Task<string> GetUsernameAsync()

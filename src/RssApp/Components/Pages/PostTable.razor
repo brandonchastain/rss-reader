@@ -8,12 +8,10 @@
 @inject ILogger<Posts> logger
 @inject NavigationManager NavigationManager
 @inject IJSRuntime jsRuntime
-@implements IDisposable
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 @rendermode InteractiveServer // needed for onclick
-Username: @username
-@if (posts == null)
+@if (Posts == null)
 {
     <p><em>Loading...</em></p>
 }
@@ -32,7 +30,7 @@ else
             </tr>
         </thead>
         <tbody>
-            <Virtualize Items="posts" Context="post" TItem="NewsFeedItem">
+            <Virtualize Items="Posts" Context="post" TItem="NewsFeedItem">
                 <tr class="@(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)">
                     <td>
                         @{
@@ -74,39 +72,13 @@ else
 }
 
 @code {
-    private int page = 0;
-    private ICollection<NewsFeedItem> posts = new List<NewsFeedItem>();
-    private Timer timer;
-    private string username;
+    [CascadingParameter(Name = "Page")]
+    public int Page { get; set; } = 0;
     
-    [CascadingParameter]
-    public Func<IFeedClient, int, Task<IEnumerable<NewsFeedItem>>> GetFeed { get; set; }
-
-    public void Dispose()
-    {
-        this.timer?.Dispose();
-        this.timer = null;
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            this.logger.LogInformation("[DEBUG] firstrender");
-            this.username = await this.GetUsernameAsync();
-            this.logger.LogInformation("[DEBUG] username: {username}", this.username);
-            await this.feedClient.RegisterUserAsync(this.username);
-            this.posts = (await this.GetFeed(this.feedClient, this.page))?.ToList() ?? new List<NewsFeedItem>();
-            this.StateHasChanged();
-        }
-    }
-
-    private async Task<string> GetUsernameAsync()
-    {
-        // invoke a javascript function to get the username
-        var username = await jsRuntime.InvokeAsync<string>("getUsername");
-        return username;
-    }
+    [CascadingParameter(Name = "Posts")]
+    public ICollection<NewsFeedItem> Posts { get; set; } = new List<NewsFeedItem>();
+    [Parameter]
+    public EventCallback<int> OnPageChanged { get; set; }
 
     private async Task Hide(string postId)
     {
@@ -116,14 +88,14 @@ else
 
     private async Task MarkAllAsRead()
     {
-        foreach (var post in this.posts)
+        foreach (var post in this.Posts)
         {
             post.IsRead = true;
         }
 
         this.StateHasChanged();
 
-        foreach (var post in this.posts)
+        foreach (var post in this.Posts)
         {
             this.feedClient.MarkAsRead(post, true);
         }
@@ -154,18 +126,20 @@ else
 
     private async Task Prev()
     {
-        if (this.page == 0)
+        if (this.Page == 0)
         {
             return;
         }
         
-        this.page -= 1;
+        this.Page -= 1;
+        await this.OnPageChanged.InvokeAsync(this.Page);
         this.StateHasChanged();
     }
 
     private async Task Next()
     {
-        this.page += 1;
+        this.Page += 1;
+        await this.OnPageChanged.InvokeAsync(this.Page);
         this.StateHasChanged();
     }
 

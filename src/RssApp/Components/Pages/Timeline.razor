@@ -1,6 +1,7 @@
 @page "/timeline"
 @attribute [StreamRendering]
 @inject IFeedRepository feedStore
+@inject IFeedClient feedClient
 @inject ILogger<Timeline> logger
 @inject IJSRuntime jsRuntime
 @rendermode InteractiveServer // needed for onclick
@@ -9,14 +10,40 @@
 
 <h1>Timeline</h1>
 
-<CascadingValue Value="GetRssFeeds">
-    <PostTable />
-</CascadingValue>
+    <CascadingValue Value="@Page" Name="Page">
+        <CascadingValue Value="@Posts" Name="Posts">
+            <PostTable OnPageChanged="UpdatePage" />
+        </CascadingValue>
+    </CascadingValue>
 
 @code {
-    private async Task<IEnumerable<NewsFeedItem>> GetRssFeeds(IFeedClient feedClient, int page)
+    public int Page { get; set; } = 0;
+    
+    public ICollection<NewsFeedItem> Posts { get; set; }
+
+    private async Task UpdatePage(int newValue)
     {
-        return await feedClient.GetTimelineAsync(page);
+        this.logger.LogInformation($"Page changed to {newValue}");
+        Page = newValue;
+        Posts = (await this.feedClient.GetTimelineAsync(Page)).ToList();
+        StateHasChanged(); // Refresh the parent component
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var username = await this.GetUsernameAsync();
+            var user = await this.feedClient.RegisterUserAsync(username);
+            Posts = (await this.feedClient.GetTimelineAsync(Page)).ToList();
+            this.StateHasChanged();
+        }
+    }
+
+    private async Task<string> GetUsernameAsync()
+    {
+        var username = await jsRuntime.InvokeAsync<string>("getUsername");
+        return username;
     }
 
 }

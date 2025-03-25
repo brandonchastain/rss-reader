@@ -1,4 +1,6 @@
+using System.Net;
 using RssApp.Components;
+using RssApp.Contracts;
 using RssApp.Persistence;
 using RssApp.RssClient;
 using RssApp.Serialization;
@@ -62,7 +64,6 @@ builder.Services.AddTransient<IFeedClient>(sp =>
     var userStore = sp.GetRequiredService<IUserRepository>();
     return new FeedClient(httpClient, hiddenItems, logger, persistedFeeds, newsFeedItemStore, userStore, bool.Parse(isTestUserEnabled));
 });
-
 var app = builder.Build();
 
 // instantiate feed client to trigger the cache reload time
@@ -87,12 +88,37 @@ app.MapRazorComponents<App>()
 
 if (app.Environment.IsDevelopment())
 {
+    int index = 1;
+    RssUser loggedInUser = null;
+    var users = new RssUser[]{
+        new RssUser("defaultuser", 1),
+        new RssUser("default2", 2),
+    };
+
     app.MapGet("/.auth/me", () => new []
     {
         new
         {
-            user_id = "defaultuser"
+            user_id = loggedInUser?.Username ?? "defaultuser",
         }
+    });
+
+    app.MapGet("/.auth/login", (context) =>
+    {
+        loggedInUser = users[index % users.Length];
+        index++;
+        context.Response.StatusCode = (int)HttpStatusCode.Redirect;
+        context.Response.Headers["Location"] = "/";
+        return Task.CompletedTask;
+    });
+
+    app.MapGet("/.auth/logout", (context) =>
+    {
+        loggedInUser = null;
+        string redirect = context.Request.Query["post_logout_redirect_uri"];
+        context.Response.StatusCode = (int)HttpStatusCode.Redirect;
+        context.Response.Headers["Location"] = redirect;
+        return Task.CompletedTask;
     });
 }
 

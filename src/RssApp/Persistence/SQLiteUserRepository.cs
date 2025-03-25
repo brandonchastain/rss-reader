@@ -56,7 +56,6 @@ public class SQLiteUserRepository : IUserRepository
 
     public RssUser GetUserById(int userId)
     {
-        this.logger.LogInformation($"[DATABASE] getting user by id {userId}.");
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();
