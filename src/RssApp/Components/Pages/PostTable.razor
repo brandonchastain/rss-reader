@@ -160,13 +160,13 @@ else
         }
         
         this.page -= 1;
-        await this.OnInitializedAsync();
+        this.StateHasChanged();
     }
 
     private async Task Next()
     {
         this.page += 1;
-        await this.OnInitializedAsync();
+        this.StateHasChanged();
     }
 
     private string GetRootDomain(string url)

@@ -43,7 +43,7 @@ public class SQLiteItemRepository : IItemRepository
                     IsRead BOOLEAN DEFAULT 0,
                     UserId INTEGER NOT NULL,
                     FOREIGN KEY (UserId) REFERENCES Users(Id),
-                    UNIQUE(FeedUrl, NewsFeedItemId, Href)
+                    UNIQUE(FeedUrl, UserId, NewsFeedItemId, Href)
                 )";
             command.ExecuteNonQuery();
         }
