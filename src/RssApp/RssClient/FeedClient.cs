@@ -37,6 +37,7 @@ public class FeedClient : IFeedClient, IDisposable
 
     public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
     {
+        await Task.Yield();
         var feeds = this.persistedFeeds.GetFeeds(this.loggedInUser);
         return feeds;
     }
@@ -85,13 +86,13 @@ public class FeedClient : IFeedClient, IDisposable
 
     public async Task<RssUser> RegisterUserAsync(string username)
     {
+        await Task.Yield();
         // send http request to /auth/.me endpoint for azure app service easy auth
         // and get the username/email frmo response
         RssUser user = null;
 
         try
         {
-            this.logger.LogInformation($"[LOGIN] Username: {username}");
             user = this.userStore.GetUserByName(username);
 
             if (user == null)
@@ -106,6 +107,7 @@ public class FeedClient : IFeedClient, IDisposable
 
         if (user == null && this.isTestUserEnabled)
         {
+            this.logger.LogWarning("Test user enabled, creating default user");
             user = this.userStore.GetUserByName("defaultuser") ?? this.userStore.AddUser("defaultuser");
         }
 
@@ -115,6 +117,7 @@ public class FeedClient : IFeedClient, IDisposable
 
     private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed)
     {
+        await Task.Yield();
         var url = feed.FeedUrl;
 
         var response = this.newsFeedItemStore.GetItems(feed).ToHashSet();
