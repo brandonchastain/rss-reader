@@ -86,7 +86,6 @@ public class FeedClient : IFeedClient, IDisposable
 
     public async Task<RssUser> RegisterUserAsync(string username)
     {
-        this.logger.LogInformation($"Registering user {username} if needed...");
         await Task.Yield();
         // send http request to /auth/.me endpoint for azure app service easy auth
         // and get the username/email frmo response
@@ -98,12 +97,8 @@ public class FeedClient : IFeedClient, IDisposable
 
             if (user == null)
             {
-
-                this.logger.LogInformation($"Adding {username}");
                 user = this.userStore.AddUser(username);
             }
-
-            this.logger.LogInformation($"User {username} registered. Id: {user.Id}");
         }
         catch (Exception ex)
         {

@@ -23,7 +23,6 @@
 
     private async Task UpdatePage(int newValue)
     {
-        this.logger.LogInformation($"Page changed to {newValue}");
         Page = newValue;
         Posts = (await this.feedClient.GetTimelineAsync(Page)).ToList();
         StateHasChanged(); // Refresh the parent component

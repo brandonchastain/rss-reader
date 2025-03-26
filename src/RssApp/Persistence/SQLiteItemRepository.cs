@@ -125,7 +125,6 @@ public class SQLiteItemRepository : IItemRepository
 
     public void AddItem(NewsFeedItem item)
     {
-        //this.logger.LogInformation($"[DATABASE] adding item {item.Id} with feedUrl {item.FeedUrl} href {item.Href}.");
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();

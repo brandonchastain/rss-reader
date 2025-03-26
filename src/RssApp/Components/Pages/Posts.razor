@@ -42,7 +42,6 @@ Username: @(user == null ? "loading" : user.Username)
     {
         if (user == null)
         {
-            this.logger.LogInformation("User is null, trying to register user");
             var username = await this.GetUsernameAsync();
             user = await this.feedClient.RegisterUserAsync(username);
             Items = (await this.feedClient.GetFeedItemsAsync(new NewsFeed(FeedUrl, user.Id), Page)).ToList();

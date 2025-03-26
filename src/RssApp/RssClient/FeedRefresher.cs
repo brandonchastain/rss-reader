@@ -7,8 +7,6 @@ namespace RssApp.RssClient;
 public class FeedRefresher : IDisposable
 {
     private const int PageSize = 10;
-    private static readonly TimeSpan CacheReloadInterval = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan CacheReloadStartupDelay = TimeSpan.FromMinutes(0);
     private static readonly bool EnableHttpLookup = true;
     private HttpClient httpClient;
     private readonly RssDeserializer deserializer;
@@ -16,20 +14,28 @@ public class FeedRefresher : IDisposable
     private readonly IFeedRepository persistedFeeds;
     private readonly IItemRepository newsFeedItemStore;
     private readonly IUserRepository userStore;
+    private readonly TimeSpan cacheReloadInterval;
+    private readonly TimeSpan cacheReloadStartupDelay;
     public FeedRefresher(
         HttpClient httpClient,
         RssDeserializer deserializer,
         ILogger<FeedClient> logger,
         IFeedRepository persistedFeeds,
         IItemRepository newsFeedItemStore,
-        IUserRepository userStore)
+        IUserRepository userStore,
+        TimeSpan? cacheReloadInterval = null,
+        TimeSpan? cacheReloadStartupDelay = null)
     {
+        cacheReloadInterval ??= TimeSpan.FromMinutes(10);
+        cacheReloadStartupDelay ??= TimeSpan.FromMinutes(0);
         this.httpClient = httpClient;
         this.deserializer = deserializer;
         this.logger = logger;
         this.persistedFeeds = persistedFeeds;
         this.newsFeedItemStore = newsFeedItemStore;
         this.userStore = userStore;
+        this.cacheReloadInterval = cacheReloadInterval.Value;
+        this.cacheReloadStartupDelay = cacheReloadStartupDelay.Value;
     }
 
     public void Dispose()
@@ -46,7 +52,7 @@ public class FeedRefresher : IDisposable
 
     private async Task RunAsync(CancellationToken token)
     {
-        await Task.Delay(CacheReloadStartupDelay, token);
+        await Task.Delay(this.cacheReloadStartupDelay, token);
 
         while (!token.IsCancellationRequested)
         {
@@ -68,7 +74,7 @@ public class FeedRefresher : IDisposable
                 this.logger.LogError(ex, "Error reloading cache");
             }
 
-            await Task.Delay(CacheReloadInterval);
+            await Task.Delay(this.cacheReloadInterval);
         }
     }
 
@@ -76,15 +82,19 @@ public class FeedRefresher : IDisposable
     {
         var url = feed.FeedUrl;
         var user = this.userStore.GetUserById(feed.UserId);
+        var cachedItems = this.newsFeedItemStore.GetItems(feed).ToHashSet();
+        var freshItems = new HashSet<NewsFeedItem>();
+        string response = null;
+
         try
         {
-            var cachedItems = this.newsFeedItemStore.GetItems(feed).ToHashSet();
-            var freshItems = new HashSet<NewsFeedItem>();
-
             if (EnableHttpLookup)
             {
-                var httpRes = await this.httpClient.GetAsync(url);
-                var response = await httpRes.Content.ReadAsStringAsync();
+                var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                browserRequest.Headers.UserAgent.ParseAdd("curl/7.79.1");
+                browserRequest.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+                var httpRes = await this.httpClient.SendAsync(browserRequest);
+                response = await httpRes.Content.ReadAsStringAsync();
 
                 if (string.IsNullOrEmpty(response))
                 {
@@ -94,24 +104,24 @@ public class FeedRefresher : IDisposable
 
                 freshItems = this.deserializer.FromString(response, user).ToHashSet();
             }
-
-            foreach (var item in freshItems)
-            {
-                item.FeedUrl = url;
-            }
-
-            var newItems = freshItems.Except(cachedItems);
-
-            foreach (var item in newItems.ToList())
-            {
-                this.newsFeedItemStore.AddItem(item);
-            }
-
-            cachedItems.UnionWith(freshItems);
         }
         catch (Exception ex)
         {
-            this.logger.LogError(ex, "Error reloading feeds");
+            this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response);
         }
+
+        foreach (var item in freshItems)
+        {
+            item.FeedUrl = url;
+        }
+
+        var newItems = freshItems.Except(cachedItems);
+
+        foreach (var item in newItems.ToList())
+        {
+            this.newsFeedItemStore.AddItem(item);
+        }
+
+        cachedItems.UnionWith(freshItems);
     }
 }
