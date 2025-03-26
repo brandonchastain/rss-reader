@@ -71,17 +71,7 @@ builder.Services.AddSingleton<FeedRefresher>(sp =>
         sp.GetRequiredService<IUserRepository>(),
         cacheReloadInterval, 
         cacheReloadStartupDelay);
-});
-builder.Services.AddTransient<IFeedClient>(sp =>
-{
-    var httpClient = sp.GetRequiredService<HttpClient>();
-    var hiddenItems = sp.GetRequiredService<PersistedHiddenItems>();
-    var logger = sp.GetRequiredService<ILogger<FeedClient>>();
-    var persistedFeeds = sp.GetRequiredService<IFeedRepository>();
-    var newsFeedItemStore = sp.GetRequiredService<IItemRepository>();
-    var userStore = sp.GetRequiredService<IUserRepository>();
-    return new FeedClient(httpClient, hiddenItems, logger, persistedFeeds, newsFeedItemStore, userStore, bool.Parse(isTestUserEnabled));
-});
+}).AddTransient<IFeedClient, FeedClient>();
 var app = builder.Build();
 
 // instantiate feed client to trigger the cache reload time

@@ -68,7 +68,7 @@ else
     [SupplyParameterFromForm]
     private string NewFeedUrl { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         if (user != null)
         {
@@ -103,6 +103,7 @@ else
     private async Task SubmitAsync()
     {
         this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.user.Id));
+        await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, this.user.Id));
         await this.OnInitializedAsync();
     }
 

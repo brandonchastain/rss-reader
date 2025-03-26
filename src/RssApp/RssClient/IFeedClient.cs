@@ -10,4 +10,5 @@ public interface IFeedClient
     void MarkAsRead(NewsFeedItem item, bool isRead);
     bool IsFilterUnread { get; set; }
     Task<RssUser> RegisterUserAsync(string username);
+    Task AddFeedAsync(NewsFeed feed);
 }

@@ -13,7 +13,7 @@ public class FeedClient : IFeedClient, IDisposable
     private readonly IItemRepository newsFeedItemStore;
     private readonly IUserRepository userStore;
     private RssUser loggedInUser;
-    private bool isTestUserEnabled;
+    private FeedRefresher feedRefresher;
 
     public FeedClient(
         HttpClient httpClient,
@@ -22,7 +22,7 @@ public class FeedClient : IFeedClient, IDisposable
         IFeedRepository persistedFeeds,
         IItemRepository newsFeedItemStore,
         IUserRepository userStore,
-        bool isTestUserEnabled)
+        FeedRefresher feedRefresher)
     {
         this.httpClient = httpClient;
         this.hiddenItems = hiddenItems;
@@ -30,7 +30,7 @@ public class FeedClient : IFeedClient, IDisposable
         this.persistedFeeds = persistedFeeds;
         this.newsFeedItemStore = newsFeedItemStore;
         this.userStore = userStore;
-        this.isTestUserEnabled = isTestUserEnabled;
+        this.feedRefresher = feedRefresher;
     }
 
     public bool IsFilterUnread { get; set; } = false;
@@ -40,6 +40,11 @@ public class FeedClient : IFeedClient, IDisposable
         await Task.Yield();
         var feeds = this.persistedFeeds.GetFeeds(this.loggedInUser);
         return feeds;
+    }
+
+    public async Task AddFeedAsync(NewsFeed feed)
+    {
+        await this.feedRefresher.AddFeedAsync(feed);
     }
 
     public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page)
@@ -87,8 +92,6 @@ public class FeedClient : IFeedClient, IDisposable
     public async Task<RssUser> RegisterUserAsync(string username)
     {
         await Task.Yield();
-        // send http request to /auth/.me endpoint for azure app service easy auth
-        // and get the username/email frmo response
         RssUser user = null;
 
         try

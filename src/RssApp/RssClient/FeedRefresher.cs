@@ -16,6 +16,7 @@ public class FeedRefresher : IDisposable
     private readonly IUserRepository userStore;
     private readonly TimeSpan cacheReloadInterval;
     private readonly TimeSpan cacheReloadStartupDelay;
+    private SemaphoreSlim semaphore = new SemaphoreSlim(1, 1);
     public FeedRefresher(
         HttpClient httpClient,
         RssDeserializer deserializer,
@@ -27,7 +28,8 @@ public class FeedRefresher : IDisposable
         TimeSpan? cacheReloadStartupDelay = null)
     {
         cacheReloadInterval ??= TimeSpan.FromMinutes(10);
-        cacheReloadStartupDelay ??= TimeSpan.FromMinutes(0);
+        cacheReloadStartupDelay ??= TimeSpan.FromMinutes(5);
+        
         this.httpClient = httpClient;
         this.deserializer = deserializer;
         this.logger = logger;
@@ -41,6 +43,7 @@ public class FeedRefresher : IDisposable
     public void Dispose()
     {
         this.httpClient.Dispose();
+        this.semaphore.Dispose();
     }
     private Task bgTask;
 
@@ -48,6 +51,11 @@ public class FeedRefresher : IDisposable
     {
         this.bgTask = RunAsync(token);
         return Task.CompletedTask;
+    }
+
+    public async Task AddFeedAsync(NewsFeed feed)
+    {
+        await ReloadCachedItemsAsync(feed);
     }
 
     private async Task RunAsync(CancellationToken token)
@@ -80,48 +88,60 @@ public class FeedRefresher : IDisposable
 
     private async Task ReloadCachedItemsAsync(NewsFeed feed)
     {
-        var url = feed.FeedUrl;
-        var user = this.userStore.GetUserById(feed.UserId);
-        var cachedItems = this.newsFeedItemStore.GetItems(feed).ToHashSet();
-        var freshItems = new HashSet<NewsFeedItem>();
-        string response = null;
+        this.logger.LogInformation($"Waiting for lock...");
+
+        await this.semaphore.WaitAsync();
+
+        this.logger.LogInformation($"Lock acquired.");
 
         try
         {
-            if (EnableHttpLookup)
+            var url = feed.FeedUrl;
+            var user = this.userStore.GetUserById(feed.UserId);
+            var cachedItems = this.newsFeedItemStore.GetItems(feed).ToHashSet();
+            var freshItems = new HashSet<NewsFeedItem>();
+            string response = null;
+
+            try
             {
-                var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
-                browserRequest.Headers.UserAgent.ParseAdd("curl/7.79.1");
-                browserRequest.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-                var httpRes = await this.httpClient.SendAsync(browserRequest);
-                response = await httpRes.Content.ReadAsStringAsync();
-
-                if (string.IsNullOrEmpty(response))
+                if (EnableHttpLookup)
                 {
-                    this.logger.LogWarning($"Empty response when refreshing feed: {url}");
-                    return;
+                    var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                    browserRequest.Headers.UserAgent.ParseAdd("curl/7.79.1");
+                    browserRequest.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+                    var httpRes = await this.httpClient.SendAsync(browserRequest);
+                    response = await httpRes.Content.ReadAsStringAsync();
+
+                    if (string.IsNullOrEmpty(response))
+                    {
+                        this.logger.LogWarning($"Empty response when refreshing feed: {url}");
+                        return;
+                    }
+
+                    freshItems = this.deserializer.FromString(response, user).ToHashSet();
                 }
-
-                freshItems = this.deserializer.FromString(response, user).ToHashSet();
             }
+            catch (Exception ex)
+            {
+                this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response);
+            }
+
+            foreach (var item in freshItems)
+            {
+                item.FeedUrl = url;
+            }
+
+            var newItems = freshItems.Except(cachedItems);
+            foreach (var item in newItems.ToList())
+            {
+                this.newsFeedItemStore.AddItem(item);
+            }
+
+            cachedItems.UnionWith(freshItems);
         }
-        catch (Exception ex)
+        finally
         {
-            this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response);
+            this.semaphore.Release();
         }
-
-        foreach (var item in freshItems)
-        {
-            item.FeedUrl = url;
-        }
-
-        var newItems = freshItems.Except(cachedItems);
-
-        foreach (var item in newItems.ToList())
-        {
-            this.newsFeedItemStore.AddItem(item);
-        }
-
-        cachedItems.UnionWith(freshItems);
     }
 }
