@@ -31,17 +31,18 @@ button.link {
     padding: 0;
     margin: 0;
     border: none;
-    max-height: 50px;
+    width: 75px;
+    max-height: 75px;
 }
 
-#postContent {
+.postContent {
     max-width: 100%; /* Set your desired max-width */
     margin: 0 auto; /* Center the container */
     /*padding: 0 1rem; /* Add some padding for better appearance */
     padding: 0;
 }
 
-#postContent img {
+.postContent img {
     max-width: 50%;
     height: auto;
 }

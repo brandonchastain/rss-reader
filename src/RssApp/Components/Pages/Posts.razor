@@ -17,7 +17,7 @@ Username: @(user == null ? "loading" : user.Username)
 
 <CascadingValue Value="@Page" Name="Page">
     <CascadingValue Value="@Items" Name="Posts">
-        <PostTable OnPageChanged="UpdatePage" />
+        <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshPosts"/>
     </CascadingValue>
 </CascadingValue>
 

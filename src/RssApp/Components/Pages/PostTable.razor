@@ -42,7 +42,7 @@ else
                         }
                     </td>
                     <td class="col-8">
-                        <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick="() => MarkAsRead(post, true)">@post.Title</a>
+                        <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick:stopPropagation="true" @onclick="() => MarkAsRead(post, true)">@post.Title</a>
                         @this.GetRootDomain(post.Href)
                         &nbsp;
                         &nbsp;
@@ -52,14 +52,22 @@ else
                         }
 
                         <span hidden=@(!post.IsBeingPreviewed)>
-                            <CascadingValue Value="@post">
-                                <Content/>
-                            </CascadingValue>
+                            @if (post != null)
+                            {
+                                <div class="postContent" onclick="event.stopPropagation()">
+                                    @((MarkupString)post.Content)
+                                </div>
+                            }
+                            else
+                            {
+                                <p>Loading...</p>
+                            }
                         </span>
                     </td>
                     <td>
+                        <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(post)">[mark @(!post.IsRead ? "read" : "unread")]</button>
+                        <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => Hide(post.Href)">[hide]</button>
                         <a href="/posts?feedUrl=@post.FeedUrl" onclick="event.stopPropagation()">[feed]</a>
-                        <button class="link" @onclick="() => Hide(post.Href)">[hide]</button>
                     </td>
                     <td>@post.ParsedDate?.ToString("f")</td>
                 </tr>
@@ -69,7 +77,23 @@ else
 
     <button class="btn-link" @onclick="() => Prev()">Prev</button>
     <button class="btn-link" @onclick="() => Next()">Next</button>
+
 }
+
+<script>
+    function preventClickPropagation() {
+        var table = document.getElementsByClassName('postContent');
+        for (var row of table) {
+            var links = row.getElementsByTagName('a');
+            for (var link of links) {
+                link.addEventListener('onclick', function (event) {
+                    event.stopPropagation();
+                    //if( e.target !== this) return;
+                });
+            }
+        }
+    }
+</script>
 
 @code {
     [CascadingParameter(Name = "Page")]
@@ -85,13 +109,21 @@ else
 
     private bool allAreMarkedAsRead = false;
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await this.jsRuntime.InvokeVoidAsync("preventClickPropagation");
+        }
+    }
+
     private async Task Hide(string postId)
     {
         this.feedClient.HidePost(postId);
         await this.OnRefreshTriggered.InvokeAsync(this.feedClient.IsFilterUnread);
     }
 
-    private async Task MarkAllAsRead()
+    private void MarkAllAsRead()
     {
         foreach (var post in this.Posts)
         {

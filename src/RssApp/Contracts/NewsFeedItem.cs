@@ -54,9 +54,10 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
 
     public string GetThumbnailUrl()
     {
+        var favicon = "/placeholder.jpg";
         if (string.IsNullOrEmpty(this.Content))
         {
-            return null;
+            return favicon;
         }
 
         var doc = new HtmlAgilityPack.HtmlDocument();
@@ -64,13 +65,13 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
         var img = doc.DocumentNode.SelectSingleNode("//img");
         if (img == null)
         {
-            return null;
+            return favicon;
         }
 
         var src = img.GetAttributeValue("src", null);
         if (string.IsNullOrEmpty(src))
         {
-            return null;
+            return favicon;
         }
 
         return src;
