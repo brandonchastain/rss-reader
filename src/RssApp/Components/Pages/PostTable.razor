@@ -20,7 +20,7 @@ else
     <div style="float: inline-start;">
     </div>
     <div style="float:inline-end;">
-        <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as read</button>
+        <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as @(allAreMarkedAsRead ? "unread" : "read")</button>
         <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.feedClient.IsFilterUnread ? "[Show all]" : "[Show unread only]")</button>
     </div>
     <table id="post-table" class="table">
@@ -80,26 +80,32 @@ else
     [Parameter]
     public EventCallback<int> OnPageChanged { get; set; }
 
+    [Parameter]
+    public EventCallback<bool> OnRefreshTriggered { get; set; }
+
+    private bool allAreMarkedAsRead = false;
+
     private async Task Hide(string postId)
     {
         this.feedClient.HidePost(postId);
-        await this.OnInitializedAsync();
+        await this.OnRefreshTriggered.InvokeAsync(this.feedClient.IsFilterUnread);
     }
 
     private async Task MarkAllAsRead()
     {
         foreach (var post in this.Posts)
         {
-            post.IsRead = true;
+            post.IsRead = !allAreMarkedAsRead;
         }
 
-        this.StateHasChanged();
+        allAreMarkedAsRead = !allAreMarkedAsRead;
 
         foreach (var post in this.Posts)
         {
-            this.feedClient.MarkAsRead(post, true);
+            this.feedClient.MarkAsRead(post, post.IsRead);
         }
-        await this.OnInitializedAsync();
+
+        this.StateHasChanged();
     }
 
     private void MarkAsRead(NewsFeedItem item, bool? isRead = null)
@@ -113,7 +119,8 @@ else
     private async Task ToggleUnreadFilterAsync()
     {
         this.feedClient.IsFilterUnread = !this.feedClient.IsFilterUnread;
-        await this.OnInitializedAsync();
+        await this.OnRefreshTriggered.InvokeAsync(this.feedClient.IsFilterUnread);
+        this.StateHasChanged();
     }
 
     private void PreviewPost(NewsFeedItem post)

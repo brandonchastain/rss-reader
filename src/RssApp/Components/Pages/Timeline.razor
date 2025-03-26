@@ -12,7 +12,7 @@
 
     <CascadingValue Value="@Page" Name="Page">
         <CascadingValue Value="@Posts" Name="Posts">
-            <PostTable OnPageChanged="UpdatePage" />
+            <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshPosts" />
         </CascadingValue>
     </CascadingValue>
 
@@ -24,8 +24,15 @@
     private async Task UpdatePage(int newValue)
     {
         Page = newValue;
-        Posts = (await this.feedClient.GetTimelineAsync(Page)).ToList();
+        await this.RefreshPosts(this.feedClient.IsFilterUnread);
         StateHasChanged(); // Refresh the parent component
+    }
+
+    private async Task RefreshPosts(bool isFilterUnread)
+    {
+        this.feedClient.IsFilterUnread = isFilterUnread;
+        Posts = (await this.feedClient.GetTimelineAsync(Page)).ToList();
+        this.StateHasChanged();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

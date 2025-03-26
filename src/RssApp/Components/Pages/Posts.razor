@@ -34,8 +34,15 @@ Username: @(user == null ? "loading" : user.Username)
     private async Task UpdatePage(int newValue)
     {
         Page = newValue;
-        Items = (await this.feedClient.GetFeedItemsAsync(new NewsFeed(FeedUrl, user.Id), Page)).ToList();
+        await this.RefreshPosts(this.feedClient.IsFilterUnread);
         StateHasChanged(); // Refresh the parent component
+    }
+
+    private async Task RefreshPosts(bool isFilterUnread)
+    {
+        this.feedClient.IsFilterUnread = isFilterUnread;
+        Items = (await this.feedClient.GetFeedItemsAsync(new NewsFeed(FeedUrl, user.Id), Page)).ToList();
+        this.StateHasChanged();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
