@@ -28,7 +28,7 @@ public class FeedRefresher : IDisposable
         TimeSpan? cacheReloadStartupDelay = null)
     {
         cacheReloadInterval ??= TimeSpan.FromMinutes(10);
-        cacheReloadStartupDelay ??= TimeSpan.FromMinutes(5);
+        cacheReloadStartupDelay ??= TimeSpan.FromMinutes(10000);
         
         this.httpClient = httpClient;
         this.deserializer = deserializer;

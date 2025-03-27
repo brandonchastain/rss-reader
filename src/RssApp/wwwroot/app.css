@@ -6,17 +6,34 @@ html, body {
     height: 100%;
 }
 
-#post-table tr.post-read {
+#post-table .post-read {
     background-color: white;
 }
 
-#post-table tr.post-unread {
+#post-table .post-unread {
     background-color: #fff9c4;
 }
 
-#post-table tr.post-read:hover, #post-table tr.post-unread:hover {
+#post-table .post-read:hover, #post-table .post-unread:hover {
     background-color: #eeeeee; /* Light yellow for white rows */
     cursor: pointer;
+}
+
+#post-table p.post-actions {
+    font-size: 0.8rem;
+    margin-top: 0rem;
+    margin-bottom: 0.5rem;
+    padding-top: 0 !important;
+}
+
+p.post-actions button.link {
+    margin: 0;
+    padding: 0;
+}
+
+p.post-title {
+    margin-bottom: 0rem;
+    padding-bottom: 0rem;
 }
 
 button.link {
@@ -28,11 +45,11 @@ button.link {
 }
 
 .thumbnail {
-    padding: 0;
-    margin: 0;
-    border: none;
-    width: 75px;
-    max-height: 75px;
+    /* padding: 0; */
+    /* margin: 0; */
+    max-width: 100px;
+    width: 100%;
+    max-height: 100px;
 }
 
 .postContent {
@@ -40,6 +57,8 @@ button.link {
     margin: 0 auto; /* Center the container */
     /*padding: 0 1rem; /* Add some padding for better appearance */
     padding: 0;
+    display: inline;
+    border-left: 5px solid black;
 }
 
 .postContent img {

@@ -17,83 +17,69 @@
 }
 else
 {
-    <div style="float: inline-start;">
+    <div style="">
     </div>
-    <div style="float:inline-end;">
+    <div style="">
         <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as @(allAreMarkedAsRead ? "unread" : "read")</button>
         <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.feedClient.IsFilterUnread ? "[Show all]" : "[Show unread only]")</button>
     </div>
-    <table id="post-table" class="table">
-        <thead>
-            <tr>
-                <th>Post</th><th>&nbsp;</th><th>Actions</th><th>Date</th>
-            </tr>
-        </thead>
-        <tbody>
-            <Virtualize Items="Posts" Context="post" TItem="NewsFeedItem">
-                <tr class="@(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)">
-                    <td>
-                        @{
-                            var thumbnailUrl = post.GetThumbnailUrl();
-                            if (!String.IsNullOrWhiteSpace(thumbnailUrl))
-                            {
-                                <img src="@post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" />
-                            }
+    <div id="post-table" class="table">
+        <Virtualize Items="Posts" Context="post" TItem="NewsFeedItem">
+            <div class="row @(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)">
+                
+                <div class="col-2 thumbnail">
+                    @{
+                        var thumbnailUrl = post.GetThumbnailUrl();
+                        if (!String.IsNullOrWhiteSpace(thumbnailUrl))
+                        {
+                            <img src="@post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" />
                         }
-                    </td>
-                    <td class="col-8">
+                    }
+                </div>
+
+                <div class="col">
+                    <p class="post-title">
                         <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick:stopPropagation="true" @onclick="() => MarkAsRead(post, true)">@post.Title</a>
-                        @this.GetRootDomain(post.Href)
-                        &nbsp;
-                        &nbsp;
+                        
+
                         @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
                         {
                             <a href="@post.CommentsHref">[comments]</a>
                         }
+                    </p>
 
-                        <span hidden=@(!post.IsBeingPreviewed)>
-                            @if (post != null)
-                            {
-                                <div class="postContent" onclick="event.stopPropagation()">
-                                    @((MarkupString)post.Content)
-                                </div>
-                            }
-                            else
-                            {
-                                <p>Loading...</p>
-                            }
-                        </span>
-                    </td>
-                    <td>
+                    <p class="post-actions">
                         <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(post)">[mark @(!post.IsRead ? "read" : "unread")]</button>
                         <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => Hide(post.Href)">[hide]</button>
-                        <a href="/posts?feedUrl=@post.FeedUrl" onclick="event.stopPropagation()">[feed]</a>
-                    </td>
-                    <td>@post.ParsedDate?.ToString("f")</td>
-                </tr>
-            </Virtualize>
-        </tbody>
-    </table>
+                        @this.GetRootDomain(post.Href)<br/>
+                    </p>
+                </div>
+                @* <div class="col">@post.ParsedDate?.ToString("f")</div> *@
+            </div>
+            <div class="row" hidden=@(!post.IsBeingPreviewed)>
+                @if (post != null)
+                {
+                    <div class="postContent">
+                        <p>
+                            Published on @post.ParsedDate?.ToLocalTime().ToString("f")
+                        </p>
+                        @((MarkupString)post.Content)
+                        <p>
+                            <a href="/posts?feedUrl=@post.FeedUrl" onclick="event.stopPropagation()">View all posts from ths feed</a><br/>
+                        </p>
+                    </div>
+                }
+                else
+                {
+                    <p>Loading...</p>
+                }
+            </div>
+        </Virtualize>
+    </div>
 
     <button class="btn-link" @onclick="() => Prev()">Prev</button>
     <button class="btn-link" @onclick="() => Next()">Next</button>
-
 }
-
-<script>
-    function preventClickPropagation() {
-        var table = document.getElementsByClassName('postContent');
-        for (var row of table) {
-            var links = row.getElementsByTagName('a');
-            for (var link of links) {
-                link.addEventListener('onclick', function (event) {
-                    event.stopPropagation();
-                    //if( e.target !== this) return;
-                });
-            }
-        }
-    }
-</script>
 
 @code {
     [CascadingParameter(Name = "Page")]
@@ -108,14 +94,6 @@ else
     public EventCallback<bool> OnRefreshTriggered { get; set; }
 
     private bool allAreMarkedAsRead = false;
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            await this.jsRuntime.InvokeVoidAsync("preventClickPropagation");
-        }
-    }
 
     private async Task Hide(string postId)
     {
