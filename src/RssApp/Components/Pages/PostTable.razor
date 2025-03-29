@@ -63,7 +63,7 @@ else
                         <p>
                             Published on @post.ParsedDate?.ToLocalTime().ToString("f")
                         </p>
-                        @((MarkupString)post.Content)
+                        @((MarkupString)HtmlSanitizer.Sanitize(post.Content))
                         <p>
                             <a href="/posts?feedUrl=@post.FeedUrl" onclick="event.stopPropagation()">View all posts from ths feed</a><br/>
                         </p>

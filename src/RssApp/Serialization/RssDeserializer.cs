@@ -17,23 +17,31 @@ public class RssDeserializer
         try
         {
             var xmlDoc = XDocument.Parse(responseContent);
-            if (responseContent.Contains("<rss"))
+            var root = xmlDoc.Root;
+            if (root.Name.LocalName.Equals("rdf", StringComparison.OrdinalIgnoreCase))
+            {
+                XmlSerializer xs = new XmlSerializer(typeof(RdfFeed));
+                var reader = new StringReader(responseContent);
+                RdfFeed rdfFeedModel = (RdfFeed)xs.Deserialize(reader);
+                return rdfFeedModel.Items.Select(x => new NewsFeedItem(x.Id, user.Id, x.Title, x.Link.Href, x.CommentsLink?.Href, x.PublishDate, x.Description));
+            }
+            else if (root.Name.LocalName.Equals("rss", StringComparison.OrdinalIgnoreCase))
             {
                 XmlSerializer xs = new XmlSerializer(typeof(RssDocument));
                 var reader = new StringReader(responseContent);
                 RssDocument rssFeedModel = (RssDocument)xs.Deserialize(reader);
                 return rssFeedModel.Feed.Entries.Select(x => new NewsFeedItem(x.Id, user.Id, x.Title, x.Link.Href, x.CommentsLink?.Href, x.PublishDate, x.Description));
             }
-            else if (responseContent.Contains("<feed"))
+            else if (root.Name.LocalName.Equals("feed", StringComparison.OrdinalIgnoreCase))
             {
                 XmlSerializer xs = new XmlSerializer(typeof(AtomFeed));
                 var reader = new StringReader(responseContent);
                 AtomFeed rssFeedModel = (AtomFeed)xs.Deserialize(reader);
-                return rssFeedModel.Entries.Select(x => new NewsFeedItem(x.Id, user.Id, x.Title, x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href, null, x.PublishDate, x.Content.ToString()));
+                return rssFeedModel.Entries.Select(x => new NewsFeedItem(x.Id, user.Id, x.Title, x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href, null, x.PublishDate, x.Content?.ToString()));
             }
             else
             {
-                throw new InvalidDataException("invalid rss feed");
+                throw new InvalidDataException("invalid document type");
             }
         }
         catch (Exception ex)
