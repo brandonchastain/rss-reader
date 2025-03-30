@@ -5,7 +5,7 @@ namespace RssApp.Persistence;
 
 public interface IItemRepository
 {
-    IEnumerable<NewsFeedItem> GetItems(NewsFeed feed);
+    Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed);
     NewsFeedItem GetItem(RssUser user, string href);
 
     void AddItem(NewsFeedItem item);

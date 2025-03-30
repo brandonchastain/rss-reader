@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Memory;
 using RssApp.Contracts;
 using RssApp.Persistence;
 
@@ -12,8 +13,10 @@ public class FeedClient : IFeedClient, IDisposable
     private readonly IFeedRepository persistedFeeds;
     private readonly IItemRepository newsFeedItemStore;
     private readonly IUserRepository userStore;
+    private readonly IMemoryCache memoryCache;
     private RssUser loggedInUser;
     private FeedRefresher feedRefresher;
+    private bool isFilterUnread;
 
     public FeedClient(
         HttpClient httpClient,
@@ -22,7 +25,8 @@ public class FeedClient : IFeedClient, IDisposable
         IFeedRepository persistedFeeds,
         IItemRepository newsFeedItemStore,
         IUserRepository userStore,
-        FeedRefresher feedRefresher)
+        FeedRefresher feedRefresher,
+        IMemoryCache memoryCache)
     {
         this.httpClient = httpClient;
         this.hiddenItems = hiddenItems;
@@ -31,9 +35,20 @@ public class FeedClient : IFeedClient, IDisposable
         this.newsFeedItemStore = newsFeedItemStore;
         this.userStore = userStore;
         this.feedRefresher = feedRefresher;
+        this.memoryCache = memoryCache;
     }
 
-    public bool IsFilterUnread { get; set; } = false;
+    public bool IsFilterUnread
+    {
+        get
+        {
+            return this.isFilterUnread;
+        }
+        set
+        {
+            this.isFilterUnread = value;
+        }
+    }
 
     public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
     {
@@ -114,19 +129,25 @@ public class FeedClient : IFeedClient, IDisposable
 
     private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed)
     {
-        await Task.Yield();
-        var url = feed.FeedUrl;
-
-        var response = this.newsFeedItemStore.GetItems(feed).ToHashSet();
-
         var hidden = this.hiddenItems.GetHidden();
+        
+        if (this.memoryCache.TryGetValue(feed.FeedUrl, out IEnumerable<NewsFeedItem> cachedItems))
+        {
+            return cachedItems
+                .Where(i => !hidden.Contains(i.Href))
+                .Where(i => !this.IsFilterUnread || !i.IsRead);
+        }
+        
+        var url = feed.FeedUrl;
+        var response = (await this.newsFeedItemStore.GetItemsAsync(feed)).ToHashSet();
         var items = response.ToList();
 
         var result = items.DistinctBy(i => i.Href)
-            .OrderByDescending(i => i.ParsedDate)
+            .OrderByDescending(i => i.ParsedDate);
+
+        this.memoryCache.Set(feed.FeedUrl, result, TimeSpan.FromMinutes(5));
+        return result
             .Where(i => !hidden.Contains(i.Href))
             .Where(i => !this.IsFilterUnread || !i.IsRead);
-
-        return result;
     }     
 }

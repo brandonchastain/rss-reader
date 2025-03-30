@@ -98,7 +98,7 @@ public class FeedRefresher : IDisposable
         {
             var url = feed.FeedUrl;
             var user = this.userStore.GetUserById(feed.UserId);
-            var cachedItems = this.newsFeedItemStore.GetItems(feed).ToHashSet();
+            var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed)).ToHashSet();
             var freshItems = new HashSet<NewsFeedItem>();
             string response = null;
 

@@ -1,4 +1,5 @@
 
+using System.Data.Common;
 using System.Data.SQLite;
 using RssApp.Contracts;
 
@@ -49,22 +50,23 @@ public class SQLiteItemRepository : IItemRepository
         }
     }
 
-    public IEnumerable<NewsFeedItem> GetItems(NewsFeed feed)
+    public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed)
     {
+        var list = new List<NewsFeedItem>();
         var user = this.userStore.GetUserById(feed.UserId);
         var feedUrl = feed.FeedUrl;
         var updatedFeed = this.feedStore.GetFeeds(user).FirstOrDefault(f => f.FeedUrl == feedUrl);
 
         using (var connection = new SQLiteConnection(this.connectionString))
         {
-            connection.Open();
+            await connection.OpenAsync();
             var command = connection.CreateCommand();
             command.CommandText = "SELECT * FROM NewsFeedItems WHERE FeedUrl = @feedUrl AND UserId = @userId";
             command.Parameters.AddWithValue("@feedUrl", feedUrl);
             command.Parameters.AddWithValue("@userId", user.Id);
-            using (var reader = command.ExecuteReader())
+            using (var reader = await command.ExecuteReaderAsync())
             {
-                while (reader.Read())
+                while (await reader.ReadAsync())
                 {
                     var item = this.ReadItemFromResults(reader);
                     
@@ -73,13 +75,15 @@ public class SQLiteItemRepository : IItemRepository
                         item.IsPaywalled = true;
                     }
 
-                    yield return item;
+                    list.Add(item);
                 }
             }
         }
+
+        return list;
     }
 
-    private NewsFeedItem ReadItemFromResults(SQLiteDataReader reader)
+    private NewsFeedItem ReadItemFromResults(DbDataReader reader)
     {
         var id = reader.IsDBNull(reader.GetOrdinal("NewFeedItemId")) ? "" : reader.GetString(reader.GetOrdinal("NewsFeedItemId"));
         var userId = reader.IsDBNull(reader.GetOrdinal("UserId")) ? 1 : reader.GetInt32(reader.GetOrdinal("UserId"));
