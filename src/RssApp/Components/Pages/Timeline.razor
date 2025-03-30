@@ -22,6 +22,11 @@
     
     public List<NewsFeedItem> Posts { get; set; } = new List<NewsFeedItem>();
 
+    protected override void OnInitialized()
+    {
+        Page = 0;
+    }
+
     private async Task UpdatePage(int newValue)
     {
         Page = newValue;

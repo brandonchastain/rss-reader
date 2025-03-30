@@ -30,6 +30,10 @@ Username: @(user == null ? "loading" : user.Username)
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
     private RssUser user;
 
+    protected override void OnInitialized()
+    {
+        Page = 0;
+    }
 
     private async Task UpdatePage(int newValue)
     {
