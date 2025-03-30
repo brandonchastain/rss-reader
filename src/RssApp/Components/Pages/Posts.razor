@@ -42,12 +42,13 @@ Username: @(user == null ? "loading" : user.Username)
     {
         this.feedClient.IsFilterUnread = isFilterUnread;
 
-        var newPageRes = await this.feedClient.GetTimelineAsync(Page);
+        var feed = new NewsFeed(FeedUrl, this.user.Id);
+        var newPageRes = await this.feedClient.GetFeedItemsAsync(feed, Page);
         Items.AddRange(newPageRes);
         while (isFilterUnread && !Items.Any(p => !p.IsRead) && newPageRes.Any())
         {
             Page++;
-            newPageRes = await this.feedClient.GetTimelineAsync(Page);
+            newPageRes = await this.feedClient.GetFeedItemsAsync(feed, Page);
             Items.AddRange(newPageRes);
         }
 
