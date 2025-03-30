@@ -4,6 +4,7 @@
 @using System.Xml.Serialization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Sve.Blazor.InfiniteScroll.Components
 @inject IFeedClient feedClient
 @inject ILogger<Posts> logger
 @inject NavigationManager NavigationManager
@@ -19,11 +20,14 @@ else
 {
     <div class="toolbar">
         <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as @(allAreMarkedAsRead ? "unread" : "read")</button>
-        <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.feedClient.IsFilterUnread ? "[Show all]" : "[Show unread only]")</button>
+        <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.IsFilterUnread ? "[Show all]" : "[Show unread only]")</button>
     </div>
     <div id="post-table" class="table">
-        <Virtualize Items="Posts" Context="post" TItem="NewsFeedItem">
-            <div class="row @(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)">
+        <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
+            @foreach (var post in Posts)
+            {
+        @* <Virtualize Items="Posts" Context="post" TItem="NewsFeedItem"> *@
+            <div class="row @(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)" hidden=@(!post.IsBeingPreviewed && this.IsFilterUnread && post.IsRead)>
                 
                 <div class="col thumbnail">
                     @{
@@ -70,10 +74,16 @@ else
                     <p>Loading...</p>
                 }
             </div>
-        </Virtualize>
+        @* </Virtualize> *@
+
+
+            }
+            <div id="observerTarget" style="margin-top: 500px"></div>
+        </InfiniteScroll>
     </div>
-    <div class="row">
-        <div class="col">
+    <div class="row" style="margin-top: 10px;">
+        Oh no! You reached the end.
+        @* <div class="col">
             <button class="big btn-link" @onclick="() => Prev()">Prev</button>
         </div>
         <div class="col">
@@ -81,9 +91,11 @@ else
         </div>
         <div class="col">
             <button class="big btn-link" style="float: right;" @onclick="() => Next()">Next</button>
-        </div>
+        </div> *@
     </div>
 }
+
+<script src="_content/Sve.Blazor.InfiniteScroll/js/Observer.js"></script>
 
 @code {
     [CascadingParameter(Name = "Page")]
@@ -97,12 +109,14 @@ else
     [Parameter]
     public EventCallback<bool> OnRefreshTriggered { get; set; }
 
+    public bool IsFilterUnread { get; set; } = false;
+
     private bool allAreMarkedAsRead = false;
 
     private async Task Hide(string postId)
     {
         this.feedClient.HidePost(postId);
-        await this.OnRefreshTriggered.InvokeAsync(this.feedClient.IsFilterUnread);
+        await this.OnRefreshTriggered.InvokeAsync(this.IsFilterUnread);
     }
 
     private void MarkAllAsRead()
@@ -132,8 +146,10 @@ else
 
     private async Task ToggleUnreadFilterAsync()
     {
-        this.feedClient.IsFilterUnread = !this.feedClient.IsFilterUnread;
+        this.IsFilterUnread = !this.IsFilterUnread;
+        this.feedClient.IsFilterUnread = this.IsFilterUnread;
         await this.OnRefreshTriggered.InvokeAsync(this.feedClient.IsFilterUnread);
+        //await this.OnInitializedAsync();
         this.StateHasChanged();
     }
 

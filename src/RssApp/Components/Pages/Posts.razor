@@ -27,7 +27,7 @@ Username: @(user == null ? "loading" : user.Username)
     public string FeedUrl { get; set; }
     public int Page { get; set; } = 0;
     
-    public ICollection<NewsFeedItem> Items { get; set; }
+    public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
     private RssUser user;
 
 
@@ -41,7 +41,16 @@ Username: @(user == null ? "loading" : user.Username)
     private async Task RefreshPosts(bool isFilterUnread)
     {
         this.feedClient.IsFilterUnread = isFilterUnread;
-        Items = (await this.feedClient.GetFeedItemsAsync(new NewsFeed(FeedUrl, user.Id), Page)).ToList();
+
+        var newPageRes = await this.feedClient.GetTimelineAsync(Page);
+        Items.AddRange(newPageRes);
+        while (isFilterUnread && !Items.Any(p => !p.IsRead) && newPageRes.Any())
+        {
+            Page++;
+            newPageRes = await this.feedClient.GetTimelineAsync(Page);
+            Items.AddRange(newPageRes);
+        }
+
         this.StateHasChanged();
     }
 

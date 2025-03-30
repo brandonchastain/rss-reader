@@ -62,8 +62,10 @@ button.link {
 }
 
 button.big {
-    width: 20%;
+    width: 80%;
+    height: 50%;
     display: inline-block;
+    margin-bottom: 10rem;
 }
 
 .thumbnail {

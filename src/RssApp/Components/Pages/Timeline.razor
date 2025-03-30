@@ -20,7 +20,7 @@
 @code {
     public int Page { get; set; } = 0;
     
-    public ICollection<NewsFeedItem> Posts { get; set; }
+    public List<NewsFeedItem> Posts { get; set; } = new List<NewsFeedItem>();
 
     private async Task UpdatePage(int newValue)
     {
@@ -32,7 +32,14 @@
     private async Task RefreshPosts(bool isFilterUnread)
     {
         this.feedClient.IsFilterUnread = isFilterUnread;
-        Posts = (await this.feedClient.GetTimelineAsync(Page)).ToList();
+        var newPageRes = await this.feedClient.GetTimelineAsync(Page);
+        Posts.AddRange(newPageRes);
+        while (isFilterUnread && Posts.Where(p => !p.IsRead).Count() < 10 && newPageRes.Any())
+        {
+            Page++;
+            newPageRes = await this.feedClient.GetTimelineAsync(Page);
+            Posts.AddRange(newPageRes);
+        }
         this.StateHasChanged();
     }
 

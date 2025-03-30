@@ -134,8 +134,7 @@ public class FeedClient : IFeedClient, IDisposable
         if (this.memoryCache.TryGetValue(feed.FeedUrl, out IEnumerable<NewsFeedItem> cachedItems))
         {
             return cachedItems
-                .Where(i => !hidden.Contains(i.Href))
-                .Where(i => !this.IsFilterUnread || !i.IsRead);
+                .Where(i => !hidden.Contains(i.Href));
         }
         
         var url = feed.FeedUrl;
@@ -147,7 +146,6 @@ public class FeedClient : IFeedClient, IDisposable
 
         this.memoryCache.Set(feed.FeedUrl, result, TimeSpan.FromMinutes(5));
         return result
-            .Where(i => !hidden.Contains(i.Href))
-            .Where(i => !this.IsFilterUnread || !i.IsRead);
+            .Where(i => !hidden.Contains(i.Href));
     }     
 }
