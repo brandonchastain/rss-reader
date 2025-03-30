@@ -34,6 +34,8 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
         {
             if (DateTime.TryParse(PublishDate, out DateTime parsed))
             {
+                parsed = TimeZoneInfo.ConvertTimeToUtc(parsed);
+                parsed = TimeZoneInfo.ConvertTimeFromUtc(parsed, TimeZoneInfo.Local);
                 return parsed;
             }
 

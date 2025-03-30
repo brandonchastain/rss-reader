@@ -6,6 +6,15 @@ html, body {
     height: 100%;
 }
 
+.toolbar {
+    margin-bottom: 2rem;
+}
+
+#post-table .row {
+    /*border-bottom: 1px solid #cccccc;*/
+    border-top: 1px solid #cccccc;
+}
+
 #post-table .post-read {
     background-color: white;
 }
@@ -45,9 +54,9 @@ button.link {
 }
 
 .thumbnail {
-    /* padding: 0; */
+    padding: 0;
     /* margin: 0; */
-    max-width: 100px;
+    max-width: 120px;
     width: 100%;
     max-height: 100px;
 }
@@ -56,13 +65,14 @@ button.link {
     max-width: 100%; /* Set your desired max-width */
     margin: 0 auto; /* Center the container */
     /*padding: 0 1rem; /* Add some padding for better appearance */
-    padding: 0;
-    display: inline;
+    padding: 1rem;
+    display: block;
     border-left: 5px solid black;
 }
 
 .postContent img {
-    max-width: 50%;
+    width: 100%;
+    max-width: 400px;
     height: auto;
 }
 

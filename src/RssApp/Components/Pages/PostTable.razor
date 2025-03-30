@@ -17,9 +17,7 @@
 }
 else
 {
-    <div style="">
-    </div>
-    <div style="">
+    <div class="toolbar">
         <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as @(allAreMarkedAsRead ? "unread" : "read")</button>
         <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.feedClient.IsFilterUnread ? "[Show all]" : "[Show unread only]")</button>
     </div>
@@ -27,7 +25,7 @@ else
         <Virtualize Items="Posts" Context="post" TItem="NewsFeedItem">
             <div class="row @(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)">
                 
-                <div class="col-2 thumbnail">
+                <div class="col thumbnail">
                     @{
                         var thumbnailUrl = post.GetThumbnailUrl();
                         if (!String.IsNullOrWhiteSpace(thumbnailUrl))
@@ -40,8 +38,6 @@ else
                 <div class="col">
                     <p class="post-title">
                         <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick:stopPropagation="true" @onclick="() => MarkAsRead(post, true)">@post.Title</a>
-                        
-
                         @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
                         {
                             <a href="@post.CommentsHref">[comments]</a>
@@ -54,14 +50,13 @@ else
                         @this.GetRootDomain(post.Href)<br/>
                     </p>
                 </div>
-                @* <div class="col">@post.ParsedDate?.ToString("f")</div> *@
             </div>
             <div class="row" hidden=@(!post.IsBeingPreviewed)>
                 @if (post != null)
                 {
                     <div class="postContent">
                         <p>
-                            Published on @post.ParsedDate?.ToLocalTime().ToString("f")
+                            Published on @post.ParsedDate?.ToString("f")
                         </p>
                         @((MarkupString)HtmlSanitizer.Sanitize(post.Content))
                         <p>
