@@ -11,7 +11,7 @@
 @inject IJSRuntime jsRuntime
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
-@rendermode InteractiveServer // needed for onclick
+@rendermode InteractiveServer
 @if (Posts == null)
 {
     <p><em>Loading...</em></p>
@@ -19,82 +19,61 @@
 else
 {
     <div class="toolbar">
-        <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as @(allAreMarkedAsRead ? "unread" : "read")</button>
+        @* <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as @(allAreMarkedAsRead ? "unread" : "read")</button> *@
         <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.IsFilterUnread ? "[Show all]" : "[Show unread only]")</button>
     </div>
     <div id="post-table" class="table">
         <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
             @foreach (var post in Posts)
             {
-        @* <Virtualize Items="Posts" Context="post" TItem="NewsFeedItem"> *@
-            <div class="row @(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)" hidden=@(!post.IsBeingPreviewed && this.IsFilterUnread && post.IsRead)>
-                
-                <div class="col thumbnail">
-                    @{
-                        var thumbnailUrl = post.GetThumbnailUrl();
-                        if (!String.IsNullOrWhiteSpace(thumbnailUrl))
-                        {
-                            <img src="@post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" />
+                <div class="row @(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)" hidden=@(!post.IsBeingPreviewed && this.IsFilterUnread && post.IsRead)>
+                    <div class="col thumbnail">
+                        @{
+                            var thumbnailUrl = post.GetThumbnailUrl();
+                            if (!String.IsNullOrWhiteSpace(thumbnailUrl))
+                            {
+                                <img src="@post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" />
+                            }
                         }
-                    }
-                </div>
-
-                <div class="col">
-                    <p class="post-title">
-                        <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick:stopPropagation="true" @onclick="() => MarkAsRead(post, true)">@post.Title</a>
-                        
-                        @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
-                        {
-                            <a href="@post.CommentsHref">[comments]</a>
-                        }
-
-                        <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(post)">[mark @(!post.IsRead ? "read" : "unread")]</button>&nbsp;<button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => Hide(post.Href)">[hide]</button>
-                        @this.GetRootDomain(post.Href)<br/>
-                    </p>
-
-                    <p class="post-actions">
-                    </p>
-                </div>
-            </div>
-            <div class="row" hidden=@(!post.IsBeingPreviewed)>
-                @if (post != null)
-                {
-                    <div class="postContent">
-                        <p>
-                            Published on @post.ParsedDate?.ToString("f")
-                        </p>
-                        @((MarkupString)HtmlSanitizer.Sanitize(post.Content))
-                        <p>
-                            <a href="/posts?feedUrl=@post.FeedUrl" onclick="event.stopPropagation()">View all posts from ths feed</a><br/>
+                    </div>
+                    <div class="col">
+                        <p class="post-title">
+                            <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick:stopPropagation="true" @onclick="() => MarkAsRead(post, true)">@post.Title</a>
+                            @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
+                            {
+                                <a href="@post.CommentsHref">[comments]</a>
+                            }
+                            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(post)">[mark @(!post.IsRead ? "read" : "unread")]</button>&nbsp;<button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => Hide(post.Href)">[hide]</button>
+                            @this.GetRootDomain(post.Href)<br/>
                         </p>
                     </div>
-                }
-                else
-                {
-                    <p>Loading...</p>
-                }
-            </div>
-        @* </Virtualize> *@
-
-
+                </div>
+                <div class="row" hidden=@(!post.IsBeingPreviewed)>
+                    @if (post != null)
+                    {
+                        <div class="postContent">
+                            <p>
+                                Published on @post.ParsedDate?.ToString("f")
+                            </p>
+                            @((MarkupString)HtmlSanitizer.Sanitize(post.Content))
+                            <p>
+                                <a href="/posts?feedUrl=@post.FeedUrl" onclick="event.stopPropagation()">View all posts from ths feed</a><br/>
+                            </p>
+                        </div>
+                    }
+                    else
+                    {
+                        <p>Loading...</p>
+                    }
+                </div>
             }
-            <div id="observerTarget" style="margin-top: 500px"></div>
+            <div id="observerTarget"></div>
         </InfiniteScroll>
     </div>
-    <div class="row" style="margin-top: 10px;">
-        Oh no! You reached the end.
-        @* <div class="col">
-            <button class="big btn-link" @onclick="() => Prev()">Prev</button>
-        </div>
-        <div class="col">
-            &nbsp;
-        </div>
-        <div class="col">
-            <button class="big btn-link" style="float: right;" @onclick="() => Next()">Next</button>
-        </div> *@
+    <div class="row" style="margin-top: 500px;">
+        Oh no! You have reached the end of the feed. 
     </div>
 }
-
 <script src="_content/Sve.Blazor.InfiniteScroll/js/Observer.js"></script>
 
 @code {
@@ -149,7 +128,6 @@ else
         this.IsFilterUnread = !this.IsFilterUnread;
         this.feedClient.IsFilterUnread = this.IsFilterUnread;
         await this.OnRefreshTriggered.InvokeAsync(this.feedClient.IsFilterUnread);
-        //await this.OnInitializedAsync();
         this.StateHasChanged();
     }
 
