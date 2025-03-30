@@ -7,7 +7,7 @@ using System.Web;
 public static class HtmlSanitizer
 {
     private static readonly string[] BlackListTags = { "script", "iframe", "object", "embed", "form" };
-    private static readonly string[] BlackListAttributes = { "onload", "onclick", "onerror", "href", "src" };
+    private static readonly string[] BlackListAttributes = { "onload", "onclick", "onerror", "href" };
 
     public static string Sanitize(string input)
     {
@@ -33,8 +33,8 @@ public static class HtmlSanitizer
         input = jsLinkRegex.Replace(input, string.Empty);
 
         // Remove plain http and https links
-        var plainLinkRegex = new Regex(@"(http|https):\/\/[^\s<>]+", RegexOptions.IgnoreCase);
-        input = plainLinkRegex.Replace(input, string.Empty);
+        //var plainLinkRegex = new Regex(@"(http|https):\/\/[^\s<>]+", RegexOptions.IgnoreCase);
+        //input = plainLinkRegex.Replace(input, string.Empty);
 
         // Encode any remaining HTML
         //return HttpUtility.HtmlEncode(input);
