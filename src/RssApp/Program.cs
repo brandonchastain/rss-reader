@@ -36,51 +36,53 @@ builder.Services.AddLogging(loggingBuilder =>
     loggingBuilder.AddAzureWebAppDiagnostics();
 });
 
-builder.Services.AddHttpClient();
-builder.Services.AddMemoryCache();
-builder.Services.AddRazorComponents()
+builder.Services
+    .AddHttpClient()
+    .AddMemoryCache()
+    .AddSingleton<IUserRepository>(sb =>
+    {
+        return new SQLiteUserRepository(
+            $"Data Source={userDb}",
+            sb.GetRequiredService<ILogger<SQLiteUserRepository>>());
+    })
+    .AddSingleton<IFeedRepository>(sb =>
+    {
+        return new SQLiteFeedRepository(
+            $"Data Source={feedDb}",
+            sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
+    })
+    .AddSingleton<PersistedHiddenItems>()
+    .AddSingleton<IItemRepository>(sb =>
+    {
+        return new SQLiteItemRepository(
+            $"Data Source={itemDb}",
+            sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
+            sb.GetRequiredService<IFeedRepository>(),
+            sb.GetRequiredService<IUserRepository>());
+    })
+    .AddSingleton<RssDeserializer>()
+    .AddSingleton<FeedRefresher>(sp =>
+    {
+        return new FeedRefresher(
+            sp.GetRequiredService<RssDeserializer>(),
+            sp.GetRequiredService<ILogger<FeedClient>>(),
+            sp.GetRequiredService<IFeedRepository>(),
+            sp.GetRequiredService<IItemRepository>(),
+            sp.GetRequiredService<IUserRepository>(),
+            cacheReloadInterval, 
+            cacheReloadStartupDelay);
+    })
+    .AddTransient<IFeedClient, FeedClient>();
+
+builder.Services
+    .AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddSingleton<IUserRepository>(sb =>
-{
-    return new SQLiteUserRepository($"Data Source={userDb}", sb.GetRequiredService<ILogger<SQLiteUserRepository>>());
-});
-builder.Services.AddSingleton<IFeedRepository>(sb =>
-{
-    return new SQLiteFeedRepository($"Data Source={feedDb}", sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
-});
-
-builder.Services.AddSingleton<PersistedHiddenItems>();
-builder.Services.AddSingleton<IItemRepository>(sb =>
-{
-    return new SQLiteItemRepository(
-        $"Data Source={itemDb}",
-        sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
-        sb.GetRequiredService<IFeedRepository>(),
-        sb.GetRequiredService<IUserRepository>());
-});
-
-builder.Services.AddSingleton<RssDeserializer>();
-builder.Services.AddSingleton<FeedRefresher>(sp =>
-{
-    return new FeedRefresher(
-        sp.GetRequiredService<HttpClient>(),
-        sp.GetRequiredService<RssDeserializer>(),
-        sp.GetRequiredService<ILogger<FeedClient>>(),
-        sp.GetRequiredService<IFeedRepository>(),
-        sp.GetRequiredService<IItemRepository>(),
-        sp.GetRequiredService<IUserRepository>(),
-        cacheReloadInterval, 
-        cacheReloadStartupDelay);
-})
-.AddTransient<IFeedClient, FeedClient>();
 
 var app = builder.Build();
 
-// instantiate feed client to trigger the cache reload time
 var refresher = app.Services.GetRequiredService<FeedRefresher>();
 await refresher.StartAsync(cancellationTokenSource.Token);
 
-// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);

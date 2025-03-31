@@ -18,7 +18,6 @@ public class FeedRefresher : IDisposable
     private readonly TimeSpan cacheReloadStartupDelay;
     private SemaphoreSlim semaphore = new SemaphoreSlim(1, 1);
     public FeedRefresher(
-        HttpClient httpClient,
         RssDeserializer deserializer,
         ILogger<FeedClient> logger,
         IFeedRepository persistedFeeds,
@@ -30,7 +29,13 @@ public class FeedRefresher : IDisposable
         cacheReloadInterval ??= TimeSpan.FromMinutes(10);
         cacheReloadStartupDelay ??= TimeSpan.FromMinutes(10000);
         
-        this.httpClient = httpClient;
+        var clientHandler = new HttpClientHandler
+        {
+            AllowAutoRedirect = true,
+            MaxAutomaticRedirections = 5,
+        };
+
+        this.httpClient = new HttpClient(clientHandler);
         this.deserializer = deserializer;
         this.logger = logger;
         this.persistedFeeds = persistedFeeds;
@@ -109,6 +114,7 @@ public class FeedRefresher : IDisposable
                     var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
                     browserRequest.Headers.UserAgent.ParseAdd("curl/7.79.1");
                     browserRequest.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        
                     var httpRes = await this.httpClient.SendAsync(browserRequest);
                     response = await httpRes.Content.ReadAsStringAsync();
 
