@@ -71,7 +71,9 @@ builder.Services.AddSingleton<FeedRefresher>(sp =>
         sp.GetRequiredService<IUserRepository>(),
         cacheReloadInterval, 
         cacheReloadStartupDelay);
-}).AddTransient<IFeedClient, FeedClient>();
+})
+.AddTransient<IFeedClient, FeedClient>();
+
 var app = builder.Build();
 
 // instantiate feed client to trigger the cache reload time

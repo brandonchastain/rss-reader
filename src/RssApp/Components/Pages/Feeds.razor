@@ -6,13 +6,21 @@
 @inject ILogger<Feeds> logger
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IJSRuntime jsRuntime
-@rendermode InteractiveServer // needed for onclick
+@rendermode InteractiveServer
 
 <PageTitle>Feeds</PageTitle>
 
 <h1>Feeds</h1>
 
-<p>Browse your RSS feeds here.</p>
+<form method="post" @onsubmit="SubmitAsync" @formname="newfeed">
+    <AntiforgeryToken />
+    <div>
+        <InputText @bind-Value="NewFeedUrl" placeholder="Feed URL" width=250 />
+        <button type="submit">Add feed</button>
+    </div>
+    <div>
+    </div>
+</form>
 
 @if (feeds == null)
 {
@@ -20,50 +28,30 @@
 }
 else
 {
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Feeds</th>
-                <th>&nbsp;</th>
-                <th>&nbsp;</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (NewsFeed feed in feeds)
-            {
-                <tr>
-                    <td><a href="posts?FeedUrl=@feed.FeedUrl">@feed.FeedUrl</a></td>
-                    <td><button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed.FeedUrl)">Delete</button></td>
-                    <td>
-                        @if (feed.IsPaywalled)
-                        {
-                            <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Paywalled</button>
-                        }
-                        else
-                        {
-                            <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Not paywalled</button>
-                        }
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-
-    <form method="post" @onsubmit="SubmitAsync" @formname="newfeed">
-        <AntiforgeryToken />
-        <div>
-            <InputText @bind-Value="NewFeedUrl" placeholder="Feed URL" />
-        </div>
-        <div>
-            <button type="submit">Add feed</button>
-        </div>
-    </form>
+    <div class="table">
+        @foreach (NewsFeed feed in feeds)
+        {
+            <div class="row">
+                <div class="col"><a href="posts?FeedUrl=@feed.FeedUrl">@feed.FeedUrl</a></div>
+                <div class="col"><button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed.FeedUrl)">Delete</button></div>
+                <div class="col">
+                    @if (feed.IsPaywalled)
+                    {
+                        <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Paywalled</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Not paywalled</button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
 }
 
 @code {
     private IEnumerable<NewsFeed> feeds;
     private RssUser user;
-    private DateTime lastCheck;
 
     [SupplyParameterFromForm]
     private string NewFeedUrl { get; set; }
@@ -85,7 +73,6 @@ else
     {
         if (firstRender || user == null)
         {
-            lastCheck = DateTime.UtcNow;
             var username = await this.GetUsernameAsync();
             user = await this.feedClient.RegisterUserAsync(username);
             feeds = this.GetFeedUrls();
@@ -95,9 +82,7 @@ else
 
     private async Task<string> GetUsernameAsync()
     {
-        // invoke a javascript function to get the username
-        var username = await jsRuntime.InvokeAsync<string>("getUsername");
-        return username;
+        return await jsRuntime.InvokeAsync<string>("getUsername");
     }
 
     private async Task SubmitAsync()

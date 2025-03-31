@@ -39,7 +39,7 @@ Username: @(user == null ? "loading" : user.Username)
     {
         Page = newValue;
         await this.RefreshPosts(this.feedClient.IsFilterUnread);
-        StateHasChanged(); // Refresh the parent component
+        StateHasChanged();
     }
 
     private async Task RefreshPosts(bool isFilterUnread)
@@ -72,8 +72,6 @@ Username: @(user == null ? "loading" : user.Username)
 
     private async Task<string> GetUsernameAsync()
     {
-        // invoke a javascript function to get the username
-        var username = await jsRuntime.InvokeAsync<string>("getUsername");
-        return username;
+        return await jsRuntime.InvokeAsync<string>("getUsername");
     }
 }

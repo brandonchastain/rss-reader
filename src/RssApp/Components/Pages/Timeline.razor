@@ -5,17 +5,17 @@
 @inject IFeedClient feedClient
 @inject ILogger<Timeline> logger
 @inject IJSRuntime jsRuntime
-@rendermode InteractiveServer // needed for onclick
+@rendermode InteractiveServer
 
 <PageTitle>Timeline</PageTitle>
 
 <h1>Timeline</h1>
 
-    <CascadingValue Value="@Page" Name="Page">
-        <CascadingValue Value="@Posts" Name="Posts">
-            <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshPosts" />
-        </CascadingValue>
+<CascadingValue Value="@Page" Name="Page">
+    <CascadingValue Value="@Posts" Name="Posts">
+        <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshPosts" />
     </CascadingValue>
+</CascadingValue>
 
 @code {
     public int Page { get; set; } = 0;
@@ -31,7 +31,7 @@
     {
         Page = newValue;
         await this.RefreshPosts(this.feedClient.IsFilterUnread);
-        StateHasChanged(); // Refresh the parent component
+        StateHasChanged();
     }
 
     private async Task RefreshPosts(bool isFilterUnread)
@@ -61,8 +61,7 @@
 
     private async Task<string> GetUsernameAsync()
     {
-        var username = await jsRuntime.InvokeAsync<string>("getUsername");
-        return username;
+        return await jsRuntime.InvokeAsync<string>("getUsername");
     }
 
 }
