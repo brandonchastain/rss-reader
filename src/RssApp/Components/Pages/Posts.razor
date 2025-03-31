@@ -49,7 +49,7 @@ Username: @(user == null ? "loading" : user.Username)
         var feed = new NewsFeed(FeedUrl, this.user.Id);
         var newPageRes = await this.feedClient.GetFeedItemsAsync(feed, Page);
         Items.AddRange(newPageRes);
-        while (isFilterUnread && !Items.Any(p => !p.IsRead) && newPageRes.Any())
+        while (isFilterUnread && Items.Where(p => !p.IsRead).Count() < 10 && newPageRes.Any())
         {
             Page++;
             newPageRes = await this.feedClient.GetFeedItemsAsync(feed, Page);
