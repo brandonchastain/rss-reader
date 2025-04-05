@@ -50,7 +50,7 @@ public class SQLiteItemRepository : IItemRepository
         }
     }
 
-    public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed)
+    public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, string filterTag, int page, int pageSize)
     {
         var set = new HashSet<NewsFeedItem>();
         var user = this.userStore.GetUserById(feed.UserId);
@@ -80,6 +80,17 @@ public class SQLiteItemRepository : IItemRepository
             """;
             command.Parameters.AddWithValue("@feedUrl", feedUrl);
             command.Parameters.AddWithValue("@userId", user.Id);
+
+            if (!string.IsNullOrWhiteSpace(filterTag))
+            {
+                command.CommandText += " AND t.TagName = @tagName";
+                command.Parameters.AddWithValue("@tagName", filterTag);
+            }
+
+            command.CommandText += " ORDER BY i.PublishDate DESC LIMIT @pageSize OFFSET @offset";
+            command.Parameters.AddWithValue("@pageSize", pageSize);
+            command.Parameters.AddWithValue("@offset", page * pageSize);
+
             using (var reader = await command.ExecuteReaderAsync())
             {
                 while (await reader.ReadAsync())

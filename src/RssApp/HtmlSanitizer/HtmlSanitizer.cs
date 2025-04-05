@@ -7,7 +7,7 @@ using System.Web;
 public static class HtmlSanitizer
 {
     private static readonly string[] BlackListTags = { "script", "iframe", "object", "embed", "form" };
-    private static readonly string[] BlackListAttributes = { "onload", "onclick", "onerror" };
+    private static readonly string[] BlackListAttributes = { "on.*", "onload", "onclick", "onerror" };
 
     public static string Sanitize(string input)
     {

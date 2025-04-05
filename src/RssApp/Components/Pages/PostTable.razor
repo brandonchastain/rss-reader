@@ -163,15 +163,20 @@ else
         this.IsFilterUnread = !this.IsFilterUnread;
         this.FeedClient.IsFilterUnread = this.IsFilterUnread;
         await this.OnRefreshTriggered.InvokeAsync((this.FeedClient.IsFilterUnread, this.filterTag));
-        this.StateHasChanged();
     }
 
     private async Task FilterForTag(string tag)
     {
+        this.Page = 0;
+        if (this.filterTag == tag)
+        {
+            this.filterTag = null;
+            await this.OnRefreshTriggered.InvokeAsync((this.FeedClient.IsFilterUnread, this.filterTag));
+            return;
+        }
+        
         this.filterTag = tag;
-        this.FeedClient.FilterTag = this.filterTag;
         await this.OnRefreshTriggered.InvokeAsync((this.FeedClient.IsFilterUnread, this.filterTag));
-        this.StateHasChanged();
     }
 
     private void PreviewPost(NewsFeedItem post)
@@ -180,18 +185,6 @@ else
         this.StateHasChanged();
 
         MarkAsRead(post, true);
-    }
-
-    private async Task Prev()
-    {
-        if (this.Page == 0)
-        {
-            return;
-        }
-        
-        this.Page -= 1;
-        await this.OnPageChanged.InvokeAsync(this.Page);
-        this.StateHasChanged();
     }
 
     private async Task Next()

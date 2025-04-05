@@ -13,7 +13,6 @@ public class FeedClient : IFeedClient, IDisposable
     private readonly IFeedRepository persistedFeeds;
     private readonly IItemRepository newsFeedItemStore;
     private readonly IUserRepository userStore;
-    private IMemoryCache memoryCache;
     private RssUser loggedInUser;
     private FeedRefresher feedRefresher;
     private bool isFilterUnread;
@@ -35,7 +34,6 @@ public class FeedClient : IFeedClient, IDisposable
         this.newsFeedItemStore = newsFeedItemStore;
         this.userStore = userStore;
         this.feedRefresher = feedRefresher;
-        this.memoryCache = new MemoryCache(new MemoryCacheOptions());
     }
 
     public bool IsFilterUnread
@@ -57,7 +55,6 @@ public class FeedClient : IFeedClient, IDisposable
         } 
         set
         {
-            this.memoryCache = new MemoryCache(new MemoryCacheOptions());
             this.filterTag = value;
         }
     }
@@ -87,24 +84,20 @@ public class FeedClient : IFeedClient, IDisposable
         
         foreach (var feed in feeds)
         {
-            items.AddRange(await this.GetFeedItemsHelperAsync(feed));
+            items.AddRange(await this.GetFeedItemsHelperAsync(feed, page));
         }
         
         var sorted = items
             .DistinctBy(i => i.GetHashCode())
             .OrderByDescending(i => i.ParsedDate);
 
-        return sorted
-            .Skip(page * PageSize)
-            .Take(PageSize);
+        return sorted;
     }
 
     public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page)
     {
-        var items = await this.GetFeedItemsHelperAsync(feed);
-        return items
-            .Skip(page * PageSize)
-            .Take(PageSize);
+        var items = await this.GetFeedItemsHelperAsync(feed, page);
+        return items;
     }
 
     public void HidePost(string id)
@@ -145,25 +138,17 @@ public class FeedClient : IFeedClient, IDisposable
         return user;
     }
 
-    private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed)
+    private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed, int page, int pageSize = PageSize)
     {
         var hidden = this.hiddenItems.GetHidden();
-        
-        if (this.memoryCache.TryGetValue(feed.FeedUrl, out IEnumerable<NewsFeedItem> cachedItems))
-        {
-            return cachedItems
-                .Where(i => !hidden.Contains(i.Href));
-        }
-        
         var url = feed.FeedUrl;
-        var response = (await this.newsFeedItemStore.GetItemsAsync(feed)).ToHashSet();
+        var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.filterTag, page, pageSize)).ToHashSet();
         var items = response.ToList();
 
         var result = items.DistinctBy(i => i.Href)
             .OrderByDescending(i => i.ParsedDate)
             .Where(i => this.filterTag == null || i.FeedTags.Contains(this.filterTag));
 
-        this.memoryCache.Set(feed.FeedUrl, result, TimeSpan.FromMinutes(5));
         return result
             .Where(i => !hidden.Contains(i.Href));
     }     

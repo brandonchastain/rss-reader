@@ -93,17 +93,15 @@ public class FeedRefresher : IDisposable
 
     private async Task ReloadCachedItemsAsync(NewsFeed feed)
     {
-        this.logger.LogInformation($"Waiting for lock...");
-
+        this.logger.LogInformation($"ReloadCachedItemsAsync waiting for lock...");
         await this.semaphore.WaitAsync();
-
-        this.logger.LogInformation($"Lock acquired.");
 
         try
         {
+            this.logger.LogInformation($"ReloadCachedItemsAsync acquired lock.");
+
             var url = feed.FeedUrl;
             var user = this.userStore.GetUserById(feed.UserId);
-            var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed)).ToHashSet();
             var freshItems = new HashSet<NewsFeedItem>();
             string response = null;
 
@@ -137,13 +135,15 @@ public class FeedRefresher : IDisposable
                 item.FeedUrl = url;
             }
 
+            var pageSize = Math.Max(10, freshItems.Count);
+            var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed, filterTag: null, page: 0, pageSize)).ToHashSet();
+
             var newItems = freshItems.Except(cachedItems);
             foreach (var item in newItems.ToList())
             {
                 this.newsFeedItemStore.AddItem(item);
+                cachedItems.Add(item);
             }
-
-            cachedItems.UnionWith(freshItems);
         }
         finally
         {
