@@ -2,41 +2,26 @@ namespace RssApp.Contracts;
 
 public class NewsFeed : IEquatable<NewsFeed>
 {
-
-    public NewsFeed(string url, int userId, bool isPaywalled = false)
+    public NewsFeed(string url, int userId)
+    : this(-1, url, userId, false)
     {
+        // for testing only
+    }
+
+    public NewsFeed(int id, string url, int userId, bool isPaywalled = false)
+    {
+        this.FeedId = id;
         this.FeedUrl = url;
         this.UserId = userId;
+        this.Tags = new List<string>();
         this.IsPaywalled = isPaywalled;
     }
 
+    public int FeedId { get; set; }
     public string FeedUrl { get; set; }
     public bool IsPaywalled { get; set; }
     public int UserId { get; set; }
-
-    public static async Task WriteCsvHeaderAsync(StreamWriter writer)
-    {
-        await writer.WriteLineAsync($"{nameof(FeedUrl)},{nameof(IsPaywalled)},{nameof(UserId)}");
-    }
-
-    public async Task WriteCsvAsync(StreamWriter writer)
-    {
-        await writer.WriteAsync($"{this.FeedUrl},");
-        await writer.WriteAsync($"{this.IsPaywalled},");
-        await writer.WriteAsync($"{this.UserId}" + Environment.NewLine);
-    }
-
-    public static NewsFeed ReadFromCsv(string csvLine)
-    {
-        var values = csvLine.Split(',');
-        if (values.Length != 3)
-        {
-            Console.WriteLine(csvLine);
-            throw new ArgumentException("Invalid CSV line");
-        }
-
-        return new NewsFeed(values[0], int.Parse(values[2]), bool.Parse(values[1]));
-    }
+    public ICollection<string> Tags { get; set; }
 
     public bool Equals(NewsFeed other)
     {

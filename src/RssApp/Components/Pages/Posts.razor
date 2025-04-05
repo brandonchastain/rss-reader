@@ -12,23 +12,28 @@
 @rendermode InteractiveServer // needed for onclick
 
 <PageTitle>Posts</PageTitle>
-Username: @(user == null ? "loading" : user.Username)
+Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
 <h1>Posts from @(FeedUrl == null ? string.Empty : new Uri(FeedUrl).Authority)</h1>
 
+<CascadingValue Value="@feedClient" Name="FeedClient">
+<CascadingValue Value="@CurrentUser" Name="CurrentUser">
 <CascadingValue Value="@Page" Name="Page">
-    <CascadingValue Value="@Items" Name="Posts">
-        <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshPosts"/>
-    </CascadingValue>
+<CascadingValue Value="@Items" Name="Posts">
+    <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshPosts"/>
+</CascadingValue>
+</CascadingValue>
+</CascadingValue>
 </CascadingValue>
 
 @code {
+
+    public RssUser CurrentUser { get; set; }
 
     [SupplyParameterFromQuery]
     public string FeedUrl { get; set; }
     public int Page { get; set; } = 0;
     
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
-    private RssUser user;
 
     protected override void OnInitialized()
     {
@@ -38,34 +43,29 @@ Username: @(user == null ? "loading" : user.Username)
     private async Task UpdatePage(int newValue)
     {
         Page = newValue;
-        await this.RefreshPosts(this.feedClient.IsFilterUnread);
+        await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
         StateHasChanged();
     }
 
-    private async Task RefreshPosts(bool isFilterUnread)
+    private async Task RefreshPosts((bool isFilterUnread, string filterTag) filters)
     {
-        this.feedClient.IsFilterUnread = isFilterUnread;
+        this.feedClient.IsFilterUnread = filters.isFilterUnread;
+        this.feedClient.FilterTag = filters.filterTag;
 
-        var feed = new NewsFeed(FeedUrl, this.user.Id);
+        var feed = new NewsFeed(FeedUrl, this.CurrentUser.Id);
         var newPageRes = await this.feedClient.GetFeedItemsAsync(feed, Page);
         Items.AddRange(newPageRes);
-        while (isFilterUnread && Items.Where(p => !p.IsRead).Count() < 10 && newPageRes.Any())
-        {
-            Page++;
-            newPageRes = await this.feedClient.GetFeedItemsAsync(feed, Page);
-            Items.AddRange(newPageRes);
-        }
 
         this.StateHasChanged();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (user == null)
+        if (CurrentUser == null)
         {
             var username = await this.GetUsernameAsync();
-            user = await this.feedClient.RegisterUserAsync(username);
-            Items = (await this.feedClient.GetFeedItemsAsync(new NewsFeed(FeedUrl, user.Id), Page)).ToList();
+            this.CurrentUser = await this.feedClient.RegisterUserAsync(username);
+            Items = (await this.feedClient.GetFeedItemsAsync(new NewsFeed(FeedUrl, this.CurrentUser.Id), Page)).ToList();
             this.StateHasChanged();
         }
     }

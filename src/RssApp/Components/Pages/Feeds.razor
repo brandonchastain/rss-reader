@@ -33,15 +33,32 @@ else
         {
             <div class="row">
                 <div class="col"><a href="posts?FeedUrl=@feed.FeedUrl">@feed.FeedUrl</a></div>
+                <div class="col">
+                    @if (feed.Tags != null && feed.Tags.Any())
+                    {
+                        <p>Tags: @string.Join(", ", feed.Tags)</p>
+                    }
+                    @{
+                        if (!newTagInputs.ContainsKey(feed.FeedUrl))
+                        {
+                            newTagInputs[feed.FeedUrl] = string.Empty;
+                        }
+                    }
+                    <input type="text" 
+                        value="@newTagInputs[feed.FeedUrl]" 
+                        @oninput="e => UpdateTagInput(feed, e.Value.ToString())" 
+                        placeholder="Tag" />
+                    <button class="btn btn-link p-0" @onclick="() => AddTag(feed)">Add tag</button>
+                </div>
                 <div class="col"><button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed.FeedUrl)">Delete</button></div>
                 <div class="col">
                     @if (feed.IsPaywalled)
                     {
-                        <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Paywalled</button>
+                        <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">??</button>
                     }
                     else
                     {
-                        <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Not paywalled</button>
+                        <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Not ??</button>
                     }
                 </div>
             </div>
@@ -50,6 +67,8 @@ else
 }
 
 @code {
+    private Dictionary<string, string> newTagInputs = new Dictionary<string, string>();
+
     private IEnumerable<NewsFeed> feeds;
     private RssUser user;
 
@@ -66,7 +85,6 @@ else
         {
             feeds = Enumerable.Empty<NewsFeed>();
         }
-        this.StateHasChanged();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -107,6 +125,25 @@ else
     {
         feed.IsPaywalled = !feed.IsPaywalled;
         this.feedStore.Update(feed);
+    }
+
+    private void UpdateTagInput(NewsFeed feed, string value)
+    {
+        newTagInputs[feed.FeedUrl] = value;
+    }
+
+    private void AddTag(NewsFeed feed)
+    {
+        if (!newTagInputs.ContainsKey(feed.FeedUrl) || string.IsNullOrWhiteSpace(newTagInputs[feed.FeedUrl]))
+        {
+            this.logger.LogWarning("Tag input is empty for feed {FeedUrl}", feed.FeedUrl);
+            return;
+        }
+        
+        var tag = newTagInputs[feed.FeedUrl];
+        this.feedStore.AddTag(feed, tag);
+        newTagInputs[feed.FeedUrl] = string.Empty;
+        this.OnInitialized();
     }
 
 }

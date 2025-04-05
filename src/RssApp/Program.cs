@@ -17,9 +17,9 @@ const string testUserEnabledVar = "RSS_BC_ENABLE_TEST_USER";
 const string cacheReloadIntervalMinsVar = "RSS_BC_CACHE_RELOAD_INTERVAL";
 const string cacheReloadStartupDelayMinsVar = "RSS_BC_CACHE_STARTUP_DELAY";
 
-var userDb = Environment.GetEnvironmentVariable(userDbVar) ?? "C:\\home\\data\\users.db";
-var itemDb = Environment.GetEnvironmentVariable(itemDbVar) ?? "C:\\home\\data\\newsFeedItems.db";
-var feedDb = Environment.GetEnvironmentVariable(feedDbVar) ?? "C:\\home\\data\\feeds.db";
+var userDb = Environment.GetEnvironmentVariable(userDbVar) ?? "C:\\home\\data\\storage.db";
+var itemDb = Environment.GetEnvironmentVariable(itemDbVar) ?? "C:\\home\\data\\storage.db";
+var feedDb = Environment.GetEnvironmentVariable(feedDbVar) ?? "C:\\home\\data\\storage.db";
 var isTestUserEnabled = Environment.GetEnvironmentVariable(testUserEnabledVar) ?? "false";
 string cacheReloadIntervalMins = Environment.GetEnvironmentVariable(cacheReloadIntervalMinsVar) ?? null;
 string cacheReloadStartupDelayMins = Environment.GetEnvironmentVariable(cacheReloadStartupDelayMinsVar) ?? null;
@@ -82,6 +82,10 @@ var app = builder.Build();
 
 var refresher = app.Services.GetRequiredService<FeedRefresher>();
 await refresher.StartAsync(cancellationTokenSource.Token);
+
+var a = app.Services.GetRequiredService<IFeedRepository>();
+var b = app.Services.GetRequiredService<IUserRepository>();
+var c = app.Services.GetRequiredService<IItemRepository>();
 
 if (!app.Environment.IsDevelopment())
 {

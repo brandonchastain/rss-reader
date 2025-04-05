@@ -13,4 +13,7 @@ public interface IFeedRepository
     void Update(NewsFeed feed);
 
     void DeleteFeed(RssUser user, string url);
+
+    void AddTag(NewsFeed feed, string tag);
+
 }
