@@ -36,13 +36,12 @@ public class SQLiteFeedRepository : IFeedRepository
             command = connection.CreateCommand();
             command.CommandText = @"
                 CREATE TABLE IF NOT EXISTS FeedTags (
-                    TagId INTEGER PRIMARY KEY AUTOINCREMENT,
                     UserId INTEGER NOT NULL,
                     FeedId INTEGER NOT NULL,
                     TagName TEXT NOT NULL,
                     FOREIGN KEY (UserId) REFERENCES Users(Id),
                     FOREIGN KEY (FeedId) REFERENCES Feeds(Id),
-                    Unique(FeedId, TagName)
+                    Unique(FeedId, TagName, UserId)
                 )";
             command.ExecuteNonQuery();
         }
@@ -115,6 +114,27 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@userId", feed.UserId);
             command.ExecuteNonQuery();
         }
+    }
+
+    public string GetTag(int userId, string tagName)
+    {
+        using (var connection = new SQLiteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT TagName FROM FeedTags WHERE TagName = @tagName AND UserId = @userId";
+            command.Parameters.AddWithValue("@tagName", tagName);
+            command.Parameters.AddWithValue("@userId", userId);
+            using (var reader = command.ExecuteReader())
+            {
+                if (reader.Read())
+                {
+                    return reader.GetString(0);
+                }
+            }
+        }
+
+        return null;
     }
 
     public void AddTag(NewsFeed feed, string tag)

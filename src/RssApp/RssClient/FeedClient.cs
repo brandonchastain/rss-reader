@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Caching.Memory;
 using RssApp.Contracts;
 using RssApp.Persistence;
 
@@ -61,7 +60,10 @@ public class FeedClient : IFeedClient, IDisposable
 
     public IEnumerable<string> GetUserTags(RssUser user)
     {
-        var tags = this.persistedFeeds.GetFeeds(user).SelectMany(f => f.Tags).Where(f => !string.IsNullOrWhiteSpace(f));
+        var tags = this.persistedFeeds.GetFeeds(user)
+            .SelectMany(f => f.Tags)
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Distinct();
         return tags;
     }
 

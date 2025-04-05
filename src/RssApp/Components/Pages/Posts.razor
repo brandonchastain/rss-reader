@@ -35,15 +35,10 @@ Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
     
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
 
-    protected override void OnInitialized()
+    private async Task UpdatePage()
     {
-        Page = 0;
-    }
-
-    private async Task UpdatePage(int newValue)
-    {
-        Page = newValue;
         await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
+        Page += 1;
         StateHasChanged();
     }
 

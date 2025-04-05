@@ -26,10 +26,11 @@
     public int Page { get; set; } = 0;
     public List<NewsFeedItem> Posts { get; set; } = new List<NewsFeedItem>();
 
-    private async Task UpdatePage(int newValue)
+    private async Task UpdatePage()
     {
-        Page = newValue;
         await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
+        Page += 1;
+        StateHasChanged();
     }
 
     private async Task RefreshPosts((bool isFilterUnread, string filterTag) filters)

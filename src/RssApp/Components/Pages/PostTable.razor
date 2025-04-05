@@ -189,7 +189,6 @@ else
 
     private async Task Next()
     {
-        this.Page += 1;
         await this.OnPageChanged.InvokeAsync(this.Page);
         this.StateHasChanged();
     }
