@@ -13,10 +13,11 @@ public class FeedClient : IFeedClient, IDisposable
     private readonly IFeedRepository persistedFeeds;
     private readonly IItemRepository newsFeedItemStore;
     private readonly IUserRepository userStore;
-    private readonly IMemoryCache memoryCache;
+    private IMemoryCache memoryCache;
     private RssUser loggedInUser;
     private FeedRefresher feedRefresher;
     private bool isFilterUnread;
+    private string filterTag;
 
     public FeedClient(
         HttpClient httpClient,
@@ -25,8 +26,7 @@ public class FeedClient : IFeedClient, IDisposable
         IFeedRepository persistedFeeds,
         IItemRepository newsFeedItemStore,
         IUserRepository userStore,
-        FeedRefresher feedRefresher,
-        IMemoryCache memoryCache)
+        FeedRefresher feedRefresher)
     {
         this.httpClient = httpClient;
         this.hiddenItems = hiddenItems;
@@ -35,7 +35,7 @@ public class FeedClient : IFeedClient, IDisposable
         this.newsFeedItemStore = newsFeedItemStore;
         this.userStore = userStore;
         this.feedRefresher = feedRefresher;
-        this.memoryCache = memoryCache;
+        this.memoryCache = new MemoryCache(new MemoryCacheOptions());
     }
 
     public bool IsFilterUnread
@@ -48,6 +48,24 @@ public class FeedClient : IFeedClient, IDisposable
         {
             this.isFilterUnread = value;
         }
+    }
+
+    public string FilterTag { 
+        get
+        {
+            return this.filterTag;
+        } 
+        set
+        {
+            this.memoryCache = new MemoryCache(new MemoryCacheOptions());
+            this.filterTag = value;
+        }
+    }
+
+    public IEnumerable<string> GetUserTags(RssUser user)
+    {
+        var tags = this.persistedFeeds.GetFeeds(user).SelectMany(f => f.Tags).Where(f => !string.IsNullOrWhiteSpace(f));
+        return tags;
     }
 
     public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
@@ -142,7 +160,8 @@ public class FeedClient : IFeedClient, IDisposable
         var items = response.ToList();
 
         var result = items.DistinctBy(i => i.Href)
-            .OrderByDescending(i => i.ParsedDate);
+            .OrderByDescending(i => i.ParsedDate)
+            .Where(i => this.filterTag == null || i.FeedTags.Contains(this.filterTag));
 
         this.memoryCache.Set(feed.FeedUrl, result, TimeSpan.FromMinutes(5));
         return result

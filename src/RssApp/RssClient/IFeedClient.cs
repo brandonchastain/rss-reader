@@ -4,6 +4,7 @@ namespace RssApp.RssClient;
 
 public interface IFeedClient
 {
+    string FilterTag { get; set; }
     Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page);
     Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page);
     void HidePost(string href);
@@ -11,4 +12,5 @@ public interface IFeedClient
     bool IsFilterUnread { get; set; }
     Task<RssUser> RegisterUserAsync(string username);
     Task AddFeedAsync(NewsFeed feed);
+    IEnumerable<string> GetUserTags(RssUser user);
 }

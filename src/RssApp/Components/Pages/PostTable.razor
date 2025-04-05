@@ -5,11 +5,8 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @using Sve.Blazor.InfiniteScroll.Components
-@inject IFeedClient feedClient
 @inject ILogger<Posts> logger
-@inject NavigationManager NavigationManager
 @inject IJSRuntime jsRuntime
-@inject AuthenticationStateProvider AuthenticationStateProvider
 
 @rendermode InteractiveServer
 @if (Posts == null)
@@ -20,13 +17,17 @@ else
 {
     <div class="toolbar">
         @* <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as @(allAreMarkedAsRead ? "unread" : "read")</button> *@
-        <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.IsFilterUnread ? "[Show all]" : "[Show unread only]")</button>
+        <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.IsFilterUnread ? "[all]" : "[unread]")</button>
+        @foreach (var tag in this.userTags)
+        {
+            <button class="btn-link" @onclick="() => FilterForTag(tag)">[@tag]</button>
+        }
     </div>
     <div id="post-table" class="table">
         <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
             @foreach (var post in Posts)
             {
-                <div class="row @(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)" hidden=@(!post.IsBeingPreviewed && this.IsFilterUnread && post.IsRead)>
+                <div class="row @(post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(post)" hidden=@(ShouldPostBeHidden(post))>
                     <div class="col thumbnail">
                         @{
                             var thumbnailUrl = post.GetThumbnailUrl();
@@ -38,12 +39,13 @@ else
                     </div>
                     <div class="col">
                         <p class="post-title">
+                            @string.Join(",", post.FeedTags)
                             <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick:stopPropagation="true" @onclick="() => MarkAsRead(post, true)">@post.Title</a>
                             @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
                             {
                                 <a href="@post.CommentsHref">[comments]</a>
                             }
-                            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(post)">[mark @(!post.IsRead ? "read" : "unread")]</button>&nbsp;<button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => Hide(post.Href)">[hide]</button>
+                            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(post)">[mark @(!post.IsRead ? "read" : "unread")]</button>
                             @this.GetRootDomain(post.Href)<br/>
                         </p>
                     </div>
@@ -77,6 +79,14 @@ else
 <script src="_content/Sve.Blazor.InfiniteScroll/js/Observer.js"></script>
 
 @code {
+    public IEnumerable<string> userTags = new List<string>();
+
+    [CascadingParameter(Name = "FeedClient")]
+    public IFeedClient FeedClient { get; set; }
+
+    [CascadingParameter(Name = "CurrentUser")]
+    public RssUser User { get; set; }
+
     [CascadingParameter(Name = "Page")]
     public int Page { get; set; } = 0;
     
@@ -86,16 +96,41 @@ else
     public EventCallback<int> OnPageChanged { get; set; }
 
     [Parameter]
-    public EventCallback<bool> OnRefreshTriggered { get; set; }
+    public EventCallback<(bool, string)> OnRefreshTriggered { get; set; }
 
     public bool IsFilterUnread { get; set; } = false;
 
     private bool allAreMarkedAsRead = false;
+    private string filterTag = null;
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (User == null)
+        {
+            var username = await this.GetUsernameAsync();
+            this.User = await this.FeedClient.RegisterUserAsync(username);
+            this.userTags = this.FeedClient.GetUserTags(User);
+            this.StateHasChanged();
+        }
+    }
+
+    private async Task<string> GetUsernameAsync()
+    {
+        return await jsRuntime.InvokeAsync<string>("getUsername");
+    }
+
+    private bool ShouldPostBeHidden(NewsFeedItem post)
+    {
+        bool isFilteredByTag = this.filterTag != null && !post.FeedTags.Contains(this.filterTag);
+        bool isFilteredByUnread = !post.IsBeingPreviewed && this.IsFilterUnread && post.IsRead;
+        return isFilteredByTag || isFilteredByUnread;
+    }
 
     private async Task Hide(string postId)
     {
-        this.feedClient.HidePost(postId);
-        await this.OnRefreshTriggered.InvokeAsync(this.IsFilterUnread);
+        this.FeedClient.HidePost(postId);
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.filterTag));
+        this.StateHasChanged();
     }
 
     private void MarkAllAsRead()
@@ -109,7 +144,7 @@ else
 
         foreach (var post in this.Posts)
         {
-            this.feedClient.MarkAsRead(post, post.IsRead);
+            this.FeedClient.MarkAsRead(post, post.IsRead);
         }
 
         this.StateHasChanged();
@@ -119,15 +154,23 @@ else
     {
         bool val = isRead ?? !item.IsRead;
         item.IsRead = val;
-        this.feedClient.MarkAsRead(item, val);
+        this.FeedClient.MarkAsRead(item, val);
         this.StateHasChanged();
     }
 
     private async Task ToggleUnreadFilterAsync()
     {
         this.IsFilterUnread = !this.IsFilterUnread;
-        this.feedClient.IsFilterUnread = this.IsFilterUnread;
-        await this.OnRefreshTriggered.InvokeAsync(this.feedClient.IsFilterUnread);
+        this.FeedClient.IsFilterUnread = this.IsFilterUnread;
+        await this.OnRefreshTriggered.InvokeAsync((this.FeedClient.IsFilterUnread, this.filterTag));
+        this.StateHasChanged();
+    }
+
+    private async Task FilterForTag(string tag)
+    {
+        this.filterTag = tag;
+        this.FeedClient.FilterTag = this.filterTag;
+        await this.OnRefreshTriggered.InvokeAsync((this.FeedClient.IsFilterUnread, this.filterTag));
         this.StateHasChanged();
     }
 

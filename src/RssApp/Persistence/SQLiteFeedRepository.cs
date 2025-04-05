@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Data.SQLite;
 using RssApp.Contracts;
 
@@ -33,31 +32,50 @@ public class SQLiteFeedRepository : IFeedRepository
                     FOREIGN KEY (UserId) REFERENCES Users(Id)
                 )";
             command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS FeedTags (
+                    TagId INTEGER PRIMARY KEY AUTOINCREMENT,
+                    UserId INTEGER NOT NULL,
+                    FeedId INTEGER NOT NULL,
+                    TagName TEXT NOT NULL,
+                    FOREIGN KEY (UserId) REFERENCES Users(Id),
+                    FOREIGN KEY (FeedId) REFERENCES Feeds(Id),
+                    Unique(TagId, FeedId)
+                )";
+            command.ExecuteNonQuery();
         }
     }
 
     public IEnumerable<NewsFeed> GetFeeds(RssUser user)
     {
-        List<NewsFeed> feeds = new List<NewsFeed>();
+        var feeds = new HashSet<NewsFeed>();
 
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT * FROM Feeds
-                WHERE UserId = @userId
+                SELECT f.Id, f.Url, f.UserId, f.IsPaywalled, t.TagName FROM Feeds f
+                LEFT JOIN FeedTags t
+                ON f.Id = t.FeedId AND f.UserId = t.UserId
+                WHERE f.UserId = @userId
             """;
             command.Parameters.AddWithValue("@userId", user.Id);
             using (var reader = command.ExecuteReader())
             {
                 while (reader.Read())
                 {
-                    var url = reader.IsDBNull(1) ? "" : reader.GetString(1);
-                    var userId = reader.IsDBNull(reader.GetOrdinal("UserId")) ? 1 : reader.GetInt32(reader.GetOrdinal("UserId"));
-                    var isPaywalled = reader.IsDBNull(reader.GetOrdinal("IsPaywalled")) ? false : reader.GetBoolean(reader.GetOrdinal("IsPaywalled"));
-                    var res = new NewsFeed(url, userId, isPaywalled);
-                    feeds.Add(res);
+                    var res = ReadSingleRecord(reader);
+
+                    if (!feeds.Contains(res))
+                    {
+                        feeds.Add(res);
+                    }
+
+                    feeds.TryGetValue(res, out var existingFeed);
+                    existingFeed.Tags = existingFeed.Tags.Union(res.Tags).ToList();
                 }
             }
         }
@@ -97,6 +115,34 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@userId", feed.UserId);
             command.ExecuteNonQuery();
         }
+    }
+
+    public void AddTag(NewsFeed feed, string tag)
+    {
+        using (var connection = new SQLiteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO FeedTags (FeedId, TagName, UserId) VALUES (@feedId, @tagName, @userId)";
+            command.Parameters.AddWithValue("@feedId", feed.FeedId);
+            command.Parameters.AddWithValue("@tagName", tag);
+            command.Parameters.AddWithValue("@userId", feed.UserId);
+            this.logger.LogInformation("Adding {tag} to feed {feedId}", tag, feed.FeedId);
+            command.ExecuteNonQuery();
+            this.logger.LogInformation("Tag {tagName} added to feed {feedId}", tag, feed.FeedId);
+        }
+    }
+
+    private NewsFeed ReadSingleRecord(SQLiteDataReader reader)
+    {
+        var feedId = reader.IsDBNull(reader.GetOrdinal("Id")) ? 0 : reader.GetInt32(reader.GetOrdinal("Id"));
+        var url = reader.IsDBNull(reader.GetOrdinal("Url")) ? "" : reader.GetString(reader.GetOrdinal("Url"));
+        var userId = reader.IsDBNull(reader.GetOrdinal("UserId")) ? 1 : reader.GetInt32(reader.GetOrdinal("UserId"));
+        var isPaywalled = reader.IsDBNull(reader.GetOrdinal("IsPaywalled")) ? false : reader.GetBoolean(reader.GetOrdinal("IsPaywalled"));
+        var tagName = reader.IsDBNull(reader.GetOrdinal("TagName")) ? "" : reader.GetString(reader.GetOrdinal("TagName"));
+        var res = new NewsFeed(feedId, url, userId, isPaywalled);
+        res.Tags.Add(tagName);
+        return res;
     }
 
     public void DeleteFeed(RssUser user, string url)

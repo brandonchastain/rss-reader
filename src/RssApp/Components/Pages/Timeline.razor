@@ -11,15 +11,19 @@
 
 <h1>Timeline</h1>
 
-<CascadingValue Value="@Page" Name="Page">
-    <CascadingValue Value="@Posts" Name="Posts">
-        <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshPosts" />
+<CascadingValue Value="@feedClient" Name="FeedClient">
+<CascadingValue Value="@CurrentUser" Name="CurrentUser">
+    <CascadingValue Value="@Page" Name="Page">
+        <CascadingValue Value="@Posts" Name="Posts">
+            <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshPosts" />
+        </CascadingValue>
     </CascadingValue>
+</CascadingValue>
 </CascadingValue>
 
 @code {
+    public RssUser CurrentUser { get; set; }
     public int Page { get; set; } = 0;
-    
     public List<NewsFeedItem> Posts { get; set; } = new List<NewsFeedItem>();
 
     protected override void OnInitialized()
@@ -30,21 +34,16 @@
     private async Task UpdatePage(int newValue)
     {
         Page = newValue;
-        await this.RefreshPosts(this.feedClient.IsFilterUnread);
+        await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
         StateHasChanged();
     }
 
-    private async Task RefreshPosts(bool isFilterUnread)
+    private async Task RefreshPosts((bool isFilterUnread, string filterTag) filters)
     {
-        this.feedClient.IsFilterUnread = isFilterUnread;
+        this.feedClient.IsFilterUnread = filters.isFilterUnread;
+        this.feedClient.FilterTag = filters.filterTag;
         var newPageRes = await this.feedClient.GetTimelineAsync(Page);
         Posts.AddRange(newPageRes);
-        while (isFilterUnread && Posts.Where(p => !p.IsRead).Count() < 10 && newPageRes.Any())
-        {
-            Page++;
-            newPageRes = await this.feedClient.GetTimelineAsync(Page);
-            Posts.AddRange(newPageRes);
-        }
         this.StateHasChanged();
     }
 
@@ -53,7 +52,7 @@
         if (firstRender)
         {
             var username = await this.GetUsernameAsync();
-            var user = await this.feedClient.RegisterUserAsync(username);
+            this.CurrentUser = await this.feedClient.RegisterUserAsync(username);
             Posts = (await this.feedClient.GetTimelineAsync(Page)).ToList();
             this.StateHasChanged();
         }
