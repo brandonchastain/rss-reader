@@ -42,7 +42,7 @@ public class SQLiteFeedRepository : IFeedRepository
                     TagName TEXT NOT NULL,
                     FOREIGN KEY (UserId) REFERENCES Users(Id),
                     FOREIGN KEY (FeedId) REFERENCES Feeds(Id),
-                    Unique(TagId, FeedId)
+                    Unique(FeedId, TagName)
                 )";
             command.ExecuteNonQuery();
         }
