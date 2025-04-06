@@ -74,7 +74,12 @@ public class SQLiteItemRepository : IItemRepository
                     t.TagName,
                     i.UserId
                 FROM NewsFeedItems i
-                LEFT JOIN Feeds f ON i.FeedUrl = f.Url
+                INNER JOIN (
+                    SELECT h.*, row_number() over (partition by h.Href) as seqnum
+                    FROM NewsFeedItems h) h
+                    ON i.Href = h.Href AND seqnum = 1
+                LEFT JOIN Feeds f
+                ON i.FeedUrl = f.Url
                 LEFT JOIN FeedTags t ON f.Id = t.FeedId
                 WHERE i.UserId = @userId
                 AND i.FeedUrl LIKE @feedUrl
