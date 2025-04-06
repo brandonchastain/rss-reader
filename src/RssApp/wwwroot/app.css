@@ -14,6 +14,11 @@ a {
     margin-bottom: 2rem;
 }
 
+#post-table {
+    min-height: 100%;
+    max-width: 100%;
+}
+
 #post-table .row {
     /*border-bottom: 1px solid #cccccc;*/
     border-top: 1px solid #cccccc;
@@ -77,11 +82,12 @@ button.big {
 }
 
 .postContent {
-    max-width: 100%; /* Set your desired max-width */
+    max-width: 95%; /* Set your desired max-width */
     margin: 0 auto; /* Center the container */
     /*padding: 0 1rem; /* Add some padding for better appearance */
     padding: 1rem;
     display: block;
+    overflow: auto;
     border-left: 5px solid black;
 }
 

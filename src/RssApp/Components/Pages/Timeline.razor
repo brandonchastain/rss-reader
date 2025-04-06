@@ -1,11 +1,10 @@
 @page "/timeline"
 @page "/"
-@attribute [StreamRendering]
-@inject IFeedRepository feedStore
-@inject IFeedClient feedClient
-@inject ILogger<Timeline> logger
-@inject IJSRuntime jsRuntime
 @rendermode InteractiveServer
+@attribute [StreamRendering]
+@inject ILogger<Timeline> logger
+@inject IFeedClient feedClient
+@inject IJSRuntime jsRuntime
 
 <PageTitle>Timeline</PageTitle>
 
@@ -13,11 +12,11 @@
 
 <CascadingValue Value="@feedClient" Name="FeedClient">
 <CascadingValue Value="@CurrentUser" Name="CurrentUser">
-    <CascadingValue Value="@Page" Name="Page">
-        <CascadingValue Value="@Posts" Name="Posts">
-            <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshPosts" />
-        </CascadingValue>
-    </CascadingValue>
+<CascadingValue Value="@Page" Name="Page">
+<CascadingValue Value="@Posts" Name="Posts">
+    <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshPosts" />
+</CascadingValue>
+</CascadingValue>
 </CascadingValue>
 </CascadingValue>
 
@@ -35,15 +34,11 @@
             return;
         }
 
-        this.logger.LogInformation("UpdatePage");
         await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
-        Page += 1;
-        StateHasChanged();
     }
 
     private async Task RefreshPosts((bool isFilterUnread, string filterTag) filters)
     {
-        this.logger.LogInformation("RefreshPosts");
         if (filters.isFilterUnread != this.feedClient.IsFilterUnread
             || filters.filterTag != this.feedClient.FilterTag)
         {
@@ -63,6 +58,7 @@
         var newPageRes = await this.feedClient.GetTimelineAsync(Page);
         Posts.AddRange(newPageRes);
         this.loadedPage = Page;
+        Page += 1;
         this.StateHasChanged();
     }
 
@@ -70,7 +66,6 @@
     {
         if (CurrentUser == null)
         {
-            this.logger.LogInformation("OnAfterRenderAsync");
             var username = await this.GetUsernameAsync();
             this.CurrentUser = await this.feedClient.RegisterUserAsync(username);
             Posts = (await this.feedClient.GetTimelineAsync(Page)).ToList();

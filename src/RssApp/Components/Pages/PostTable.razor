@@ -1,14 +1,10 @@
+@rendermode InteractiveServer
 @attribute [StreamRendering]
-@using System.Xml
-@using System.Xml.Linq
-@using System.Xml.Serialization
-@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @using Sve.Blazor.InfiniteScroll.Components
 @inject ILogger<Posts> logger
 @inject IJSRuntime jsRuntime
 
-@rendermode InteractiveServer
 @if (Posts == null)
 {
     <p><em>Loading...</em></p>
@@ -49,10 +45,10 @@ else
                         </p>
                     </div>
                 </div>
-                <div class="row" hidden=@(!post.IsBeingPreviewed)>
+                <div class="postContent" hidden=@(!post.IsBeingPreviewed)>
                     @if (post != null)
                     {
-                        <div class="postContent">
+                        <div class="">
                             <p>
                                 Published on @post.ParsedDate?.ToString("f")
                             </p>
@@ -68,14 +64,41 @@ else
                     }
                 </div>
             }
-            <div id="observerTarget"></div>
+            <div class="row" style="height: 100px">
+                &nbsp;
+            </div>
+            <div class="row">
+                <div id="observerTarget" class="col-3">
+                    Oh no! You have reached the end of the feed. 
+                </div>
+            </div>
         </InfiniteScroll>
     </div>
-    <div class="row" style="margin-top: 500px;">
-        Oh no! You have reached the end of the feed. 
-    </div>
 }
-<script src="_content/Sve.Blazor.InfiniteScroll/js/Observer.js"></script>
+
+<script type="text/javascript">
+window.Observer = {
+    observer: null,
+    Initialize: function (component, observerTargetId) {
+        this.observer = new IntersectionObserver(e => {
+            // Check here
+            if (e[0].isIntersecting) {
+                component.invokeMethodAsync('OnIntersection');
+            }
+        },
+        {
+            root: null,
+            rootMargin: '0px',
+            threshold: [0, 0.25, 0.5, 0.75, 1]
+        });
+
+        let element = document.getElementById(observerTargetId);
+        if (element == null) throw new Error("The observable target was not found");
+        this.observer.observe(element);
+    }
+};
+</script>
+@* <script src="_content/Sve.Blazor.InfiniteScroll/js/Observer.js"></script> *@
 
 @code {
     public IEnumerable<string> userTags = new List<string>();
@@ -134,22 +157,37 @@ else
     private async Task ToggleUnreadFilterAsync()
     {
         this.IsFilterUnread = !this.IsFilterUnread;
-        this.FeedClient.IsFilterUnread = this.IsFilterUnread;
-        await this.OnRefreshTriggered.InvokeAsync((this.FeedClient.IsFilterUnread, this.filterTag));
+
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.filterTag));
+        int displayedCount = this.Posts.Where(p => !this.IsFilterUnread || !p.IsRead).Count();
+
+        while (displayedCount < 10)
+        {
+            this.logger.LogInformation("Loading more posts..........");
+            
+            await Next();
+            int previousCount = displayedCount;
+            displayedCount = this.Posts.Where(p => !this.IsFilterUnread || !p.IsRead).Count();
+
+            if (previousCount == displayedCount)
+            {
+                this.logger.LogInformation("No more posts to load :(");
+                break;
+            }
+        }
     }
 
     private async Task FilterForTag(string tag)
     {
-        this.Page = 0;
         if (this.filterTag == tag)
         {
             this.filterTag = null;
-            await this.OnRefreshTriggered.InvokeAsync((this.FeedClient.IsFilterUnread, this.filterTag));
+            await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.filterTag));
             return;
         }
         
         this.filterTag = tag;
-        await this.OnRefreshTriggered.InvokeAsync((this.FeedClient.IsFilterUnread, this.filterTag));
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.filterTag));
     }
 
     private void PreviewPost(NewsFeedItem post)

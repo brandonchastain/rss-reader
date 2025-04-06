@@ -1,13 +1,9 @@
 ﻿@page "/posts"
+@rendermode InteractiveServer
 @attribute [StreamRendering]
-@using System.Xml
-@using System.Xml.Linq
-@using System.Xml.Serialization
-@using Microsoft.AspNetCore.Components.Authorization
 @inject ILogger<Posts> logger
 @inject IFeedClient feedClient
 @inject IJSRuntime jsRuntime
-@rendermode InteractiveServer // needed for onclick
 
 <PageTitle>Posts</PageTitle>
 Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
@@ -29,15 +25,18 @@ Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
     [SupplyParameterFromQuery]
     public string FeedUrl { get; set; }
     public int Page { get; set; } = 0;
+    private bool initialized = false;
     private int loadedPage = -1;
     
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
 
     private async Task UpdatePage()
     {
+        if (!initialized)
+        {
+            return;
+        }
         await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
-        Page += 1;
-        StateHasChanged();
     }
 
     private async Task RefreshPosts((bool isFilterUnread, string filterTag) filters)
@@ -62,7 +61,7 @@ Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
         var newPageRes = await this.feedClient.GetFeedItemsAsync(feed, Page);
         Items.AddRange(newPageRes);
         this.loadedPage = Page;
-
+        Page += 1;
         this.StateHasChanged();
     }
 
@@ -74,6 +73,7 @@ Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
             this.CurrentUser = await this.feedClient.RegisterUserAsync(username);
             Items = (await this.feedClient.GetFeedItemsAsync(new NewsFeed(FeedUrl, this.CurrentUser.Id), Page)).ToList();
             this.loadedPage = Page;
+            this.initialized = true;
             this.StateHasChanged();
         }
     }

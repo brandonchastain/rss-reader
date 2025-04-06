@@ -53,6 +53,7 @@ public class SQLiteItemRepository : IItemRepository
 
     public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, string filterTag, int page, int pageSize)
     {
+        this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
         var sw = Stopwatch.StartNew();
         var set = new HashSet<NewsFeedItem>();
         var user = this.userStore.GetUserById(feed.UserId);
@@ -77,7 +78,7 @@ public class SQLiteItemRepository : IItemRepository
                 INNER JOIN (
                     SELECT h.*, row_number() over (partition by h.Href) as seqnum
                     FROM NewsFeedItems h) h
-                    ON i.Href = h.Href AND seqnum = 1
+                    ON i.Href LIKE h.Href AND seqnum = 1
                 LEFT JOIN Feeds f
                 ON i.FeedUrl = f.Url
                 LEFT JOIN FeedTags t ON f.Id = t.FeedId
