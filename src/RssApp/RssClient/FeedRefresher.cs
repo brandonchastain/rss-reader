@@ -16,7 +16,6 @@ public class FeedRefresher : IDisposable
     private readonly IUserRepository userStore;
     private readonly TimeSpan cacheReloadInterval;
     private readonly TimeSpan cacheReloadStartupDelay;
-    private SemaphoreSlim semaphore = new SemaphoreSlim(1, 1);
     public FeedRefresher(
         RssDeserializer deserializer,
         ILogger<FeedClient> logger,
@@ -27,7 +26,7 @@ public class FeedRefresher : IDisposable
         TimeSpan? cacheReloadStartupDelay = null)
     {
         cacheReloadInterval ??= TimeSpan.FromMinutes(10);
-        cacheReloadStartupDelay ??= TimeSpan.FromMinutes(10000);
+        cacheReloadStartupDelay ??= TimeSpan.FromMinutes(0);
         
         var clientHandler = new HttpClientHandler
         {
@@ -48,7 +47,6 @@ public class FeedRefresher : IDisposable
     public void Dispose()
     {
         this.httpClient.Dispose();
-        this.semaphore.Dispose();
     }
     private Task bgTask;
 
@@ -94,10 +92,6 @@ public class FeedRefresher : IDisposable
     private async Task ReloadCachedItemsAsync(NewsFeed feed)
     {
         this.logger.LogInformation($"ReloadCachedItemsAsync waiting for lock...");
-        await this.semaphore.WaitAsync();
-
-        try
-        {
             this.logger.LogInformation($"ReloadCachedItemsAsync acquired lock.");
 
             var url = feed.FeedUrl;
@@ -134,7 +128,6 @@ public class FeedRefresher : IDisposable
             {
                 item.FeedUrl = url;
             }
-
             var pageSize = Math.Max(10, freshItems.Count);
             var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed, filterTag: null, page: 0, pageSize)).ToHashSet();
 
@@ -144,10 +137,5 @@ public class FeedRefresher : IDisposable
                 this.newsFeedItemStore.AddItem(item);
                 cachedItems.Add(item);
             }
-        }
-        finally
-        {
-            this.semaphore.Release();
-        }
     }
 }

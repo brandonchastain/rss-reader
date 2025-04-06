@@ -6,12 +6,14 @@ using RssApp.Contracts;
 
 namespace RssApp.Persistence;
 
-public class SQLiteItemRepository : IItemRepository
+public class SQLiteItemRepository : IItemRepository, IDisposable
 {
     private readonly string connectionString;
     private readonly ILogger<SQLiteItemRepository> logger;
     private readonly IFeedRepository feedStore;
     private readonly IUserRepository userStore;
+
+    private SemaphoreSlim semaphore = new SemaphoreSlim(1, 1);
 
     public SQLiteItemRepository(
         string connectionString,
@@ -31,6 +33,11 @@ public class SQLiteItemRepository : IItemRepository
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();
+            // Set WAL journal mode for better concurrency
+            var pragmaCommand = connection.CreateCommand();
+            pragmaCommand.CommandText = "PRAGMA journal_mode=WAL;";
+            pragmaCommand.ExecuteNonQuery();
+
             var command = connection.CreateCommand();
             command.CommandText = @"
                 CREATE TABLE IF NOT EXISTS NewsFeedItems (
@@ -53,75 +60,85 @@ public class SQLiteItemRepository : IItemRepository
 
     public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, string filterTag, int page, int pageSize)
     {
-        this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
-        var sw = Stopwatch.StartNew();
-        var set = new HashSet<NewsFeedItem>();
-        var user = this.userStore.GetUserById(feed.UserId);
 
-        using (var connection = new SQLiteConnection(this.connectionString))
+        await this.semaphore.WaitAsync();
+
+        try
         {
-            await connection.OpenAsync();
-            var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT
-                    i.FeedUrl,
-                    i.NewsFeedItemId,
-                    i.Href,
-                    i.CommentsHref,
-                    i.Title,
-                    i.PublishDate,
-                    i.Content,
-                    i.IsRead,
-                    t.TagName,
-                    i.UserId
-                FROM NewsFeedItems i
-                INNER JOIN (
-                    SELECT h.*, row_number() over (partition by h.Href) as seqnum
-                    FROM NewsFeedItems h) h
-                    ON i.Href LIKE h.Href AND seqnum = 1
-                LEFT JOIN Feeds f
-                ON i.FeedUrl = f.Url
-                LEFT JOIN FeedTags t ON f.Id = t.FeedId
-                WHERE i.UserId = @userId
-                AND i.FeedUrl LIKE @feedUrl
-            """;
-            command.Parameters.AddWithValue("@feedUrl", feed.FeedUrl);
-            command.Parameters.AddWithValue("@userId", user.Id);
+            this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
+            var sw = Stopwatch.StartNew();
+            var set = new HashSet<NewsFeedItem>();
+            var user = this.userStore.GetUserById(feed.UserId);
 
-            if (!string.IsNullOrWhiteSpace(filterTag))
+            using (var connection = new SQLiteConnection(this.connectionString))
             {
-                command.CommandText += " AND t.TagName = @tagName";
-                command.Parameters.AddWithValue("@tagName", filterTag);
-            }
+                await connection.OpenAsync();
+                var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT
+                        i.FeedUrl,
+                        i.NewsFeedItemId,
+                        i.Href,
+                        i.CommentsHref,
+                        i.Title,
+                        i.PublishDate,
+                        i.Content,
+                        i.IsRead,
+                        t.TagName,
+                        i.UserId
+                    FROM NewsFeedItems i
+                    INNER JOIN (
+                        SELECT h.*, row_number() over (partition by h.Href) as seqnum
+                        FROM NewsFeedItems h) h
+                        ON i.Href LIKE h.Href AND seqnum = 1
+                    LEFT JOIN Feeds f
+                    ON i.FeedUrl = f.Url
+                    LEFT JOIN FeedTags t ON f.Id = t.FeedId
+                    WHERE i.UserId = @userId
+                    AND i.FeedUrl LIKE @feedUrl
+                """;
+                command.Parameters.AddWithValue("@feedUrl", feed.FeedUrl);
+                command.Parameters.AddWithValue("@userId", user.Id);
 
-            command.CommandText += " ORDER BY i.PublishDate DESC LIMIT @pageSize OFFSET @offset";
-            command.Parameters.AddWithValue("@pageSize", pageSize);
-            command.Parameters.AddWithValue("@offset", page * pageSize);
-
-            using (var reader = await command.ExecuteReaderAsync())
-            {
-                while (await reader.ReadAsync())
+                if (!string.IsNullOrWhiteSpace(filterTag))
                 {
-                    var item = this.ReadItemFromResults(reader);
-                    
-                    if (feed?.IsPaywalled == true)
-                    {
-                        item.IsPaywalled = true;
-                    }
+                    command.CommandText += " AND t.TagName = @tagName";
+                    command.Parameters.AddWithValue("@tagName", filterTag);
+                }
 
-                    if (!set.Contains(item))
-                    {
-                        set.Add(item);
-                    }
+                command.CommandText += " ORDER BY i.PublishDate DESC LIMIT @pageSize OFFSET @offset";
+                command.Parameters.AddWithValue("@pageSize", pageSize);
+                command.Parameters.AddWithValue("@offset", page * pageSize);
 
-                    set.TryGetValue(item, out var storedItem);
-                    storedItem.FeedTags = storedItem.FeedTags.Union(item.FeedTags).ToList();
+                using (var reader = await command.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        var item = this.ReadItemFromResults(reader);
+                        
+                        if (feed?.IsPaywalled == true)
+                        {
+                            item.IsPaywalled = true;
+                        }
+
+                        if (!set.Contains(item))
+                        {
+                            set.Add(item);
+                        }
+
+                        set.TryGetValue(item, out var storedItem);
+                        storedItem.FeedTags = storedItem.FeedTags.Union(item.FeedTags).ToList();
+                    }
                 }
             }
-        }
 
-        this.logger.LogInformation($"GetItemsAsync took {sw.ElapsedMilliseconds}ms");
-        return set.ToList();
+            this.logger.LogInformation($"GetItemsAsync took {sw.ElapsedMilliseconds}ms");
+            return set.ToList();
+        }
+        finally
+        {
+            this.semaphore.Release();
+        }
     }
 
     private NewsFeedItem ReadItemFromResults(DbDataReader reader)
@@ -177,6 +194,9 @@ public class SQLiteItemRepository : IItemRepository
 
     public void AddItem(NewsFeedItem item)
     {
+        this.semaphore.Wait();
+        try
+        {
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();
@@ -203,6 +223,11 @@ public class SQLiteItemRepository : IItemRepository
             command.Parameters.AddWithValue("@userId", item.UserId);
             command.ExecuteNonQuery();
         }
+        }
+        finally
+        {
+            this.semaphore.Release();
+        }
     }
 
     public void MarkAsRead(NewsFeedItem item, bool isRead)
@@ -221,5 +246,10 @@ public class SQLiteItemRepository : IItemRepository
             command.Parameters.AddWithValue("@userId", item.UserId);
             command.ExecuteNonQuery();
         }
+    }
+
+    public void Dispose()
+    {
+        this.semaphore.Dispose();
     }
 }
