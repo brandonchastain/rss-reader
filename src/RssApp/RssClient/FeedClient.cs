@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using RssApp.Contracts;
 using RssApp.Persistence;
 
@@ -35,6 +36,7 @@ public class FeedClient : IFeedClient, IDisposable
         this.feedRefresher = feedRefresher;
     }
 
+// todo: apply isfilterunread to sql query logic (currently ui only)
     public bool IsFilterUnread
     {
         get
@@ -60,17 +62,21 @@ public class FeedClient : IFeedClient, IDisposable
 
     public IEnumerable<string> GetUserTags(RssUser user)
     {
+        var sw = Stopwatch.StartNew();
         var tags = this.persistedFeeds.GetFeeds(user)
             .SelectMany(f => f.Tags)
             .Where(f => !string.IsNullOrWhiteSpace(f))
             .Distinct();
+        //this.logger.LogInformation($"GetUserTags took {sw.ElapsedMilliseconds}ms");
         return tags;
     }
 
     public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
     {
         await Task.Yield();
+        var sw = Stopwatch.StartNew();
         var feeds = this.persistedFeeds.GetFeeds(this.loggedInUser);
+        //this.logger.LogInformation($"GetFeeds took {sw.ElapsedMilliseconds}ms");
         return feeds;
     }
 
@@ -81,24 +87,22 @@ public class FeedClient : IFeedClient, IDisposable
 
     public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page)
     {
-        var items = new List<NewsFeedItem>();
-        var feeds = await this.GetFeedsAsync();
-        
-        foreach (var feed in feeds)
-        {
-            items.AddRange(await this.GetFeedItemsHelperAsync(feed, page));
-        }
+        var sw = Stopwatch.StartNew();
+        var items = await this.GetFeedItemsHelperAsync(new NewsFeed("%", this.loggedInUser.Id), page);
         
         var sorted = items
             .DistinctBy(i => i.GetHashCode())
             .OrderByDescending(i => i.ParsedDate);
 
+        this.logger.LogInformation($"GetTimeline took {sw.ElapsedMilliseconds}ms");
         return sorted;
     }
 
     public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page)
     {
+        var sw = Stopwatch.StartNew();
         var items = await this.GetFeedItemsHelperAsync(feed, page);
+        this.logger.LogInformation($"GetFeedItems took {sw.ElapsedMilliseconds}ms");
         return items;
     }
 
@@ -143,7 +147,6 @@ public class FeedClient : IFeedClient, IDisposable
     private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed, int page, int pageSize = PageSize)
     {
         var hidden = this.hiddenItems.GetHidden();
-        var url = feed.FeedUrl;
         var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.filterTag, page, pageSize)).ToHashSet();
         var items = response.ToList();
 

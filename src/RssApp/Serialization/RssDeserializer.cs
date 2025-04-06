@@ -23,21 +23,47 @@ public class RssDeserializer
                 XmlSerializer xs = new XmlSerializer(typeof(RdfFeed));
                 var reader = new StringReader(responseContent);
                 RdfFeed rdfFeedModel = (RdfFeed)xs.Deserialize(reader);
-                return rdfFeedModel.Items.Select(x => new NewsFeedItem(x.Id, user.Id, x.Title, x.Link.Href, x.CommentsLink?.Href, x.PublishDate, x.Description));
+                return rdfFeedModel.Items.Select(x => 
+                {
+                    return new NewsFeedItem(
+                        x.Id,
+                        user.Id,
+                        x.Title,
+                        x.Link.Href,
+                        x.CommentsLink?.Href,
+                        FormatDateString(x.PublishDate),
+                        x.Description);
+                });
             }
             else if (root.Name.LocalName.Equals("rss", StringComparison.OrdinalIgnoreCase))
             {
                 XmlSerializer xs = new XmlSerializer(typeof(RssDocument));
                 var reader = new StringReader(responseContent);
                 RssDocument rssFeedModel = (RssDocument)xs.Deserialize(reader);
-                return rssFeedModel.Feed.Entries.Select(x => new NewsFeedItem(x.Id, user.Id, x.Title, x.Link.Href, x.CommentsLink?.Href, x.PublishDate, x.Description));
+                return rssFeedModel.Feed.Entries.Select(
+                    x => new NewsFeedItem(
+                        x.Id,
+                        user.Id,
+                        x.Title,
+                        x.Link.Href,
+                        x.CommentsLink?.Href,
+                        FormatDateString(x.PublishDate),
+                        x.Description));
             }
             else if (root.Name.LocalName.Equals("feed", StringComparison.OrdinalIgnoreCase))
             {
                 XmlSerializer xs = new XmlSerializer(typeof(AtomFeed));
                 var reader = new StringReader(responseContent);
                 AtomFeed rssFeedModel = (AtomFeed)xs.Deserialize(reader);
-                return rssFeedModel.Entries.Select(x => new NewsFeedItem(x.Id, user.Id, x.Title, x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href, null, x.PublishDate, x.Content?.ToString()));
+                return rssFeedModel.Entries.Select(
+                    x => new NewsFeedItem(
+                        x.Id,
+                        user.Id,
+                        x.Title,
+                        x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href,
+                        commentsHref: null,
+                        FormatDateString(x.PublishDate),
+                        x.Content?.ToString()));
             }
             else
             {
@@ -49,5 +75,22 @@ public class RssDeserializer
             this.logger.LogError(ex, "rss entry deserialization exception");
             throw;
         }
+    }
+
+    private static string FormatDateString(string dateString)
+    {
+        if (string.IsNullOrEmpty(dateString))
+        {
+            return string.Empty;
+        }
+
+        if (DateTime.TryParse(dateString, out DateTime parsedDate))
+        {
+            // output ISO 8601 format
+            return parsedDate.ToString("yyyy-MM-ddTHH:mm:ssK");
+        }
+
+        // If parsing fails, return the original string or handle it as needed
+        return dateString;
     }
 }

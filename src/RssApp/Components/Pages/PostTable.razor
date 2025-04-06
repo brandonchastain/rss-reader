@@ -16,11 +16,10 @@
 else
 {
     <div class="toolbar">
-        @* <button class="btn-link" @onclick="() => MarkAllAsRead()">Mark all as @(allAreMarkedAsRead ? "unread" : "read")</button> *@
         <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.IsFilterUnread ? "[all]" : "[unread]")</button>
         @foreach (var tag in this.userTags)
         {
-            <button class="btn-link" @onclick="() => FilterForTag(tag)">[@tag]</button>
+            <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="() => FilterForTag(tag)">[@tag]</button>
         }
     </div>
     <div id="post-table" class="table">
@@ -99,8 +98,6 @@ else
     public EventCallback<(bool, string)> OnRefreshTriggered { get; set; }
 
     public bool IsFilterUnread { get; set; } = false;
-
-    private bool allAreMarkedAsRead = false;
     private string filterTag = null;
     
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -124,30 +121,6 @@ else
         bool isFilteredByTag = this.filterTag != null && !post.FeedTags.Contains(this.filterTag);
         bool isFilteredByUnread = !post.IsBeingPreviewed && this.IsFilterUnread && post.IsRead;
         return isFilteredByTag || isFilteredByUnread;
-    }
-
-    private async Task Hide(string postId)
-    {
-        this.FeedClient.HidePost(postId);
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.filterTag));
-        this.StateHasChanged();
-    }
-
-    private void MarkAllAsRead()
-    {
-        foreach (var post in this.Posts)
-        {
-            post.IsRead = !allAreMarkedAsRead;
-        }
-
-        allAreMarkedAsRead = !allAreMarkedAsRead;
-
-        foreach (var post in this.Posts)
-        {
-            this.FeedClient.MarkAsRead(post, post.IsRead);
-        }
-
-        this.StateHasChanged();
     }
 
     private void MarkAsRead(NewsFeedItem item, bool? isRead = null)

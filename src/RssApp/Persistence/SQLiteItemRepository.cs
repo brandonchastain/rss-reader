@@ -1,6 +1,7 @@
 
 using System.Data.Common;
 using System.Data.SQLite;
+using System.Diagnostics;
 using RssApp.Contracts;
 
 namespace RssApp.Persistence;
@@ -52,10 +53,9 @@ public class SQLiteItemRepository : IItemRepository
 
     public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, string filterTag, int page, int pageSize)
     {
+        var sw = Stopwatch.StartNew();
         var set = new HashSet<NewsFeedItem>();
         var user = this.userStore.GetUserById(feed.UserId);
-        var feedUrl = feed.FeedUrl;
-        var updatedFeed = this.feedStore.GetFeeds(user).FirstOrDefault(f => f.FeedUrl == feedUrl);
 
         using (var connection = new SQLiteConnection(this.connectionString))
         {
@@ -76,9 +76,10 @@ public class SQLiteItemRepository : IItemRepository
                 FROM NewsFeedItems i
                 LEFT JOIN Feeds f ON i.FeedUrl = f.Url
                 LEFT JOIN FeedTags t ON f.Id = t.FeedId
-                WHERE i.FeedUrl = @feedUrl AND i.UserId = @userId
+                WHERE i.UserId = @userId
+                AND i.FeedUrl LIKE @feedUrl
             """;
-            command.Parameters.AddWithValue("@feedUrl", feedUrl);
+            command.Parameters.AddWithValue("@feedUrl", feed.FeedUrl);
             command.Parameters.AddWithValue("@userId", user.Id);
 
             if (!string.IsNullOrWhiteSpace(filterTag))
@@ -97,7 +98,7 @@ public class SQLiteItemRepository : IItemRepository
                 {
                     var item = this.ReadItemFromResults(reader);
                     
-                    if (updatedFeed?.IsPaywalled == true)
+                    if (feed?.IsPaywalled == true)
                     {
                         item.IsPaywalled = true;
                     }
@@ -113,6 +114,7 @@ public class SQLiteItemRepository : IItemRepository
             }
         }
 
+        this.logger.LogInformation($"GetItemsAsync took {sw.ElapsedMilliseconds}ms");
         return set.ToList();
     }
 

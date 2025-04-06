@@ -7,8 +7,6 @@
 @inject ILogger<Posts> logger
 @inject IFeedClient feedClient
 @inject IJSRuntime jsRuntime
-
-
 @rendermode InteractiveServer // needed for onclick
 
 <PageTitle>Posts</PageTitle>
@@ -26,7 +24,6 @@ Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
 </CascadingValue>
 
 @code {
-
     public RssUser CurrentUser { get; set; }
 
     [SupplyParameterFromQuery]

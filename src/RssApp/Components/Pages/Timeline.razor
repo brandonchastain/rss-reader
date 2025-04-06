@@ -25,9 +25,16 @@
     public RssUser CurrentUser { get; set; }
     public int Page { get; set; } = 0;
     public List<NewsFeedItem> Posts { get; set; } = new List<NewsFeedItem>();
+    private bool initialized = false;
 
     private async Task UpdatePage()
     {
+        if (!initialized)
+        {
+            return;
+        }
+
+        this.logger.LogInformation("UpdatePage");
         await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
         Page += 1;
         StateHasChanged();
@@ -35,6 +42,7 @@
 
     private async Task RefreshPosts((bool isFilterUnread, string filterTag) filters)
     {
+        this.logger.LogInformation("RefreshPosts");
         if (filters.isFilterUnread != this.feedClient.IsFilterUnread
             || filters.filterTag != this.feedClient.FilterTag)
         {
@@ -51,11 +59,14 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (CurrentUser == null)
         {
+            this.logger.LogInformation("OnAfterRenderAsync");
             var username = await this.GetUsernameAsync();
             this.CurrentUser = await this.feedClient.RegisterUserAsync(username);
-            //await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
+            Posts = (await this.feedClient.GetTimelineAsync(Page)).ToList();
+            this.initialized = true;
+            this.StateHasChanged();
         }
     }
 

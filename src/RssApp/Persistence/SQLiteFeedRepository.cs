@@ -41,8 +41,15 @@ public class SQLiteFeedRepository : IFeedRepository
                     TagName TEXT NOT NULL,
                     FOREIGN KEY (UserId) REFERENCES Users(Id),
                     FOREIGN KEY (FeedId) REFERENCES Feeds(Id),
-                    Unique(FeedId, TagName, UserId)
+                    Unique(FeedId, TagName, UserId),
+                    PRIMARY KEY (FeedId, TagName, UserId)
                 )";
+            command.ExecuteNonQuery();
+            
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE INDEX IF NOT EXISTS idx_feedtag_feedid_userid
+                ON FeedTags (FeedId, UserId);";
             command.ExecuteNonQuery();
         }
     }
