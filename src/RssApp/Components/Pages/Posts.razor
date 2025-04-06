@@ -36,6 +36,9 @@ Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
         {
             return;
         }
+
+        Page += 1;
+
         await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
     }
 
@@ -60,8 +63,8 @@ Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
         var feed = new NewsFeed(FeedUrl, this.CurrentUser.Id);
         var newPageRes = await this.feedClient.GetFeedItemsAsync(feed, Page);
         Items.AddRange(newPageRes);
+        Items = Items.Distinct().ToList();
         this.loadedPage = Page;
-        Page += 1;
         this.StateHasChanged();
     }
 

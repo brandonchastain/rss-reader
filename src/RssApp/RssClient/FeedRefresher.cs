@@ -91,51 +91,44 @@ public class FeedRefresher : IDisposable
 
     private async Task ReloadCachedItemsAsync(NewsFeed feed)
     {
-        this.logger.LogInformation($"ReloadCachedItemsAsync waiting for lock...");
-            this.logger.LogInformation($"ReloadCachedItemsAsync acquired lock.");
+        var url = feed.FeedUrl;
+        var user = this.userStore.GetUserById(feed.UserId);
+        var freshItems = new HashSet<NewsFeedItem>();
+        string response = null;
 
-            var url = feed.FeedUrl;
-            var user = this.userStore.GetUserById(feed.UserId);
-            var freshItems = new HashSet<NewsFeedItem>();
-            string response = null;
-
-            try
+        try
+        {
+            if (EnableHttpLookup)
             {
-                if (EnableHttpLookup)
+                var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                browserRequest.Headers.UserAgent.ParseAdd("curl/7.79.1");
+                browserRequest.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+    
+                var httpRes = await this.httpClient.SendAsync(browserRequest);
+                response = await httpRes.Content.ReadAsStringAsync();
+
+                if (string.IsNullOrEmpty(response))
                 {
-                    var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
-                    browserRequest.Headers.UserAgent.ParseAdd("curl/7.79.1");
-                    browserRequest.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-        
-                    var httpRes = await this.httpClient.SendAsync(browserRequest);
-                    response = await httpRes.Content.ReadAsStringAsync();
-
-                    if (string.IsNullOrEmpty(response))
-                    {
-                        this.logger.LogWarning($"Empty response when refreshing feed: {url}");
-                        return;
-                    }
-
-                    freshItems = this.deserializer.FromString(response, user).ToHashSet();
+                    this.logger.LogWarning($"Empty response when refreshing feed: {url}");
+                    return;
                 }
-            }
-            catch (Exception ex)
-            {
-                this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response);
-            }
 
-            foreach (var item in freshItems)
-            {
-                item.FeedUrl = url;
+                freshItems = this.deserializer.FromString(response, user).ToHashSet();
             }
-            var pageSize = Math.Max(10, freshItems.Count);
-            var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed, filterTag: null, page: 0, pageSize)).ToHashSet();
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response);
+        }
 
-            var newItems = freshItems.Except(cachedItems);
-            foreach (var item in newItems.ToList())
-            {
-                this.newsFeedItemStore.AddItem(item);
-                cachedItems.Add(item);
-            }
+        foreach (var item in freshItems)
+        {
+            item.FeedUrl = url;
+        }
+
+        var size = Math.Max(10, freshItems.Count);
+        var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed, filterTag: null, page: 0, pageSize: size)).ToHashSet();
+        var newItems = freshItems.Except(cachedItems);
+        this.newsFeedItemStore.AddItems(newItems);
     }
 }

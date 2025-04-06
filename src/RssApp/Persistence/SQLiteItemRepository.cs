@@ -58,7 +58,11 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         }
     }
 
-    public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, string filterTag, int page, int pageSize)
+    public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
+        NewsFeed feed,
+        string filterTag,
+        int? page = null,
+        int? pageSize = null)
     {
 
         await this.semaphore.WaitAsync();
@@ -106,9 +110,14 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     command.Parameters.AddWithValue("@tagName", filterTag);
                 }
 
-                command.CommandText += " ORDER BY i.PublishDate DESC LIMIT @pageSize OFFSET @offset";
-                command.Parameters.AddWithValue("@pageSize", pageSize);
-                command.Parameters.AddWithValue("@offset", page * pageSize);
+                command.CommandText += " ORDER BY i.PublishDate DESC";
+
+                if (page != null && pageSize != null)
+                {
+                    command.CommandText += " LIMIT @pageSize OFFSET @offset";
+                    command.Parameters.AddWithValue("@pageSize", pageSize);
+                    command.Parameters.AddWithValue("@offset", page * pageSize);
+                }
 
                 using (var reader = await command.ExecuteReaderAsync())
                 {
@@ -192,37 +201,66 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         }
     }
 
-    public void AddItem(NewsFeedItem item)
+    public void AddItems(IEnumerable<NewsFeedItem> items)
     {
         this.semaphore.Wait();
         try
         {
-        using (var connection = new SQLiteConnection(this.connectionString))
-        {
-            connection.Open();
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-                INSERT INTO NewsFeedItems (
-                    FeedUrl,
-                    NewsFeedItemId,
-                    Href,
-                    CommentsHref,
-                    Title,
-                    PublishDate,
-                    Content,
-                    UserId
-                ) 
-                VALUES (@feedUrl, @newsFeedItemId, @href, @commentsHref, @title, @publishDate, @content, @userId)";
-            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
-            command.Parameters.AddWithValue("@newsFeedItemId", item.Id);
-            command.Parameters.AddWithValue("@href", item.Href);
-            command.Parameters.AddWithValue("@commentsHref", item.CommentsHref);
-            command.Parameters.AddWithValue("@title", item.Title);
-            command.Parameters.AddWithValue("@publishDate", item.PublishDate);
-            command.Parameters.AddWithValue("@content", item.Content);
-            command.Parameters.AddWithValue("@userId", item.UserId);
-            command.ExecuteNonQuery();
+            using (var connection = new SQLiteConnection(this.connectionString))
+            {
+                connection.Open();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        foreach (var item in items)
+                        {
+                            try
+                            {
+                                var command = connection.CreateCommand();
+                                command.CommandText = @"
+                                    INSERT INTO NewsFeedItems (
+                                        FeedUrl,
+                                        NewsFeedItemId,
+                                        Href,
+                                        CommentsHref,
+                                        Title,
+                                        PublishDate,
+                                        Content,
+                                        UserId
+                                    ) 
+                                    VALUES (@feedUrl, @newsFeedItemId, @href, @commentsHref, @title, @publishDate, @content, @userId)";
+                                command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
+                                command.Parameters.AddWithValue("@newsFeedItemId", item.Id);
+                                command.Parameters.AddWithValue("@href", item.Href);
+                                command.Parameters.AddWithValue("@commentsHref", item.CommentsHref);
+                                command.Parameters.AddWithValue("@title", item.Title);
+                                command.Parameters.AddWithValue("@publishDate", item.PublishDate);
+                                command.Parameters.AddWithValue("@content", item.Content);
+                                command.Parameters.AddWithValue("@userId", item.UserId);
+                                command.ExecuteNonQuery();
+                            }
+                            catch (SQLiteException ex) when (ex.ResultCode == SQLiteErrorCode.Constraint && ex.Message.Contains("UNIQUE"))
+                            {
+                                // A duplicate entry was found, just skip it.
+                                this.logger.LogWarning(ex, "Unique constraint violation while adding items to SQLite database");
+                            }
+                        }
+
+                        transaction.Commit();
+                    }
+                    catch
+                    {
+                        transaction.Rollback();
+                        throw;
+                    }
+                }
+            }
         }
+        catch (Exception ex)
+        {
+            this.logger.LogError(ex, "Error adding items to SQLite database");
         }
         finally
         {
