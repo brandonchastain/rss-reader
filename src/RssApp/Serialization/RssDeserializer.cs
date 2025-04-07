@@ -32,7 +32,8 @@ public class RssDeserializer
                         x.Link.Href,
                         x.CommentsLink?.Href,
                         FormatDateString(x.PublishDate),
-                        x.Description);
+                        x.Description,
+                        thumbnailUrl: null);
                 });
             }
             else if (root.Name.LocalName.Equals("rss", StringComparison.OrdinalIgnoreCase))
@@ -48,7 +49,8 @@ public class RssDeserializer
                         x.Link.Href,
                         x.CommentsLink?.Href,
                         FormatDateString(x.PublishDate),
-                        x.Description));
+                        x.Description,
+                        x.MediaContents?.FirstOrDefault()?.Url));
             }
             else if (root.Name.LocalName.Equals("feed", StringComparison.OrdinalIgnoreCase))
             {
@@ -63,7 +65,8 @@ public class RssDeserializer
                         x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href,
                         commentsHref: null,
                         FormatDateString(x.PublishDate),
-                        x.Content?.ToString()));
+                        x.Content?.ToString(),
+                        thumbnailUrl: null));
             }
             else
             {

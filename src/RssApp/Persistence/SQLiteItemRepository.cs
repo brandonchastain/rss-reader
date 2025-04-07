@@ -51,6 +51,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     Content TEXT,
                     IsRead BOOLEAN DEFAULT 0,
                     UserId INTEGER NOT NULL,
+                    ThumbnailUrl TEXT,
                     FOREIGN KEY (UserId) REFERENCES Users(Id),
                     UNIQUE(FeedUrl, UserId, NewsFeedItemId, Href)
                 )";
@@ -89,7 +90,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         i.Content,
                         i.IsRead,
                         t.TagName,
-                        i.UserId
+                        i.UserId,
+                        i.ThumbnailUrl
                     FROM NewsFeedItems i
                     INNER JOIN (
                         SELECT h.*, row_number() over (partition by h.Href) as seqnum
@@ -162,8 +164,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var url = reader.IsDBNull(reader.GetOrdinal("FeedUrl")) ? "" : reader.GetString(reader.GetOrdinal("FeedUrl"));
         var isRead = reader.IsDBNull(reader.GetOrdinal("IsRead")) ? false : reader.GetBoolean(reader.GetOrdinal("IsRead"));
         var tagName = reader.IsDBNull(reader.GetOrdinal("TagName")) ? "" : reader.GetString(reader.GetOrdinal("TagName"));
-
-        var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content)
+        var thumbnailUrl = reader.IsDBNull(reader.GetOrdinal("ThumbnailUrl")) ? "" : reader.GetString(reader.GetOrdinal("ThumbnailUrl"));
+        var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
         {
             FeedUrl = url,
             IsRead = isRead,
@@ -228,9 +230,10 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                         Title,
                                         PublishDate,
                                         Content,
-                                        UserId
+                                        UserId,
+                                        ThumbnailUrl
                                     ) 
-                                    VALUES (@feedUrl, @newsFeedItemId, @href, @commentsHref, @title, @publishDate, @content, @userId)";
+                                    VALUES (@feedUrl, @newsFeedItemId, @href, @commentsHref, @title, @publishDate, @content, @userId, @thumbnailUrl)";
                                 command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
                                 command.Parameters.AddWithValue("@newsFeedItemId", item.Id);
                                 command.Parameters.AddWithValue("@href", item.Href);
@@ -239,6 +242,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                 command.Parameters.AddWithValue("@publishDate", item.PublishDate);
                                 command.Parameters.AddWithValue("@content", item.Content);
                                 command.Parameters.AddWithValue("@userId", item.UserId);
+                                command.Parameters.AddWithValue("@thumbnailUrl", item.ThumbnailUrl);
                                 command.ExecuteNonQuery();
                             }
                             catch (SQLiteException ex) when (ex.ResultCode == SQLiteErrorCode.Constraint && ex.Message.Contains("UNIQUE"))

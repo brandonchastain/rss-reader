@@ -114,6 +114,7 @@ public class FeedRefresher : IDisposable
                 }
 
                 freshItems = this.deserializer.FromString(response, user).ToHashSet();
+                this.logger.LogWarning($"{string.Join(",", freshItems.Where(x => x.ThumbnailUrl != null))}");
             }
         }
         catch (Exception ex)

@@ -39,6 +39,20 @@ public class RssItem
 
     [XmlElement("description")]
     public string Description { get; set; }
+    
+    [XmlElement("content", Namespace = "http://search.yahoo.com/mrss/")]
+    public List<MediaContent> MediaContents { get; set; }
+}
+
+[XmlType(Namespace = "http://search.yahoo.com/mrss/")]
+[XmlRoot("content")]
+public class MediaContent
+{
+    [XmlAttribute("url")]
+    public string Url { get; set; }
+    
+    [XmlAttribute("width")]
+    public string Width { get; set; }
 }
 
 [XmlRoot("link")]

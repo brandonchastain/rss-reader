@@ -3,7 +3,7 @@ namespace RssApp.Contracts;
 public class NewsFeedItem : IEquatable<NewsFeedItem>
 {
 
-    public NewsFeedItem(string id, int userId, string title, string href, string commentsHref, string publishDate, string content)
+    public NewsFeedItem(string id, int userId, string title, string href, string commentsHref, string publishDate, string content, string thumbnailUrl)
     {
         this.Id = id;
         this.UserId = userId;
@@ -12,6 +12,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
         this.CommentsHref = commentsHref;
         this.PublishDate = publishDate;
         this.Content = content;
+        this.ThumbnailUrl = thumbnailUrl;
     }
 
     public string FeedUrl { get; set; }
@@ -23,6 +24,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
     public string Id { get; set; }
     public string Content { get; set; }
     public bool IsRead { get; set; }
+    public string ThumbnailUrl { get; set; }
 
     // ignore below for serialization
     public bool IsPaywalled { get; set; }
@@ -58,6 +60,11 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
 
     public string GetThumbnailUrl()
     {
+        if (!string.IsNullOrEmpty(this.ThumbnailUrl))
+        {
+            return this.ThumbnailUrl;
+        }
+
         var favicon = "/placeholder.jpg";
         if (string.IsNullOrEmpty(this.Content))
         {
