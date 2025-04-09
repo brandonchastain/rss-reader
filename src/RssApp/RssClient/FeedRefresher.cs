@@ -18,7 +18,7 @@ public class FeedRefresher : IDisposable
     private readonly TimeSpan cacheReloadStartupDelay;
     public FeedRefresher(
         RssDeserializer deserializer,
-        ILogger<FeedClient> logger,
+        ILogger<FeedRefresher> logger,
         IFeedRepository persistedFeeds,
         IItemRepository newsFeedItemStore,
         IUserRepository userStore,

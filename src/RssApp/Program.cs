@@ -65,7 +65,7 @@ builder.Services
     {
         return new FeedRefresher(
             sp.GetRequiredService<RssDeserializer>(),
-            sp.GetRequiredService<ILogger<FeedClient>>(),
+            sp.GetRequiredService<ILogger<FeedRefresher>>(),
             sp.GetRequiredService<IFeedRepository>(),
             sp.GetRequiredService<IItemRepository>(),
             sp.GetRequiredService<IUserRepository>(),
