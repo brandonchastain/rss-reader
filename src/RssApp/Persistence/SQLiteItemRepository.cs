@@ -56,6 +56,18 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     UNIQUE(FeedUrl, UserId, NewsFeedItemId, Href)
                 )";
             command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE INDEX IF NOT EXISTS idx_items_feedurl_userid
+                ON NewsFeedItems (FeedUrl, UserId);";
+            command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE INDEX IF NOT EXISTS idx_items_href
+                ON NewsFeedItems (Href);";
+            command.ExecuteNonQuery();
         }
     }
 
@@ -65,7 +77,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         int? page = null,
         int? pageSize = null)
     {
-
         await this.semaphore.WaitAsync();
 
         try
@@ -96,7 +107,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     INNER JOIN (
                         SELECT h.*, row_number() over (partition by h.Href) as seqnum
                         FROM NewsFeedItems h) h
-                        ON i.Href LIKE h.Href AND seqnum = 1
+                        ON i.Href = h.Href AND seqnum = 1
                     LEFT JOIN Feeds f
                     ON i.FeedUrl = f.Url
                     LEFT JOIN FeedTags t ON f.Id = t.FeedId
@@ -185,7 +196,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 SELECT * FROM NewsFeedItems
                 LEFT JOIN Feeds ON NewsFeedItems.FeedUrl = Feeds.Url
                 LEFT JOIN FeedTags ON NewsFeedItems.Id = FeedTags.FeedId
-                WHERE Href = @href AND UserId = @userId
+                WHERE NewsFeedItems.Href = @href AND NewsFeedItems.UserId = @userId
             """;
             command.Parameters.AddWithValue("@href", href);
             command.Parameters.AddWithValue("@userId", user.Id);
@@ -220,6 +231,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         {
                             try
                             {
+                                var alreadyStored = this.GetItem(this.userStore.GetUserById(item.UserId), item.Href);
+                                if (alreadyStored != null)
+                                {
+                                    this.logger.LogInformation($"Item already exists in the database: {item.Href}");
+                                    continue;
+                                }
                                 var command = connection.CreateCommand();
                                 command.CommandText = @"
                                     INSERT INTO NewsFeedItems (

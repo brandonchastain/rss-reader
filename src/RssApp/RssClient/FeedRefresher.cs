@@ -10,7 +10,7 @@ public class FeedRefresher : IDisposable
     private static readonly bool EnableHttpLookup = true;
     private HttpClient httpClient;
     private readonly RssDeserializer deserializer;
-    private readonly ILogger<FeedClient> logger;
+    private readonly ILogger<FeedRefresher> logger;
     private readonly IFeedRepository persistedFeeds;
     private readonly IItemRepository newsFeedItemStore;
     private readonly IUserRepository userStore;
@@ -114,7 +114,6 @@ public class FeedRefresher : IDisposable
                 }
 
                 freshItems = this.deserializer.FromString(response, user).ToHashSet();
-                this.logger.LogWarning($"{string.Join(",", freshItems.Where(x => x.ThumbnailUrl != null))}");
             }
         }
         catch (Exception ex)
@@ -125,6 +124,7 @@ public class FeedRefresher : IDisposable
         foreach (var item in freshItems)
         {
             item.FeedUrl = url;
+            item.IsPaywalled = feed.IsPaywalled;
         }
 
         var size = Math.Max(10, freshItems.Count);

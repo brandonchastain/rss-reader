@@ -34,14 +34,14 @@ else
                     </div>
                     <div class="col">
                         <p class="post-title">
-                            @string.Join(",", post.FeedTags)
-                            <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick:stopPropagation="true" @onclick="() => MarkAsRead(post, true)">@post.Title</a>
+                            <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick:stopPropagation="true" @onclick="() => MarkAsRead(post, true)">@post.Title</a><br/>
                             @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
                             {
                                 <a href="@post.CommentsHref">[comments]</a>
                             }
                             <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(post)">[mark @(!post.IsRead ? "read" : "unread")]</button>
                             @this.GetRootDomain(post.Href)<br/>
+                            @(post.FeedTags.Any() ? $"[{string.Join(",", post.FeedTags)}]" : "")
                         </p>
                     </div>
                 </div>
@@ -52,7 +52,9 @@ else
                             <p>
                                 Published on @post.ParsedDate?.ToString("f")
                             </p>
-                            @((MarkupString)HtmlSanitizer.Sanitize(post.Content))
+                            <p>
+                                @((MarkupString)HtmlSanitizer.Sanitize(post.Content))
+                            </p>
                             <p>
                                 <a href="/posts?feedUrl=@post.FeedUrl" onclick="event.stopPropagation()">View all posts from ths feed</a><br/>
                             </p>
