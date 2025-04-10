@@ -6,8 +6,9 @@ using RssApp.RssClient;
 using RssApp.Serialization;
 
 var cancellationTokenSource = new CancellationTokenSource();
+
 Console.CancelKeyPress += delegate {
-        cancellationTokenSource.Cancel();
+    cancellationTokenSource.Cancel();
 };
 
 const string userDbVar = "RSS_BC_USER_DB";
@@ -16,15 +17,14 @@ const string itemDbVar = "RSS_BC_ITEM_DB";
 const string testUserEnabledVar = "RSS_BC_ENABLE_TEST_USER";
 const string cacheReloadIntervalMinsVar = "RSS_BC_CACHE_RELOAD_INTERVAL";
 const string cacheReloadStartupDelayMinsVar = "RSS_BC_CACHE_STARTUP_DELAY";
-
 var userDb = Environment.GetEnvironmentVariable(userDbVar) ?? "C:\\home\\data\\storage.db";
 var itemDb = Environment.GetEnvironmentVariable(itemDbVar) ?? "C:\\home\\data\\storage.db";
 var feedDb = Environment.GetEnvironmentVariable(feedDbVar) ?? "C:\\home\\data\\storage.db";
 var isTestUserEnabled = Environment.GetEnvironmentVariable(testUserEnabledVar) ?? "false";
 string cacheReloadIntervalMins = Environment.GetEnvironmentVariable(cacheReloadIntervalMinsVar) ?? null;
 string cacheReloadStartupDelayMins = Environment.GetEnvironmentVariable(cacheReloadStartupDelayMinsVar) ?? null;
-TimeSpan? cacheReloadInterval = cacheReloadIntervalMins == null ? null : TimeSpan.FromMinutes(int.Parse(cacheReloadIntervalMins));
-TimeSpan? cacheReloadStartupDelay = cacheReloadStartupDelayMins == null ? null : TimeSpan.FromMinutes(int.Parse(cacheReloadStartupDelayMins));
+TimeSpan cacheReloadInterval = TimeSpan.FromMinutes(int.Parse(cacheReloadIntervalMins ?? "5"));
+TimeSpan cacheReloadStartupDelay = TimeSpan.FromMinutes(int.Parse(cacheReloadStartupDelayMins ?? "1"));
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -95,10 +95,8 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseStaticFiles();
 app.UseAntiforgery();
-
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

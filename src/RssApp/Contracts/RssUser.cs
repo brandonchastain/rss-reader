@@ -11,16 +11,4 @@ public class RssUser
 
     public int Id { get; set; }
 
-    public static RssUser ReadFromCsv(string csv)
-    {
-        var parts = csv.Split(',');
-        if (parts.Length != 2)
-        {
-            throw new ArgumentException("Invalid CSV format");
-        }
-
-        var user = new RssUser(parts[0], int.Parse(parts[1]));
-        return user;
-    }
-
 }

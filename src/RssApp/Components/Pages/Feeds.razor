@@ -32,7 +32,7 @@ else
         @foreach (NewsFeed feed in feeds)
         {
             <div class="row">
-                <div class="col"><a href="posts?FeedUrl=@feed.FeedUrl">@feed.FeedUrl</a></div>
+                <div class="col"><a href="posts?FeedUrl=@System.Net.WebUtility.UrlEncode(feed.FeedUrl)">@feed.FeedUrl</a></div>
                 <div class="col">
                     @if (feed.Tags != null && feed.Tags.Any())
                     {

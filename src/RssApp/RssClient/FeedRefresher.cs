@@ -22,11 +22,9 @@ public class FeedRefresher : IDisposable
         IFeedRepository persistedFeeds,
         IItemRepository newsFeedItemStore,
         IUserRepository userStore,
-        TimeSpan? cacheReloadInterval = null,
-        TimeSpan? cacheReloadStartupDelay = null)
+        TimeSpan cacheReloadInterval,
+        TimeSpan cacheReloadStartupDelay)
     {
-        cacheReloadInterval ??= TimeSpan.FromMinutes(10);
-        cacheReloadStartupDelay ??= TimeSpan.FromMinutes(0);
         
         var clientHandler = new HttpClientHandler
         {
@@ -40,8 +38,8 @@ public class FeedRefresher : IDisposable
         this.persistedFeeds = persistedFeeds;
         this.newsFeedItemStore = newsFeedItemStore;
         this.userStore = userStore;
-        this.cacheReloadInterval = cacheReloadInterval.Value;
-        this.cacheReloadStartupDelay = cacheReloadStartupDelay.Value;
+        this.cacheReloadInterval = cacheReloadInterval;
+        this.cacheReloadStartupDelay = cacheReloadStartupDelay;
     }
 
     public void Dispose()
