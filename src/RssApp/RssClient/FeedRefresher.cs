@@ -124,7 +124,6 @@ public class FeedRefresher : IDisposable
         foreach (var item in freshItems)
         {
             item.FeedUrl = url;
-            item.IsPaywalled = feed.IsPaywalled;
         }
 
         var size = Math.Max(10, freshItems.Count);

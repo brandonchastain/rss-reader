@@ -102,7 +102,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         i.IsRead,
                         t.TagName,
                         i.UserId,
-                        i.ThumbnailUrl
+                        i.ThumbnailUrl,
+                        f.IsPaywalled
                     FROM NewsFeedItems i
                     INNER JOIN (
                         SELECT h.*, row_number() over (partition by h.Href) as seqnum
@@ -137,11 +138,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     while (await reader.ReadAsync())
                     {
                         var item = this.ReadItemFromResults(reader);
-                        
-                        if (feed?.IsPaywalled == true)
-                        {
-                            item.IsPaywalled = true;
-                        }
 
                         if (!set.Contains(item))
                         {
@@ -176,11 +172,14 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var isRead = reader.IsDBNull(reader.GetOrdinal("IsRead")) ? false : reader.GetBoolean(reader.GetOrdinal("IsRead"));
         var tagName = reader.IsDBNull(reader.GetOrdinal("TagName")) ? "" : reader.GetString(reader.GetOrdinal("TagName"));
         var thumbnailUrl = reader.IsDBNull(reader.GetOrdinal("ThumbnailUrl")) ? "" : reader.GetString(reader.GetOrdinal("ThumbnailUrl"));
+        var isPaywalled = reader.IsDBNull(reader.GetOrdinal("IsPaywalled")) ? false : reader.GetBoolean(reader.GetOrdinal("IsPaywalled"));
+        
         var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
         {
             FeedUrl = url,
             IsRead = isRead,
             FeedTags = string.IsNullOrWhiteSpace(tagName) ? [] : [tagName],
+            IsPaywalled = isPaywalled,
         };
 
         return item;
