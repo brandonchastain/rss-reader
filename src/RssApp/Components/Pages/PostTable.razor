@@ -56,7 +56,7 @@ else
                                 @((MarkupString)HtmlSanitizer.Sanitize(post.Content))
                             </p>
                             <p>
-                                <a href="/posts?feedUrl=@post.FeedUrl" onclick="event.stopPropagation()">View all posts from ths feed</a><br/>
+                                <a href="/posts?feedUrl=@System.Net.WebUtility.UrlEncode(post.FeedUrl)" onclick="event.stopPropagation()">View all posts from this feed</a><br/>
                             </p>
                         </div>
                     }
