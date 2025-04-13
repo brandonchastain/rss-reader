@@ -159,24 +159,7 @@ window.Observer = {
     private async Task ToggleUnreadFilterAsync()
     {
         this.IsFilterUnread = !this.IsFilterUnread;
-
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.filterTag));
-        int displayedCount = this.Posts.Where(p => !this.IsFilterUnread || !p.IsRead).Count();
-
-        while (displayedCount < 10)
-        {
-            this.logger.LogInformation("Loading more posts..........");
-            
-            await Next();
-            int previousCount = displayedCount;
-            displayedCount = this.Posts.Where(p => !this.IsFilterUnread || !p.IsRead).Count();
-
-            if (previousCount == displayedCount)
-            {
-                this.logger.LogInformation("No more posts to load :(");
-                break;
-            }
-        }
     }
 
     private async Task FilterForTag(string tag)

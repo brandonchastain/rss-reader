@@ -17,6 +17,7 @@ const string itemDbVar = "RSS_BC_ITEM_DB";
 const string testUserEnabledVar = "RSS_BC_ENABLE_TEST_USER";
 const string cacheReloadIntervalMinsVar = "RSS_BC_CACHE_RELOAD_INTERVAL";
 const string cacheReloadStartupDelayMinsVar = "RSS_BC_CACHE_STARTUP_DELAY";
+
 var userDb = Environment.GetEnvironmentVariable(userDbVar) ?? "C:\\home\\data\\storage.db";
 var itemDb = Environment.GetEnvironmentVariable(itemDbVar) ?? "C:\\home\\data\\storage.db";
 var feedDb = Environment.GetEnvironmentVariable(feedDbVar) ?? "C:\\home\\data\\storage.db";

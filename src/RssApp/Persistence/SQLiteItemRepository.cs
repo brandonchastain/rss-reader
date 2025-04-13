@@ -73,6 +73,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
         NewsFeed feed,
+        bool isFilterUnread,
         string filterTag,
         int? page = null,
         int? pageSize = null)
@@ -81,7 +82,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
         try
         {
-            this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
+            this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, isFilterUnread={isFilterUnread}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
             var sw = Stopwatch.StartNew();
             var set = new HashSet<NewsFeedItem>();
             var user = this.userStore.GetUserById(feed.UserId);
@@ -117,6 +118,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 """;
                 command.Parameters.AddWithValue("@feedUrl", feed.FeedUrl);
                 command.Parameters.AddWithValue("@userId", user.Id);
+
+                if (isFilterUnread)
+                {
+                    command.CommandText += " AND i.IsRead = @isRead";
+                    command.Parameters.AddWithValue("@isRead", false);
+                }
 
                 if (!string.IsNullOrWhiteSpace(filterTag))
                 {

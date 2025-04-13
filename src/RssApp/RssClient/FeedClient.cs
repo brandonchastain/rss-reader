@@ -147,7 +147,7 @@ public class FeedClient : IFeedClient, IDisposable
     private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed, int page, int pageSize = PageSize)
     {
         var hidden = this.hiddenItems.GetHidden();
-        var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.filterTag, page, pageSize)).ToHashSet();
+        var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.IsFilterUnread, this.filterTag, page, pageSize)).ToHashSet();
         var items = response.ToList();
 
         var result = items.DistinctBy(i => i.Href)

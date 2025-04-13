@@ -126,7 +126,7 @@ public class FeedRefresher : IDisposable
         }
 
         var size = Math.Max(10, freshItems.Count);
-        var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed, filterTag: null, page: 0, pageSize: size)).ToHashSet();
+        var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed, isFilterUnread: false, filterTag: null, page: 0, pageSize: size)).ToHashSet();
         var newItems = freshItems.Except(cachedItems);
         this.newsFeedItemStore.AddItems(newItems);
     }
