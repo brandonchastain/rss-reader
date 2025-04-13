@@ -24,7 +24,7 @@ var isTestUserEnabled = Environment.GetEnvironmentVariable(testUserEnabledVar) ?
 string cacheReloadIntervalMins = Environment.GetEnvironmentVariable(cacheReloadIntervalMinsVar) ?? null;
 string cacheReloadStartupDelayMins = Environment.GetEnvironmentVariable(cacheReloadStartupDelayMinsVar) ?? null;
 TimeSpan cacheReloadInterval = TimeSpan.FromMinutes(int.Parse(cacheReloadIntervalMins ?? "5"));
-TimeSpan cacheReloadStartupDelay = TimeSpan.FromMinutes(int.Parse(cacheReloadStartupDelayMins ?? "1"));
+TimeSpan cacheReloadStartupDelay = TimeSpan.FromMinutes(int.Parse(cacheReloadStartupDelayMins ?? "60"));
 
 var builder = WebApplication.CreateBuilder(args);
 
