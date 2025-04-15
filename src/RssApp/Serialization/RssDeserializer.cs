@@ -1,11 +1,15 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using System.Xml.Serialization;
 using RssApp.Contracts;
+using RssApp.Utilities;
 
 namespace RssApp.Serialization;
 
 public class RssDeserializer
 {
+    private const string IsoDateFormat = "yyyy-MM-ddTHH:mm:ssK";
     private readonly ILogger<RssDeserializer> logger;
     public RssDeserializer(ILogger<RssDeserializer> logger)
     {
@@ -14,6 +18,7 @@ public class RssDeserializer
 
     public IEnumerable<NewsFeedItem> FromString(string responseContent, RssUser user)
     {
+        var now = FormatDateString(DateTime.UtcNow.ToString(IsoDateFormat));
         try
         {
             var xmlDoc = XDocument.Parse(responseContent);
@@ -25,13 +30,14 @@ public class RssDeserializer
                 RdfFeed rdfFeedModel = (RdfFeed)xs.Deserialize(reader);
                 return rdfFeedModel.Items.Select(x => 
                 {
+                    var date = FormatDateString(x.PublishDate) ?? now;
                     return new NewsFeedItem(
                         x.Id,
                         user.Id,
                         x.Title,
                         x.Link.Href,
                         x.CommentsLink?.Href,
-                        FormatDateString(x.PublishDate),
+                        date,
                         x.Description,
                         thumbnailUrl: null);
                 });
@@ -41,32 +47,39 @@ public class RssDeserializer
                 XmlSerializer xs = new XmlSerializer(typeof(RssDocument));
                 var reader = new StringReader(responseContent);
                 RssDocument rssFeedModel = (RssDocument)xs.Deserialize(reader);
-                return rssFeedModel.Feed.Entries.Select(
-                    x => new NewsFeedItem(
+                return rssFeedModel.Feed.Entries.Select(x =>
+                {
+                    var date = FormatDateString(x.PublishDate) ?? now;
+
+                    return new NewsFeedItem(
                         x.Id,
                         user.Id,
                         x.Title,
                         x.Link.Href,
                         x.CommentsLink?.Href,
-                        FormatDateString(x.PublishDate),
+                        date,
                         x.Description,
-                        x.MediaContents?.FirstOrDefault()?.Url));
+                        x.MediaContents?.FirstOrDefault()?.Url);
+                });
             }
             else if (root.Name.LocalName.Equals("feed", StringComparison.OrdinalIgnoreCase))
             {
                 XmlSerializer xs = new XmlSerializer(typeof(AtomFeed));
                 var reader = new StringReader(responseContent);
                 AtomFeed rssFeedModel = (AtomFeed)xs.Deserialize(reader);
-                return rssFeedModel.Entries.Select(
-                    x => new NewsFeedItem(
+                return rssFeedModel.Entries.Select(x =>
+                {
+                    var date = FormatDateString(x.PublishDate) ?? now;
+                    return new NewsFeedItem(
                         x.Id,
                         user.Id,
                         x.Title,
                         x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href,
                         commentsHref: null,
-                        FormatDateString(x.PublishDate),
+                        date,
                         x.Content?.ToString(),
-                        thumbnailUrl: null));
+                        thumbnailUrl: null);
+                });
             }
             else
             {
@@ -80,20 +93,93 @@ public class RssDeserializer
         }
     }
 
-    private static string FormatDateString(string dateString)
+    public static string FormatDateString(string dateString)
     {
-        if (string.IsNullOrEmpty(dateString))
+        var date = ParseDateTime(dateString);
+        if (date.HasValue)
         {
-            return string.Empty;
+            return date.Value.ToString(IsoDateFormat, CultureInfo.InvariantCulture);
         }
 
-        if (DateTime.TryParse(dateString, out DateTime parsedDate))
+        return null;
+    }
+
+    private static DateTime? ParseDateTime(string dateString)
+    {
+        if (string.IsNullOrWhiteSpace(dateString))
         {
-            // output ISO 8601 format
-            return parsedDate.ToString("yyyy-MM-ddTHH:mm:ssK");
+            return null;
         }
 
-        // If parsing fails, return the original string or handle it as needed
-        return dateString;
+        dateString = dateString.Trim();
+
+        // Replace timezone abbreviations with their standard format
+        dateString = TimeZoneHelper.ConvertTimeZoneAbbreviation(dateString);
+
+        // Try Unix timestamp (seconds since Unix epoch)
+        if (long.TryParse(dateString, out long unixTimestamp))
+        {
+            try
+            {
+                // Check if this is a reasonable Unix timestamp (between 1970 and 2100)
+                if (unixTimestamp > 0 && unixTimestamp < 4102444800) // 1/1/2100
+                {
+                    return DateTimeOffset.FromUnixTimeSeconds(unixTimestamp).UtcDateTime;
+                }
+            }
+            catch
+            {
+                // If conversion fails, continue with other formats
+            }
+        }
+
+        // Common date formats
+        string[] formats = {
+            // RFC 1123 / RFC 2822
+            "ddd, dd MMM yyyy HH:mm:ss zzz",
+            "ddd, dd MMM yyyy HH:mm:ss zzzz", // Four-digit timezone offset
+            "ddd, dd MMM yyyy HH:mm:ss",
+            "ddd, d MMM yyyy HH:mm:ss zzz",
+            "ddd, d MMM yyyy HH:mm:ss zzzz", // Four-digit timezone offset
+            "ddd, d MMM yyyy HH:mm:ss",
+            
+            // ISO 8601
+            "yyyy-MM-ddTHH:mm:ssK",
+            "yyyy-MM-ddTHH:mm:ss.fffffffK",
+            "yyyy-MM-ddTHH:mm:ssZ",
+            "yyyy-MM-ddTHH:mm:ss",
+            "yyyy-MM-dd",
+            
+            // Other common formats
+            "MM/dd/yyyy HH:mm:ss",
+            "MM/dd/yyyy",
+            "dd/MM/yyyy HH:mm:ss",
+            "dd/MM/yyyy",
+            "yyyyMMddTHHmmssZ"
+        };
+
+        // Try parsing with explicit formats
+        foreach (var format in formats)
+        {
+            if (DateTime.TryParseExact(dateString, format, CultureInfo.InvariantCulture, 
+                                      DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, 
+                                      out DateTime result))
+            {
+                return result;
+            }
+        }
+
+        // Try with general DateTime parsing as a fallback
+        var styles = DateTimeStyles.AdjustToUniversal 
+                    | DateTimeStyles.AssumeUniversal 
+                    | DateTimeStyles.AllowWhiteSpaces;
+
+        if (DateTime.TryParse(dateString, CultureInfo.InvariantCulture, styles, out DateTime parsedDate))
+        {
+            return parsedDate;
+        }
+
+        // If all parsing attempts fail, return null
+        return null;
     }
 }

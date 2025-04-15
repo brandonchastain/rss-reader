@@ -29,7 +29,7 @@ public class RssItem
     public  string Title { get; set; }
 
     [XmlElement("pubDate")]
-    public  string PublishDate { get; set; }
+    public string PublishDate { get; set; }
     
     [XmlElement("link")]
     public  RssLink Link { get; set; }

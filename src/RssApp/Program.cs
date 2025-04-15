@@ -11,6 +11,10 @@ Console.CancelKeyPress += delegate {
     cancellationTokenSource.Cancel();
 };
 
+string dateStr = " Tue, 15 Apr 2025 06:00:00 EST ";
+var date = RssDeserializer.FormatDateString(dateStr);
+Console.WriteLine($"Date: {date}");
+
 const string userDbVar = "RSS_BC_USER_DB";
 const string feedDbVar = "RSS_BC_FEED_DB";
 const string itemDbVar = "RSS_BC_ITEM_DB";
