@@ -160,6 +160,45 @@ public class SQLiteFeedRepository : IFeedRepository
         }
     }
 
+    public void ImportFeeds(RssUser user, IEnumerable<NewsFeed> feeds)
+    {
+        if (user == null || feeds == null || !feeds.Any())
+        {
+            return;
+        }
+
+        // Get existing feeds for this user to check for duplicates
+        var existingFeeds = GetFeeds(user).ToList();
+        var existingUrls = existingFeeds.Select(f => f.FeedUrl).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var feed in feeds)
+        {
+            // Set the user ID for the feed
+            feed.UserId = user.Id;
+            
+            // Skip if feed already exists for this user
+            if (existingUrls.Contains(feed.FeedUrl))
+            {
+                continue;
+            }
+
+            // Add the feed using the existing method
+            AddFeed(feed);
+            
+            // Add tags if any
+            if (feed.Tags != null && feed.Tags.Any())
+            {
+                foreach (var tag in feed.Tags)
+                {
+                    if (!string.IsNullOrWhiteSpace(tag))
+                    {
+                        AddTag(feed, tag);
+                    }
+                }
+            }
+        }
+    }
+
     private NewsFeed ReadSingleRecord(SQLiteDataReader reader)
     {
         var feedId = reader.IsDBNull(reader.GetOrdinal("Id")) ? 0 : reader.GetInt32(reader.GetOrdinal("Id"));

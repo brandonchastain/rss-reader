@@ -1,11 +1,14 @@
 @page "/feeds"
 @using Microsoft.AspNetCore.Components.Authorization
+@using RssApp.Services
+@using System.IO
 @attribute [StreamRendering]
 @inject IFeedRepository feedStore
 @inject IFeedClient feedClient
 @inject ILogger<Feeds> logger
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IJSRuntime jsRuntime
+@inject OpmlService opmlService
 @rendermode InteractiveServer
 
 <PageTitle>Feeds</PageTitle>
@@ -17,6 +20,9 @@
     <div>
         <InputText @bind-Value="NewFeedUrl" placeholder="Feed URL" width=250 />
         <button type="submit">Add feed</button>
+        <button type="button" class="btn btn-secondary" @onclick="ExportOpml">Export OPML</button>
+        <InputFile OnChange="ImportOpml" accept=".opml,.xml" id="opmlImportInput" hidden/>
+        <label for="opmlImportInput" class="btn btn-secondary">Import OPML</label>
     </div>
     <div>
     </div>
@@ -151,4 +157,39 @@ else
         this.OnInitialized();
     }
 
+    private async Task ExportOpml()
+    {
+        var opmlContent = opmlService.GenerateOpmlContent(feeds);
+        await jsRuntime.InvokeVoidAsync("downloadFile", "feeds.opml", "application/xml", opmlContent);
+    }
+
+    private async Task ImportOpml(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null)
+            {
+                return;
+            }
+
+            using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024); // 1MB max size
+            using var reader = new StreamReader(stream);
+            var opmlContent = await reader.ReadToEndAsync();
+            
+            var importedFeeds = opmlService.ParseOpmlContent(opmlContent, user.Id);
+            
+            // Import the parsed feeds
+            feedStore.ImportFeeds(user, importedFeeds);
+            
+            // Refresh the feed list
+            feeds = GetFeedUrls();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error importing OPML file");
+            // You could add UI feedback here for the error
+        }
+    }
 }

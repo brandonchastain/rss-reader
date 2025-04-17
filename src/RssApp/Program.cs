@@ -4,6 +4,7 @@ using RssApp.Contracts;
 using RssApp.Persistence;
 using RssApp.RssClient;
 using RssApp.Serialization;
+using RssApp.Services;
 
 var cancellationTokenSource = new CancellationTokenSource();
 
@@ -77,7 +78,8 @@ builder.Services
             cacheReloadInterval, 
             cacheReloadStartupDelay);
     })
-    .AddTransient<IFeedClient, FeedClient>();
+    .AddTransient<IFeedClient, FeedClient>()
+    .AddSingleton<OpmlService>();
 
 builder.Services
     .AddRazorComponents()

@@ -1,4 +1,3 @@
-
 using RssApp.Contracts;
 
 namespace RssApp.Persistence;
@@ -15,5 +14,7 @@ public interface IFeedRepository
     void DeleteFeed(RssUser user, string url);
 
     void AddTag(NewsFeed feed, string tag);
+
+    void ImportFeeds(RssUser user, IEnumerable<NewsFeed> feeds);
 
 }
