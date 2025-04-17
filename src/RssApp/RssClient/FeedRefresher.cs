@@ -94,30 +94,38 @@ public class FeedRefresher : IDisposable
         var freshItems = new HashSet<NewsFeedItem>();
         string response = null;
 
-        try
+        string[] agents = ["reader.brandonchastain.com/1.1", "curl/7.79.1"];
+
+        foreach (string agent in agents)
         {
-            if (EnableHttpLookup)
+            try
             {
-                var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
-                browserRequest.Headers.UserAgent.ParseAdd("curl/7.79.1");
-                browserRequest.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-    
-                var httpRes = await this.httpClient.SendAsync(browserRequest);
-                response = await httpRes.Content.ReadAsStringAsync();
-
-                if (string.IsNullOrEmpty(response))
+                if (EnableHttpLookup)
                 {
-                    this.logger.LogWarning($"Empty response when refreshing feed: {url}");
-                    return;
-                }
+                    var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                    browserRequest.Headers.UserAgent.ParseAdd(agent);
+                    browserRequest.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        
+                    var httpRes = await this.httpClient.SendAsync(browserRequest);
+                    response = await httpRes.Content.ReadAsStringAsync();
 
-                freshItems = this.deserializer.FromString(response, user).ToHashSet();
+                    if (string.IsNullOrEmpty(response))
+                    {
+                        this.logger.LogWarning($"Empty response when refreshing feed: {url}");
+                        return;
+                    }
+
+                    freshItems = this.deserializer.FromString(response, user).ToHashSet();
+                    
+                    // It worked. Exit the loop.
+                    break;
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            int len = Math.Min(200, response?.Length ?? 0);
-            this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(len));
+            catch (Exception ex)
+            {
+                int len = Math.Min(200, response?.Length ?? 0);
+                this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(len));
+            }
         }
 
         foreach (var item in freshItems)
