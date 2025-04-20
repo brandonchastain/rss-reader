@@ -1,36 +1,19 @@
 using System.Net;
 using RssApp.Components;
+using RssApp.Config;
 using RssApp.Contracts;
 using RssApp.Persistence;
 using RssApp.RssClient;
 using RssApp.Serialization;
-using RssApp.Services;
+
+// Refactor configuration loading into a function
+var config = RssAppConfig.LoadFromEnvironment();
 
 var cancellationTokenSource = new CancellationTokenSource();
 
 Console.CancelKeyPress += delegate {
     cancellationTokenSource.Cancel();
 };
-
-string dateStr = " Tue, 15 Apr 2025 06:00:00 EST ";
-var date = RssDeserializer.FormatDateString(dateStr);
-Console.WriteLine($"Date: {date}");
-
-const string userDbVar = "RSS_BC_USER_DB";
-const string feedDbVar = "RSS_BC_FEED_DB";
-const string itemDbVar = "RSS_BC_ITEM_DB";
-const string testUserEnabledVar = "RSS_BC_ENABLE_TEST_USER";
-const string cacheReloadIntervalMinsVar = "RSS_BC_CACHE_RELOAD_INTERVAL";
-const string cacheReloadStartupDelayMinsVar = "RSS_BC_CACHE_STARTUP_DELAY";
-
-var userDb = Environment.GetEnvironmentVariable(userDbVar) ?? "C:\\home\\data\\storage.db";
-var itemDb = Environment.GetEnvironmentVariable(itemDbVar) ?? "C:\\home\\data\\storage.db";
-var feedDb = Environment.GetEnvironmentVariable(feedDbVar) ?? "C:\\home\\data\\storage.db";
-var isTestUserEnabled = Environment.GetEnvironmentVariable(testUserEnabledVar) ?? "false";
-string cacheReloadIntervalMins = Environment.GetEnvironmentVariable(cacheReloadIntervalMinsVar) ?? null;
-string cacheReloadStartupDelayMins = Environment.GetEnvironmentVariable(cacheReloadStartupDelayMinsVar) ?? null;
-TimeSpan cacheReloadInterval = TimeSpan.FromMinutes(int.Parse(cacheReloadIntervalMins ?? "5"));
-TimeSpan cacheReloadStartupDelay = TimeSpan.FromMinutes(int.Parse(cacheReloadStartupDelayMins ?? "60"));
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,20 +31,20 @@ builder.Services
     .AddSingleton<IUserRepository>(sb =>
     {
         return new SQLiteUserRepository(
-            $"Data Source={userDb}",
+            $"Data Source={config.UserDb}",
             sb.GetRequiredService<ILogger<SQLiteUserRepository>>());
     })
     .AddSingleton<IFeedRepository>(sb =>
     {
         return new SQLiteFeedRepository(
-            $"Data Source={feedDb}",
+            $"Data Source={config.FeedDb}",
             sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
     })
     .AddSingleton<PersistedHiddenItems>()
     .AddSingleton<IItemRepository>(sb =>
     {
         return new SQLiteItemRepository(
-            $"Data Source={itemDb}",
+            $"Data Source={config.ItemDb}",
             sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
             sb.GetRequiredService<IFeedRepository>(),
             sb.GetRequiredService<IUserRepository>());
@@ -75,11 +58,11 @@ builder.Services
             sp.GetRequiredService<IFeedRepository>(),
             sp.GetRequiredService<IItemRepository>(),
             sp.GetRequiredService<IUserRepository>(),
-            cacheReloadInterval, 
-            cacheReloadStartupDelay);
+            config.CacheReloadInterval, 
+            config.CacheReloadStartupDelay);
     })
     .AddTransient<IFeedClient, FeedClient>()
-    .AddSingleton<OpmlService>();
+    .AddSingleton<OpmlSerializer>();
 
 builder.Services
     .AddRazorComponents()

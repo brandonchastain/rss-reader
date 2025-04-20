@@ -146,6 +146,12 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public void AddTag(NewsFeed feed, string tag)
     {
+        var existing = GetTag(feed.UserId, tag);
+        if (existing != null)
+        {
+            return;
+        }
+        
         using (var connection = new SQLiteConnection(this.connectionString))
         {
             connection.Open();

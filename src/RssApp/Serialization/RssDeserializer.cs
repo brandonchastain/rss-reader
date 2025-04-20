@@ -21,6 +21,9 @@ public class RssDeserializer
         var now = FormatDateString(DateTime.UtcNow.ToString(IsoDateFormat));
         try
         {
+            // Strip out darkreader-related content
+            responseContent = Regex.Replace(responseContent, "<[^>]*darkreader[^>]*>", string.Empty, RegexOptions.IgnoreCase);
+
             var xmlDoc = XDocument.Parse(responseContent);
             var root = xmlDoc.Root;
             if (root.Name.LocalName.Equals("rdf", StringComparison.OrdinalIgnoreCase))

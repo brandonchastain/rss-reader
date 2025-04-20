@@ -1,5 +1,5 @@
 
-namespace RssApp.RssClient;
+namespace RssApp.Serialization;
 
 using System.Text.RegularExpressions;
 using System.Web;

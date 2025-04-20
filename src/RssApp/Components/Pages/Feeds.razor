@@ -1,6 +1,5 @@
 @page "/feeds"
 @using Microsoft.AspNetCore.Components.Authorization
-@using RssApp.Services
 @using System.IO
 @attribute [StreamRendering]
 @inject IFeedRepository feedStore
@@ -8,7 +7,7 @@
 @inject ILogger<Feeds> logger
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IJSRuntime jsRuntime
-@inject OpmlService opmlService
+@inject OpmlSerializer OpmlSerializer
 @rendermode InteractiveServer
 
 <PageTitle>Feeds</PageTitle>
@@ -159,7 +158,7 @@ else
 
     private async Task ExportOpml()
     {
-        var opmlContent = opmlService.GenerateOpmlContent(feeds);
+        var opmlContent = OpmlSerializer.GenerateOpmlContent(feeds);
         await jsRuntime.InvokeVoidAsync("downloadFile", "feeds.opml", "application/xml", opmlContent);
     }
 
@@ -177,10 +176,16 @@ else
             using var reader = new StreamReader(stream);
             var opmlContent = await reader.ReadToEndAsync();
             
-            var importedFeeds = opmlService.ParseOpmlContent(opmlContent, user.Id);
+            var importedFeeds = OpmlSerializer.ParseOpmlContent(opmlContent, user.Id).ToHashSet();
             
             // Import the parsed feeds
             feedStore.ImportFeeds(user, importedFeeds);
+            var feeds = this.feedStore.GetFeeds(user);
+            var newFeeds = feeds.Where(f => importedFeeds.Contains(f));
+            foreach (var feed in newFeeds)
+            {
+                await this.feedClient.AddFeedAsync(feed);
+            }
             
             // Refresh the feed list
             feeds = GetFeedUrls();

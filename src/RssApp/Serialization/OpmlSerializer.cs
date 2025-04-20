@@ -1,9 +1,9 @@
 using System.Xml;
 using RssApp.Contracts;
 
-namespace RssApp.Services;
+namespace RssApp.Serialization;
 
-public class OpmlService
+public class OpmlSerializer
 {
     public string GenerateOpmlContent(IEnumerable<NewsFeed> feeds)
     {
@@ -65,7 +65,7 @@ public class OpmlService
         try
         {
             // Enforce a reasonable size limit
-            if (opmlContent.Length > 10_000_000) // 10MB limit
+            if (opmlContent.Length > 1_000_000) // 1MB limit
             {
                 throw new ArgumentException("OPML content exceeds maximum allowed size");
             }
