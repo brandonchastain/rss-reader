@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using System.Xml.Serialization;
 using RssApp.Contracts;
-using RssApp.Utilities;
+using RssApp.Contracts.FeedTypes;
 
 namespace RssApp.Serialization;
 
@@ -117,7 +117,7 @@ public class RssDeserializer
         dateString = dateString.Trim();
 
         // Replace timezone abbreviations with their standard format
-        dateString = TimeZoneHelper.ConvertTimeZoneAbbreviation(dateString);
+        dateString = TimeZoneConverter.ConvertTimeZoneAbbreviation(dateString);
 
         // Try Unix timestamp (seconds since Unix epoch)
         if (long.TryParse(dateString, out long unixTimestamp))

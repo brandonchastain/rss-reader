@@ -2,7 +2,7 @@ using System.Net;
 using RssApp.Components;
 using RssApp.Config;
 using RssApp.Contracts;
-using RssApp.Persistence;
+using RssApp.Data;
 using RssApp.RssClient;
 using RssApp.Serialization;
 

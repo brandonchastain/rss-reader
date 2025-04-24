@@ -4,7 +4,7 @@ using System.Data.SQLite;
 using System.Diagnostics;
 using RssApp.Contracts;
 
-namespace RssApp.Persistence;
+namespace RssApp.Data;
 
 public class SQLiteItemRepository : IItemRepository, IDisposable
 {

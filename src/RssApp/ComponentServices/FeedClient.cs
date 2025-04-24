@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using RssApp.Contracts;
-using RssApp.Persistence;
+using RssApp.Data;
 
 namespace RssApp.RssClient;
 
@@ -9,7 +9,6 @@ public class FeedClient : IFeedClient, IDisposable
     private const int PageSize = 10;
     private HttpClient httpClient;
     private readonly ILogger<FeedClient> logger;
-    //private readonly PersistedHiddenItems hiddenItems;
     private readonly IFeedRepository persistedFeeds;
     private readonly IItemRepository newsFeedItemStore;
     private readonly IUserRepository userStore;
@@ -20,7 +19,6 @@ public class FeedClient : IFeedClient, IDisposable
 
     public FeedClient(
         HttpClient httpClient,
-        //PersistedHiddenItems hiddenItems,
         ILogger<FeedClient> logger,
         IFeedRepository persistedFeeds,
         IItemRepository newsFeedItemStore,
@@ -28,7 +26,6 @@ public class FeedClient : IFeedClient, IDisposable
         FeedRefresher feedRefresher)
     {
         this.httpClient = httpClient;
-        //this.hiddenItems = hiddenItems;
         this.logger = logger;
         this.persistedFeeds = persistedFeeds;
         this.newsFeedItemStore = newsFeedItemStore;
@@ -106,11 +103,6 @@ public class FeedClient : IFeedClient, IDisposable
         return items;
     }
 
-    public void HidePost(string id)
-    {
-        //this.hiddenItems.HidePost(id);
-    }
-
     public void MarkAsRead(NewsFeedItem item, bool isRead)
     {
         this.newsFeedItemStore.MarkAsRead(item, isRead);
@@ -146,7 +138,6 @@ public class FeedClient : IFeedClient, IDisposable
 
     private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed, int page, int pageSize = PageSize)
     {
-        //var hidden = this.hiddenItems.GetHidden();
         var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.IsFilterUnread, this.filterTag, page, pageSize)).ToHashSet();
         var items = response.ToList();
 
@@ -155,6 +146,5 @@ public class FeedClient : IFeedClient, IDisposable
             .Where(i => this.filterTag == null || i.FeedTags.Contains(this.filterTag));
 
         return result;
-            //.Where(i => !hidden.Contains(i.Href));
     }     
 }

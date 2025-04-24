@@ -1,7 +1,7 @@
 
 using RssApp.Contracts;
 
-namespace RssApp.Persistence;
+namespace RssApp.Data;
 
 public interface IUserRepository
 {

@@ -1,6 +1,6 @@
 using RssApp.Contracts;
 using RssApp.Serialization;
-using RssApp.Persistence;
+using RssApp.Data;
 
 namespace RssApp.RssClient;
 

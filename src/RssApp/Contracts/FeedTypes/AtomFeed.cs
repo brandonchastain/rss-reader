@@ -2,7 +2,7 @@
 using System.Xml;
 using System.Xml.Serialization;
 
-namespace RssApp.Contracts;
+namespace RssApp.Contracts.FeedTypes;
     
 [XmlRoot("feed", Namespace = "http://www.w3.org/2005/Atom")]
 public class AtomFeed

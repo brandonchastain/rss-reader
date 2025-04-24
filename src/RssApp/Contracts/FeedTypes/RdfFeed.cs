@@ -1,6 +1,6 @@
 using System.Xml.Serialization;
 
-namespace RssApp.Contracts;
+namespace RssApp.Contracts.FeedTypes;
 
 [XmlRoot("RDF", Namespace = "http://www.w3.org/1999/02/22-rdf-syntax-ns#")]
 public class RdfFeed

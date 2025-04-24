@@ -1,7 +1,7 @@
 using System.Data.SQLite;
 using RssApp.Contracts;
 
-namespace RssApp.Persistence;
+namespace RssApp.Data;
 
 public class SQLiteUserRepository : IUserRepository
 {

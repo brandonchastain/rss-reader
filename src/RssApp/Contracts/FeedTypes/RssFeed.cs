@@ -1,7 +1,7 @@
 
 using System.Xml.Serialization;
 
-namespace RssApp.Contracts;
+namespace RssApp.Contracts.FeedTypes;
     
 [XmlRoot("rss")]
 public class RssDocument

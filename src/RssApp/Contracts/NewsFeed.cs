@@ -1,5 +1,7 @@
 namespace RssApp.Contracts;
 
+using RssApp.Contracts.FeedTypes;
+
 public class NewsFeed : IEquatable<NewsFeed>
 {
     public NewsFeed(string url, int userId)

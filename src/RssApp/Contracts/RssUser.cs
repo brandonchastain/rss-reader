@@ -1,5 +1,8 @@
 namespace RssApp.Contracts;
 
+using RssApp.Contracts.FeedTypes;
+
+
 public class RssUser
 {
     public RssUser(string username, int id)
