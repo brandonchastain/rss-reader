@@ -106,10 +106,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         i.ThumbnailUrl,
                         f.IsPaywalled
                     FROM NewsFeedItems i
-                    INNER JOIN (
-                        SELECT h.*, row_number() over (partition by h.Href) as seqnum
-                        FROM NewsFeedItems h) h
-                        ON i.Href = h.Href AND seqnum = 1
                     LEFT JOIN Feeds f
                     ON i.FeedUrl = f.Url
                     LEFT JOIN FeedTags t ON f.Id = t.FeedId
@@ -131,6 +127,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     command.Parameters.AddWithValue("@tagName", filterTag);
                 }
 
+                command.CommandText += " GROUP BY i.Href HAVING MAX(i.PublishDate)";
                 command.CommandText += " ORDER BY i.PublishDate DESC";
 
                 if (page != null && pageSize != null)
