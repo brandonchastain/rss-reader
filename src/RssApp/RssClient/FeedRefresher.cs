@@ -123,7 +123,7 @@ public class FeedRefresher : IDisposable
             }
             catch (Exception ex)
             {
-                int len = Math.Min(200, response?.Length ?? 0);
+                int len = Math.Min(500, response?.Length ?? 0);
                 this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
             }
         }

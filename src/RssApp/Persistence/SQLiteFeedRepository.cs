@@ -144,9 +144,30 @@ public class SQLiteFeedRepository : IFeedRepository
         return null;
     }
 
+    public string GetTagByFeedId(int feedId, string tagName)
+    {
+        using (var connection = new SQLiteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT TagName FROM FeedTags WHERE TagName = @tagName AND FeedId = @feedId";
+            command.Parameters.AddWithValue("@tagName", tagName);
+            command.Parameters.AddWithValue("@feedId", feedId);
+            using (var reader = command.ExecuteReader())
+            {
+                if (reader.Read())
+                {
+                    return reader.GetString(0);
+                }
+            }
+        }
+
+        return null;
+    }
+
     public void AddTag(NewsFeed feed, string tag)
     {
-        var existing = GetTag(feed.UserId, tag);
+        var existing = GetTagByFeedId(feed.FeedId, tag);
         if (existing != null)
         {
             return;

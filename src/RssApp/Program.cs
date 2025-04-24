@@ -40,7 +40,6 @@ builder.Services
             $"Data Source={config.FeedDb}",
             sb.GetRequiredService<ILogger<SQLiteFeedRepository>>());
     })
-    .AddSingleton<PersistedHiddenItems>()
     .AddSingleton<IItemRepository>(sb =>
     {
         return new SQLiteItemRepository(
