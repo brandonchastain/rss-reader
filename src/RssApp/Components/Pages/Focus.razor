@@ -11,15 +11,24 @@
 
 <PageTitle>Focused Feed</PageTitle>
 
-<div class="" style="position: relative; z-index: 10000;">
-    <button @onclick="() => PrevPage()">Prev</button>
-    <button @onclick="() => NextPage()">Next</button>
+@if (isLoading)
+{
+    <div class="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+}
+
+<div class="" style="position: relative;">
+    <button class="focus-nav-button focus-nav-prev" @onclick="() => PrevPage()">←</button>
+    <button class="focus-nav-button focus-nav-next" @onclick="() => NextPage()">→</button>
 </div>
 
 <div id="focus-post-table">
-@if (Posts != null && Posts.Count > 0) {
+@if (Posts != null && Posts.Count > 0)
+{
     var post = Posts.First();
-    <div id="post-header-img">
+
+    <div>
     @{
         var thumbnailUrl = post.GetThumbnailUrl();
         if (!String.IsNullOrWhiteSpace(thumbnailUrl))
@@ -29,7 +38,7 @@
     }
     </div>
 
-    <div id ="focus-post-spacer"></div>
+    @* <div id ="focus-post-spacer"></div> *@
     <div id="focus-post-content">
         <div id="focus-post-content-container">
         <p>
@@ -67,6 +76,57 @@
     public List<NewsFeedItem> Posts { get; set; } = new List<NewsFeedItem>();
     private bool initialized = false;
     private int loadedPage = -1;
+    private bool isLoading = false;
+
+    private double touchStartX;
+    private double touchStartY;
+    private string swipeClass = "";
+    private const int SWIPE_THRESHOLD = 50;
+    private bool isHorizontalSwipe = false;
+
+    private void HandleTouchStart(TouchEventArgs e)
+    {
+        touchStartX = e.Touches[0].ClientX;
+        touchStartY = e.Touches[0].ClientY;
+        isHorizontalSwipe = false;
+    }
+
+    private void HandleTouchMove(TouchEventArgs e)
+    {
+        if (touchStartX == 0) return;
+        
+        var deltaX = e.Touches[0].ClientX - touchStartX;
+        var deltaY = e.Touches[0].ClientY - touchStartY;
+
+        if (!isHorizontalSwipe && Math.Abs(deltaX) > Math.Abs(deltaY) && Math.Abs(deltaX) > 10)
+        {
+            isHorizontalSwipe = true;
+        }
+
+        if (isHorizontalSwipe && Math.Abs(deltaX) > SWIPE_THRESHOLD)
+        {
+            swipeClass = deltaX > 0 ? "swipe-right" : "swipe-left";
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleTouchEnd(TouchEventArgs e)
+    {
+        if (string.IsNullOrEmpty(swipeClass)) return;
+
+        if (swipeClass == "swipe-right" && Page > 0)
+        {
+            await PrevPage();
+        }
+        else if (swipeClass == "swipe-left")
+        {
+            await NextPage();
+        }
+
+        swipeClass = "";
+        touchStartX = 0;
+        StateHasChanged();
+    }
 
     private async Task PrevPage()
     {
@@ -82,6 +142,7 @@
 
         await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
     }
+
     private async Task NextPage()
     {
         if (!initialized)
@@ -90,12 +151,13 @@
         }
 
         Page += 1;
-
         await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
     }
 
     private async Task RefreshPosts((bool isFilterUnread, string filterTag) filters)
     {
+        isLoading = true;
+        this.StateHasChanged();
         if (filters.isFilterUnread != this.feedClient.IsFilterUnread
             || filters.filterTag != this.feedClient.FilterTag)
         {
@@ -110,6 +172,7 @@
         Posts = Posts.Distinct().ToList();
         this.loadedPage = Page;
         this.StateHasChanged();
+        isLoading = false;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

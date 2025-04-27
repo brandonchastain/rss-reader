@@ -19,6 +19,8 @@ main {
     height: 3.5rem;
     display: flex;
     align-items: center;
+    z-index: 1001; /* Higher than the gradient */
+    position: relative; /* Ensure stacking context */
 }
 
 .top-row ::deep a, .top-row ::deep .btn-link {
