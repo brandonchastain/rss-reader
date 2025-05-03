@@ -12,6 +12,7 @@ public interface IFeedClient
     Task<RssUser> RegisterUserAsync(string username);
     IEnumerable<string> GetUserTags(RssUser user);
     Task SavePostAsync(NewsFeedItem item);
+    Task UnsavePostAsync(NewsFeedItem item);
     bool IsFilterUnread { get; set; }
     string FilterTag { get; set; }
     bool IsFilterSaved { get; set; }

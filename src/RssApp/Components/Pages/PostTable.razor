@@ -41,7 +41,7 @@ else
                                 <a href="@post.CommentsHref">[comments]</a>
                             }
                             <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(post)">[mark @(!post.IsRead ? "read" : "unread")]</button>
-                            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => SavePost(post)">[save]</button>
+                            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => SavePost(post)">[@(!post.IsSaved ? "save" : "unsave")]</button>
                             @this.GetRootDomain(post.Href)<br/>
                             @(post.FeedTags.Any() ? $"[{string.Join(",", post.FeedTags)}]" : "")
                         </p>
@@ -215,7 +215,17 @@ window.Observer = {
 
     private async Task SavePost(NewsFeedItem post)
     {
-        await this.FeedClient.SavePostAsync(post);
+        if (!post.IsSaved)
+        {
+            logger.LogInformation("Saving post {post}", post);
+            await this.FeedClient.SavePostAsync(post);
+        }
+        else    
+        {
+            logger.LogInformation("Unsaving post {post}", post);
+            await this.FeedClient.UnsavePostAsync(post);
+        }
+
         this.StateHasChanged();
     }
 }

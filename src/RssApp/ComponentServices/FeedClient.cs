@@ -148,6 +148,13 @@ public class FeedClient : IFeedClient, IDisposable
         this.newsFeedItemStore.SavePost(item, this.loggedInUser);
     }
 
+    public async Task UnsavePostAsync(NewsFeedItem item)
+    {
+        await Task.Yield();
+        this.newsFeedItemStore.UnsavePost(item, this.loggedInUser);
+        item.IsSaved = false;
+    }
+
     private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed, int page, int pageSize = PageSize)
     {
         var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.IsFilterUnread, this.IsFilterSaved, this.filterTag, page, pageSize)).ToHashSet();
