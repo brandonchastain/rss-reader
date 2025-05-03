@@ -82,10 +82,10 @@ public class FeedClient : IFeedClient, IDisposable
         await this.feedRefresher.AddFeedAsync(feed);
     }
 
-    public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page)
+    public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = PageSize)
     {
         var sw = Stopwatch.StartNew();
-        var items = await this.GetFeedItemsHelperAsync(new NewsFeed("%", this.loggedInUser.Id), page);
+        var items = await this.GetFeedItemsHelperAsync(new NewsFeed("%", this.loggedInUser.Id), page, pageSize);
         
         var sorted = items
             .DistinctBy(i => i.GetHashCode())
