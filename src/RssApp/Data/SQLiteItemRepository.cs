@@ -1,4 +1,3 @@
-
 using System.Data.Common;
 using System.Data.SQLite;
 using System.Diagnostics;
@@ -59,6 +58,19 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
             command = connection.CreateCommand();
             command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS SavedPosts (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    UserId INTEGER NOT NULL,
+                    FeedUrl TEXT NOT NULL,
+                    Href TEXT NOT NULL,
+                    SavedDate TEXT NOT NULL,
+                    FOREIGN KEY (UserId) REFERENCES Users(Id),
+                    UNIQUE(UserId, FeedUrl, Href)
+                )";
+            command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
                 CREATE INDEX IF NOT EXISTS idx_items_feedurl_userid
                 ON NewsFeedItems (FeedUrl, UserId);";
             command.ExecuteNonQuery();
@@ -74,6 +86,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
         NewsFeed feed,
         bool isFilterUnread,
+        bool isFilterSaved,
         string filterTag,
         int? page = null,
         int? pageSize = null)
@@ -82,7 +95,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
         try
         {
-            this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, isFilterUnread={isFilterUnread}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
+            this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, isFilterUnread={isFilterUnread}, isFilterSaved={isFilterSaved}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
             var sw = Stopwatch.StartNew();
             var set = new HashSet<NewsFeedItem>();
             var user = this.userStore.GetUserById(feed.UserId);
@@ -109,11 +122,26 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     LEFT JOIN Feeds f
                     ON i.FeedUrl = f.Url
                     LEFT JOIN FeedTags t ON f.Id = t.FeedId
-                    WHERE i.UserId = @userId
-                    AND i.FeedUrl LIKE @feedUrl
                 """;
-                command.Parameters.AddWithValue("@feedUrl", feed.FeedUrl);
+
+                if (isFilterSaved)
+                {
+                    command.CommandText += """
+                        INNER JOIN SavedPosts s 
+                        ON i.Href = s.Href 
+                        AND i.FeedUrl = s.FeedUrl 
+                        AND i.UserId = s.UserId
+                    """;
+                }
+
+                command.CommandText += " WHERE i.UserId = @userId";
                 command.Parameters.AddWithValue("@userId", user.Id);
+
+                if (feed.FeedUrl != "%")
+                {
+                    command.CommandText += " AND i.FeedUrl LIKE @feedUrl";
+                    command.Parameters.AddWithValue("@feedUrl", feed.FeedUrl);
+                }
 
                 if (isFilterUnread)
                 {
@@ -306,6 +334,23 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command.Parameters.AddWithValue("@href", item.Href);
             command.Parameters.AddWithValue("@isRead", isRead);
             command.Parameters.AddWithValue("@userId", item.UserId);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    public void SavePost(NewsFeedItem item, RssUser user)
+    {
+        using (var connection = new SQLiteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                INSERT OR REPLACE INTO SavedPosts (UserId, FeedUrl, Href, SavedDate)
+                VALUES (@userId, @feedUrl, @href, @savedDate)";
+            command.Parameters.AddWithValue("@userId", user.Id);
+            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
+            command.Parameters.AddWithValue("@href", item.Href);
+            command.Parameters.AddWithValue("@savedDate", DateTime.UtcNow.ToString("o"));
             command.ExecuteNonQuery();
         }
     }
