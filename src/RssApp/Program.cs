@@ -62,10 +62,19 @@ builder.Services
     })
     .AddTransient<IFeedClient, FeedClient>()
     .AddSingleton<OpmlSerializer>();
-
+builder.Services.AddLettuceEncrypt();
 builder.Services
     .AddRazorComponents()
     .AddInteractiveServerComponents();
+
+builder.WebHost.UseKestrel(k =>
+{
+    var appServices = k.ApplicationServices;
+    k.ConfigureHttpsDefaults(h =>
+    {
+        h.UseLettuceEncrypt(appServices);
+    });
+});
 
 var app = builder.Build();
 
