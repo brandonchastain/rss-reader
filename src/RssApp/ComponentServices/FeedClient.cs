@@ -16,6 +16,7 @@ public class FeedClient : IFeedClient, IDisposable
     private FeedRefresher feedRefresher;
     private bool isFilterUnread;
     private string filterTag;
+    private bool isFilterSaved;
 
     public FeedClient(
         HttpClient httpClient,
@@ -57,6 +58,12 @@ public class FeedClient : IFeedClient, IDisposable
         }
     }
 
+    public bool IsFilterSaved
+    {
+        get { return this.isFilterSaved; }
+        set { this.isFilterSaved = value; }
+    }
+
     public IEnumerable<string> GetUserTags(RssUser user)
     {
         var sw = Stopwatch.StartNew();
@@ -86,7 +93,6 @@ public class FeedClient : IFeedClient, IDisposable
     {
         var sw = Stopwatch.StartNew();
         var items = await this.GetFeedItemsHelperAsync(new NewsFeed("%", this.loggedInUser.Id), page, pageSize);
-        
         var sorted = items
             .DistinctBy(i => i.GetHashCode())
             .OrderByDescending(i => i.ParsedDate);
@@ -136,9 +142,22 @@ public class FeedClient : IFeedClient, IDisposable
         return user;
     }
 
+    public async Task SavePostAsync(NewsFeedItem item)
+    {
+        await Task.Yield();
+        this.newsFeedItemStore.SavePost(item, this.loggedInUser);
+    }
+
+    public async Task UnsavePostAsync(NewsFeedItem item)
+    {
+        await Task.Yield();
+        this.newsFeedItemStore.UnsavePost(item, this.loggedInUser);
+        item.IsSaved = false;
+    }
+
     private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed, int page, int pageSize = PageSize)
     {
-        var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.IsFilterUnread, this.filterTag, page, pageSize)).ToHashSet();
+        var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.IsFilterUnread, this.IsFilterSaved, this.filterTag, page, pageSize)).ToHashSet();
         var items = response.ToList();
 
         var result = items.DistinctBy(i => i.Href)

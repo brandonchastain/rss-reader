@@ -13,6 +13,7 @@ else
 {
     <div class="toolbar">
         <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.IsFilterUnread ? "[all]" : "[unread]")</button>
+        <button class="btn-link" @onclick="() => ToggleSavedFilterAsync()">@(this.IsFilterSaved ? "[all]" : "[saved]")</button>
         @foreach (var tag in this.userTags)
         {
             <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="() => FilterForTag(tag)">[@tag]</button>
@@ -40,6 +41,7 @@ else
                                 <a href="@post.CommentsHref">[comments]</a>
                             }
                             <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(post)">[mark @(!post.IsRead ? "read" : "unread")]</button>
+                            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => SavePost(post)">[@(!post.IsSaved ? "save" : "unsave")]</button>
                             @this.GetRootDomain(post.Href)<br/>
                             @(post.FeedTags.Any() ? $"[{string.Join(",", post.FeedTags)}]" : "")
                         </p>
@@ -120,9 +122,10 @@ window.Observer = {
     public EventCallback<int> OnPageChanged { get; set; }
 
     [Parameter]
-    public EventCallback<(bool, string)> OnRefreshTriggered { get; set; }
+    public EventCallback<(bool, bool, string)> OnRefreshTriggered { get; set; }
 
     public bool IsFilterUnread { get; set; } = false;
+    public bool IsFilterSaved { get; set; } = false;
     private string filterTag = null;
     
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -159,7 +162,13 @@ window.Observer = {
     private async Task ToggleUnreadFilterAsync()
     {
         this.IsFilterUnread = !this.IsFilterUnread;
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.filterTag));
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+    }
+
+    private async Task ToggleSavedFilterAsync()
+    {
+        this.IsFilterSaved = !this.IsFilterSaved;
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
     private async Task FilterForTag(string tag)
@@ -167,12 +176,12 @@ window.Observer = {
         if (this.filterTag == tag)
         {
             this.filterTag = null;
-            await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.filterTag));
+            await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
             return;
         }
         
         this.filterTag = tag;
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.filterTag));
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
     private void PreviewPost(NewsFeedItem post)
@@ -202,5 +211,21 @@ window.Observer = {
         }
 
         return post.Href;
+    }
+
+    private async Task SavePost(NewsFeedItem post)
+    {
+        if (!post.IsSaved)
+        {
+            logger.LogInformation("Saving post {post}", post);
+            await this.FeedClient.SavePostAsync(post);
+        }
+        else    
+        {
+            logger.LogInformation("Unsaving post {post}", post);
+            await this.FeedClient.UnsavePostAsync(post);
+        }
+
+        this.StateHasChanged();
     }
 }

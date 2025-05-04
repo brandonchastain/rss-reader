@@ -1,4 +1,3 @@
-
 using System.Data.Common;
 using System.Data.SQLite;
 using System.Diagnostics;
@@ -59,6 +58,19 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
             command = connection.CreateCommand();
             command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS SavedPosts (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    UserId INTEGER NOT NULL,
+                    FeedUrl TEXT NOT NULL,
+                    Href TEXT NOT NULL,
+                    SavedDate TEXT NOT NULL,
+                    FOREIGN KEY (UserId) REFERENCES Users(Id),
+                    UNIQUE(UserId, FeedUrl, Href)
+                )";
+            command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
                 CREATE INDEX IF NOT EXISTS idx_items_feedurl_userid
                 ON NewsFeedItems (FeedUrl, UserId);";
             command.ExecuteNonQuery();
@@ -74,6 +86,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
         NewsFeed feed,
         bool isFilterUnread,
+        bool isFilterSaved,
         string filterTag,
         int? page = null,
         int? pageSize = null)
@@ -82,7 +95,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
         try
         {
-            this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, isFilterUnread={isFilterUnread}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
+            this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, isFilterUnread={isFilterUnread}, isFilterSaved={isFilterSaved}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
             var sw = Stopwatch.StartNew();
             var set = new HashSet<NewsFeedItem>();
             var user = this.userStore.GetUserById(feed.UserId);
@@ -104,21 +117,37 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         t.TagName,
                         i.UserId,
                         i.ThumbnailUrl,
-                        f.IsPaywalled
+                        f.IsPaywalled,
+                        s.SavedDate
                     FROM NewsFeedItems i
+                    LEFT JOIN SavedPosts s
+                        ON i.Href = s.Href 
+                        AND i.FeedUrl = s.FeedUrl 
+                        AND i.UserId = s.UserId
                     LEFT JOIN Feeds f
-                    ON i.FeedUrl = f.Url
-                    LEFT JOIN FeedTags t ON f.Id = t.FeedId
-                    WHERE i.UserId = @userId
-                    AND i.FeedUrl LIKE @feedUrl
+                        ON i.FeedUrl = f.Url
+                    LEFT JOIN FeedTags t
+                        ON f.Id = t.FeedId
                 """;
-                command.Parameters.AddWithValue("@feedUrl", feed.FeedUrl);
+
+                command.CommandText += " WHERE i.UserId = @userId";
                 command.Parameters.AddWithValue("@userId", user.Id);
+
+                if (feed.FeedUrl != "%")
+                {
+                    command.CommandText += " AND i.FeedUrl LIKE @feedUrl";
+                    command.Parameters.AddWithValue("@feedUrl", feed.FeedUrl);
+                }
 
                 if (isFilterUnread)
                 {
                     command.CommandText += " AND i.IsRead = @isRead";
                     command.Parameters.AddWithValue("@isRead", false);
+                }
+
+                if (isFilterSaved)
+                {
+                    command.CommandText += " AND s.SavedDate IS NOT NULL";
                 }
 
                 if (!string.IsNullOrWhiteSpace(filterTag))
@@ -177,6 +206,10 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var tagName = reader.IsDBNull(reader.GetOrdinal("TagName")) ? "" : reader.GetString(reader.GetOrdinal("TagName"));
         var thumbnailUrl = reader.IsDBNull(reader.GetOrdinal("ThumbnailUrl")) ? "" : reader.GetString(reader.GetOrdinal("ThumbnailUrl"));
         var isPaywalled = reader.IsDBNull(reader.GetOrdinal("IsPaywalled")) ? false : reader.GetBoolean(reader.GetOrdinal("IsPaywalled"));
+        var isSaved = false;
+
+        // Check if SavedPosts table was joined in the query
+        isSaved = !reader.IsDBNull(reader.GetOrdinal("SavedDate"));
         
         var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
         {
@@ -184,6 +217,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             IsRead = isRead,
             FeedTags = string.IsNullOrWhiteSpace(tagName) ? [] : [tagName],
             IsPaywalled = isPaywalled,
+            IsSaved = isSaved
         };
 
         return item;
@@ -306,6 +340,39 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command.Parameters.AddWithValue("@href", item.Href);
             command.Parameters.AddWithValue("@isRead", isRead);
             command.Parameters.AddWithValue("@userId", item.UserId);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    public void SavePost(NewsFeedItem item, RssUser user)
+    {
+        using (var connection = new SQLiteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                INSERT OR REPLACE INTO SavedPosts (UserId, FeedUrl, Href, SavedDate)
+                VALUES (@userId, @feedUrl, @href, @savedDate)";
+            command.Parameters.AddWithValue("@userId", user.Id);
+            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
+            command.Parameters.AddWithValue("@href", item.Href);
+            command.Parameters.AddWithValue("@savedDate", DateTime.UtcNow.ToString("o"));
+            command.ExecuteNonQuery();
+        }
+    }
+
+    public void UnsavePost(NewsFeedItem item, RssUser user)
+    {
+        using (var connection = new SQLiteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                DELETE FROM SavedPosts 
+                WHERE UserId = @userId AND FeedUrl = @feedUrl AND Href = @href";
+            command.Parameters.AddWithValue("@userId", user.Id);
+            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
+            command.Parameters.AddWithValue("@href", item.Href);
             command.ExecuteNonQuery();
         }
     }

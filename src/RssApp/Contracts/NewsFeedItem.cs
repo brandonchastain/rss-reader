@@ -31,6 +31,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
 
     // ignore below for serialization
     public bool IsPaywalled { get; set; }
+    public bool IsSaved { get; set; }
 
     public bool IsBeingPreviewed { get; set; }
 
