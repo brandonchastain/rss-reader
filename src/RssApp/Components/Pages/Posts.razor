@@ -1,4 +1,5 @@
 ﻿@page "/posts"
+@inherits Base
 @rendermode InteractiveServer
 @attribute [StreamRendering]
 @inject ILogger<Posts> logger
@@ -6,6 +7,7 @@
 @inject IJSRuntime jsRuntime
 
 <PageTitle>Posts</PageTitle>
+<AuthorizeView>
 Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
 <h1>Posts from @(FeedUrl == null ? string.Empty : new Uri(FeedUrl).Authority)</h1>
 
@@ -76,6 +78,10 @@ Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
         if (CurrentUser == null)
         {
             var username = await this.GetUsernameAsync();
+            if (username == null)
+            {
+                return;
+            }
             this.CurrentUser = await this.feedClient.RegisterUserAsync(username);
             var decodedUrl = System.Net.WebUtility.UrlDecode(FeedUrl);
             Items = (await this.feedClient.GetFeedItemsAsync(new NewsFeed(decodedUrl, this.CurrentUser.Id), Page)).ToList();
@@ -84,9 +90,5 @@ Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
             this.StateHasChanged();
         }
     }
-
-    private async Task<string> GetUsernameAsync()
-    {
-        return await jsRuntime.InvokeAsync<string>("getUsername");
-    }
 }
+</AuthorizeView>

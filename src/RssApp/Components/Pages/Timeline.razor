@@ -1,5 +1,6 @@
 @page "/timeline"
 @page "/"
+@inherits Base
 @rendermode InteractiveServer
 @attribute [StreamRendering]
 @inject ILogger<Timeline> logger
@@ -8,6 +9,7 @@
 
 <PageTitle>Timeline</PageTitle>
 
+<AuthorizeView>
 <h1>Timeline</h1>
 
 <CascadingValue Value="@feedClient" Name="FeedClient">
@@ -71,6 +73,10 @@
         if (CurrentUser == null)
         {
             var username = await this.GetUsernameAsync();
+            if (username == null)
+            {
+                return;
+            }
             this.CurrentUser = await this.feedClient.RegisterUserAsync(username);
             Posts = (await this.feedClient.GetTimelineAsync(Page)).ToList();
             this.loadedPage = Page;
@@ -78,9 +84,6 @@
             this.StateHasChanged();
         }
     }
-
-    private async Task<string> GetUsernameAsync()
-    {
-        return await jsRuntime.InvokeAsync<string>("getUsername");
-    }
 }
+
+</AuthorizeView>

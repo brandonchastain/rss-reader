@@ -26,9 +26,10 @@ public class SQLiteFeedRepository : IFeedRepository
             command.CommandText = @"
                 CREATE TABLE IF NOT EXISTS Feeds (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Url TEXT NOT NULL UNIQUE,
+                    Url TEXT NOT NULL,
                     IsPaywalled BOOLEAN NOT NULL DEFAULT 0,
                     UserId INTEGER NOT NULL,
+                    UNIQUE (Url, UserId),
                     FOREIGN KEY (UserId) REFERENCES Users(Id)
                 )";
             command.ExecuteNonQuery();
@@ -81,6 +82,12 @@ public class SQLiteFeedRepository : IFeedRepository
                     }
 
                     feeds.TryGetValue(res, out var existingFeed);
+
+                    if (existingFeed == null)
+                    {
+                        continue;
+                    }
+                    
                     existingFeed.Tags = existingFeed.Tags.Union(res.Tags).ToList();
                 }
             }
@@ -101,7 +108,25 @@ public class SQLiteFeedRepository : IFeedRepository
             command.CommandText = "INSERT INTO Feeds (Url, UserId) VALUES (@url, @userId)";
             command.Parameters.AddWithValue("@url", feed.FeedUrl);
             command.Parameters.AddWithValue("@userId", feed.UserId);
+            
             command.ExecuteNonQuery();
+        }
+        
+        using (var connection = new SQLiteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT Id FROM Feeds WHERE Url = @url AND UserId = @userId";
+            command.Parameters.AddWithValue("@url", feed.FeedUrl);
+            command.Parameters.AddWithValue("@userId", feed.UserId);
+            
+            using (var reader = command.ExecuteReader())
+            {
+                if (reader.Read())
+                {
+                    feed.FeedId = reader.GetInt32(0);
+                }
+            }
         }
     }
 
@@ -123,7 +148,7 @@ public class SQLiteFeedRepository : IFeedRepository
         }
     }
 
-    public string GetTag(int userId, string tagName)
+    public string? GetTag(int userId, string tagName)
     {
         using (var connection = new SQLiteConnection(this.connectionString))
         {
@@ -144,7 +169,7 @@ public class SQLiteFeedRepository : IFeedRepository
         return null;
     }
 
-    public string GetTagByFeedId(int feedId, string tagName)
+    public string? GetTagByFeedId(int feedId, string tagName)
     {
         using (var connection = new SQLiteConnection(this.connectionString))
         {
@@ -167,9 +192,11 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public void AddTag(NewsFeed feed, string tag)
     {
+        this.logger.LogInformation("Adding {tag} to feed {feedId}", tag, feed.FeedId);
         var existing = GetTagByFeedId(feed.FeedId, tag);
         if (existing != null)
         {
+            this.logger.LogInformation("tag {tag} on feed {feedId} exists", tag, feed.FeedId);
             return;
         }
         
@@ -181,7 +208,6 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@feedId", feed.FeedId);
             command.Parameters.AddWithValue("@tagName", tag);
             command.Parameters.AddWithValue("@userId", feed.UserId);
-            this.logger.LogInformation("Adding {tag} to feed {feedId}", tag, feed.FeedId);
             command.ExecuteNonQuery();
             this.logger.LogInformation("Tag {tagName} added to feed {feedId}", tag, feed.FeedId);
         }

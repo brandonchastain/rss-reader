@@ -89,13 +89,13 @@ public class OpmlSerializer
                 doc.Load(reader);
                 
                 // Find all outline elements with type="rss"
-                XmlNodeList outlineNodes = doc.SelectNodes("//outline[@type='rss']");
+                XmlNodeList? outlineNodes = doc.SelectNodes("//outline[@type='rss']");
                 
                 if (outlineNodes != null)
                 {
                     foreach (XmlNode node in outlineNodes)
                     {
-                        string xmlUrl = node.Attributes?["xmlUrl"]?.Value;
+                        string? xmlUrl = node.Attributes?["xmlUrl"]?.Value;
                         
                         if (!string.IsNullOrEmpty(xmlUrl))
                         {
@@ -105,7 +105,7 @@ public class OpmlSerializer
                             //feed.Title = node.Attributes?["text"]?.Value ?? node.Attributes?["title"]?.Value;
                             
                             // Get categories/tags if available
-                            string categories = node.Attributes?["category"]?.Value;
+                            string? categories = node.Attributes?["category"]?.Value;
                             if (!string.IsNullOrEmpty(categories))
                             {
                                 foreach (var tag in categories.Split(',', StringSplitOptions.RemoveEmptyEntries))

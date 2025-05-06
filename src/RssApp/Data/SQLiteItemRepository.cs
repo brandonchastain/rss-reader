@@ -95,7 +95,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
         try
         {
-            this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, isFilterUnread={isFilterUnread}, isFilterSaved={isFilterSaved}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
+            // this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, isFilterUnread={isFilterUnread}, isFilterSaved={isFilterSaved}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
             var sw = Stopwatch.StartNew();
             var set = new HashSet<NewsFeedItem>();
             var user = this.userStore.GetUserById(feed.UserId);
@@ -183,7 +183,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 }
             }
 
-            this.logger.LogInformation($"GetItemsAsync took {sw.ElapsedMilliseconds}ms");
+            // this.logger.LogInformation($"GetItemsAsync took {sw.ElapsedMilliseconds}ms");
             return set.ToList();
         }
         finally
@@ -223,7 +223,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         return item;
     }
 
-    public NewsFeedItem GetItem(RssUser user, string href)
+    public NewsFeedItem? GetItem(RssUser user, string href)
     {
         using (var connection = new SQLiteConnection(this.connectionString))
         {

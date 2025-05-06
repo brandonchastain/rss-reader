@@ -1,6 +1,8 @@
 @page "/feeds"
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.IO
+@using RssApp.Components.Layout
+@inherits Base
 @attribute [StreamRendering]
 @inject IFeedRepository feedStore
 @inject IFeedClient feedClient
@@ -12,6 +14,7 @@
 
 <PageTitle>Feeds</PageTitle>
 
+<AuthorizeView>
 <h1>Feeds</h1>
 
 <form method="post" @onsubmit="SubmitAsync" @formname="newfeed">
@@ -36,42 +39,39 @@ else
     <div id="post-table" class="table">
         @foreach (NewsFeed feed in feeds)
         {
-            @* <div class="row"> *@
-                <div class="row post-unread" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    <div class="col" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                        <a href="posts?FeedUrl=@System.Net.WebUtility.UrlEncode(feed.FeedUrl)">@feed.FeedUrl</a>
-                    </div>
-                    <div class="col" style="overflow: hidden;">
-                        <p>
-                            @if (!newTagInputs.ContainsKey(feed.FeedUrl))
-                            {
-                                newTagInputs[feed.FeedUrl] = string.Empty;
-                            }
-
-                            @if (feed.Tags != null && feed.Tags.Any())
-                            {
-                                <span>Tags: @(string.Join(", ", feed.Tags))</span>
-                            }
-
-                            <input type="text" 
-                                value="@newTagInputs[feed.FeedUrl]" 
-                                @oninput="e => UpdateTagInput(feed, e.Value.ToString())" 
-                                placeholder="Tag" />
-                            <button class="btn btn-link p-0" @onclick="() => AddTag(feed)">Add tag</button>
-                            <button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed.FeedUrl)">Delete</button>
-                            @if (feed.IsPaywalled)
-                            {
-                                <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">??</button>
-                            }
-                            else
-                            {
-                                <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Not ??</button>
-                            }
-                        </p>
-                    </div>
+            <div class="row post-unread" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <div class="col" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    <a href="posts?FeedUrl=@System.Net.WebUtility.UrlEncode(feed.FeedUrl)">@feed.FeedUrl</a>
                 </div>
-                
-            @* </div> *@
+            </div>
+            <div class="row" style="overflow: hidden;">
+                <p>
+                    @if (!newTagInputs.ContainsKey(feed.FeedUrl))
+                    {
+                        newTagInputs[feed.FeedUrl] = string.Empty;
+                    }
+
+                    @if (feed.Tags != null && feed.Tags.Any())
+                    {
+                        <span>Tags: @(string.Join(", ", feed.Tags))</span>
+                    }
+
+                    <input type="text" 
+                        value="@newTagInputs[feed.FeedUrl]" 
+                        @oninput="e => UpdateTagInput(feed, e.Value.ToString())" 
+                        placeholder="Tag" @onsubmit="() => AddTag(feed)"/>
+                    <button class="btn btn-link p-0" @onclick="() => AddTag(feed)">Add tag</button>
+                    <button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed.FeedUrl)">Delete</button>
+                    @if (feed.IsPaywalled)
+                    {
+                        <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">??</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Not ??</button>
+                    }
+                </p>
+            </div>
         }
     </div>
 }
@@ -102,15 +102,14 @@ else
         if (firstRender || user == null)
         {
             var username = await this.GetUsernameAsync();
+            if (username == null)
+            {
+                return;
+            }
             user = await this.feedClient.RegisterUserAsync(username);
             feeds = this.GetFeedUrls();
             this.StateHasChanged();
         }
-    }
-
-    private async Task<string> GetUsernameAsync()
-    {
-        return await jsRuntime.InvokeAsync<string>("getUsername");
     }
 
     private async Task SubmitAsync()
@@ -198,3 +197,5 @@ else
         }
     }
 }
+
+</AuthorizeView>

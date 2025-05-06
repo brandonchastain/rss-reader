@@ -1,0 +1,22 @@
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationState { get; set; }
+
+    protected async Task<string?> GetUsernameAsync()
+    {
+        // return await jsRuntime.InvokeAsync<string>("getUsername");
+        if (authenticationState is not null)
+        {
+            var authState = await authenticationState;
+            var user = authState?.User;
+
+            if (user?.Identity is not null && user.Identity.IsAuthenticated)
+            {
+                return user.Identity.Name;
+            }
+        }
+
+        return null;
+    }
+}

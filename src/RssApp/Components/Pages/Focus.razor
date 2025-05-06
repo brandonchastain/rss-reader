@@ -1,4 +1,5 @@
 @page "/focus"
+@inherits Base
 @rendermode InteractiveServer
 @attribute [StreamRendering]
 @inject ILogger<Timeline> logger
@@ -10,7 +11,7 @@
 @inject IJSRuntime jsRuntime
 
 <PageTitle>Focused Feed</PageTitle>
-
+<AuthorizeView>
 @if (isLoading)
 {
     <div class="loading-overlay">
@@ -212,16 +213,15 @@
         if (CurrentUser == null)
         {
             var username = await this.GetUsernameAsync();
+            if (username == null)
+            {
+                return;
+            }
             this.CurrentUser = await this.feedClient.RegisterUserAsync(username);
             await RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
             this.initialized = true;
             this.StateHasChanged();
         }
-    }
-
-    private async Task<string> GetUsernameAsync()
-    {
-        return await jsRuntime.InvokeAsync<string>("getUsername");
     }
 
     private string GetRootDomain(string url)
@@ -239,3 +239,4 @@
         return post.Href;
     }
 }
+</AuthorizeView>

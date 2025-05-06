@@ -1,3 +1,4 @@
+@inherits Base
 @rendermode InteractiveServer
 @attribute [StreamRendering]
 @using Microsoft.AspNetCore.Components.Web.Virtualization
@@ -5,6 +6,7 @@
 @inject ILogger<Posts> logger
 @inject IJSRuntime jsRuntime
 
+<AuthorizeView>
 @if (Posts == null)
 {
     <p><em>Loading...</em></p>
@@ -41,7 +43,7 @@ else
                                 <a href="@post.CommentsHref">[comments]</a>
                             }
                             <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(post)">[mark @(!post.IsRead ? "read" : "unread")]</button>
-                            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => SavePost(post)">[@(!post.IsSaved ? "save" : "unsave")]</button>
+                            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(post)">[@(!post.IsSaved ? "save" : "unsave")]</button>
                             @this.GetRootDomain(post.Href)<br/>
                             @(post.FeedTags.Any() ? $"[{string.Join(",", post.FeedTags)}]" : "")
                         </p>
@@ -72,8 +74,8 @@ else
                 &nbsp;
             </div>
             <div class="row">
-                <div id="observerTarget" class="col-3">
-                    Oh no! You have reached the end of the feed. 
+                <div id="observerTarget">
+                    RssApp
                 </div>
             </div>
         </InfiniteScroll>
@@ -102,7 +104,6 @@ window.Observer = {
     }
 };
 </script>
-@* <script src="_content/Sve.Blazor.InfiniteScroll/js/Observer.js"></script> *@
 
 @code {
     public IEnumerable<string> userTags = new List<string>();
@@ -133,15 +134,14 @@ window.Observer = {
         if (User == null)
         {
             var username = await this.GetUsernameAsync();
+            if (username == null)
+            {
+                return;
+            }
             this.User = await this.FeedClient.RegisterUserAsync(username);
             this.userTags = this.FeedClient.GetUserTags(User);
             this.StateHasChanged();
         }
-    }
-
-    private async Task<string> GetUsernameAsync()
-    {
-        return await jsRuntime.InvokeAsync<string>("getUsername");
     }
 
     private bool ShouldPostBeHidden(NewsFeedItem post)
@@ -156,7 +156,7 @@ window.Observer = {
         bool val = isRead ?? !item.IsRead;
         item.IsRead = val;
         this.FeedClient.MarkAsRead(item, val);
-        this.StateHasChanged();
+        InvokeAsync(StateHasChanged);
     }
 
     private async Task ToggleUnreadFilterAsync()
@@ -187,15 +187,14 @@ window.Observer = {
     private void PreviewPost(NewsFeedItem post)
     {
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
-        this.StateHasChanged();
-
+        InvokeAsync(this.StateHasChanged);
         MarkAsRead(post, true);
     }
 
     private async Task Next()
     {
         await this.OnPageChanged.InvokeAsync(this.Page);
-        this.StateHasChanged();
+        await InvokeAsync(this.StateHasChanged);
     }
 
     private string GetRootDomain(string url)
@@ -219,13 +218,16 @@ window.Observer = {
         {
             logger.LogInformation("Saving post {post}", post);
             await this.FeedClient.SavePostAsync(post);
+            post.IsSaved = true;
         }
         else    
         {
             logger.LogInformation("Unsaving post {post}", post);
             await this.FeedClient.UnsavePostAsync(post);
+            post.IsSaved = false;
         }
 
-        this.StateHasChanged();
+        await InvokeAsync(StateHasChanged);
     }
 }
+</AuthorizeView>

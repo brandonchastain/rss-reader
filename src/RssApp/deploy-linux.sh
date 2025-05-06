@@ -19,21 +19,21 @@
 #   --size Standard_B1s \
 #   --public-ip-sku Standard
 
-az network nsg rule delete \
-    --resource-group rss-reader-linux-group \
-    --nsg-name rss-linux-vmNSG \
-    --name open-port-80
+# az network nsg rule delete \
+#     --resource-group rss-reader-linux-group \
+#     --nsg-name rss-linux-vmNSG \
+#     --name open-port-80
 
-az network nsg rule delete \
-    --resource-group rss-reader-linux-group \
-    --nsg-name rss-linux-vmNSG \
-    --name open-port-443
+# az network nsg rule delete \
+#     --resource-group rss-reader-linux-group \
+#     --nsg-name rss-linux-vmNSG \
+#     --name open-port-443
 
-# Open port 80 for HTTP traffic
-az vm open-port \
-    --resource-group rss-reader-linux-group \
-    --name rss-linux-vm \
-    --port 443
+# # Open port 80 for HTTP traffic
+# az vm open-port \
+#     --resource-group rss-reader-linux-group \
+#     --name rss-linux-vm \
+#     --port 443
 
 # az vm open-port \
 #     --resource-group rss-reader-linux-group \
@@ -88,7 +88,7 @@ WorkingDirectory=/home/brandonchastain/app
 ExecStart=/usr/bin/authbind --deep /snap/aspnetcore-runtime-90/15/usr/bin//dotnet /home/brandonchastain/app/RssApp.dll --launch-profile https
 User=brandonchastain
 Environment=ASPNETCORE_URLS=https://+:443
-Environment=ASPNETCORE_ENVIRONMENT=Development
+Environment=ASPNETCORE_ENVIRONMENT=Production
 Restart=always
 
 [Install]
