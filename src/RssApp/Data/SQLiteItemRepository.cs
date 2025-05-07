@@ -1,5 +1,5 @@
 using System.Data.Common;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using System.Diagnostics;
 using RssApp.Contracts;
 
@@ -29,7 +29,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     private void InitializeDatabase()
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             // Set WAL journal mode for better concurrency
@@ -69,6 +69,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 )";
             command.ExecuteNonQuery();
 
+            // indexes
             command = connection.CreateCommand();
             command.CommandText = @"
                 CREATE INDEX IF NOT EXISTS idx_items_feedurl_userid
@@ -80,7 +81,137 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 CREATE INDEX IF NOT EXISTS idx_items_href
                 ON NewsFeedItems (Href);";
             command.ExecuteNonQuery();
+
+            // FTS5 virtual table for full-text search
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE VIRTUAL TABLE IF NOT EXISTS NewsFeedItems_fts
+                USING fts5(
+                    Title,
+                    Content,
+                    Href,
+                    FeedUrl,
+                    UserId UNINDEXED,
+                    content='NewsFeedItems',
+                    content_rowid='Id'
+                );";
+            command.ExecuteNonQuery();
+
+            // Trigger to keep the FTS table in sync with the main table
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TRIGGER IF NOT EXISTS NewsFeedItems_after_insert
+                AFTER INSERT ON NewsFeedItems
+                BEGIN
+                    INSERT INTO NewsFeedItems_fts (rowid, Title, Content, Href, FeedUrl, UserId)
+                    VALUES (new.Id, new.Title, new.Content, new.Href, new.FeedUrl, new.UserId);
+                END;";
+            command.ExecuteNonQuery();
+
+            // Update trigger
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TRIGGER IF NOT EXISTS NewsFeedItems_au AFTER UPDATE ON NewsFeedItems
+                BEGIN
+                    INSERT INTO NewsFeedItems_fts(NewsFeedItems_fts, rowid, Title, Content, Href, FeedUrl, UserId)
+                    VALUES('delete', old.Id, old.Title, old.Content, old.Href, old.FeedUrl, old.UserId);
+                    INSERT INTO NewsFeedItems_fts(rowid, Title, Content, Href, FeedUrl, UserId)
+                    VALUES (new.Id, new.Title, new.Content, new.Href, new.FeedUrl, new.UserId);
+                END;";
+            command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TRIGGER IF NOT EXISTS NewsFeedItems_after_delete
+                AFTER DELETE ON NewsFeedItems
+                BEGIN
+                    DELETE FROM NewsFeedItems_fts WHERE rowid = old.Id;
+                END;";
+            command.ExecuteNonQuery();
+
+            // Rebuild the FTS table (run if db gets out of sync with fts5)
+            // logger.LogWarning("Rebuilding FTS table...");
+            // command = connection.CreateCommand();
+            // command.CommandText = @"INSERT INTO NewsFeedItems_fts(NewsFeedItems_fts) VALUES('rebuild');";
+            // command.ExecuteNonQuery();
+            // logger.LogWarning("Done rebuilding FTS table...");
         }
+    }
+
+    public async Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize)
+    {
+        var set = new HashSet<NewsFeedItem>();
+        await this.semaphore.WaitAsync();
+
+        try
+        {
+            using (var connection = new SqliteConnection(this.connectionString))
+            {
+                await connection.OpenAsync();
+                var command = connection.CreateCommand();
+                // 
+                command.CommandText = """
+                    SELECT 
+                        i.FeedUrl,
+                        i.NewsFeedItemId,
+                        i.Href,
+                        i.CommentsHref,
+                        i.Title,
+                        i.PublishDate,
+                        i.Content,
+                        i.IsRead,
+                        t.TagName,
+                        i.UserId,
+                        i.ThumbnailUrl,
+                        f.IsPaywalled,
+                        s.SavedDate
+                    FROM NewsFeedItems i
+                    LEFT JOIN Feeds f
+                        ON i.FeedUrl = f.Url
+                    LEFT JOIN FeedTags t
+                        ON f.Id = t.FeedId
+                    LEFT JOIN SavedPosts s
+                        ON i.Href = s.Href 
+                        AND i.FeedUrl = s.FeedUrl 
+                        AND i.UserId = s.UserId
+                    WHERE (i.Id IN (
+                        SELECT rowid FROM NewsFeedItems_fts
+                        WHERE NewsFeedItems_fts MATCH @query)
+                        OR i.Title LIKE @plainQuery)
+                    AND i.UserId = @userId
+                    ORDER BY i.PublishDate DESC
+                    LIMIT @pageSize OFFSET @offset
+                """;
+                
+                command.Parameters.AddWithValue("@query", $"\"{query}\"");
+                command.Parameters.AddWithValue("@plainQuery", $"%{query}%");
+                command.Parameters.AddWithValue("@userId", user.Id);
+                command.Parameters.AddWithValue("@pageSize", pageSize);
+                command.Parameters.AddWithValue("@offset", page * pageSize);
+
+                using (var reader = await command.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        var item = this.ReadItemFromResults(reader);
+
+                        if (!set.Contains(item))
+                        {
+                            set.Add(item);
+                        }
+
+                        set.TryGetValue(item, out var storedItem);
+                        storedItem.FeedTags = storedItem.FeedTags.Union(item.FeedTags).ToList();
+                    }
+                }
+            }
+        }
+        finally
+        {
+            this.semaphore.Release();
+        }
+
+        return set.ToList();
     }
 
     public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
@@ -100,7 +231,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             var set = new HashSet<NewsFeedItem>();
             var user = this.userStore.GetUserById(feed.UserId);
 
-            using (var connection = new SQLiteConnection(this.connectionString))
+            using (var connection = new SqliteConnection(this.connectionString))
             {
                 await connection.OpenAsync();
                 var command = connection.CreateCommand();
@@ -194,7 +325,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     private NewsFeedItem ReadItemFromResults(DbDataReader reader)
     {
-        var id = reader.IsDBNull(reader.GetOrdinal("NewFeedItemId")) ? "" : reader.GetString(reader.GetOrdinal("NewsFeedItemId"));
+        var id = reader.IsDBNull(reader.GetOrdinal("NewsFeedItemId")) ? "" : reader.GetString(reader.GetOrdinal("NewsFeedItemId"));
         var userId = reader.IsDBNull(reader.GetOrdinal("UserId")) ? 1 : reader.GetInt32(reader.GetOrdinal("UserId"));
         var href = reader.IsDBNull(reader.GetOrdinal("Href")) ? "" : reader.GetString(reader.GetOrdinal("Href"));
         var commentsHref = reader.IsDBNull(reader.GetOrdinal("CommentsHref")) ? "" : reader.GetString(reader.GetOrdinal("CommentsHref"));
@@ -225,7 +356,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public NewsFeedItem? GetItem(RssUser user, string href)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -256,7 +387,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         this.semaphore.Wait();
         try
         {
-            using (var connection = new SQLiteConnection(this.connectionString))
+            using (var connection = new SqliteConnection(this.connectionString))
             {
                 connection.Open();
 
@@ -288,18 +419,18 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                         ThumbnailUrl
                                     ) 
                                     VALUES (@feedUrl, @newsFeedItemId, @href, @commentsHref, @title, @publishDate, @content, @userId, @thumbnailUrl)";
-                                command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
-                                command.Parameters.AddWithValue("@newsFeedItemId", item.Id);
-                                command.Parameters.AddWithValue("@href", item.Href);
-                                command.Parameters.AddWithValue("@commentsHref", item.CommentsHref);
-                                command.Parameters.AddWithValue("@title", item.Title);
-                                command.Parameters.AddWithValue("@publishDate", item.PublishDate);
-                                command.Parameters.AddWithValue("@content", item.Content);
+                                command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
+                                command.Parameters.AddWithValue("@newsFeedItemId", item.Id ?? "");
+                                command.Parameters.AddWithValue("@href", item.Href ?? "");
+                                command.Parameters.AddWithValue("@commentsHref", (object?)item.CommentsHref ?? DBNull.Value);
+                                command.Parameters.AddWithValue("@title", item.Title ?? "");
+                                command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
+                                command.Parameters.AddWithValue("@content", (object?)item.Content ?? DBNull.Value);
                                 command.Parameters.AddWithValue("@userId", item.UserId);
-                                command.Parameters.AddWithValue("@thumbnailUrl", item.ThumbnailUrl);
+                                command.Parameters.AddWithValue("@thumbnailUrl", (object?)item.ThumbnailUrl ?? DBNull.Value);
                                 command.ExecuteNonQuery();
                             }
-                            catch (SQLiteException ex) when (ex.ResultCode == SQLiteErrorCode.Constraint && ex.Message.Contains("UNIQUE"))
+                            catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.Message.Contains("UNIQUE"))
                             {
                                 // A duplicate entry was found, just skip it.
                                 this.logger.LogWarning(ex, "Unique constraint violation while adding items to SQLite database");
@@ -328,7 +459,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public void MarkAsRead(NewsFeedItem item, bool isRead)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -346,7 +477,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public void SavePost(NewsFeedItem item, RssUser user)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -363,7 +494,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public void UnsavePost(NewsFeedItem item, RssUser user)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
