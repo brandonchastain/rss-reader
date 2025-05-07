@@ -69,6 +69,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 )";
             command.ExecuteNonQuery();
 
+            // indexes
             command = connection.CreateCommand();
             command.CommandText = @"
                 CREATE INDEX IF NOT EXISTS idx_items_feedurl_userid
@@ -80,6 +81,102 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 CREATE INDEX IF NOT EXISTS idx_items_href
                 ON NewsFeedItems (Href);";
             command.ExecuteNonQuery();
+
+            // FTS5 virtual table for full-text search
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE VIRTUAL TABLE IF NOT EXISTS NewsFeedItems_fts
+                USING fts5(
+                    Title,
+                    Content,
+                    Href,
+                    FeedUrl,
+                    UserId UNINDEXED,
+                    content='NewsFeedItems',
+                    content_rowid='Id'
+                );";
+            command.ExecuteNonQuery();
+
+            // Trigger to keep the FTS table in sync with the main table
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TRIGGER IF NOT EXISTS NewsFeedItems_after_insert
+                AFTER INSERT ON NewsFeedItems
+                BEGIN
+                    INSERT INTO NewsFeedItems_fts (rowid, Title, Content, Href, FeedUrl, UserId)
+                    VALUES (new.Id, new.Title, new.Content, new.Href, new.FeedUrl, new.UserId);
+                END;";
+            command.ExecuteNonQuery();
+
+            // Update trigger
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TRIGGER IF NOT EXISTS NewsFeedItems_au AFTER UPDATE ON NewsFeedItems
+                BEGIN
+                    INSERT INTO NewsFeedItems_fts(NewsFeedItems_fts, rowid, Title, Content, Href, FeedUrl, UserId)
+                    VALUES('delete', old.Id, old.Title, old.Content, old.Href, old.FeedUrl, old.UserId);
+                    INSERT INTO NewsFeedItems_fts(rowid, Title, Content, Href, FeedUrl, UserId)
+                    VALUES (new.Id, new.Title, new.Content, new.Href, new.FeedUrl, new.UserId);
+                END;";
+            command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TRIGGER IF NOT EXISTS NewsFeedItems_after_delete
+                AFTER DELETE ON NewsFeedItems
+                BEGIN
+                    DELETE FROM NewsFeedItems_fts WHERE rowid = old.Id;
+                END;";
+            command.ExecuteNonQuery();
+
+            // Rebuild the FTS table
+            // command = connection.CreateCommand();
+            // command.CommandText = @"INSERT INTO NewsFeedItems_fts(NewsFeedItems_fts) VALUES('rebuild');";
+            // command.ExecuteNonQuery();
+        }
+    }
+
+    public async Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize)
+    {
+        using (var connection = new SQLiteConnection(this.connectionString))
+        {
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT * FROM NewsFeedItems
+                WHERE Id IN (
+                    SELECT rowid FROM NewsFeedItems_fts
+                    WHERE NewsFeedItems_fts MATCH @query
+                    LIMIT @pageSize OFFSET @offset
+                )
+                AND UserId = @userId
+                ORDER BY PublishDate DESC
+            """;
+            command.Parameters.AddWithValue("@query", query);
+            command.Parameters.AddWithValue("@userId", user.Id);
+            command.Parameters.AddWithValue("@pageSize", pageSize);
+            command.Parameters.AddWithValue("@offset", page * pageSize);
+
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+
+                var set = new HashSet<NewsFeedItem>();
+
+                while (await reader.ReadAsync())
+                {
+                    var item = this.ReadItemFromResults(reader);
+
+                    if (!set.Contains(item))
+                    {
+                        set.Add(item);
+                    }
+
+                    set.TryGetValue(item, out var storedItem);
+                    storedItem.FeedTags = storedItem.FeedTags.Union(item.FeedTags).ToList();
+                }
+
+                return set;
+            }
         }
     }
 
