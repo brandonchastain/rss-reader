@@ -13,14 +13,17 @@
 }
 else
 {
-    <div class="toolbar">
-        <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.IsFilterUnread ? "[all]" : "[unread]")</button>
-        <button class="btn-link" @onclick="() => ToggleSavedFilterAsync()">@(this.IsFilterSaved ? "[all]" : "[saved]")</button>
-        @foreach (var tag in this.userTags)
-        {
-            <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="() => FilterForTag(tag)">[@tag]</button>
-        }
-    </div>
+    if (ShowToolbar)
+    {
+        <div class="toolbar">
+            <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.IsFilterUnread ? "[all]" : "[unread]")</button>
+            <button class="btn-link" @onclick="() => ToggleSavedFilterAsync()">@(this.IsFilterSaved ? "[all]" : "[saved]")</button>
+            @foreach (var tag in this.userTags)
+            {
+                <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="() => FilterForTag(tag)">[@tag]</button>
+            }
+        </div>
+    }
     <div id="post-table" class="table">
         <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
             @foreach (var post in Posts)
@@ -114,6 +117,9 @@ window.Observer = {
     [CascadingParameter(Name = "CurrentUser")]
     public RssUser User { get; set; }
 
+    [CascadingParameter(Name = "ShowToolbar")]
+    public bool ShowToolbar { get; set; } = true;
+
     [CascadingParameter(Name = "Page")]
     public int Page { get; set; } = 0;
     
@@ -199,6 +205,11 @@ window.Observer = {
 
     private string GetRootDomain(string url)
     {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
         return new Uri(url).Authority;
     }
 

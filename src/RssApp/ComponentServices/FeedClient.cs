@@ -109,6 +109,12 @@ public class FeedClient : IFeedClient, IDisposable
         return items;
     }
 
+    public async Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, int page, int pageSize = PageSize)
+    {
+        var items = await this.newsFeedItemStore.SearchItemsAsync(query, this.loggedInUser, page, pageSize);
+        return items;
+    }
+
     public void MarkAsRead(NewsFeedItem item, bool isRead)
     {
         this.newsFeedItemStore.MarkAsRead(item, isRead);
