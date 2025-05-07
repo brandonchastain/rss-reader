@@ -129,12 +129,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 END;";
             command.ExecuteNonQuery();
 
-            // Rebuild the FTS table
-            logger.LogWarning("Rebuilding FTS table...");
-            command = connection.CreateCommand();
-            command.CommandText = @"INSERT INTO NewsFeedItems_fts(NewsFeedItems_fts) VALUES('rebuild');";
-            command.ExecuteNonQuery();
-            logger.LogWarning("Done rebuilding FTS table...");
+            // Rebuild the FTS table (run if db gets out of sync with fts5)
+            // logger.LogWarning("Rebuilding FTS table...");
+            // command = connection.CreateCommand();
+            // command.CommandText = @"INSERT INTO NewsFeedItems_fts(NewsFeedItems_fts) VALUES('rebuild');";
+            // command.ExecuteNonQuery();
+            // logger.LogWarning("Done rebuilding FTS table...");
         }
     }
 
