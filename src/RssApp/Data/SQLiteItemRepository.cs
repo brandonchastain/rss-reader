@@ -149,7 +149,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             {
                 await connection.OpenAsync();
                 var command = connection.CreateCommand();
-                // 
                 command.CommandText = """
                     SELECT 
                         i.FeedUrl,
@@ -340,7 +339,11 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var isSaved = false;
 
         // Check if SavedPosts table was joined in the query
-        isSaved = !reader.IsDBNull(reader.GetOrdinal("SavedDate"));
+        if (reader.GetSchemaTable().Columns.Contains("SavedDate"))
+        {
+            isSaved = !reader.IsDBNull(reader.GetOrdinal("SavedDate"));
+        }
+        
         
         var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
         {

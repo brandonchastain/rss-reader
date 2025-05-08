@@ -1,4 +1,3 @@
-using System.Net;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -6,14 +5,11 @@ using RssApp.Components;
 using RssApp.Components.Account;
 using RssApp.ComponentServices;
 using RssApp.Config;
-using RssApp.Contracts;
 using RssApp.Data;
 using RssApp.RssClient;
 using RssApp.Serialization;
 
-// Refactor configuration loading into a function
 var config = RssAppConfig.LoadFromEnvironment();
-
 var cancellationTokenSource = new CancellationTokenSource();
 
 Console.CancelKeyPress += delegate {
@@ -81,7 +77,6 @@ builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<IdentityUserAccessor>();
 builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
-
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultScheme = IdentityConstants.ApplicationScheme;
@@ -142,42 +137,6 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// TODO: Add real auth
-// if (app.Environment.IsDevelopment())
-// {
-    int index = 1;
-    RssUser loggedInUser = null;
-    var users = new RssUser[]{
-        new RssUser("defaultuser", 1),
-        new RssUser("default2", 2),
-    };
-
-    app.MapGet("/.auth/me", () => new []
-    {
-        new
-        {
-            user_id = loggedInUser?.Username ?? "defaultuser",
-        }
-    });
-
-    app.MapGet("/.auth/login", (context) =>
-    {
-        loggedInUser = users[index % users.Length];
-        index++;
-        context.Response.StatusCode = (int)HttpStatusCode.Redirect;
-        context.Response.Headers["Location"] = "/";
-        return Task.CompletedTask;
-    });
-
-    app.MapGet("/.auth/logout", (context) =>
-    {
-        loggedInUser = null;
-        string redirect = context.Request.Query["post_logout_redirect_uri"];
-        context.Response.StatusCode = (int)HttpStatusCode.Redirect;
-        context.Response.Headers["Location"] = redirect;
-        return Task.CompletedTask;
-    });
-// }
 app.MapAdditionalIdentityEndpoints();
 
 using (var scope = app.Services.CreateScope())

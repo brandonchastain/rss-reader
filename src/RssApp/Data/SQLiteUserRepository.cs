@@ -1,4 +1,4 @@
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using RssApp.Contracts;
 
 namespace RssApp.Data;
@@ -19,7 +19,7 @@ public class SQLiteUserRepository : IUserRepository
 
     private void InitializeDatabase()
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -34,7 +34,7 @@ public class SQLiteUserRepository : IUserRepository
 
     public RssUser? GetUserByName(string username)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -56,7 +56,7 @@ public class SQLiteUserRepository : IUserRepository
 
     public RssUser? GetUserById(int userId)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -78,7 +78,7 @@ public class SQLiteUserRepository : IUserRepository
 
     public RssUser AddUser(string username, int? id = null)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -104,7 +104,7 @@ public class SQLiteUserRepository : IUserRepository
 
     public IEnumerable<RssUser> GetAllUsers()
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -121,7 +121,7 @@ public class SQLiteUserRepository : IUserRepository
         }
     }
 
-    private RssUser ReadItemFromResults(SQLiteDataReader reader)
+    private RssUser ReadItemFromResults(SqliteDataReader reader)
     {
         var id = reader.IsDBNull(reader.GetOrdinal("Id")) ? 0 : reader.GetInt32(reader.GetOrdinal("Id"));
         var username = reader.IsDBNull(reader.GetOrdinal("Username")) ? "" : reader.GetString(reader.GetOrdinal("Username"));

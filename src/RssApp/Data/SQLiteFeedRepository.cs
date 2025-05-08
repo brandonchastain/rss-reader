@@ -1,4 +1,4 @@
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using RssApp.Contracts;
 
 namespace RssApp.Data;
@@ -19,7 +19,7 @@ public class SQLiteFeedRepository : IFeedRepository
 
     private void InitializeDatabase()
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -59,7 +59,7 @@ public class SQLiteFeedRepository : IFeedRepository
     {
         var feeds = new HashSet<NewsFeed>();
 
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -101,30 +101,53 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public void AddFeed(NewsFeed feed)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        try
         {
-            connection.Open();
-            var command = connection.CreateCommand();
-            command.CommandText = "INSERT INTO Feeds (Url, UserId) VALUES (@url, @userId)";
-            command.Parameters.AddWithValue("@url", feed.FeedUrl);
-            command.Parameters.AddWithValue("@userId", feed.UserId);
-            
-            command.ExecuteNonQuery();
-        }
-        
-        using (var connection = new SQLiteConnection(this.connectionString))
-        {
-            connection.Open();
-            var command = connection.CreateCommand();
-            command.CommandText = "SELECT Id FROM Feeds WHERE Url = @url AND UserId = @userId";
-            command.Parameters.AddWithValue("@url", feed.FeedUrl);
-            command.Parameters.AddWithValue("@userId", feed.UserId);
-            
-            using (var reader = command.ExecuteReader())
+            using (var connection = new SqliteConnection(this.connectionString))
             {
-                if (reader.Read())
+                connection.Open();
+                var command = connection.CreateCommand();
+                command.CommandText = "INSERT INTO Feeds (Url, UserId) VALUES (@url, @userId)";
+                command.Parameters.AddWithValue("@url", feed.FeedUrl);
+                command.Parameters.AddWithValue("@userId", feed.UserId);
+                
+                command.ExecuteNonQuery();
+            }
+            
+            using (var connection = new SqliteConnection(this.connectionString))
+            {
+                connection.Open();
+                var command = connection.CreateCommand();
+                command.CommandText = "SELECT Id FROM Feeds WHERE Url = @url AND UserId = @userId";
+                command.Parameters.AddWithValue("@url", feed.FeedUrl);
+                command.Parameters.AddWithValue("@userId", feed.UserId);
+                
+                using (var reader = command.ExecuteReader())
                 {
-                    feed.FeedId = reader.GetInt32(0);
+                    if (reader.Read())
+                    {
+                        feed.FeedId = reader.GetInt32(0);
+                    }
+                }
+            }
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.Message.Contains("UNIQUE"))
+        {
+            // Feed already exists, just update the ID
+            using (var connection = new SqliteConnection(this.connectionString))
+            {
+                connection.Open();
+                var command = connection.CreateCommand();
+                command.CommandText = "SELECT Id FROM Feeds WHERE Url = @url AND UserId = @userId";
+                command.Parameters.AddWithValue("@url", feed.FeedUrl);
+                command.Parameters.AddWithValue("@userId", feed.UserId);
+                
+                using (var reader = command.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        feed.FeedId = reader.GetInt32(0);
+                    }
                 }
             }
         }
@@ -132,7 +155,7 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public void Update(NewsFeed feed)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -150,7 +173,7 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public string? GetTag(int userId, string tagName)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -171,7 +194,7 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public string? GetTagByFeedId(int feedId, string tagName)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -200,7 +223,7 @@ public class SQLiteFeedRepository : IFeedRepository
             return;
         }
         
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
@@ -252,7 +275,7 @@ public class SQLiteFeedRepository : IFeedRepository
         }
     }
 
-    private NewsFeed ReadSingleRecord(SQLiteDataReader reader)
+    private NewsFeed ReadSingleRecord(SqliteDataReader reader)
     {
         var feedId = reader.IsDBNull(reader.GetOrdinal("Id")) ? 0 : reader.GetInt32(reader.GetOrdinal("Id"));
         var url = reader.IsDBNull(reader.GetOrdinal("Url")) ? "" : reader.GetString(reader.GetOrdinal("Url"));
@@ -266,7 +289,7 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public void DeleteFeed(RssUser user, string url)
     {
-        using (var connection = new SQLiteConnection(this.connectionString))
+        using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();

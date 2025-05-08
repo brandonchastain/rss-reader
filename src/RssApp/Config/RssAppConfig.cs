@@ -30,7 +30,7 @@ namespace RssApp.Config
                 AuthDb = Environment.GetEnvironmentVariable(authDbVar) ?? "C:\\home\\data\\auth.db",
                 IsTestUserEnabled = bool.TryParse(Environment.GetEnvironmentVariable(testUserEnabledVar), out var isEnabled) && isEnabled,
                 CacheReloadInterval = TimeSpan.FromMinutes(int.TryParse(Environment.GetEnvironmentVariable(cacheReloadIntervalMinsVar), out var interval) ? interval : 5),
-                CacheReloadStartupDelay = TimeSpan.FromMinutes(int.TryParse(Environment.GetEnvironmentVariable(cacheReloadStartupDelayMinsVar), out var delay) ? delay : 60)
+                CacheReloadStartupDelay = TimeSpan.FromMinutes(int.TryParse(Environment.GetEnvironmentVariable(cacheReloadStartupDelayMinsVar), out var delay) ? delay : 5)
             };
         }
     }

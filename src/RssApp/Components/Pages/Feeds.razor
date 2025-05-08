@@ -114,6 +114,7 @@ else
 
     private async Task SubmitAsync()
     {
+        logger.LogInformation("Adding feed: {FeedUrl}, User: {UserId}, storeIsNull: {store}, clientIsNull: {clientIsNull}", NewFeedUrl, this.user?.Id, this.feedStore == null, this.feedClient == null);
         this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.user.Id));
         await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, this.user.Id));
         await this.OnInitializedAsync();
