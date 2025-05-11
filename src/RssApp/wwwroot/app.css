@@ -206,7 +206,7 @@ h1:focus {
     height: 100%;
     margin: 0;
     background: linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.8) 100%);
-    z-index: -1;
+    z-index: 1;
 }
 
 #focus-post-content-container {
@@ -216,8 +216,8 @@ h1:focus {
     height: 80vh;
     margin: 0 auto;
     padding: 3rem;
-    background-color: rgba(0, 0, 0, 0.7);
-    z-index: -1;
+    background-color: rgba(0, 0, 0, 0.85);
+    z-index: 2;
     border-radius: 8px;
     overflow-y: auto;
     overflow-x: hidden;
@@ -260,7 +260,7 @@ h1:focus {
     border: none;
     color: white;
     font-size: 2rem;
-    z-index: 10001;
+    z-index: 3;
     cursor: pointer;
     transition: background 0.2s;
     display: flex;
