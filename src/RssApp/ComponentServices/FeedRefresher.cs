@@ -16,6 +16,8 @@ public class FeedRefresher : IDisposable
     private readonly IUserRepository userStore;
     private readonly TimeSpan cacheReloadInterval;
     private readonly TimeSpan cacheReloadStartupDelay;
+    private Exception lastRefreshException;
+
     public FeedRefresher(
         RssDeserializer deserializer,
         ILogger<FeedRefresher> logger,
@@ -73,7 +75,15 @@ public class FeedRefresher : IDisposable
                     var feeds = this.persistedFeeds.GetFeeds(user);
                     foreach (var feed in feeds)
                     {
-                        await this.ReloadCachedItemsAsync(feed);
+                        try
+                        {
+                            await this.ReloadCachedItemsAsync(feed);
+                        }
+                        catch (Exception ex)
+                        {
+                            this.logger.LogError(ex, "Error reloading feed: {feed}", feed.FeedUrl);
+                        }
+
                         await Task.Delay(10000);
                     }
                 }
@@ -125,7 +135,14 @@ public class FeedRefresher : IDisposable
             {
                 int len = Math.Min(500, response?.Length ?? 0);
                 this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
+                lastRefreshException = ex;
             }
+        }
+
+        if (lastRefreshException != null && (freshItems == null || !freshItems.Any()))
+        {
+            //this.logger.LogWarning($"No items found when refreshing feed: {url}");
+            throw lastRefreshException;
         }
 
         foreach (var item in freshItems)

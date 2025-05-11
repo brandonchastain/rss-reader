@@ -30,6 +30,11 @@
     </div>
 </form>
 
+@if (lastError != null)
+{
+    <p style="color: red;">@lastError</p>
+}
+
 @if (feeds == null)
 {
     <p><em>Loading...</em></p>
@@ -37,7 +42,7 @@
 else
 {
     <div id="post-table" class="table">
-        @foreach (NewsFeed feed in feeds)
+        @foreach (NewsFeed feed in feeds.OrderBy(f => f.FeedUrl))
         {
             <div class="row post-unread" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                 <div class="col" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
@@ -78,9 +83,9 @@ else
 
 @code {
     private Dictionary<string, string> newTagInputs = new Dictionary<string, string>();
-
     private IEnumerable<NewsFeed> feeds;
     private RssUser user;
+    private string lastError = null;
 
     [SupplyParameterFromForm]
     private string NewFeedUrl { get; set; }
@@ -115,8 +120,40 @@ else
     private async Task SubmitAsync()
     {
         logger.LogInformation("Adding feed: {FeedUrl}, User: {UserId}, storeIsNull: {store}, clientIsNull: {clientIsNull}", NewFeedUrl, this.user?.Id, this.feedStore == null, this.feedClient == null);
-        this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.user.Id));
-        await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, this.user.Id));
+        
+        try
+        {
+            if (string.IsNullOrWhiteSpace(NewFeedUrl))
+            {
+                lastError = "Feed URL is empty";
+                return;
+            }
+
+            NewFeedUrl = NewFeedUrl.Trim();
+
+            if (NewFeedUrl.StartsWith("http://"))
+            {
+                NewFeedUrl = NewFeedUrl.Replace("http://", "https://");
+            }
+            else if (!NewFeedUrl.StartsWith("https://"))
+            {
+                NewFeedUrl = "https://" + NewFeedUrl;
+            }
+
+            await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, this.user.Id));
+            this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.user.Id));
+        }
+        catch (HttpRequestException ex)
+        {
+            lastError = "Invalid feed URL.";
+            this.logger.LogError(ex, "Invalid feed url, got HTTP exception from {url}", NewFeedUrl);
+        }
+        catch (Exception ex)
+        {
+            lastError = "Could not add feed.";
+            this.logger.LogError(ex, "Could not add feed {url}", NewFeedUrl);
+        }
+
         await this.OnInitializedAsync();
     }
 

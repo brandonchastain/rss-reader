@@ -8,8 +8,8 @@
 
 <PageTitle>Posts</PageTitle>
 <AuthorizeView>
-Username: @(CurrentUser == null ? "loading" : CurrentUser.Username)
-<h1>Posts from @(FeedUrl == null ? string.Empty : new Uri(FeedUrl).Authority)</h1>
+
+Posts from @(FeedUrl)
 
 <CascadingValue Value="@feedClient" Name="FeedClient">
 <CascadingValue Value="@CurrentUser" Name="CurrentUser">
