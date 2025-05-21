@@ -16,6 +16,8 @@ public class FeedRefresher : IDisposable
     private readonly IUserRepository userStore;
     private readonly TimeSpan cacheReloadInterval;
     private readonly TimeSpan cacheReloadStartupDelay;
+    private DateTime? lastCacheReloadTime;
+    private DateTime startupTime = DateTime.UtcNow;
     private Exception lastRefreshException;
 
     public FeedRefresher(
@@ -48,52 +50,49 @@ public class FeedRefresher : IDisposable
     {
         this.httpClient.Dispose();
     }
-    private Task bgTask;
-
-    public Task StartAsync(CancellationToken token)
-    {
-        this.bgTask = RunAsync(token);
-        return Task.CompletedTask;
-    }
 
     public async Task AddFeedAsync(NewsFeed feed)
     {
         await ReloadCachedItemsAsync(feed);
     }
 
-    private async Task RunAsync(CancellationToken token)
+    public async Task RefreshAsync()
     {
-        await Task.Delay(this.cacheReloadStartupDelay, token);
-
-        while (!token.IsCancellationRequested)
+        bool isJustStarted = this.startupTime + this.cacheReloadStartupDelay > DateTime.UtcNow;
+        bool isRecentRefresh = this.lastCacheReloadTime + this.cacheReloadInterval > DateTime.UtcNow;
+        
+        if (isJustStarted || isRecentRefresh)
         {
-            try
-            {
-                var allUsers = this.userStore.GetAllUsers();
-                foreach (var user in allUsers)
-                {
-                    var feeds = this.persistedFeeds.GetFeeds(user);
-                    foreach (var feed in feeds)
-                    {
-                        try
-                        {
-                            await this.ReloadCachedItemsAsync(feed);
-                        }
-                        catch (Exception ex)
-                        {
-                            this.logger.LogError(ex, "Error reloading feed: {feed}", feed.FeedUrl);
-                        }
+            return;
+        }
 
-                        await Task.Delay(10000);
+        try
+        {
+            var allUsers = this.userStore.GetAllUsers();
+            foreach (var user in allUsers)
+            {
+                var feeds = this.persistedFeeds.GetFeeds(user);
+                foreach (var feed in feeds)
+                {
+                    try
+                    {
+                        await this.ReloadCachedItemsAsync(feed);
                     }
+                    catch (Exception ex)
+                    {
+                        this.logger.LogError(ex, "Error reloading feed: {feed}", feed.FeedUrl);
+                    }
+
+                    // TODO: remove
+                    await Task.Delay(10000);
                 }
             }
-            catch (Exception ex)
-            {
-                this.logger.LogError(ex, "Error reloading cache");
-            }
 
-            await Task.Delay(this.cacheReloadInterval);
+            this.lastCacheReloadTime = DateTime.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogError(ex, "Error reloading cache");
         }
     }
 

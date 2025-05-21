@@ -9,13 +9,12 @@ using RssApp.Data;
 using RssApp.RssClient;
 using RssApp.Serialization;
 
-var config = RssAppConfig.LoadFromEnvironment();
 var cancellationTokenSource = new CancellationTokenSource();
-
 Console.CancelKeyPress += delegate {
     cancellationTokenSource.Cancel();
 };
 
+var config = RssAppConfig.LoadFromEnvironment();
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddLogging(loggingBuilder =>
@@ -112,9 +111,6 @@ builder.Services.AddTransient<Microsoft.AspNetCore.Identity.UI.Services.IEmailSe
 builder.Services.Configure<AuthMessageSenderOptions>(builder.Configuration);
 
 var app = builder.Build();
-
-var refresher = app.Services.GetRequiredService<FeedRefresher>();
-await refresher.StartAsync(cancellationTokenSource.Token);
 
 var a = app.Services.GetRequiredService<IFeedRepository>();
 var b = app.Services.GetRequiredService<IUserRepository>();
