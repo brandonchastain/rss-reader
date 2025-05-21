@@ -213,15 +213,28 @@ h1:focus {
     position: relative;
     width: 90%;
     max-width: 800px;
-    height: 80vh;
+    height: 30vh;
     margin: 0 auto;
-    padding: 3rem;
+    padding: 2rem;
     background-color: rgba(0, 0, 0, 0.85);
     z-index: 2;
     border-radius: 8px;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-origin: center;
+    backface-visibility: hidden;
+    will-change: transform;
+    cursor: pointer;
+}
+
+#focus-post-content-container.expanded {
+    height: 70vh;
     overflow-y: auto;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
+    cursor: default;
+}
+
+#focus-post-content-container p:last-child {
+    margin-bottom: 0;
 }
 
 #focus-post-content-container::-webkit-scrollbar {
@@ -338,4 +351,73 @@ h1:focus {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+/* Add swipe animation styles */
+.swipe-left {
+    -webkit-animation: swipeLeft 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: swipeLeft 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation-fill-mode: forwards;
+    -webkit-animation-fill-mode: forwards;
+    pointer-events: none;
+}
+
+.swipe-right {
+    -webkit-animation: swipeRight 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: swipeRight 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation-fill-mode: forwards;
+    -webkit-animation-fill-mode: forwards;
+    pointer-events: none;
+}
+
+@-webkit-keyframes swipeLeft {
+    0% {
+        -webkit-transform: translateX(0) rotate(0deg) scale(1);
+        transform: translateX(0) rotate(0deg) scale(1);
+        opacity: 1;
+    }
+    100% {
+        -webkit-transform: translateX(-120%) rotate(-5deg) scale(0.8);
+        transform: translateX(-120%) rotate(-5deg) scale(0.8);
+        opacity: 0;
+    }
+}
+
+@keyframes swipeLeft {
+    0% {
+        -webkit-transform: translateX(0) rotate(0deg) scale(1);
+        transform: translateX(0) rotate(0deg) scale(1);
+        opacity: 1;
+    }
+    100% {
+        -webkit-transform: translateX(-120%) rotate(-5deg) scale(0.8);
+        transform: translateX(-120%) rotate(-5deg) scale(0.8);
+        opacity: 0;
+    }
+}
+
+@-webkit-keyframes swipeRight {
+    0% {
+        -webkit-transform: translateX(0) rotate(0deg) scale(1);
+        transform: translateX(0) rotate(0deg) scale(1);
+        opacity: 1;
+    }
+    100% {
+        -webkit-transform: translateX(120%) rotate(5deg) scale(0.8);
+        transform: translateX(120%) rotate(5deg) scale(0.8);
+        opacity: 0;
+    }
+}
+
+@keyframes swipeRight {
+    0% {
+        -webkit-transform: translateX(0) rotate(0deg) scale(1);
+        transform: translateX(0) rotate(0deg) scale(1);
+        opacity: 1;
+    }
+    100% {
+        -webkit-transform: translateX(120%) rotate(5deg) scale(0.8);
+        transform: translateX(120%) rotate(5deg) scale(0.8);
+        opacity: 0;
+    }
 }
