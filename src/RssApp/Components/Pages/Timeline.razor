@@ -30,14 +30,14 @@
     private bool initialized = false;
     private int loadedPage = -1;
 
-    private async Task UpdatePage()
+    private async Task UpdatePage(int page)
     {
         if (!initialized)
         {
             return;
         }
 
-        Page += 1;
+        Page = page;
 
         await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag));
     }

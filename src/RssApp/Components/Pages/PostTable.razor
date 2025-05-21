@@ -180,7 +180,7 @@ window.Observer = {
                 this.filterTag = storedFilterTag;
                 if (int.TryParse(storedPage, out int page))
                 {
-                    this.Page = page;
+                    await this.OnPageChanged.InvokeAsync(this.Page);
                 }
 
             this.StateHasChanged();
@@ -247,7 +247,7 @@ window.Observer = {
 
     private async Task Next()
     {
-        await this.OnPageChanged.InvokeAsync(this.Page);
+        await this.OnPageChanged.InvokeAsync(this.Page + 1);
         await SaveState();
         await InvokeAsync(this.StateHasChanged);
     }
