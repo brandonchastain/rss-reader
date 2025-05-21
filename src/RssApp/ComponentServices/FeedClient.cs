@@ -163,8 +163,6 @@ public class FeedClient : IFeedClient, IDisposable
 
     private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed, int page, int pageSize = PageSize)
     {
-        _ = this.feedRefresher.RefreshAsync();
-
         var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.IsFilterUnread, this.IsFilterSaved, this.filterTag, page, pageSize)).ToHashSet();
         var items = response.ToList();
 

@@ -66,6 +66,8 @@ public class FeedRefresher : IDisposable
             return;
         }
 
+        this.logger.LogInformation("Refreshing feeds...");
+        
         try
         {
             var allUsers = this.userStore.GetAllUsers();

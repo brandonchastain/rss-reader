@@ -3,8 +3,10 @@
 @attribute [StreamRendering]
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @using Sve.Blazor.InfiniteScroll.Components
+@using global::RssApp.RssClient
 @inject ILogger<Posts> logger
 @inject IJSRuntime jsRuntime
+@inject FeedRefresher feedRefresher
 
 <AuthorizeView>
 @if (Posts == null)
@@ -22,6 +24,10 @@ else
             {
                 <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="() => FilterForTag(tag)">[@tag]</button>
             }
+
+            
+            <button class="btn-link" @onclick="() => feedRefresher.RefreshAsync()">[refresh]</button>
+
         </div>
     }
     <div id="post-table" class="table">
