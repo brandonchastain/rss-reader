@@ -9,7 +9,14 @@
     </div>
     <main>
         <article class="">
-            @Body
+            <AuthorizeView>
+                <Authorized>
+                    @Body
+                </Authorized>
+                <NotAuthorized>
+                    <Intro />
+                </NotAuthorized>
+            </AuthorizeView>
         </article>
     </main>
 </div>

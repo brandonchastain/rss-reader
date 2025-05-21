@@ -46,6 +46,8 @@ public class FeedRefresher : IDisposable
         this.cacheReloadStartupDelay = cacheReloadStartupDelay;
     }
 
+    public DateTime? LastCacheReloadTime => this.lastCacheReloadTime;
+
     public void Dispose()
     {
         this.httpClient.Dispose();
@@ -67,7 +69,7 @@ public class FeedRefresher : IDisposable
         }
 
         this.logger.LogInformation("Refreshing feeds...");
-        
+
         try
         {
             var allUsers = this.userStore.GetAllUsers();

@@ -17,6 +17,9 @@ else
 {
     if (ShowToolbar)
     {
+        <div>
+            <p>Last refreshed on @feedRefresher.LastCacheReloadTime</p>
+        </div>
         <div class="toolbar">
             <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync()">@(this.IsFilterUnread ? "[all]" : "[unread]")</button>
             <button class="btn-link" @onclick="() => ToggleSavedFilterAsync()">@(this.IsFilterSaved ? "[all]" : "[saved]")</button>
