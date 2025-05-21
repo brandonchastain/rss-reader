@@ -31,3 +31,15 @@ window.downloadFile = function (filename, contentType, content) {
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
 };
+
+document.addEventListener('DOMContentLoaded', () => {
+    const contentContainer = document.getElementById('focus-post-content-container');
+    if (contentContainer) {
+        contentContainer.addEventListener('click', (e) => {
+            // Only expand if not already expanded and not clicking a link
+            if (!e.target.closest('a') && !contentContainer.classList.contains('expanded')) {
+                contentContainer.classList.add('expanded');
+            }
+        });
+    }
+});

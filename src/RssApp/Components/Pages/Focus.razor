@@ -5,8 +5,6 @@
 @inject ILogger<Timeline> logger
 @inject IFeedClient feedClient
 @inject IJSRuntime jsRuntime
-@using Microsoft.AspNetCore.Components.Web.Virtualization
-@using Sve.Blazor.InfiniteScroll.Components
 @inject ILogger<Posts> logger
 @inject IJSRuntime jsRuntime
 
@@ -18,11 +16,6 @@
         <div class="spinner"></div>
     </div>
 }
-
-<div class="" style="position: relative;">
-    <button class="focus-nav-button focus-nav-prev" @onclick="() => PrevPost()">←</button>
-    <button class="focus-nav-button focus-nav-next" @onclick="() => NextPost()">→</button>
-</div>
 
 <div id="focus-post-table">
 @if (CurrentPost != null)
@@ -41,7 +34,19 @@
 
     @* <div id ="focus-post-spacer"></div> *@
     <div id="focus-post-content">
-        <div id="focus-post-content-container">
+        <div id="focus-post-content-container" class="@(isExpanded ? "expanded" : "") @swipeClass"
+             @ontouchstart="HandleTouchStart"
+             @ontouchmove="HandleTouchMove"
+             @ontouchend="HandleTouchEnd"
+             @onclick="HandleContentClick">
+
+
+<div class="row">
+    <div class="" style="flex: 1; text-align: center;">
+        <button class="link" @onclick="() => PrevPost()">←</button>
+        <button class="link" @onclick="() => NextPost()">→</button>
+    </div>
+</div>
         <p>
             <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick:stopPropagation="true">@post.Title</a><br/>
         </p>
@@ -85,11 +90,21 @@
     private double touchStartX;
     private double touchStartY;
     private string swipeClass = "";
+    private bool isExpanded = false;
     private const int SWIPE_THRESHOLD = 50;
     private bool isHorizontalSwipe = false;
+    private bool isAnimating = false;
+
+    private void HandleContentClick()
+    {
+        // Toggle expanded state
+        isExpanded = !isExpanded;
+        StateHasChanged();
+    }
 
     private void HandleTouchStart(TouchEventArgs e)
     {
+        if (isAnimating) return;
         touchStartX = e.Touches[0].ClientX;
         touchStartY = e.Touches[0].ClientY;
         isHorizontalSwipe = false;
@@ -97,7 +112,7 @@
 
     private void HandleTouchMove(TouchEventArgs e)
     {
-        if (touchStartX == 0) return;
+        if (touchStartX == 0 || isAnimating) return;
         
         var deltaX = e.Touches[0].ClientX - touchStartX;
         var deltaY = e.Touches[0].ClientY - touchStartY;
@@ -116,19 +131,28 @@
 
     private async Task HandleTouchEnd(TouchEventArgs e)
     {
-        if (string.IsNullOrEmpty(swipeClass)) return;
+        if (string.IsNullOrEmpty(swipeClass) || isAnimating) return;
 
-        if (swipeClass == "swipe-right" && Page > 0)
+        isAnimating = true;
+        var currentSwipeClass = swipeClass;
+
+        // Let the animation complete before changing state
+        await Task.Delay(400);
+
+        if (currentSwipeClass == "swipe-right")
         {
-            await PrevPage();
+            await PrevPost();
         }
-        else if (swipeClass == "swipe-left")
+        else if (currentSwipeClass == "swipe-left")
         {
-            await NextPage();
+            await NextPost();
         }
 
+        // Auto-collapse after swipe
+        isExpanded = false;
         swipeClass = "";
         touchStartX = 0;
+        isAnimating = false;
         StateHasChanged();
     }
 
