@@ -155,8 +155,44 @@ window.Observer = {
             }
             this.User = await this.FeedClient.RegisterUserAsync(username);
             this.userTags = this.FeedClient.GetUserTags(User);
+                var storedIsFilterUnread = await jsRuntime.InvokeAsync<string>("localStorage.getItem", "isFilterUnread");
+                var storedIsFilterSaved = await jsRuntime.InvokeAsync<string>("localStorage.getItem", "isFilterSaved");
+                var storedFilterTag = await jsRuntime.InvokeAsync<string>("localStorage.getItem", "filterTag");
+                var storedPage = await jsRuntime.InvokeAsync<string>("localStorage.getItem", "currentPage");
+
+                if (!bool.TryParse(storedIsFilterUnread, out bool isFilterUnread))
+                {
+                    this.IsFilterUnread = false;
+                }
+                else
+                {
+                    this.IsFilterUnread = isFilterUnread;
+                }
+
+                if (!bool.TryParse(storedIsFilterSaved, out bool isFilterSaved))
+                {
+                    this.IsFilterSaved = false;
+                }
+                else
+                {
+                    this.IsFilterSaved = isFilterSaved;
+                }
+                this.filterTag = storedFilterTag;
+                if (int.TryParse(storedPage, out int page))
+                {
+                    this.Page = page;
+                }
+
             this.StateHasChanged();
         }
+    }
+
+    private async Task SaveState()
+    {
+        await jsRuntime.InvokeVoidAsync("localStorage.setItem", "isFilterUnread", this.IsFilterUnread);
+        await jsRuntime.InvokeVoidAsync("localStorage.setItem", "isFilterSaved", this.IsFilterSaved);
+        await jsRuntime.InvokeVoidAsync("localStorage.setItem", "filterTag", this.filterTag);
+        await jsRuntime.InvokeVoidAsync("localStorage.setItem", "currentPage", this.Page.ToString());
     }
 
     private bool ShouldPostBeHidden(NewsFeedItem post)
@@ -177,12 +213,14 @@ window.Observer = {
     private async Task ToggleUnreadFilterAsync()
     {
         this.IsFilterUnread = !this.IsFilterUnread;
+        await SaveState();
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
     private async Task ToggleSavedFilterAsync()
     {
         this.IsFilterSaved = !this.IsFilterSaved;
+        await SaveState();
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
@@ -191,11 +229,12 @@ window.Observer = {
         if (this.filterTag == tag)
         {
             this.filterTag = null;
-            await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
-            return;
         }
-        
-        this.filterTag = tag;
+        else
+        {
+            this.filterTag = tag;
+        }
+        await SaveState();
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
@@ -209,6 +248,7 @@ window.Observer = {
     private async Task Next()
     {
         await this.OnPageChanged.InvokeAsync(this.Page);
+        await SaveState();
         await InvokeAsync(this.StateHasChanged);
     }
 
