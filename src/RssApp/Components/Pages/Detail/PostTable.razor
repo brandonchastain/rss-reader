@@ -1,0 +1,103 @@
+@inherits PageBase
+@rendermode InteractiveServer
+@attribute [StreamRendering]
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Sve.Blazor.InfiniteScroll.Components
+@using global::RssApp.RssClient
+@inject ILogger<Posts> logger
+@inject IJSRuntime jsRuntime
+@inject FeedRefresher feedRefresher
+
+<AuthorizeView>
+
+<Toolbar
+    feedRefresher="@feedRefresher"
+    filterTag="@filterTag"
+    IsFilterUnread="@IsFilterUnread"
+    IsFilterSaved="@IsFilterSaved"
+    userTags="@userTags"
+    ToggleUnreadFilterAsync="@ToggleUnreadFilterAsync"
+    ToggleSavedFilterAsync="@ToggleSavedFilterAsync"
+    FilterForTag="@FilterForTag"
+/>
+
+<div id="post-table" class="table">
+    <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
+        @foreach (var post in Posts)
+        {
+            <PostDetail 
+                Post="@post"
+                FilterTag="@this.filterTag"
+                IsFilterUnread="@this.IsFilterUnread"/>
+        }
+
+        <div class="row">
+            <div id="observerTarget">
+                RssApp
+            </div>
+        </div>
+        
+    </InfiniteScroll>
+</div>
+
+@code {
+
+    [CascadingParameter(Name = "Posts")]
+    public List<NewsFeedItem> Posts { get; set; }
+    
+    [CascadingParameter(Name = "Page")]
+    private int Page { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnPageChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<(bool, bool, string)> OnRefreshTriggered { get; set; }
+
+    public bool IsFilterUnread { get; set; } = false;
+    public bool IsFilterSaved { get; set; } = false;
+    public IEnumerable<string> userTags = null;
+    private string filterTag = null;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (firstRender)
+        {
+            this.userTags = this.feedClient.GetUserTags(CurrentUser);
+            this.StateHasChanged();
+        }
+    }
+
+    private async Task ToggleUnreadFilterAsync()
+    {
+        this.IsFilterUnread = !this.IsFilterUnread;
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+    }
+
+    private async Task ToggleSavedFilterAsync()
+    {
+        this.IsFilterSaved = !this.IsFilterSaved;
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+    }
+
+    private async Task FilterForTag(string tag)
+    {
+        if (this.filterTag == tag)
+        {
+            this.filterTag = null;
+        }
+        else
+        {
+            this.filterTag = tag;
+        }
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+    }
+
+    private async Task Next()
+    {
+        await this.OnPageChanged.InvokeAsync(this.Page + 1);
+        await InvokeAsync(this.StateHasChanged);
+    }
+}
+</AuthorizeView>

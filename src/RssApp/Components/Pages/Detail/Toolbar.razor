@@ -1,0 +1,50 @@
+
+<div>
+    <p>Last refreshed on @feedRefresher.LastCacheReloadTime</p>
+</div>
+<div class="toolbar">
+    <button class="btn-link" @onclick="() => ToggleUnreadFilterAsync.InvokeAsync()">@(this.IsFilterUnread ? "[all]" : "[unread]")</button>
+    <button class="btn-link" @onclick="() => ToggleSavedFilterAsync.InvokeAsync()">@(this.IsFilterSaved ? "[all]" : "[saved]")</button>
+    @if (this.userTags != null)
+    {
+        @foreach (var tag in this.userTags)
+        {
+            <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="() => FilterForTag.InvokeAsync(tag)">[@tag]</button>
+        }
+    }
+    <button class="btn-link" @onclick="() => feedRefresher.RefreshAsync()">[refresh]</button>
+</div>
+
+
+@code {
+    [Parameter]
+    public FeedRefresher feedRefresher { get; set; }
+
+
+    [Parameter]
+    public string? filterTag { get; set; }
+
+
+    [Parameter]
+    public bool IsFilterUnread { get; set; }
+
+
+    [Parameter]
+    public bool IsFilterSaved { get; set; }
+
+
+    [Parameter]
+    public IEnumerable<string> userTags { get; set; }
+
+    
+    [Parameter]
+    public EventCallback ToggleUnreadFilterAsync { get; set; }
+
+    
+    [Parameter]
+    public EventCallback ToggleSavedFilterAsync { get; set; }
+
+    
+    [Parameter]
+    public EventCallback<string?> FilterForTag { get; set; }
+}

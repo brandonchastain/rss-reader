@@ -1,18 +1,3 @@
-/// Hit the endpoint for Azure App Service authentication.
-/// This must be sent from the client side (javascript) to get the authentication cookie.
-async function getUsername() {
-    const response = await fetch('/.auth/me');
-    const json = await response.json();
-
-    var username = null;
-    if (json.length > 0 && json[0].user_id) {
-        username = json[0].user_id;
-        console.log(username);
-    }
-
-    return username;
-}
-
 // Function to download a file
 window.downloadFile = function (filename, contentType, content) {
     // Create a Blob with the file content
@@ -30,6 +15,27 @@ window.downloadFile = function (filename, contentType, content) {
     // Clean up
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
+};
+
+window.Observer = {
+    observer: null,
+    Initialize: function (component, observerTargetId) {
+        this.observer = new IntersectionObserver(e => {
+            // Check here
+            if (e[0].isIntersecting) {
+                component.invokeMethodAsync('OnIntersection');
+            }
+        },
+        {
+            root: null,
+            rootMargin: '0px',
+            threshold: [0]
+        });
+
+        let element = document.getElementById(observerTargetId);
+        if (element == null) throw new Error("The observable target was not found");
+        this.observer.observe(element);
+    }
 };
 
 document.addEventListener('DOMContentLoaded', () => {

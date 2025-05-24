@@ -2,7 +2,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.IO
 @using RssApp.Components.Layout
-@inherits Base
+@inherits PageBase
 @attribute [StreamRendering]
 @inject IFeedRepository feedStore
 @inject IFeedClient feedClient
@@ -84,7 +84,6 @@ else
 @code {
     private Dictionary<string, string> newTagInputs = new Dictionary<string, string>();
     private IEnumerable<NewsFeed> feeds;
-    private RssUser user;
     private string lastError = null;
 
     [SupplyParameterFromForm]
@@ -92,7 +91,7 @@ else
 
     protected override void OnInitialized()
     {
-        if (user != null)
+        if (CurrentUser != null)
         {
             feeds = this.GetFeedUrls();
         }
@@ -104,14 +103,9 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender || user == null)
+        await base.OnAfterRenderAsync(firstRender);
+        if (firstRender)
         {
-            var username = await this.GetUsernameAsync();
-            if (username == null)
-            {
-                return;
-            }
-            user = await this.feedClient.RegisterUserAsync(username);
             feeds = this.GetFeedUrls();
             this.StateHasChanged();
         }
@@ -119,7 +113,7 @@ else
 
     private async Task SubmitAsync()
     {
-        logger.LogInformation("Adding feed: {FeedUrl}, User: {UserId}, storeIsNull: {store}, clientIsNull: {clientIsNull}", NewFeedUrl, this.user?.Id, this.feedStore == null, this.feedClient == null);
+        //logger.LogInformation("Adding feed: {FeedUrl}, User: {UserId}, storeIsNull: {store}, clientIsNull: {clientIsNull}", NewFeedUrl, this.CurrentUser?.Id, this.feedStore == null, this.feedClient == null);
         
         try
         {
@@ -140,8 +134,8 @@ else
                 NewFeedUrl = "https://" + NewFeedUrl;
             }
 
-            await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, this.user.Id));
-            this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.user.Id));
+            await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
+            this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
         }
         catch (HttpRequestException ex)
         {
@@ -159,13 +153,13 @@ else
 
     private async Task DeleteAsync(string feed)
     {
-        this.feedStore.DeleteFeed(this.user, feed);
+        this.feedStore.DeleteFeed(this.CurrentUser, feed);
         await this.OnInitializedAsync();
     }
 
     private IEnumerable<NewsFeed> GetFeedUrls()
     {
-        return this.feedStore.GetFeeds(this.user);
+        return this.feedStore.GetFeeds(this.CurrentUser);
     }
 
     private void TogglePaywalledAsync(NewsFeed feed)
@@ -213,11 +207,11 @@ else
             using var reader = new StreamReader(stream);
             var opmlContent = await reader.ReadToEndAsync();
             
-            var importedFeeds = OpmlSerializer.ParseOpmlContent(opmlContent, user.Id).ToHashSet();
+            var importedFeeds = OpmlSerializer.ParseOpmlContent(opmlContent, CurrentUser.Id).ToHashSet();
             
             // Import the parsed feeds
-            feedStore.ImportFeeds(user, importedFeeds);
-            var feeds = this.feedStore.GetFeeds(user);
+            feedStore.ImportFeeds(CurrentUser, importedFeeds);
+            var feeds = this.feedStore.GetFeeds(CurrentUser);
             var newFeeds = feeds.Where(f => importedFeeds.Contains(f));
             foreach (var feed in newFeeds)
             {

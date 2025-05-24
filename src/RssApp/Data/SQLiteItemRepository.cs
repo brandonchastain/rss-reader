@@ -405,7 +405,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                 var alreadyStored = this.GetItem(this.userStore.GetUserById(item.UserId), item.Href);
                                 if (alreadyStored != null)
                                 {
-                                    this.logger.LogInformation($"Item already exists in the database: {item.Href}");
+                                    //this.logger.LogInformation($"Item already exists in the database: {item.Href}");
                                     continue;
                                 }
                                 var command = connection.CreateCommand();

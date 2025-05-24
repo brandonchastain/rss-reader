@@ -97,7 +97,7 @@ public class FeedClient : IFeedClient, IDisposable
             .DistinctBy(i => i.GetHashCode())
             .OrderByDescending(i => i.ParsedDate);
 
-        this.logger.LogInformation($"GetTimeline took {sw.ElapsedMilliseconds}ms");
+        //this.logger.LogInformation($"GetTimeline took {sw.ElapsedMilliseconds}ms");
         return sorted;
     }
 
@@ -105,7 +105,7 @@ public class FeedClient : IFeedClient, IDisposable
     {
         var sw = Stopwatch.StartNew();
         var items = await this.GetFeedItemsHelperAsync(feed, page);
-        this.logger.LogInformation($"GetFeedItems took {sw.ElapsedMilliseconds}ms");
+        //this.logger.LogInformation($"GetFeedItems took {sw.ElapsedMilliseconds}ms");
         return items;
     }
 

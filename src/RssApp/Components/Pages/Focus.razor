@@ -1,11 +1,10 @@
 @page "/focus"
-@inherits Base
+@inherits PostPageBase
 @rendermode InteractiveServer
 @attribute [StreamRendering]
 @inject ILogger<Timeline> logger
-@inject IFeedClient feedClient
 @inject IJSRuntime jsRuntime
-@inject ILogger<Posts> logger
+@inject ILogger<Focus> logger
 @inject IJSRuntime jsRuntime
 
 <PageTitle>Focused Feed</PageTitle>
@@ -48,7 +47,7 @@
     </div>
 </div>
         <p>
-            <a tooltip="@post.ParsedDate?.ToString("f")" href="@this.GetEffectiveHref(post)" target="_blank" @onclick:stopPropagation="true">@post.Title</a><br/>
+            <a tooltip="@post.ParsedDate?.ToString("f")" href="@post.Href" target="_blank" @onclick:stopPropagation="true">@post.Title</a><br/>
         </p>
         <p>
             @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
@@ -57,7 +56,7 @@
             }
         </p>
         <p>
-            @this.GetRootDomain(post.Href)<br/>
+            @post.Href.GetRootDomain()<br/>
         </p>
         <p>
             @(post.FeedTags.Any() ? $"[{string.Join(",", post.FeedTags)}]" : "")
@@ -69,7 +68,7 @@
             @((MarkupString)HtmlSanitizer.Sanitize(post.Content))
         </p>
         <p>
-            <a href="/posts?feedUrl=@System.Net.WebUtility.UrlEncode(post.FeedUrl)" onclick="event.stopPropagation()">View all posts from this feed</a><br/>
+            <a href="/Items?feedUrl=@System.Net.WebUtility.UrlEncode(post.FeedUrl)" onclick="event.stopPropagation()">View all Items from this feed</a><br/>
         </p>
         </div>
     </div>
@@ -77,14 +76,9 @@
 </div>
 
 @code {
-    public RssUser CurrentUser { get; set; }
-    public int Page { get; set; } = 0;
 
     public int PostIndex { get; set; } = 0;
     public NewsFeedItem CurrentPost { get; set; } = null;
-    public List<NewsFeedItem> Posts { get; set; } = new List<NewsFeedItem>();
-    private bool initialized = false;
-    private int loadedPage = -1;
     private bool isLoading = false;
 
     private double touchStartX;
@@ -161,24 +155,24 @@
         this.PostIndex -= 1;
         if (this.PostIndex < 0)
         {
-            this.PostIndex = this.Posts.Count - 1;
+            this.PostIndex = this.Items.Count - 1;
             await PrevPage();
         }
 
-        this.CurrentPost = this.Posts[this.PostIndex];
+        this.CurrentPost = this.Items[this.PostIndex];
         this.StateHasChanged();
     }
 
     private async Task NextPost()
     {
         this.PostIndex += 1;
-        if (this.PostIndex >= this.Posts.Count)
+        if (this.PostIndex >= this.Items.Count)
         {
             this.PostIndex = 0;
             await NextPage();
         }
 
-        this.CurrentPost = this.Posts[this.PostIndex];
+        this.CurrentPost = this.Items[this.PostIndex];
         this.StateHasChanged();
     }
 
@@ -189,12 +183,7 @@
             return;
         }
 
-        if (Page > 0)
-        {
-            Page -= 1;
-        }
-
-        await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
+        await this.UpdatePage(this.Page - 1);
     }
 
     private async Task NextPage()
@@ -204,63 +193,24 @@
             return;
         }
 
-        Page += 1;
-        await this.RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
+        await this.UpdatePage(this.Page + 1);
     }
 
-    private async Task RefreshPosts((bool isFilterUnread, string filterTag) filters)
+    protected override async Task<List<NewsFeedItem>> GetPostsAsync()
     {
-        isLoading = true;
-        this.StateHasChanged();
-
-        if (filters.isFilterUnread != this.feedClient.IsFilterUnread
-            || filters.filterTag != this.feedClient.FilterTag)
-        {
-            Posts = new List<NewsFeedItem>();
-            Page = 0;
-            PostIndex = 0;
-            this.feedClient.IsFilterUnread = filters.isFilterUnread;
-            this.feedClient.FilterTag = filters.filterTag;
-        }
-        
-        var newPageRes = await this.feedClient.GetTimelineAsync(Page, pageSize: 20);
-        Posts.AddRange(newPageRes);
-        Posts = Posts.Distinct().ToList();
-        this.loadedPage = Page;
-        this.CurrentPost = Posts[PostIndex];
-        isLoading = false;
-        this.StateHasChanged();
+        var items = await this.feedClient.GetTimelineAsync(Page, pageSize: 20);
+        return items?.ToList() ?? new List<NewsFeedItem>();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (CurrentUser == null)
+        await base.OnAfterRenderAsync(firstRender);
+
+        if (this.Items != null && this.Items.Count > 0)
         {
-            var username = await this.GetUsernameAsync();
-            if (username == null)
-            {
-                return;
-            }
-            this.CurrentUser = await this.feedClient.RegisterUserAsync(username);
-            await RefreshPosts((this.feedClient.IsFilterUnread, this.feedClient.FilterTag));
-            this.initialized = true;
+            this.CurrentPost = this.Items[this.PostIndex];
             this.StateHasChanged();
         }
-    }
-
-    private string GetRootDomain(string url)
-    {
-        return new Uri(url).Authority;
-    }
-
-    private string GetEffectiveHref(NewsFeedItem post)
-    {
-        if (post.IsPaywalled)
-        {
-            return "https://archive.is/" + post.Href;
-        }
-
-        return post.Href;
     }
 }
 </AuthorizeView>

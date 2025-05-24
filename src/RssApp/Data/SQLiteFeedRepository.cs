@@ -215,11 +215,11 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public void AddTag(NewsFeed feed, string tag)
     {
-        this.logger.LogInformation("Adding {tag} to feed {feedId}", tag, feed.FeedId);
+        //this.logger.LogInformation("Adding {tag} to feed {feedId}", tag, feed.FeedId);
         var existing = GetTagByFeedId(feed.FeedId, tag);
         if (existing != null)
         {
-            this.logger.LogInformation("tag {tag} on feed {feedId} exists", tag, feed.FeedId);
+            //this.logger.LogInformation("tag {tag} on feed {feedId} exists", tag, feed.FeedId);
             return;
         }
         
@@ -232,7 +232,7 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@tagName", tag);
             command.Parameters.AddWithValue("@userId", feed.UserId);
             command.ExecuteNonQuery();
-            this.logger.LogInformation("Tag {tagName} added to feed {feedId}", tag, feed.FeedId);
+            //this.logger.LogInformation("Tag {tagName} added to feed {feedId}", tag, feed.FeedId);
         }
     }
 
@@ -293,6 +293,19 @@ public class SQLiteFeedRepository : IFeedRepository
         {
             connection.Open();
             var command = connection.CreateCommand();
+            command.CommandText = """
+                DELETE FROM FeedTags
+                WHERE FeedId in (
+                    SELECT Id from Feeds 
+                    WHERE Url = @url AND UserId = @userId
+                )
+            """;
+            command.Parameters.AddWithValue("@url", url);
+            command.Parameters.AddWithValue("@userId", user.Id);
+            command.ExecuteNonQuery();
+
+            connection.Open();
+            command = connection.CreateCommand();
             command.CommandText = """
                 DELETE FROM Feeds
                 WHERE Url = @url AND UserId = @userId
