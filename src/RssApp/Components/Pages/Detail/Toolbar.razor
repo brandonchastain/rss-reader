@@ -12,39 +12,40 @@
             <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="() => FilterForTag.InvokeAsync(tag)">[@tag]</button>
         }
     }
-    <button class="btn-link" @onclick="() => feedRefresher.RefreshAsync()">[refresh]</button>
+    <button class="btn-link" @onclick="() => RefreshAsync()">@(refreshState)</button>
 </div>
-
 
 @code {
     [Parameter]
     public FeedRefresher feedRefresher { get; set; }
 
-
     [Parameter]
     public string? filterTag { get; set; }
-
 
     [Parameter]
     public bool IsFilterUnread { get; set; }
 
-
     [Parameter]
     public bool IsFilterSaved { get; set; }
 
-
     [Parameter]
     public IEnumerable<string> userTags { get; set; }
-
     
     [Parameter]
     public EventCallback ToggleUnreadFilterAsync { get; set; }
-
     
     [Parameter]
     public EventCallback ToggleSavedFilterAsync { get; set; }
-
     
     [Parameter]
     public EventCallback<string?> FilterForTag { get; set; }
+
+    private string refreshState = "refresh";
+
+    private async Task RefreshAsync()
+    {
+        refreshState = "refreshing...";
+        await feedRefresher.RefreshAsync();
+        refreshState = "refresh";
+    }
 }

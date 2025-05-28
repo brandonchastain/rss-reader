@@ -1,6 +1,7 @@
 using RssApp.Contracts;
 using RssApp.Serialization;
 using RssApp.Data;
+using RssApp.ComponentServices;
 
 namespace RssApp.RssClient;
 
@@ -16,9 +17,11 @@ public class FeedRefresher : IDisposable
     private readonly IUserRepository userStore;
     private readonly TimeSpan cacheReloadInterval;
     private readonly TimeSpan cacheReloadStartupDelay;
+    private readonly BackgroundWorkQueue backgroundWorkQueue;
     private DateTime? lastCacheReloadTime;
     private DateTime startupTime = DateTime.UtcNow;
     private Exception lastRefreshException;
+    private bool doRefresh;
 
     public FeedRefresher(
         RssDeserializer deserializer,
@@ -26,10 +29,11 @@ public class FeedRefresher : IDisposable
         IFeedRepository persistedFeeds,
         IItemRepository newsFeedItemStore,
         IUserRepository userStore,
+        BackgroundWorkQueue backgroundWorkQueue,
         TimeSpan cacheReloadInterval,
         TimeSpan cacheReloadStartupDelay)
     {
-        
+
         var clientHandler = new HttpClientHandler
         {
             AllowAutoRedirect = true,
@@ -44,6 +48,7 @@ public class FeedRefresher : IDisposable
         this.userStore = userStore;
         this.cacheReloadInterval = cacheReloadInterval;
         this.cacheReloadStartupDelay = cacheReloadStartupDelay;
+        this.backgroundWorkQueue = backgroundWorkQueue;
     }
 
     public DateTime? LastCacheReloadTime => this.lastCacheReloadTime;
@@ -69,35 +74,41 @@ public class FeedRefresher : IDisposable
         }
 
         //this.logger.LogInformation("Refreshing feeds...");
-
-        try
+        await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
         {
-            var allUsers = this.userStore.GetAllUsers();
-            foreach (var user in allUsers)
+            bool isJustStarted = this.startupTime + this.cacheReloadStartupDelay > DateTime.UtcNow;
+            bool isRecentRefresh = this.lastCacheReloadTime + this.cacheReloadInterval > DateTime.UtcNow;
+            
+            if (isJustStarted || isRecentRefresh)
             {
-                var feeds = this.persistedFeeds.GetFeeds(user);
-                foreach (var feed in feeds)
-                {
-                    try
-                    {
-                        await this.ReloadCachedItemsAsync(feed);
-                    }
-                    catch (Exception ex)
-                    {
-                        this.logger.LogError(ex, "Error reloading feed: {feed}", feed.FeedUrl);
-                    }
-
-                    // TODO: remove
-                    await Task.Delay(10000);
-                }
+                return;
             }
+            try
+            {
+                var allUsers = this.userStore.GetAllUsers();
+                foreach (var user in allUsers)
+                {
+                    var feeds = this.persistedFeeds.GetFeeds(user);
+                    foreach (var feed in feeds)
+                    {
+                        try
+                        {
+                            await ReloadCachedItemsAsync(feed);
+                        }
+                        catch (Exception ex)
+                        {
+                            this.logger.LogError(ex, "Error reloading feed: {feed}", feed.FeedUrl);
+                        }
+                    }
+                }
 
-            this.lastCacheReloadTime = DateTime.UtcNow;
-        }
-        catch (Exception ex)
-        {
-            this.logger.LogError(ex, "Error reloading cache");
-        }
+                this.lastCacheReloadTime = DateTime.UtcNow;
+            }
+            catch (Exception ex)
+            {
+                this.logger.LogError(ex, "Error reloading cache");
+            }
+        });
     }
 
     private async Task ReloadCachedItemsAsync(NewsFeed feed)
@@ -107,7 +118,7 @@ public class FeedRefresher : IDisposable
         var freshItems = new HashSet<NewsFeedItem>();
         string response = null;
 
-        string[] agents = ["reader.brandonchastain.com/1.1", "curl/7.79.1"];
+        string[] agents = ["rssreader.brandonchastain.com/1.1", "curl/7.79.1"];
 
         foreach (string agent in agents)
         {

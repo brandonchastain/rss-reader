@@ -49,6 +49,8 @@ builder.Services
             sb.GetRequiredService<IUserRepository>());
     })
     .AddSingleton<RssDeserializer>()
+    .AddSingleton<BackgroundWorkQueue>()
+    .AddHostedService<BackgroundWorker>()
     .AddSingleton<FeedRefresher>(sp =>
     {
         return new FeedRefresher(
@@ -57,6 +59,7 @@ builder.Services
             sp.GetRequiredService<IFeedRepository>(),
             sp.GetRequiredService<IItemRepository>(),
             sp.GetRequiredService<IUserRepository>(),
+            sp.GetRequiredService<BackgroundWorkQueue>(),
             config.CacheReloadInterval, 
             config.CacheReloadStartupDelay);
     })
