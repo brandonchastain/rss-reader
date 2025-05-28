@@ -37,6 +37,17 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             pragmaCommand.CommandText = "PRAGMA journal_mode=WAL;";
             pragmaCommand.ExecuteNonQuery();
 
+            // Performance optimization settings
+            pragmaCommand = connection.CreateCommand();
+            pragmaCommand.CommandText = """
+                PRAGMA cache_size=-20000;  -- Use 20MB of memory for page cache
+                PRAGMA temp_store=MEMORY; -- Store temp tables and indices in memory
+                PRAGMA synchronous=NORMAL; -- Slightly faster than FULL, still safe
+                PRAGMA busy_timeout=5000; -- Wait up to 5s on locks
+                PRAGMA mmap_size=268435456; -- Use memory mapping up to 256MB
+            """;
+            pragmaCommand.ExecuteNonQuery();
+
             var command = connection.CreateCommand();
             command.CommandText = @"
                 CREATE TABLE IF NOT EXISTS NewsFeedItems (
@@ -80,6 +91,31 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command.CommandText = @"
                 CREATE INDEX IF NOT EXISTS idx_items_href
                 ON NewsFeedItems (Href);";
+            command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE INDEX IF NOT EXISTS idx_items_userid_pubdate
+                ON NewsFeedItems (UserId, PublishDate DESC);";
+            command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE INDEX IF NOT EXISTS idx_items_userid_isread
+                ON NewsFeedItems (UserId, IsRead);";
+            command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE INDEX IF NOT EXISTS idx_items_timeline 
+                ON NewsFeedItems (UserId, Href, PublishDate DESC, IsRead)
+                WHERE UserId IS NOT NULL;";
+            command.ExecuteNonQuery();
+
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE INDEX IF NOT EXISTS idx_savedposts_userid_href
+                ON SavedPosts (UserId, Href);";
             command.ExecuteNonQuery();
 
             // FTS5 virtual table for full-text search
@@ -219,7 +255,9 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         bool isFilterSaved,
         string filterTag,
         int? page = null,
-        int? pageSize = null)
+        int? pageSize = null,
+        long? lastId = null,
+        string? lastPublishDate = null)
     {
         await this.semaphore.WaitAsync();
 
@@ -227,7 +265,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         {
             // this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, isFilterUnread={isFilterUnread}, isFilterSaved={isFilterSaved}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
             var sw = Stopwatch.StartNew();
-            var set = new HashSet<NewsFeedItem>();
+            var items = new List<NewsFeedItem>();
             var user = this.userStore.GetUserById(feed.UserId);
 
             using (var connection = new SqliteConnection(this.connectionString))
@@ -235,6 +273,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 await connection.OpenAsync();
                 var command = connection.CreateCommand();
                 command.CommandText = """
+                    WITH LatestItems AS (
+                        SELECT Href, MAX(PublishDate) as MaxDate
+                        FROM NewsFeedItems
+                        WHERE UserId = @userId
+                        GROUP BY Href
+                    )
                     SELECT
                         i.FeedUrl,
                         i.NewsFeedItemId,
@@ -244,15 +288,17 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         i.PublishDate,
                         i.Content,
                         i.IsRead,
-                        t.TagName,
+                        GROUP_CONCAT(DISTINCT t.TagName) as TagName,
                         i.UserId,
                         i.ThumbnailUrl,
                         f.IsPaywalled,
                         s.SavedDate
                     FROM NewsFeedItems i
+                    INNER JOIN LatestItems li 
+                        ON i.Href = li.Href 
+                        AND i.PublishDate = li.MaxDate
                     LEFT JOIN SavedPosts s
                         ON i.Href = s.Href 
-                        AND i.FeedUrl = s.FeedUrl 
                         AND i.UserId = s.UserId
                     LEFT JOIN Feeds f
                         ON i.FeedUrl = f.Url
@@ -260,7 +306,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         ON f.Id = t.FeedId
                 """;
 
-                command.CommandText += " WHERE i.UserId = @userId";
+                command.CommandText += " WHERE 1=1";
                 command.Parameters.AddWithValue("@userId", user.Id);
 
                 if (feed.FeedUrl != "%")
@@ -286,14 +332,28 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     command.Parameters.AddWithValue("@tagName", filterTag);
                 }
 
-                command.CommandText += " GROUP BY i.Href HAVING MAX(i.PublishDate)";
-                command.CommandText += " ORDER BY i.PublishDate DESC";
+                command.CommandText += """
+                    GROUP BY i.Href, i.FeedUrl, i.NewsFeedItemId, i.CommentsHref, i.Title, 
+                             i.PublishDate, i.Content, i.IsRead, i.UserId, i.ThumbnailUrl,
+                             f.IsPaywalled, s.SavedDate
+                """;
 
-                if (page != null && pageSize != null)
+                command.CommandText += " ORDER BY i.PublishDate DESC /* USING INDEX idx_items_timeline */";
+
+                if (pageSize != null)
                 {
-                    command.CommandText += " LIMIT @pageSize OFFSET @offset";
+                    command.CommandText += " LIMIT @pageSize";
                     command.Parameters.AddWithValue("@pageSize", pageSize);
-                    command.Parameters.AddWithValue("@offset", page * pageSize);
+
+                    if (lastId != null && lastPublishDate != null)
+                    {
+                        command.CommandText = command.CommandText.Replace("WHERE 1=1", """
+                            WHERE (i.PublishDate < @lastPublishDate OR 
+                                  (i.PublishDate = @lastPublishDate AND i.Id < @lastId))
+                        """);
+                        command.Parameters.AddWithValue("@lastId", lastId);
+                        command.Parameters.AddWithValue("@lastPublishDate", lastPublishDate);
+                    }
                 }
 
                 using (var reader = await command.ExecuteReaderAsync())
@@ -301,20 +361,13 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     while (await reader.ReadAsync())
                     {
                         var item = this.ReadItemFromResults(reader);
-
-                        if (!set.Contains(item))
-                        {
-                            set.Add(item);
-                        }
-
-                        set.TryGetValue(item, out var storedItem);
-                        storedItem.FeedTags = storedItem.FeedTags.Union(item.FeedTags).ToList();
+                        items.Add(item);
                     }
                 }
             }
 
-            // this.logger.LogInformation($"GetItemsAsync took {sw.ElapsedMilliseconds}ms");
-            return set.ToList();
+            this.logger.LogInformation($"GetItemsAsync took {sw.ElapsedMilliseconds}ms");
+            return items;
         }
         finally
         {
@@ -346,7 +399,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         
         
         var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
-        {
+                        {
             FeedUrl = url,
             IsRead = isRead,
             FeedTags = string.IsNullOrWhiteSpace(tagName) ? [] : [tagName],
@@ -378,7 +431,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 {
                     return null;
                 }
-                
+
                 var item = this.ReadItemFromResults(reader);
                 return item;
             }
@@ -514,5 +567,5 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     public void Dispose()
     {
         this.semaphore.Dispose();
+        }
     }
-}

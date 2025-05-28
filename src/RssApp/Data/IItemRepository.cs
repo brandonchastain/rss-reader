@@ -4,7 +4,8 @@ namespace RssApp.Data;
 
 public interface IItemRepository
 {
-    Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string filterTag, int? page, int? pageSize);
+    Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string filterTag, int? page = null, int? pageSize = null, long? lastId = null, string? lastPublishDate = null);
+    //Task<IEnumerable<NewsFeedItem>> GetItemsWithCursorAsync(NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string filterTag, int pageSize, long? lastId = null, string? lastPublishDate = null);
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize);
     NewsFeedItem? GetItem(RssUser user, string href);
     void AddItems(IEnumerable<NewsFeedItem> item);
