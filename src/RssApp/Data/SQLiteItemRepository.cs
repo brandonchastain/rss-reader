@@ -62,60 +62,11 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     IsRead BOOLEAN DEFAULT 0,
                     UserId INTEGER NOT NULL,
                     ThumbnailUrl TEXT,
+                    IsSaved BOOLEAN DEFAULT 0,
+                    Tags TEXT,
                     FOREIGN KEY (UserId) REFERENCES Users(Id),
                     UNIQUE(FeedUrl, UserId, NewsFeedItemId, Href)
                 )";
-            command.ExecuteNonQuery();
-
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE TABLE IF NOT EXISTS SavedPosts (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    UserId INTEGER NOT NULL,
-                    FeedUrl TEXT NOT NULL,
-                    Href TEXT NOT NULL,
-                    SavedDate TEXT NOT NULL,
-                    FOREIGN KEY (UserId) REFERENCES Users(Id),
-                    UNIQUE(UserId, FeedUrl, Href)
-                )";
-            command.ExecuteNonQuery();
-
-            // indexes
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE INDEX IF NOT EXISTS idx_items_feedurl_userid
-                ON NewsFeedItems (FeedUrl, UserId);";
-            command.ExecuteNonQuery();
-
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE INDEX IF NOT EXISTS idx_items_href
-                ON NewsFeedItems (Href);";
-            command.ExecuteNonQuery();
-
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE INDEX IF NOT EXISTS idx_items_userid_pubdate
-                ON NewsFeedItems (UserId, PublishDate DESC);";
-            command.ExecuteNonQuery();
-
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE INDEX IF NOT EXISTS idx_items_userid_isread
-                ON NewsFeedItems (UserId, IsRead);";
-            command.ExecuteNonQuery();
-
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE INDEX IF NOT EXISTS idx_items_timeline 
-                ON NewsFeedItems (UserId, Href, PublishDate DESC, IsRead)
-                WHERE UserId IS NOT NULL;";
-            command.ExecuteNonQuery();
-
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE INDEX IF NOT EXISTS idx_savedposts_userid_href
-                ON SavedPosts (UserId, Href);";
             command.ExecuteNonQuery();
 
             // FTS5 virtual table for full-text search
@@ -198,7 +149,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         t.TagName,
                         i.UserId,
                         i.ThumbnailUrl,
-                        f.IsPaywalled,
                         s.SavedDate
                     FROM NewsFeedItems i
                     LEFT JOIN Feeds f
@@ -288,22 +238,14 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         i.PublishDate,
                         i.Content,
                         i.IsRead,
-                        GROUP_CONCAT(DISTINCT t.TagName) as TagName,
                         i.UserId,
                         i.ThumbnailUrl,
-                        f.IsPaywalled,
-                        s.SavedDate
+                        i.IsSaved,
+                        i.Tags
                     FROM NewsFeedItems i
                     INNER JOIN LatestItems li 
                         ON i.Href = li.Href 
                         AND i.PublishDate = li.MaxDate
-                    LEFT JOIN SavedPosts s
-                        ON i.Href = s.Href 
-                        AND i.UserId = s.UserId
-                    LEFT JOIN Feeds f
-                        ON i.FeedUrl = f.Url
-                    LEFT JOIN FeedTags t
-                        ON f.Id = t.FeedId
                 """;
 
                 command.CommandText += " WHERE 1=1";
@@ -323,19 +265,19 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
                 if (isFilterSaved)
                 {
-                    command.CommandText += " AND s.SavedDate IS NOT NULL";
+                    command.CommandText += " AND s.IsRead = 1";
                 }
 
                 if (!string.IsNullOrWhiteSpace(filterTag))
                 {
-                    command.CommandText += " AND t.TagName = @tagName";
+                    command.CommandText += " AND t.Tags CONTAINS @tagName";
                     command.Parameters.AddWithValue("@tagName", filterTag);
                 }
 
                 command.CommandText += """
                     GROUP BY i.Href, i.FeedUrl, i.NewsFeedItemId, i.CommentsHref, i.Title, 
                              i.PublishDate, i.Content, i.IsRead, i.UserId, i.ThumbnailUrl,
-                             f.IsPaywalled, s.SavedDate
+                             i.IsSaved
                 """;
 
                 command.CommandText += " ORDER BY i.PublishDate DESC /* USING INDEX idx_items_timeline */";

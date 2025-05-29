@@ -91,6 +91,10 @@ public class FeedClient : IFeedClient, IDisposable
 
     public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = PageSize)
     {
+        if (this.loggedInUser == null)
+        {
+            return null;
+        }
         var sw = Stopwatch.StartNew();
         var items = await this.GetFeedItemsHelperAsync(new NewsFeed("%", this.loggedInUser.Id), page, pageSize);
         var sorted = items
@@ -168,7 +172,7 @@ public class FeedClient : IFeedClient, IDisposable
 
         var result = items.DistinctBy(i => i.Href)
             .OrderByDescending(i => i.ParsedDate)
-            .Where(i => this.filterTag == null || i.FeedTags.Contains(this.filterTag));
+            .Where(i => this.filterTag == null || (i.FeedTags?.Contains(this.filterTag) ?? false));
 
         return result;
     }
