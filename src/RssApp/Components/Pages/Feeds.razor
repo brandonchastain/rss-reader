@@ -134,8 +134,8 @@ else
                 NewFeedUrl = "https://" + NewFeedUrl;
             }
 
-            await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
             this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
+            await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
         }
         catch (HttpRequestException ex)
         {
@@ -173,7 +173,7 @@ else
         newTagInputs[feed.FeedUrl] = value;
     }
 
-    private void AddTag(NewsFeed feed)
+    private async Task AddTag(NewsFeed feed)
     {
         if (!newTagInputs.ContainsKey(feed.FeedUrl) || string.IsNullOrWhiteSpace(newTagInputs[feed.FeedUrl]))
         {
@@ -182,7 +182,7 @@ else
         }
         
         var tag = newTagInputs[feed.FeedUrl];
-        this.feedStore.AddTag(feed, tag);
+        await this.feedClient.AddTagAsync(feed, tag);
         newTagInputs[feed.FeedUrl] = string.Empty;
         this.OnInitialized();
     }

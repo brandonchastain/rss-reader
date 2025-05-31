@@ -23,6 +23,8 @@ public class RssDeserializer
         {
             // Strip out darkreader-related content
             responseContent = Regex.Replace(responseContent, "<[^>]*darkreader[^>]*>", string.Empty, RegexOptions.IgnoreCase);
+            responseContent = Regex.Replace(responseContent, "<[^>]*dark-theme[^>]*>", string.Empty, RegexOptions.IgnoreCase);
+            responseContent = Regex.Replace(responseContent, "<[^>]*darker-dark-theme[^>]*>", string.Empty, RegexOptions.IgnoreCase);
 
             var xmlDoc = XDocument.Parse(responseContent);
             var root = xmlDoc.Root;

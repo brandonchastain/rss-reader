@@ -12,4 +12,6 @@ public interface IItemRepository
     void MarkAsRead(NewsFeedItem item, bool isRead);
     void SavePost(NewsFeedItem item, RssUser user);
     void UnsavePost(NewsFeedItem item, RssUser user);
+    void UpdateTags(NewsFeedItem item, string tags);
+
 }
