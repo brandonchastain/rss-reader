@@ -12,7 +12,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     private readonly IFeedRepository feedStore;
     private readonly IUserRepository userStore;
 
-    private SemaphoreSlim semaphore = new SemaphoreSlim(1, 1);
+    private SemaphoreSlim semaphore = new SemaphoreSlim(2, 2);
 
     public SQLiteItemRepository(
         string connectionString,
@@ -34,12 +34,11 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             connection.Open();
             // Set WAL journal mode for better concurrency
             var pragmaCommand = connection.CreateCommand();
-            pragmaCommand.CommandText = "PRAGMA journal_mode=WAL;";
-            pragmaCommand.ExecuteNonQuery();
 
             // Performance optimization settings
             pragmaCommand = connection.CreateCommand();
             pragmaCommand.CommandText = """
+                PRAGMA journal_mode=WAL;    
                 PRAGMA cache_size=-20000;  -- Use 20MB of memory for page cache
                 PRAGMA temp_store=MEMORY; -- Store temp tables and indices in memory
                 PRAGMA synchronous=NORMAL; -- Slightly faster than FULL, still safe
@@ -50,10 +49,9 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-                CREATE TABLE IF NOT EXISTS NewsFeedItems (
+                CREATE TABLE IF NOT EXISTS Items (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     FeedUrl TEXT NOT NULL,
-                    NewsFeedItemId TEXT,
                     Href TEXT,
                     CommentsHref TEXT,
                     Title TEXT,
@@ -63,23 +61,23 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     UserId INTEGER NOT NULL,
                     ThumbnailUrl TEXT,
                     IsSaved BOOLEAN DEFAULT 0,
-                    Tags TEXT,
+                    Tags TEXT DEFAULT '',
                     FOREIGN KEY (UserId) REFERENCES Users(Id),
-                    UNIQUE(FeedUrl, UserId, NewsFeedItemId, Href)
+                    UNIQUE(FeedUrl, UserId, Href)
                 )";
             command.ExecuteNonQuery();
 
             // FTS5 virtual table for full-text search
             command = connection.CreateCommand();
             command.CommandText = @"
-                CREATE VIRTUAL TABLE IF NOT EXISTS NewsFeedItems_fts
+                CREATE VIRTUAL TABLE IF NOT EXISTS Items_fts
                 USING fts5(
                     Title,
                     Content,
                     Href,
                     FeedUrl,
                     UserId UNINDEXED,
-                    content='NewsFeedItems',
+                    content='Items',
                     content_rowid='Id'
                 );";
             command.ExecuteNonQuery();
@@ -87,10 +85,10 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             // Trigger to keep the FTS table in sync with the main table
             command = connection.CreateCommand();
             command.CommandText = @"
-                CREATE TRIGGER IF NOT EXISTS NewsFeedItems_after_insert
-                AFTER INSERT ON NewsFeedItems
+                CREATE TRIGGER IF NOT EXISTS Items_after_insert
+                AFTER INSERT ON Items
                 BEGIN
-                    INSERT INTO NewsFeedItems_fts (rowid, Title, Content, Href, FeedUrl, UserId)
+                    INSERT INTO Items_fts (rowid, Title, Content, Href, FeedUrl, UserId)
                     VALUES (new.Id, new.Title, new.Content, new.Href, new.FeedUrl, new.UserId);
                 END;";
             command.ExecuteNonQuery();
@@ -98,28 +96,28 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             // Update trigger
             command = connection.CreateCommand();
             command.CommandText = @"
-                CREATE TRIGGER IF NOT EXISTS NewsFeedItems_au AFTER UPDATE ON NewsFeedItems
+                CREATE TRIGGER IF NOT EXISTS Items_au AFTER UPDATE ON Items
                 BEGIN
-                    INSERT INTO NewsFeedItems_fts(NewsFeedItems_fts, rowid, Title, Content, Href, FeedUrl, UserId)
+                    INSERT INTO Items_fts(Items_fts, rowid, Title, Content, Href, FeedUrl, UserId)
                     VALUES('delete', old.Id, old.Title, old.Content, old.Href, old.FeedUrl, old.UserId);
-                    INSERT INTO NewsFeedItems_fts(rowid, Title, Content, Href, FeedUrl, UserId)
+                    INSERT INTO Items_fts(rowid, Title, Content, Href, FeedUrl, UserId)
                     VALUES (new.Id, new.Title, new.Content, new.Href, new.FeedUrl, new.UserId);
                 END;";
             command.ExecuteNonQuery();
 
             command = connection.CreateCommand();
             command.CommandText = @"
-                CREATE TRIGGER IF NOT EXISTS NewsFeedItems_after_delete
-                AFTER DELETE ON NewsFeedItems
+                CREATE TRIGGER IF NOT EXISTS Items_after_delete
+                AFTER DELETE ON Items
                 BEGIN
-                    DELETE FROM NewsFeedItems_fts WHERE rowid = old.Id;
+                    DELETE FROM Items_fts WHERE rowid = old.Id;
                 END;";
             command.ExecuteNonQuery();
 
             // Rebuild the FTS table (run if db gets out of sync with fts5)
             // logger.LogWarning("Rebuilding FTS table...");
             // command = connection.CreateCommand();
-            // command.CommandText = @"INSERT INTO NewsFeedItems_fts(NewsFeedItems_fts) VALUES('rebuild');";
+            // command.CommandText = @"INSERT INTO Items_fts(Items_fts) VALUES('rebuild');";
             // command.ExecuteNonQuery();
             // logger.LogWarning("Done rebuilding FTS table...");
         }
@@ -139,29 +137,22 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 command.CommandText = """
                     SELECT 
                         i.FeedUrl,
-                        i.NewsFeedItemId,
                         i.Href,
                         i.CommentsHref,
                         i.Title,
                         i.PublishDate,
                         i.Content,
                         i.IsRead,
-                        t.TagName,
                         i.UserId,
                         i.ThumbnailUrl,
-                        s.SavedDate
-                    FROM NewsFeedItems i
+                        i.IsSaved,
+                        i.Tags
+                    FROM Items i
                     LEFT JOIN Feeds f
                         ON i.FeedUrl = f.Url
-                    LEFT JOIN FeedTags t
-                        ON f.Id = t.FeedId
-                    LEFT JOIN SavedPosts s
-                        ON i.Href = s.Href 
-                        AND i.FeedUrl = s.FeedUrl 
-                        AND i.UserId = s.UserId
                     WHERE (i.Id IN (
-                        SELECT rowid FROM NewsFeedItems_fts
-                        WHERE NewsFeedItems_fts MATCH @query)
+                        SELECT rowid FROM Items_fts
+                        WHERE Items_fts MATCH @query)
                         OR i.Title LIKE @plainQuery)
                     AND i.UserId = @userId
                     ORDER BY i.PublishDate DESC
@@ -225,13 +216,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 command.CommandText = """
                     WITH LatestItems AS (
                         SELECT Href, MAX(PublishDate) as MaxDate
-                        FROM NewsFeedItems
+                        FROM Items
                         WHERE UserId = @userId
                         GROUP BY Href
                     )
                     SELECT
                         i.FeedUrl,
-                        i.NewsFeedItemId,
                         i.Href,
                         i.CommentsHref,
                         i.Title,
@@ -242,7 +232,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         i.ThumbnailUrl,
                         i.IsSaved,
                         i.Tags
-                    FROM NewsFeedItems i
+                    FROM Items i
                     INNER JOIN LatestItems li 
                         ON i.Href = li.Href 
                         AND i.PublishDate = li.MaxDate
@@ -265,38 +255,27 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
                 if (isFilterSaved)
                 {
-                    command.CommandText += " AND s.IsRead = 1";
+                    command.CommandText += " AND i.IsSaved = 1";
                 }
 
                 if (!string.IsNullOrWhiteSpace(filterTag))
                 {
-                    command.CommandText += " AND t.Tags CONTAINS @tagName";
-                    command.Parameters.AddWithValue("@tagName", filterTag);
+                    command.CommandText += " AND i.Tags LIKE @tagName";
+                    command.Parameters.AddWithValue("@tagName", $"%{filterTag}%");
                 }
 
                 command.CommandText += """
-                    GROUP BY i.Href, i.FeedUrl, i.NewsFeedItemId, i.CommentsHref, i.Title, 
+                    GROUP BY i.Href, i.FeedUrl, i.CommentsHref, i.Title, 
                              i.PublishDate, i.Content, i.IsRead, i.UserId, i.ThumbnailUrl,
                              i.IsSaved
                 """;
 
                 command.CommandText += " ORDER BY i.PublishDate DESC /* USING INDEX idx_items_timeline */";
-
-                if (pageSize != null)
-                {
-                    command.CommandText += " LIMIT @pageSize";
-                    command.Parameters.AddWithValue("@pageSize", pageSize);
-
-                    if (lastId != null && lastPublishDate != null)
-                    {
-                        command.CommandText = command.CommandText.Replace("WHERE 1=1", """
-                            WHERE (i.PublishDate < @lastPublishDate OR 
-                                  (i.PublishDate = @lastPublishDate AND i.Id < @lastId))
-                        """);
-                        command.Parameters.AddWithValue("@lastId", lastId);
-                        command.Parameters.AddWithValue("@lastPublishDate", lastPublishDate);
-                    }
-                }
+                pageSize ??= 20; // Default page size if not provided
+                page ??= 0;
+                command.CommandText += " LIMIT @pageSize OFFSET @offset";
+                command.Parameters.AddWithValue("@pageSize", pageSize);
+                command.Parameters.AddWithValue("@offset", page * pageSize);
 
                 using (var reader = await command.ExecuteReaderAsync())
                 {
@@ -308,7 +287,20 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 }
             }
 
+            // var feedTags = new Dictionary<string, IEnumerable<string>>(StringComparer.OrdinalIgnoreCase);
+            // foreach (var item in items)
+            // {
+            //     if (!feedTags.ContainsKey(item.FeedUrl))
+            //     {
+            //         var feedItem = this.feedStore.GetFeed(user, item.FeedUrl);
+            //         feedTags[item.FeedUrl] = feedItem.Tags;
+            //     }
+
+            //     item.FeedTags = feedTags[item.FeedUrl]?.ToList();
+            // }
+
             this.logger.LogInformation($"GetItemsAsync took {sw.ElapsedMilliseconds}ms");
+            
             return items;
         }
         finally
@@ -319,7 +311,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     private NewsFeedItem ReadItemFromResults(DbDataReader reader)
     {
-        var id = reader.IsDBNull(reader.GetOrdinal("NewsFeedItemId")) ? "" : reader.GetString(reader.GetOrdinal("NewsFeedItemId"));
+        //var id = reader.IsDBNull(reader.GetOrdinal("NewsFeedItemId")) ? "" : reader.GetString(reader.GetOrdinal("NewsFeedItemId"));
+        var id = "1";
         var userId = reader.IsDBNull(reader.GetOrdinal("UserId")) ? 1 : reader.GetInt32(reader.GetOrdinal("UserId"));
         var href = reader.IsDBNull(reader.GetOrdinal("Href")) ? "" : reader.GetString(reader.GetOrdinal("Href"));
         var commentsHref = reader.IsDBNull(reader.GetOrdinal("CommentsHref")) ? "" : reader.GetString(reader.GetOrdinal("CommentsHref"));
@@ -328,24 +321,16 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var content = reader.IsDBNull(reader.GetOrdinal("Content")) ? "" : reader.GetString(reader.GetOrdinal("Content"));
         var url = reader.IsDBNull(reader.GetOrdinal("FeedUrl")) ? "" : reader.GetString(reader.GetOrdinal("FeedUrl"));
         var isRead = reader.IsDBNull(reader.GetOrdinal("IsRead")) ? false : reader.GetBoolean(reader.GetOrdinal("IsRead"));
-        var tagName = reader.IsDBNull(reader.GetOrdinal("TagName")) ? "" : reader.GetString(reader.GetOrdinal("TagName"));
+        var tags = reader.IsDBNull(reader.GetOrdinal("Tags")) ? "" : reader.GetString(reader.GetOrdinal("Tags"));
         var thumbnailUrl = reader.IsDBNull(reader.GetOrdinal("ThumbnailUrl")) ? "" : reader.GetString(reader.GetOrdinal("ThumbnailUrl"));
-        var isPaywalled = reader.IsDBNull(reader.GetOrdinal("IsPaywalled")) ? false : reader.GetBoolean(reader.GetOrdinal("IsPaywalled"));
-        var isSaved = false;
-
-        // Check if SavedPosts table was joined in the query
-        if (reader.GetSchemaTable().Columns.Contains("SavedDate"))
-        {
-            isSaved = !reader.IsDBNull(reader.GetOrdinal("SavedDate"));
-        }
-        
+        //var isPaywalled = reader.IsDBNull(reader.GetOrdinal("IsPaywalled")) ? false : reader.GetBoolean(reader.GetOrdinal("IsPaywalled"));
+        var isSaved = reader.IsDBNull(reader.GetOrdinal("IsSaved"));;
         
         var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
-                        {
+        {
             FeedUrl = url,
             IsRead = isRead,
-            FeedTags = string.IsNullOrWhiteSpace(tagName) ? [] : [tagName],
-            IsPaywalled = isPaywalled,
+            FeedTags = string.IsNullOrWhiteSpace(tags) ? [] : tags.Split(","),
             IsSaved = isSaved
         };
 
@@ -359,10 +344,9 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             connection.Open();
             var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT * FROM NewsFeedItems
-                LEFT JOIN Feeds ON NewsFeedItems.FeedUrl = Feeds.Url
-                LEFT JOIN FeedTags ON NewsFeedItems.Id = FeedTags.FeedId
-                WHERE NewsFeedItems.Href = @href AND NewsFeedItems.UserId = @userId
+                SELECT * FROM Items
+                LEFT JOIN Feeds ON Items.FeedUrl = Feeds.Url
+                WHERE Items.Href = @href AND Items.UserId = @userId
             """;
             command.Parameters.AddWithValue("@href", href);
             command.Parameters.AddWithValue("@userId", user.Id);
@@ -393,32 +377,42 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 {
                     try
                     {
+                        var feedTags = new Dictionary<string, IEnumerable<string>>(StringComparer.OrdinalIgnoreCase);
+                        
                         foreach (var item in items)
                         {
                             try
                             {
-                                var alreadyStored = this.GetItem(this.userStore.GetUserById(item.UserId), item.Href);
+                                var user = this.userStore.GetUserById(item.UserId);
+
+                                if (!feedTags.ContainsKey(item.FeedUrl))
+                                {
+                                    var feed = this.feedStore.GetFeed(user, item.FeedUrl);
+                                    feedTags[item.FeedUrl] = feed.Tags ?? [];
+                                }
+
+                                var alreadyStored = this.GetItem(user, item.Href);
                                 if (alreadyStored != null)
                                 {
                                     //this.logger.LogInformation($"Item already exists in the database: {item.Href}");
                                     continue;
                                 }
+
                                 var command = connection.CreateCommand();
                                 command.CommandText = @"
-                                    INSERT INTO NewsFeedItems (
+                                    INSERT INTO Items (
                                         FeedUrl,
-                                        NewsFeedItemId,
                                         Href,
                                         CommentsHref,
                                         Title,
                                         PublishDate,
                                         Content,
                                         UserId,
-                                        ThumbnailUrl
+                                        ThumbnailUrl,
+                                        Tags
                                     ) 
-                                    VALUES (@feedUrl, @newsFeedItemId, @href, @commentsHref, @title, @publishDate, @content, @userId, @thumbnailUrl)";
+                                    VALUES (@feedUrl, @href, @commentsHref, @title, @publishDate, @content, @userId, @thumbnailUrl, @tags)";
                                 command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
-                                command.Parameters.AddWithValue("@newsFeedItemId", item.Id ?? "");
                                 command.Parameters.AddWithValue("@href", item.Href ?? "");
                                 command.Parameters.AddWithValue("@commentsHref", (object?)item.CommentsHref ?? DBNull.Value);
                                 command.Parameters.AddWithValue("@title", item.Title ?? "");
@@ -426,6 +420,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                 command.Parameters.AddWithValue("@content", (object?)item.Content ?? DBNull.Value);
                                 command.Parameters.AddWithValue("@userId", item.UserId);
                                 command.Parameters.AddWithValue("@thumbnailUrl", (object?)item.ThumbnailUrl ?? DBNull.Value);
+                                command.Parameters.AddWithValue("@tags", string.Join(",", feedTags[item.FeedUrl]));
                                 command.ExecuteNonQuery();
                             }
                             catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.Message.Contains("UNIQUE"))
@@ -455,6 +450,24 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         }
     }
 
+    public void UpdateTags(NewsFeedItem item, string tags)
+    {
+        using (var connection = new SqliteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                UPDATE Items
+                SET Tags = @tags
+                WHERE FeedUrl = @feedUrl AND Href = @href AND UserId = @userId";
+            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
+            command.Parameters.AddWithValue("@href", item.Href);
+            command.Parameters.AddWithValue("@tags", tags);
+            command.Parameters.AddWithValue("@userId", item.UserId);
+            command.ExecuteNonQuery();
+        }
+    }
+
     public void MarkAsRead(NewsFeedItem item, bool isRead)
     {
         using (var connection = new SqliteConnection(this.connectionString))
@@ -462,7 +475,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             connection.Open();
             var command = connection.CreateCommand();
             command.CommandText = @"
-                UPDATE NewsFeedItems
+                UPDATE Items
                 SET IsRead = @isRead
                 WHERE FeedUrl = @feedUrl AND Href = @href AND UserId = @userId";
             command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
@@ -480,12 +493,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             connection.Open();
             var command = connection.CreateCommand();
             command.CommandText = @"
-                INSERT OR REPLACE INTO SavedPosts (UserId, FeedUrl, Href, SavedDate)
-                VALUES (@userId, @feedUrl, @href, @savedDate)";
+                UPDATE Items
+                SET IsSaved = 1
+                WHERE UserId = @userId AND FeedUrl = @feedUrl AND Href = @href";
             command.Parameters.AddWithValue("@userId", user.Id);
             command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
             command.Parameters.AddWithValue("@href", item.Href);
-            command.Parameters.AddWithValue("@savedDate", DateTime.UtcNow.ToString("o"));
             command.ExecuteNonQuery();
         }
     }
@@ -497,7 +510,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             connection.Open();
             var command = connection.CreateCommand();
             command.CommandText = @"
-                DELETE FROM SavedPosts 
+                UPDATE Items
+                SET IsSaved = 0
                 WHERE UserId = @userId AND FeedUrl = @feedUrl AND Href = @href";
             command.Parameters.AddWithValue("@userId", user.Id);
             command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
@@ -509,5 +523,5 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     public void Dispose()
     {
         this.semaphore.Dispose();
-        }
     }
+}

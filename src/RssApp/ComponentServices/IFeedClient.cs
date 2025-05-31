@@ -6,6 +6,8 @@ public interface IFeedClient
 {
     Task<IEnumerable<NewsFeed>> GetFeedsAsync();
     Task AddFeedAsync(NewsFeed feed);
+    Task AddTagAsync(NewsFeed feed, string tag);
+
     Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 10);
     Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page);
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, int page, int pageSize = 10);

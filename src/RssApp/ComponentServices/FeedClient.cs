@@ -75,6 +75,22 @@ public class FeedClient : IFeedClient, IDisposable
         return tags;
     }
 
+    public async Task AddTagAsync(NewsFeed feed, string tag)
+    {
+        this.persistedFeeds.AddTag(feed, tag);
+        
+        feed.Tags ??= new List<string>();
+        feed.Tags.Add(tag);
+        feed.Tags = feed.Tags.Distinct().ToList();
+
+        var items = await this.newsFeedItemStore.GetItemsAsync(feed, false, false, null);
+        foreach (var item in items)
+        {
+            this.newsFeedItemStore.UpdateTags(item, string.Join(',', feed.Tags));
+        }
+    }
+
+
     public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
     {
         await Task.Yield();

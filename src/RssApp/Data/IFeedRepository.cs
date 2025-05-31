@@ -5,6 +5,7 @@ namespace RssApp.Data;
 public interface IFeedRepository
 {
 
+    NewsFeed GetFeed(RssUser user, string url);
     IEnumerable<NewsFeed> GetFeeds(RssUser user);
 
     void AddFeed(NewsFeed feed);
