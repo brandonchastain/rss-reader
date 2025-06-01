@@ -73,15 +73,16 @@ window.rssApp = {
         const lastPostId = this.getLastPostId();
         if (!lastPostId) return;
 
-        const maxAttempts = 10;
-        const scrollStep = 500; // px
-        const delay = 300; // ms
+        const maxAttempts = 100;
+        const scrollStep = 1000; // px
+        const delay = 100; // ms
         let attempts = 0;
 
         function tryScroll() {
             const postElement = document.querySelector(`a[href="${lastPostId}"]`);
             if (postElement) {
                 postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                postElement.parentElement.click();
                 return;
             }
             if (attempts < maxAttempts) {

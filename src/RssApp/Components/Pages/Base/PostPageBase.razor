@@ -1,5 +1,6 @@
 @inherits PageBase
 @inject ILogger<PostPageBase> logger
+@inject IJSRuntime jsRuntime
 
 @code {
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
@@ -53,9 +54,73 @@
         if (firstRender)
         {
             Items = await this.GetPostsAsync();
+            if (!initialized)
+            {
+                // Try to restore last post
+                var lastPostHref = await jsRuntime.InvokeAsync<string>("rssApp.getLastPostId");
+                var isUnread = await jsRuntime.InvokeAsync<bool>("rssApp.getIsFilterUnread");
+                var isSaved = await jsRuntime.InvokeAsync<bool>("rssApp.getIsFilterSaved");
+                var filterTag = await jsRuntime.InvokeAsync<string>("rssApp.getFilterTags");
+                if (filterTag == "null")
+                {
+                    filterTag = null;
+                }
+                var lastSetStr = await jsRuntime.InvokeAsync<string>("rssApp.getLastSet");
+                
+                if (string.IsNullOrEmpty(lastSetStr))
+                {
+                    this.StateHasChanged();
+                    return;
+                }
+
+                var lastSetDate = DateTime.Parse(lastSetStr, null, System.Globalization.DateTimeStyles.AdjustToUniversal);
+                if (lastSetDate < DateTime.UtcNow - TimeSpan.FromHours(1))
+                {
+                    this.StateHasChanged();
+                    return;
+                }
+
+                this.feedClient.IsFilterUnread = isUnread;
+                this.feedClient.IsFilterSaved = isSaved;
+                this.feedClient.FilterTag = filterTag;
+                
+                Items = await this.GetPostsAsync();
+                await jsRuntime.InvokeVoidAsync("rssApp.scrollToLastPost");
+@*    
+                if (!string.IsNullOrEmpty(lastPostHref))
+                {
+                    int index = 0;
+                    bool foundPost = false;
+                    while (!foundPost)
+                    {
+                        if (index >= this.Items.Count)
+                        {
+                            await UpdatePage(this.Page + 1);
+                        }
+
+                        if (index >= this.Items.Count)
+                        {
+                            break; // Prevent out of range access
+                        }
+
+                        var post = this.Items[index];
+                        if (string.Equals(post.Href, lastPostHref, StringComparison.OrdinalIgnoreCase))
+                        {
+                            post.IsBeingPreviewed = true;
+                            foundPost = true;
+                            await jsRuntime.InvokeVoidAsync("rssApp.scrollToLastPost");
+                        }
+
+                        index++;
+                    }
+                } *@
+                this.initialized = true;
+                this.StateHasChanged();
+            }
+
             this.loadedPage = Page;
             this.initialized = true;
-            this.StateHasChanged();
+            //this.StateHasChanged();
         }
     }
 }

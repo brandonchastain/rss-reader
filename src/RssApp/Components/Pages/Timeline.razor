@@ -14,7 +14,7 @@
 
 <CascadingValue Value="@Page" Name="Page">
 <CascadingValue Value="@Items" Name="Posts">
-    <PostTable OnPageChanged="UpdatePage" OnRefreshTriggered="RefreshItems" />
+    <PostTable OnPageChanged="UpdatePage" FeedClient="@this.feedClient" OnRefreshTriggered="RefreshItems" />
 </CascadingValue>
 </CascadingValue>
 

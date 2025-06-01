@@ -53,10 +53,13 @@
     [Parameter]
     public EventCallback<(bool, bool, string)> OnRefreshTriggered { get; set; }
 
-    public bool IsFilterUnread { get; set; } = false;
-    public bool IsFilterSaved { get; set; } = false;
+    [Parameter]
+    public IFeedClient FeedClient { get; set; }
+
+    public bool IsFilterUnread => FeedClient.IsFilterUnread;
+    public bool IsFilterSaved => FeedClient.IsFilterSaved;
     public IEnumerable<string> userTags = null;
-    private string filterTag = null;
+    private string filterTag => FeedClient.FilterTag;
     private bool initialized = false;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -64,80 +67,17 @@
         await base.OnAfterRenderAsync(firstRender);
         if (firstRender)
         {
-            this.userTags = this.feedClient.GetUserTags(CurrentUser);
-
-            if (!initialized)
-            {
-                // Try to restore last post
-                var lastPostHref = await jsRuntime.InvokeAsync<string>("rssApp.getLastPostId");
-                var isUnread = await jsRuntime.InvokeAsync<bool>("rssApp.getIsFilterUnread");
-                var isSaved = await jsRuntime.InvokeAsync<bool>("rssApp.getIsFilterSaved");
-                var filterTag = await jsRuntime.InvokeAsync<string>("rssApp.getFilterTags");
-                var lastSetStr = await jsRuntime.InvokeAsync<string>("rssApp.getLastSet");
-                
-                if (string.IsNullOrEmpty(lastSetStr))
-                {
-                    this.StateHasChanged();
-                    return;
-                }
-
-                var lastSetDate = DateTime.Parse(lastSetStr, null, System.Globalization.DateTimeStyles.AdjustToUniversal);
-                if (lastSetDate < DateTime.UtcNow - TimeSpan.FromHours(1))
-                {
-                    this.StateHasChanged();
-                    return;
-                }
-                
-                this.IsFilterUnread = isUnread;
-                this.IsFilterSaved = isSaved;
-                this.filterTag = filterTag;
-                this.feedClient.IsFilterUnread = isUnread;
-                this.feedClient.IsFilterSaved = isSaved;
-                this.feedClient.FilterTag = filterTag;
-
-                await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
-                if (!string.IsNullOrEmpty(lastPostHref))
-                {
-                    int index = 0;
-                    bool foundPost = false;
-                    while (!foundPost)
-                    {
-                        if (index >= this.Posts.Count)
-                        {
-                            await Next();
-                        }
-
-                        if (index >= this.Posts.Count)
-                        {
-                            break; // Prevent out of range access
-                        }
-
-                        var post = this.Posts[index];
-                        if (string.Equals(post.Href, lastPostHref, StringComparison.OrdinalIgnoreCase))
-                        {
-                            post.IsBeingPreviewed = true;
-                            foundPost = true;
-                            await jsRuntime.InvokeVoidAsync("rssApp.scrollToLastPost");
-                        }
-
-                        index++;
-                    }
-                }
-                this.StateHasChanged();
-                this.initialized = true;
-            }
+            this.userTags = FeedClient.GetUserTags(CurrentUser);
         }
     }
 
     private async Task ToggleUnreadFilterAsync()
     {
-        this.IsFilterUnread = !this.IsFilterUnread;
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
     private async Task ToggleSavedFilterAsync()
     {
-        this.IsFilterSaved = !this.IsFilterSaved;
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
@@ -145,13 +85,9 @@
     {
         if (this.filterTag == tag)
         {
-            this.filterTag = null;
+            tag = null;
         }
-        else
-        {
-            this.filterTag = tag;
-        }
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, tag));
     }
 
     private async Task Next()
