@@ -5,7 +5,7 @@
 
 @if (Post != null)
 {
-<div class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="() => PreviewPost(Post)" hidden=@(ShouldPostBeHidden(Post))>
+<div class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="() => HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
     <div class="col thumbnail">
         @{
             var thumbnailUrl = Post.GetThumbnailUrl();
@@ -61,6 +61,9 @@
     [Parameter]
     public bool IsFilterUnread { get; set; }
 
+    [Parameter]
+    public EventCallback OnPostClicked { get; set; }
+
     private bool ShouldPostBeHidden(NewsFeedItem post)
     {
         bool isFilteredByTag = this.FilterTag != null && !post.FeedTags.Contains(this.FilterTag);
@@ -97,5 +100,14 @@
         }
 
         await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleClick(NewsFeedItem post)
+    {
+        PreviewPost(post);
+        if (OnPostClicked.HasDelegate)
+        {
+            OnPostClicked.InvokeAsync(post);
+        }
     }
 }

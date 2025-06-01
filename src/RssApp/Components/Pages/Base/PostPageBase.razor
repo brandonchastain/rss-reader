@@ -38,15 +38,10 @@
             this.feedClient.IsFilterSaved = filters.isFilterSaved;
             this.feedClient.FilterTag = filters.filterTag;
         }
-
-        if (Page <= loadedPage)
-        {
-            this.logger.LogWarning("RefreshItems extraneous call");
-            return;
-        }
         
         var newPageRes = await this.GetPostsAsync();
-        Items.AddRange(newPageRes.Distinct());
+        Items.AddRange(newPageRes);
+        Items = Items.Distinct().ToList();
         this.loadedPage = Page;
         
         this.StateHasChanged();

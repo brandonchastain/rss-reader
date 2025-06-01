@@ -38,6 +38,62 @@ window.Observer = {
     }
 };
 
+// Functions to save, get, and clear the last post ID in localStorage
+window.rssApp = {
+    setLastPostId: function(postId, isFilterUnread, isFilterSaved, filterTags, setDateTime) {
+        localStorage.setItem('rssApp.lastPostId', postId);
+        localStorage.setItem('rssApp.isFilterUnread', isFilterUnread);
+        localStorage.setItem('rssApp.isFilterSaved', isFilterSaved);
+        localStorage.setItem('rssApp.filterTags', filterTags);
+        localStorage.setItem('rssApp.lastSet', setDateTime);
+    },
+    getLastPostId: function() {
+        return localStorage.getItem('rssApp.lastPostId');
+    },
+    getIsFilterUnread: function() {
+        return localStorage.getItem('rssApp.isFilterUnread') === 'true';
+    },
+    getIsFilterSaved: function() {
+        return localStorage.getItem('rssApp.isFilterSaved') === 'true';
+    },
+    getFilterTags: function() {
+        return localStorage.getItem('rssApp.filterTags') || '';
+    },
+    getLastSet: function() {
+        return localStorage.getItem('rssApp.lastSet');
+    },
+    clearData: function() {
+        localStorage.removeItem('rssApp.lastPostId');
+        localStorage.removeItem('rssApp.isFilterUnread');
+        localStorage.removeItem('rssApp.isFilterSaved');
+        localStorage.removeItem('rssApp.filterTags');
+        localStorage.removeItem('rssApp.lastSet');
+    },
+    scrollToLastPost: function() {
+        const lastPostId = this.getLastPostId();
+        if (!lastPostId) return;
+
+        const maxAttempts = 10;
+        const scrollStep = 500; // px
+        const delay = 300; // ms
+        let attempts = 0;
+
+        function tryScroll() {
+            const postElement = document.querySelector(`a[href="${lastPostId}"]`);
+            if (postElement) {
+                postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            if (attempts < maxAttempts) {
+                window.scrollBy(0, scrollStep);
+                attempts++;
+                setTimeout(tryScroll, delay);
+            }
+        }
+        tryScroll();
+    }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     const contentContainer = document.getElementById('focus-post-content-container');
     if (contentContainer) {

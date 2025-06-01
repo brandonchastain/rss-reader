@@ -6,7 +6,7 @@ namespace RssApp.RssClient;
 
 public class FeedClient : IFeedClient, IDisposable
 {
-    private const int PageSize = 10;
+    private const int PageSize = 20;
     private HttpClient httpClient;
     private readonly ILogger<FeedClient> logger;
     private readonly IFeedRepository persistedFeeds;

@@ -7,7 +7,6 @@ namespace RssApp.RssClient;
 
 public class FeedRefresher : IDisposable
 {
-    private const int PageSize = 10;
     private static readonly bool EnableHttpLookup = true;
     private HttpClient httpClient;
     private readonly RssDeserializer deserializer;
