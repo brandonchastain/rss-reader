@@ -51,10 +51,14 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await base.OnAfterRenderAsync(firstRender);
-        if (firstRender)
+        if (!firstRender)
         {
-            Items = await this.GetPostsAsync();
-            if (!initialized)
+            return;
+        }
+        Items = await this.GetPostsAsync();
+        if (!initialized)
+        {
+            try
             {
                 // Try to restore last post
                 var lastPostHref = await jsRuntime.InvokeAsync<string>("rssApp.getLastPostId");
@@ -69,14 +73,12 @@
                 
                 if (string.IsNullOrEmpty(lastSetStr))
                 {
-                    this.StateHasChanged();
                     return;
                 }
 
                 var lastSetDate = DateTime.Parse(lastSetStr, null, System.Globalization.DateTimeStyles.AdjustToUniversal);
                 if (lastSetDate < DateTime.UtcNow - TimeSpan.FromHours(1))
                 {
-                    this.StateHasChanged();
                     return;
                 }
 
@@ -86,41 +88,12 @@
                 
                 Items = await this.GetPostsAsync();
                 await jsRuntime.InvokeVoidAsync("rssApp.scrollToLastPost");
-@*    
-                if (!string.IsNullOrEmpty(lastPostHref))
-                {
-                    int index = 0;
-                    bool foundPost = false;
-                    while (!foundPost)
-                    {
-                        if (index >= this.Items.Count)
-                        {
-                            await UpdatePage(this.Page + 1);
-                        }
-
-                        if (index >= this.Items.Count)
-                        {
-                            break; // Prevent out of range access
-                        }
-
-                        var post = this.Items[index];
-                        if (string.Equals(post.Href, lastPostHref, StringComparison.OrdinalIgnoreCase))
-                        {
-                            post.IsBeingPreviewed = true;
-                            foundPost = true;
-                            await jsRuntime.InvokeVoidAsync("rssApp.scrollToLastPost");
-                        }
-
-                        index++;
-                    }
-                } *@
+            }
+            finally 
+            {
                 this.initialized = true;
                 this.StateHasChanged();
             }
-
-            this.loadedPage = Page;
-            this.initialized = true;
-            //this.StateHasChanged();
         }
     }
 }
