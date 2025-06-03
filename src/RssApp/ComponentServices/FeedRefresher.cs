@@ -72,7 +72,6 @@ public class FeedRefresher : IDisposable
             return;
         }
 
-        //this.logger.LogInformation("Refreshing feeds...");
         await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
         {
             bool isJustStarted = this.startupTime + this.cacheReloadStartupDelay > DateTime.UtcNow;

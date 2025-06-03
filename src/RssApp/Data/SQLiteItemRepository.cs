@@ -204,8 +204,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
         try
         {
-            // this.logger.LogInformation($"GetItemsAsync: feedUrl={feed.FeedUrl}, isFilterUnread={isFilterUnread}, isFilterSaved={isFilterSaved}, filterTag={filterTag}, page={page}, pageSize={pageSize}");
-            var sw = Stopwatch.StartNew();
             var items = new List<NewsFeedItem>();
             var user = this.userStore.GetUserById(feed.UserId);
 
@@ -297,10 +295,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             //     }
 
             //     item.FeedTags = feedTags[item.FeedUrl]?.ToList();
-            // }
-
-            this.logger.LogInformation($"GetItemsAsync took {sw.ElapsedMilliseconds}ms");
-            
+            // }            
             return items;
         }
         finally
@@ -394,7 +389,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                 var alreadyStored = this.GetItem(user, item.Href);
                                 if (alreadyStored != null)
                                 {
-                                    //this.logger.LogInformation($"Item already exists in the database: {item.Href}");
+                                    this.logger.LogWarning($"Item already exists in the database: {item.Href}");
                                     continue;
                                 }
 
