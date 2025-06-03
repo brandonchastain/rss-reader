@@ -126,7 +126,7 @@ public class FeedRefresher : IDisposable
                 {
                     var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
                     browserRequest.Headers.UserAgent.ParseAdd(agent);
-                    browserRequest.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+                    browserRequest.Headers.Accept.ParseAdd("application/xhtml+xml,application/xml");
         
                     var httpRes = await this.httpClient.SendAsync(browserRequest);
                     response = await httpRes.Content.ReadAsStringAsync();
