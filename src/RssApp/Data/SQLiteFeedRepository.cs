@@ -175,7 +175,6 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public void AddTag(NewsFeed feed, string tag)
     {
-        //this.logger.LogInformation("Adding {tag} to feed {feedId}", tag, feed.FeedId);
         var existing = GetTagByFeedId(feed.FeedId, tag)?.Split(',').ToList();
         if (existing == null)
         {
@@ -198,7 +197,6 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@tags", string.Join(',', existing));
             command.Parameters.AddWithValue("@userId", feed.UserId);
             command.ExecuteNonQuery();
-            //this.logger.LogInformation("Tag {tagName} added to feed {feedId}", tag, feed.FeedId);
         }
     }
 

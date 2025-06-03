@@ -66,12 +66,10 @@ public class FeedClient : IFeedClient, IDisposable
 
     public IEnumerable<string> GetUserTags(RssUser user)
     {
-        var sw = Stopwatch.StartNew();
         var tags = this.persistedFeeds.GetFeeds(user)
             .SelectMany(f => f.Tags)
             .Where(f => !string.IsNullOrWhiteSpace(f))
             .Distinct();
-        //this.logger.LogInformation($"GetUserTags took {sw.ElapsedMilliseconds}ms");
         return tags;
     }
 
@@ -90,13 +88,10 @@ public class FeedClient : IFeedClient, IDisposable
         }
     }
 
-
     public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
     {
         await Task.Yield();
-        var sw = Stopwatch.StartNew();
         var feeds = this.persistedFeeds.GetFeeds(this.loggedInUser);
-        //this.logger.LogInformation($"GetFeeds took {sw.ElapsedMilliseconds}ms");
         return feeds;
     }
 
@@ -111,21 +106,17 @@ public class FeedClient : IFeedClient, IDisposable
         {
             return null;
         }
-        var sw = Stopwatch.StartNew();
         var items = await this.GetFeedItemsHelperAsync(new NewsFeed("%", this.loggedInUser.Id), page, pageSize);
         var sorted = items
             .DistinctBy(i => i.GetHashCode())
             .OrderByDescending(i => i.ParsedDate);
 
-        //this.logger.LogInformation($"GetTimeline took {sw.ElapsedMilliseconds}ms");
         return sorted;
     }
 
     public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page)
     {
-        var sw = Stopwatch.StartNew();
         var items = await this.GetFeedItemsHelperAsync(feed, page);
-        //this.logger.LogInformation($"GetFeedItems took {sw.ElapsedMilliseconds}ms");
         return items;
     }
 
