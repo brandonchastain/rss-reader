@@ -37,6 +37,12 @@
                 Published on @Post.ParsedDate?.ToString("f")
             </p>
             <p>
+                @if (!Post.GetThumbnailUrl().EndsWith("placeholder.jpg"))
+                {
+                    <img src="@Post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" />
+                }
+            </p>
+            <p>
                 @((MarkupString)HtmlSanitizer.Sanitize(Post.Content))
             </p>
             <p>
