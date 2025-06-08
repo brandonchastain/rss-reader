@@ -42,6 +42,7 @@ window.Observer = {
 window.rssApp = {
     setLastPostId: function(postId, isFilterUnread, isFilterSaved, filterTags, setDateTime) {
         localStorage.setItem('rssApp.lastPostId', postId);
+        localStorage.setItem('rssApp.lastPage', document.title);
         localStorage.setItem('rssApp.isFilterUnread', isFilterUnread);
         localStorage.setItem('rssApp.isFilterSaved', isFilterSaved);
         localStorage.setItem('rssApp.filterTags', filterTags);
@@ -71,7 +72,10 @@ window.rssApp = {
     },
     scrollToLastPost: function() {
         const lastPostId = this.getLastPostId();
-        if (!lastPostId) return;
+        const isSamePage = document.title === localStorage.getItem('rssApp.lastPage');
+        if (!lastPostId || !isSamePage) {
+            return;
+        }
 
         const maxAttempts = 100;
         const scrollStep = 10000; // px

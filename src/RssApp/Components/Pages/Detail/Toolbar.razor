@@ -1,3 +1,4 @@
+@inject IJSRuntime JS
 
 <div>
     <p>Last refreshed on @feedRefresher.LastCacheReloadTime</p>
@@ -12,7 +13,16 @@
             <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="() => FilterForTag.InvokeAsync(tag)">[@tag]</button>
         }
     }
-    <button class="btn-link" @onclick="() => RefreshAsync()">@(refreshState)</button>
+    <button class="btn-link" @onclick="() => RefreshAsync()">
+        @if (feedRefresher.IsRefreshing)
+        {
+            <i class="fas fa-sync fa-spin"></i>
+        }
+        else
+        {
+            <i class="fas fa-sync"></i>
+        }
+    </button>
 </div>
 
 @code {
@@ -42,10 +52,38 @@
 
     private string refreshState = "refresh";
 
+    protected override void OnInitialized()
+    {
+        feedRefresher.OnNewItemsAvailable += HandleNewItems;
+        feedRefresher.OnRefreshComplete += HandleRefreshComplete;
+    }
+
+    public void Dispose()
+    {
+        feedRefresher.OnNewItemsAvailable -= HandleNewItems;
+        feedRefresher.OnRefreshComplete -= HandleRefreshComplete;
+    }
+
+    private void HandleNewItems(object? sender, List<NewsFeedItem> newItems)
+    {
+        refreshState = "refresh";
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleRefreshComplete(object? sender, EventArgs e)
+    {
+        refreshState = "refresh";
+        InvokeAsync(StateHasChanged);
+    }
+
     private async Task RefreshAsync()
     {
         refreshState = "refreshing...";
         await feedRefresher.RefreshAsync();
-        refreshState = "refresh";
+        
+        // invoke js to scroll to top
+        await JS.InvokeVoidAsync("window.scrollTo", 0, 0);
+
+        // Note: Don't set refreshState here, wait for the OnRefreshComplete event
     }
 }

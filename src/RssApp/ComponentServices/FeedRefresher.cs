@@ -19,8 +19,15 @@ public class FeedRefresher : IDisposable
     private readonly BackgroundWorkQueue backgroundWorkQueue;
     private DateTime? lastCacheReloadTime;
     private DateTime startupTime = DateTime.UtcNow;
-    private Exception lastRefreshException;
+    private Exception? lastRefreshException;
     private bool doRefresh;
+    private int pendingRefreshes = 0;
+    private bool isRefreshing;
+
+    public event EventHandler<List<NewsFeedItem>>? OnNewItemsAvailable;
+    public event EventHandler? OnRefreshComplete;
+
+    public bool IsRefreshing => isRefreshing;
 
     public FeedRefresher(
         RssDeserializer deserializer,
@@ -48,6 +55,7 @@ public class FeedRefresher : IDisposable
         this.cacheReloadInterval = cacheReloadInterval;
         this.cacheReloadStartupDelay = cacheReloadStartupDelay;
         this.backgroundWorkQueue = backgroundWorkQueue;
+        this.isRefreshing = false;
     }
 
     public DateTime? LastCacheReloadTime => this.lastCacheReloadTime;
@@ -67,27 +75,39 @@ public class FeedRefresher : IDisposable
         bool isJustStarted = this.startupTime + this.cacheReloadStartupDelay > DateTime.UtcNow;
         bool isRecentRefresh = this.lastCacheReloadTime + this.cacheReloadInterval > DateTime.UtcNow;
         
-        if (isJustStarted || isRecentRefresh)
+        if (isJustStarted || isRecentRefresh || isRefreshing)
         {
             return;
         }
-
-        await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
+        
+        try
         {
-            bool isJustStarted = this.startupTime + this.cacheReloadStartupDelay > DateTime.UtcNow;
-            bool isRecentRefresh = this.lastCacheReloadTime + this.cacheReloadInterval > DateTime.UtcNow;
+            var allUsers = this.userStore.GetAllUsers();
+            var totalFeeds = 0;
             
-            if (isJustStarted || isRecentRefresh)
+            // Count total feeds first
+            foreach (var user in allUsers)
             {
+                var feeds = this.persistedFeeds.GetFeeds(user);
+                totalFeeds += feeds.Count();
+            }
+            
+            if (totalFeeds == 0)
+            {
+                this.lastCacheReloadTime = DateTime.UtcNow;
+                OnRefreshComplete?.Invoke(this, EventArgs.Empty);
                 return;
             }
-            try
+
+            isRefreshing = true;
+            Interlocked.Exchange(ref pendingRefreshes, totalFeeds);
+
+            foreach (var user in allUsers)
             {
-                var allUsers = this.userStore.GetAllUsers();
-                foreach (var user in allUsers)
+                var feeds = this.persistedFeeds.GetFeeds(user);
+                foreach (var feed in feeds)
                 {
-                    var feeds = this.persistedFeeds.GetFeeds(user);
-                    foreach (var feed in feeds)
+                    await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
                     {
                         try
                         {
@@ -97,24 +117,45 @@ public class FeedRefresher : IDisposable
                         {
                             this.logger.LogError(ex, "Error reloading feed: {feed}", feed.FeedUrl);
                         }
-                    }
+                        finally
+                        {
+                            if (Interlocked.Decrement(ref pendingRefreshes) == 0)
+                            {
+                                this.lastCacheReloadTime = DateTime.UtcNow;
+                                isRefreshing = false;
+                                OnRefreshComplete?.Invoke(this, EventArgs.Empty);
+                            }
+                        }
+                    });
                 }
+            }
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogError(ex, "Error reloading cache");
+            Interlocked.Exchange(ref pendingRefreshes, 0);
+            isRefreshing = false;
+            OnRefreshComplete?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
-                this.lastCacheReloadTime = DateTime.UtcNow;
-            }
-            catch (Exception ex)
-            {
-                this.logger.LogError(ex, "Error reloading cache");
-            }
-        });
+    private void NotifyNewItems(List<NewsFeedItem> newItems)
+    {
+        OnNewItemsAvailable?.Invoke(this, newItems);
     }
 
     private async Task ReloadCachedItemsAsync(NewsFeed feed)
     {
         var url = feed.FeedUrl;
         var user = this.userStore.GetUserById(feed.UserId);
+        if (user == null)
+        {
+            this.logger.LogError("User not found: {userId}", feed.UserId);
+            return;
+        }
+
         var freshItems = new HashSet<NewsFeedItem>();
-        string response = null;
+        string? response = null;
 
         string[] agents = ["rssreader.brandonchastain.com/1.1", "curl/7.79.1"];
 
@@ -157,7 +198,6 @@ public class FeedRefresher : IDisposable
 
         if (lastRefreshException != null && (freshItems == null || !freshItems.Any()))
         {
-            //this.logger.LogWarning($"No items found when refreshing feed: {url}");
             throw lastRefreshException;
         }
 
@@ -168,8 +208,12 @@ public class FeedRefresher : IDisposable
         }
 
         var size = Math.Max(10, freshItems.Count);
-        var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed, isFilterUnread: false, isFilterSaved: false, filterTag: null, page: 0, pageSize: size)).ToHashSet();
-        var newItems = freshItems.Except(cachedItems);
-        this.newsFeedItemStore.AddItems(newItems);
+        var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed, isFilterUnread: false, isFilterSaved: false, filterTag: default, page: 0, pageSize: size)).ToHashSet();
+        var newItems = freshItems.Except(cachedItems).ToList();
+        if (newItems.Any())
+        {
+            this.newsFeedItemStore.AddItems(newItems);
+            NotifyNewItems(newItems);
+        }
     }
 }

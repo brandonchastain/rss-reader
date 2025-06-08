@@ -62,6 +62,23 @@
     private string filterTag => FeedClient.FilterTag;
     private bool initialized = false;
 
+    protected override void OnInitialized()
+    {
+        feedRefresher.OnNewItemsAvailable += HandleNewItems;
+    }
+
+    public void Dispose()
+    {
+        feedRefresher.OnNewItemsAvailable -= HandleNewItems;
+    }
+
+    private void HandleNewItems(object? sender, List<NewsFeedItem> newItems)
+    {
+        // Add new items to the beginning of the Posts list
+        Posts.InsertRange(0, newItems);
+        InvokeAsync(StateHasChanged);
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await base.OnAfterRenderAsync(firstRender);
@@ -73,12 +90,12 @@
 
     private async Task ToggleUnreadFilterAsync()
     {
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+        await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
     private async Task ToggleSavedFilterAsync()
     {
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag));
     }
 
     private async Task FilterForTag(string tag)

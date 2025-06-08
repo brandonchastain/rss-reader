@@ -88,6 +88,7 @@
                 
                 Items = await this.GetPostsAsync();
                 await jsRuntime.InvokeVoidAsync("rssApp.scrollToLastPost");
+                await jsRuntime.InvokeVoidAsync("rssApp.clearData");
             }
             finally 
             {
