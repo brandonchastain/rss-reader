@@ -126,7 +126,10 @@ public class FeedRefresher : IDisposable
                 {
                     var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
                     browserRequest.Headers.UserAgent.ParseAdd(agent);
-                    browserRequest.Headers.Accept.ParseAdd("application/xhtml+xml,application/xml");
+                    browserRequest.Headers.Accept.ParseAdd("text/xml");
+                    browserRequest.Headers.Accept.ParseAdd("application/xml");
+                    browserRequest.Headers.Accept.ParseAdd("application/rss+xml");
+                    browserRequest.Headers.Accept.ParseAdd("application/atom+xml");
         
                     var httpRes = await this.httpClient.SendAsync(browserRequest);
                     response = await httpRes.Content.ReadAsStringAsync();
@@ -134,7 +137,8 @@ public class FeedRefresher : IDisposable
                     if (string.IsNullOrEmpty(response))
                     {
                         this.logger.LogWarning($"Empty response when refreshing feed: {url}");
-                        return;
+                        this.logger.LogError($"Error response: {response}");
+                        continue;
                     }
 
                     freshItems = this.deserializer.FromString(response, user).ToHashSet();
