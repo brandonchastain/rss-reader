@@ -17,7 +17,7 @@
     </div>
     <div class="col">
         <p class="post-title">
-            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick="() => MarkAsRead(Post, true)">@Post.Title</a><br/>
+            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick="() => { HandleClick(Post, false); MarkAsRead(Post, true);}">@Post.Title</a><br/>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
                 <a href="@Post.CommentsHref">[comments]</a>
@@ -108,9 +108,13 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private void HandleClick(NewsFeedItem post)
+    private void HandleClick(NewsFeedItem post, bool preview = true)
     {
-        PreviewPost(post);
+        if (preview)
+        {
+            PreviewPost(post);
+        }
+
         if (OnPostClicked.HasDelegate)
         {
             OnPostClicked.InvokeAsync(post);

@@ -73,12 +73,12 @@
 
     private async Task ToggleUnreadFilterAsync()
     {
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+        await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
     private async Task ToggleSavedFilterAsync()
     {
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag));
     }
 
     private async Task FilterForTag(string tag)
