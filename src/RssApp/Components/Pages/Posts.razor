@@ -21,6 +21,15 @@ Posts from @(FeedUrl)
     [SupplyParameterFromQuery]
     public string FeedUrl { get; set; }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await this.jsRuntime.InvokeVoidAsync("rssApp.clearData");
+        }
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
     protected override async Task<List<NewsFeedItem>> GetPostsAsync()
     {
         var decodedUrl = System.Net.WebUtility.UrlDecode(FeedUrl);
