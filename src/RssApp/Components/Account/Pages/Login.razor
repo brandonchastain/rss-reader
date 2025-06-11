@@ -17,9 +17,9 @@
     <div class="col-lg-6">
         <section>
             <StatusMessage Message="@errorMessage" />
-            <EditForm Model="Input" method="post" OnValidSubmit="LoginUser" FormName="login">
+            <EditForm Model="Input" method="post" OnValidSubmit="LoginUser" FormName="login" action="@(NavigationManager.GetUriWithQueryParameters("Account/Login", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">
                 <DataAnnotationsValidator />
-                <h2>Use a local account to log in.</h2>
+                <h2>Use an RssReader account to log in.</h2>
                 <hr />
                 <ValidationSummary class="text-danger" role="alert" />
                 <div class="form-floating mb-3">
@@ -57,15 +57,16 @@
     </div>
     <div class="col-lg-4 col-lg-offset-2">
         <section>
-            <h3>Use another service to log in.</h3>
+            @* <h3>Use another service to log in.</h3>
             <hr />
-            <ExternalLoginPicker />
+            <ExternalLoginPicker /> *@
         </section>
     </div>
 </div>
 
 @code {
     private string? errorMessage;
+    private string? _returnUrl;
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
@@ -74,7 +75,12 @@
     private InputModel Input { get; set; } = new();
 
     [SupplyParameterFromQuery]
-    private string? ReturnUrl { get; set; }
+    private string? ReturnUrl 
+    { 
+        get => _returnUrl ?? "/timeline";
+        set => _returnUrl = value;
+    }
+
 
     protected override async Task OnInitializedAsync()
     {

@@ -1,14 +1,12 @@
 @page "/timeline"
-@page "/"
 @inherits PostPageBase
 @rendermode InteractiveServer
 @attribute [StreamRendering]
+@attribute [Authorize]
 @inject ILogger<Timeline> logger
 @inject IJSRuntime jsRuntime
 
 <PageTitle>Timeline</PageTitle>
-
-<AuthorizeView>
 
 <h1>Timeline</h1>
 
@@ -26,5 +24,3 @@
         return posts?.ToList() ?? new List<NewsFeedItem>();
     }
 }
-
-</AuthorizeView>

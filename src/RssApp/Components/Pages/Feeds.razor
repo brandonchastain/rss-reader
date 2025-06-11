@@ -4,6 +4,7 @@
 @using RssApp.Components.Layout
 @inherits PageBase
 @attribute [StreamRendering]
+@attribute [Authorize]
 @inject IFeedRepository feedStore
 @inject IFeedClient feedClient
 @inject ILogger<Feeds> logger
