@@ -6,8 +6,7 @@
 @attribute [Authorize]
 
 <PageTitle>Search</PageTitle>
-
-<h3>Search Posts</h3>
+<SectionContent SectionName="page-title">| Search</SectionContent>
 
 <input @bind="searchTerm" @bind:event="oninput" placeholder="Search..." class="form-control mb-3" @onkeydown="(e) => OnKeyDown(e)" />
 <button class="btn btn-primary mb-3" @onclick="() => SearchPosts()">Search</button>

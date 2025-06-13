@@ -33,6 +33,7 @@ a {
 }
 
 .toolbar {
+    display: inline;
     margin-bottom: 2rem;
 }
 

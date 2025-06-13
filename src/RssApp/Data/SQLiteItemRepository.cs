@@ -200,7 +200,9 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         long? lastId = null,
         string? lastPublishDate = null)
     {
+        var sw = Stopwatch.StartNew();
         await this.semaphore.WaitAsync();
+        var lockWait = sw.ElapsedMilliseconds;
 
         try
         {
@@ -212,12 +214,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 await connection.OpenAsync();
                 var command = connection.CreateCommand();
                 command.CommandText = """
-                    WITH LatestItems AS (
-                        SELECT Href, MAX(PublishDate) as MaxDate
-                        FROM Items
-                        WHERE UserId = @userId
-                        GROUP BY Href
-                    )
                     SELECT
                         i.FeedUrl,
                         i.Href,
@@ -231,9 +227,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         i.IsSaved,
                         i.Tags
                     FROM Items i
-                    INNER JOIN LatestItems li 
-                        ON i.Href = li.Href 
-                        AND i.PublishDate = li.MaxDate
                 """;
 
                 command.CommandText += " WHERE 1=1";
@@ -261,12 +254,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     command.CommandText += " AND i.Tags LIKE @tagName";
                     command.Parameters.AddWithValue("@tagName", $"%{filterTag}%");
                 }
-
-                command.CommandText += """
-                    GROUP BY i.Href, i.FeedUrl, i.CommentsHref, i.Title, 
-                             i.PublishDate, i.Content, i.IsRead, i.UserId, i.ThumbnailUrl,
-                             i.IsSaved
-                """;
 
                 command.CommandText += " ORDER BY i.PublishDate DESC /* USING INDEX idx_items_timeline */";
                 pageSize ??= 20; // Default page size if not provided
@@ -301,6 +288,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         finally
         {
             this.semaphore.Release();
+            this.logger.LogInformation("GetItems took {ElapsedMilliseconds} ms, lock wait: {LockWait} ms", 
+                sw.ElapsedMilliseconds, lockWait);
         }
     }
 

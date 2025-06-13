@@ -1,7 +1,10 @@
 @page "/feeds"
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.IO
+@using Microsoft.AspNetCore.Components.Sections
 @using RssApp.Components.Layout
+@using RssApp.Components.Pages.Base
+
 @inherits PageBase
 @attribute [StreamRendering]
 @attribute [Authorize]
@@ -14,9 +17,7 @@
 @rendermode InteractiveServer
 
 <PageTitle>Feeds</PageTitle>
-
-<AuthorizeView>
-<h1>Feeds</h1>
+<SectionContent SectionName="page-title">Feeds</SectionContent>
 
 <form method="post" @onsubmit="SubmitAsync" @formname="newfeed">
     <AntiforgeryToken />
@@ -228,5 +229,3 @@ else
         }
     }
 }
-
-</AuthorizeView>

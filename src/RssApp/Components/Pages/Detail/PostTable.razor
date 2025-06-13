@@ -10,6 +10,7 @@
 
 <AuthorizeView>
 
+<SectionContent SectionName="toolbar">
 <Toolbar
     feedRefresher="@feedRefresher"
     filterTag="@filterTag"
@@ -20,6 +21,8 @@
     ToggleSavedFilterAsync="@ToggleSavedFilterAsync"
     FilterForTag="@FilterForTag"
 />
+</SectionContent>
+
 
 <div id="post-table" class="table">
     <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">

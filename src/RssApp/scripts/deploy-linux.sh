@@ -85,7 +85,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/home/brandonchastain/app
-ExecStart=/usr/bin/authbind --deep /snap/aspnetcore-runtime-90/15/usr/bin//dotnet /home/brandonchastain/app/RssApp.dll --launch-profile https
+ExecStart=/usr/bin/authbind --deep /snap/aspnetcore-runtime-90/current/usr/bin//dotnet /home/brandonchastain/app/RssApp.dll --launch-profile https
 User=brandonchastain
 Environment=ASPNETCORE_URLS=https://+:443
 Environment=ASPNETCORE_ENVIRONMENT=Production
