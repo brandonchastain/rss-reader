@@ -357,7 +357,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             {
                 connection.Open();
 
-                using (var transaction = connection.BeginTransaction())
+                // using (var transaction = connection.BeginTransaction())
                 {
                     try
                     {
@@ -414,11 +414,11 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                             }
                         }
 
-                        transaction.Commit();
+                        // transaction.Commit();
                     }
                     catch
                     {
-                        transaction.Rollback();
+                        // transaction.Rollback();
                         throw;
                     }
                 }

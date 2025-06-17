@@ -8,7 +8,7 @@ namespace RssApp.RssClient;
 public class FeedRefresher : IDisposable
 {
     private static readonly bool EnableHttpLookup = true;
-    private HttpClient httpClient;
+    private readonly IHttpClientFactory httpClientFactory;
     private readonly RssDeserializer deserializer;
     private readonly ILogger<FeedRefresher> logger;
     private readonly IFeedRepository persistedFeeds;
@@ -30,6 +30,7 @@ public class FeedRefresher : IDisposable
     public bool IsRefreshing => isRefreshing;
 
     public FeedRefresher(
+        IHttpClientFactory httpClientFactory,
         RssDeserializer deserializer,
         ILogger<FeedRefresher> logger,
         IFeedRepository persistedFeeds,
@@ -39,14 +40,7 @@ public class FeedRefresher : IDisposable
         TimeSpan cacheReloadInterval,
         TimeSpan cacheReloadStartupDelay)
     {
-
-        var clientHandler = new HttpClientHandler
-        {
-            AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 5,
-        };
-
-        this.httpClient = new HttpClient(clientHandler);
+        this.httpClientFactory = httpClientFactory;
         this.deserializer = deserializer;
         this.logger = logger;
         this.persistedFeeds = persistedFeeds;
@@ -62,7 +56,7 @@ public class FeedRefresher : IDisposable
 
     public void Dispose()
     {
-        this.httpClient.Dispose();
+        // Remove httpClient.Dispose() since we're using HttpClientFactory
     }
 
     public async Task AddFeedAsync(NewsFeed feed)
@@ -165,16 +159,17 @@ public class FeedRefresher : IDisposable
             {
                 if (EnableHttpLookup)
                 {
-                    var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                    using var httpClient = httpClientFactory.CreateClient();
+                    using var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
                     browserRequest.Headers.UserAgent.ParseAdd(agent);
                     browserRequest.Headers.Accept.ParseAdd("text/xml");
                     browserRequest.Headers.Accept.ParseAdd("application/xml");
                     browserRequest.Headers.Accept.ParseAdd("application/rss+xml");
                     browserRequest.Headers.Accept.ParseAdd("application/atom+xml");
         
-                    var httpRes = await this.httpClient.SendAsync(browserRequest);
+                    using var httpRes = await httpClient.SendAsync(browserRequest);
                     response = await httpRes.Content.ReadAsStringAsync();
-
+                    
                     if (string.IsNullOrEmpty(response))
                     {
                         this.logger.LogWarning($"Empty response when refreshing feed: {url}");
@@ -182,7 +177,9 @@ public class FeedRefresher : IDisposable
                         continue;
                     }
 
-                    freshItems = this.deserializer.FromString(response, user).ToHashSet();
+                    var items = this.deserializer.FromString(response, user);
+                    freshItems.UnionWith(items);
+                    response = null;  // Help GC by clearing the response string
                     
                     // It worked. Exit the loop.
                     break;
@@ -193,6 +190,7 @@ public class FeedRefresher : IDisposable
                 int len = Math.Min(500, response?.Length ?? 0);
                 this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
                 lastRefreshException = ex;
+                response = null;  // Help GC by clearing the response string
             }
         }
 
@@ -210,6 +208,7 @@ public class FeedRefresher : IDisposable
         var size = Math.Max(10, freshItems.Count);
         var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed, isFilterUnread: false, isFilterSaved: false, filterTag: default, page: 0, pageSize: size)).ToHashSet();
         var newItems = freshItems.Except(cachedItems).ToList();
+        
         if (newItems.Any())
         {
             this.newsFeedItemStore.AddItems(newItems);

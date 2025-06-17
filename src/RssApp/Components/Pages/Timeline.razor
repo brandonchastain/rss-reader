@@ -16,6 +16,7 @@
 </CascadingValue>
 
 @code {
+
     protected override async Task<List<NewsFeedItem>> GetPostsAsync()
     {
         var posts = await this.feedClient.GetTimelineAsync(Page);

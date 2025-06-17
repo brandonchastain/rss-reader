@@ -25,10 +25,17 @@ builder.Services.AddLogging(loggingBuilder =>
     loggingBuilder.AddAzureWebAppDiagnostics();
 });
 
-builder.Services
-    .AddHttpClient()
-    .AddMemoryCache()
-    .AddSingleton<IUserRepository>(sb =>
+builder.Services.AddMemoryCache();
+
+builder.Services.AddHttpClient<FeedRefresher>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = true,
+        MaxAutomaticRedirections = 5,
+        UseDefaultCredentials = true
+    });
+
+builder.Services.AddSingleton<IUserRepository>(sb =>
     {
         return new SQLiteUserRepository(
             $"Data Source={config.UserDb}",
@@ -54,6 +61,7 @@ builder.Services
     .AddSingleton<FeedRefresher>(sp =>
     {
         return new FeedRefresher(
+            sp.GetRequiredService<IHttpClientFactory>(),
             sp.GetRequiredService<RssDeserializer>(),
             sp.GetRequiredService<ILogger<FeedRefresher>>(),
             sp.GetRequiredService<IFeedRepository>(),

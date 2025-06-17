@@ -4,10 +4,9 @@ using RssApp.Data;
 
 namespace RssApp.RssClient;
 
-public class FeedClient : IFeedClient, IDisposable
+public class FeedClient : IFeedClient
 {
     private const int PageSize = 20;
-    private HttpClient httpClient;
     private readonly ILogger<FeedClient> logger;
     private readonly IFeedRepository persistedFeeds;
     private readonly IItemRepository newsFeedItemStore;
@@ -19,14 +18,12 @@ public class FeedClient : IFeedClient, IDisposable
     private bool isFilterSaved;
 
     public FeedClient(
-        HttpClient httpClient,
         ILogger<FeedClient> logger,
         IFeedRepository persistedFeeds,
         IItemRepository newsFeedItemStore,
         IUserRepository userStore,
         FeedRefresher feedRefresher)
     {
-        this.httpClient = httpClient;
         this.logger = logger;
         this.persistedFeeds = persistedFeeds;
         this.newsFeedItemStore = newsFeedItemStore;
@@ -129,11 +126,6 @@ public class FeedClient : IFeedClient, IDisposable
     public void MarkAsRead(NewsFeedItem item, bool isRead)
     {
         this.newsFeedItemStore.MarkAsRead(item, isRead);
-    }
-
-    public void Dispose()
-    {
-        this.httpClient.Dispose();
     }
 
     public async Task<RssUser> RegisterUserAsync(string username)

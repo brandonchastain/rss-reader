@@ -1,4 +1,5 @@
 @inherits PageBase
+@implements IDisposable
 @rendermode InteractiveServer
 @attribute [StreamRendering]
 @attribute [Authorize]
@@ -7,8 +8,6 @@
 @inject ILogger<Posts> logger
 @inject IJSRuntime jsRuntime
 @inject FeedRefresher feedRefresher
-
-<AuthorizeView>
 
 <SectionContent SectionName="toolbar">
 <Toolbar
@@ -66,23 +65,40 @@
     private string filterTag => FeedClient.FilterTag;
     private bool initialized = false;
 
+    private const int MaxPostsToKeep = 100;  // Adjust this number based on your needs
+    
     protected override void OnInitialized()
     {
         feedRefresher.OnNewItemsAvailable += HandleNewItems;
-    }
-
-    public void Dispose()
-    {
-        feedRefresher.OnNewItemsAvailable -= HandleNewItems;
     }
 
     private void HandleNewItems(object? sender, List<NewsFeedItem> newItems)
     {
         // Add new items to the beginning of the Posts list
         Posts.InsertRange(0, newItems);
+        
+        // Trim the list if it gets too large
+        if (Posts.Count > MaxPostsToKeep)
+        {
+            Posts.RemoveRange(MaxPostsToKeep, Posts.Count - MaxPostsToKeep);
+        }
+        
         InvokeAsync(StateHasChanged);
     }
 
+    public void Dispose()
+    {
+        try 
+        {
+            feedRefresher.OnNewItemsAvailable -= HandleNewItems;
+            Posts?.Clear();  // Help the GC by clearing the list
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error disposing PostTable");
+        }
+    }
+    
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await base.OnAfterRenderAsync(firstRender);
@@ -125,4 +141,3 @@
         }
     }
 }
-</AuthorizeView>
