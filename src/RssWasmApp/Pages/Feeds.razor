@@ -1,0 +1,231 @@
+@page "/feeds"
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.IO
+@using Microsoft.AspNetCore.Components.Sections
+@using RssWasmApp.Layout
+@using RssWasmApp.Pages.Base
+
+@inherits PageBase
+@attribute [StreamRendering]
+@attribute [Authorize]
+@inject IFeedRepository feedStore
+@inject IFeedClient feedClient
+@inject ILogger<Feeds> logger
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime jsRuntime
+@inject OpmlSerializer OpmlSerializer
+@rendermode InteractiveWebAssembly
+
+<PageTitle>Feeds</PageTitle>
+<SectionContent SectionName="page-title">Feeds</SectionContent>
+
+<form method="post" @onsubmit="SubmitAsync" @formname="newfeed">
+    <AntiforgeryToken />
+    <div>
+        <InputText @bind-Value="NewFeedUrl" placeholder="Feed URL" width=250 />
+        <button type="submit">Add feed</button>
+        <button type="button" class="btn btn-secondary" @onclick="ExportOpml">Export OPML</button>
+        <InputFile OnChange="ImportOpml" accept=".opml,.xml" id="opmlImportInput" hidden/>
+        <label for="opmlImportInput" class="btn btn-secondary">Import OPML</label>
+    </div>
+    <div>
+    </div>
+</form>
+
+@if (lastError != null)
+{
+    <p style="color: red;">@lastError</p>
+}
+
+@if (feeds == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div id="post-table" class="table">
+        @foreach (NewsFeed feed in feeds.OrderBy(f => f.FeedUrl))
+        {
+            <div class="row post-unread" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <div class="col" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    <a href="posts?FeedUrl=@System.Net.WebUtility.UrlEncode(feed.FeedUrl)">@feed.FeedUrl</a>
+                </div>
+            </div>
+            <div class="row" style="overflow: hidden;">
+                <p>
+                    @if (!newTagInputs.ContainsKey(feed.FeedUrl))
+                    {
+                        newTagInputs[feed.FeedUrl] = string.Empty;
+                    }
+
+                    @if (feed.Tags != null && feed.Tags.Any())
+                    {
+                        <span>Tags: @(string.Join(", ", feed.Tags))</span>
+                    }
+
+                    <input type="text" 
+                        value="@newTagInputs[feed.FeedUrl]" 
+                        @oninput="e => UpdateTagInput(feed, e.Value.ToString())" 
+                        placeholder="Tag" @onsubmit="() => AddTag(feed)"/>
+                    <button class="btn btn-link p-0" @onclick="() => AddTag(feed)">Add tag</button>
+                    <button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed.FeedUrl)">Delete</button>
+                    @if (feed.IsPaywalled)
+                    {
+                        <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">??</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-link p-0" @onclick="() => TogglePaywalledAsync(feed)">Not ??</button>
+                    }
+                </p>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private Dictionary<string, string> newTagInputs = new Dictionary<string, string>();
+    private IEnumerable<NewsFeed> feeds;
+    private string lastError = null;
+
+    [SupplyParameterFromForm]
+    private string NewFeedUrl { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (CurrentUser != null)
+        {
+            feeds = this.GetFeedUrls();
+        }
+        else
+        {
+            feeds = Enumerable.Empty<NewsFeed>();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (firstRender)
+        {
+            feeds = this.GetFeedUrls();
+            this.StateHasChanged();
+        }
+    }
+
+    private async Task SubmitAsync()
+    {        
+        try
+        {
+            if (string.IsNullOrWhiteSpace(NewFeedUrl))
+            {
+                lastError = "Feed URL is empty";
+                return;
+            }
+
+            NewFeedUrl = NewFeedUrl.Trim();
+
+            if (NewFeedUrl.StartsWith("http://"))
+            {
+                NewFeedUrl = NewFeedUrl.Replace("http://", "https://");
+            }
+            else if (!NewFeedUrl.StartsWith("https://"))
+            {
+                NewFeedUrl = "https://" + NewFeedUrl;
+            }
+
+            this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
+            await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
+        }
+        catch (HttpRequestException ex)
+        {
+            lastError = "Invalid feed URL.";
+            this.logger.LogError(ex, "Invalid feed url, got HTTP exception from {url}", NewFeedUrl);
+        }
+        catch (Exception ex)
+        {
+            lastError = "Could not add feed.";
+            this.logger.LogError(ex, "Could not add feed {url}", NewFeedUrl);
+        }
+
+        await this.OnInitializedAsync();
+    }
+
+    private async Task DeleteAsync(string feed)
+    {
+        this.feedStore.DeleteFeed(this.CurrentUser, feed);
+        await this.OnInitializedAsync();
+    }
+
+    private IEnumerable<NewsFeed> GetFeedUrls()
+    {
+        return this.feedStore.GetFeeds(this.CurrentUser);
+    }
+
+    private void TogglePaywalledAsync(NewsFeed feed)
+    {
+        feed.IsPaywalled = !feed.IsPaywalled;
+        this.feedStore.Update(feed);
+    }
+
+    private void UpdateTagInput(NewsFeed feed, string value)
+    {
+        newTagInputs[feed.FeedUrl] = value;
+    }
+
+    private async Task AddTag(NewsFeed feed)
+    {
+        if (!newTagInputs.ContainsKey(feed.FeedUrl) || string.IsNullOrWhiteSpace(newTagInputs[feed.FeedUrl]))
+        {
+            this.logger.LogWarning("Tag input is empty for feed {FeedUrl}", feed.FeedUrl);
+            return;
+        }
+        
+        var tag = newTagInputs[feed.FeedUrl];
+        await this.feedClient.AddTagAsync(feed, tag);
+        newTagInputs[feed.FeedUrl] = string.Empty;
+        this.OnInitialized();
+    }
+
+    private async Task ExportOpml()
+    {
+        var opmlContent = OpmlSerializer.GenerateOpmlContent(feeds);
+        await jsRuntime.InvokeVoidAsync("downloadFile", "feeds.opml", "application/xml", opmlContent);
+    }
+
+    private async Task ImportOpml(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null)
+            {
+                return;
+            }
+
+            using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024); // 1MB max size
+            using var reader = new StreamReader(stream);
+            var opmlContent = await reader.ReadToEndAsync();
+            
+            var importedFeeds = OpmlSerializer.ParseOpmlContent(opmlContent, CurrentUser.Id).ToHashSet();
+            
+            // Import the parsed feeds
+            feedStore.ImportFeeds(CurrentUser, importedFeeds);
+            var feeds = this.feedStore.GetFeeds(CurrentUser);
+            var newFeeds = feeds.Where(f => importedFeeds.Contains(f));
+            foreach (var feed in newFeeds)
+            {
+                await this.feedClient.AddFeedAsync(feed);
+            }
+            
+            // Refresh the feed list
+            feeds = GetFeedUrls();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error importing OPML file");
+            // You could add UI feedback here for the error
+        }
+    }
+}

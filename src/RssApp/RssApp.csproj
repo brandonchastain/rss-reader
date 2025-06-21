@@ -20,4 +20,8 @@
     <PackageReference Include="Microsoft.VisualStudio.Threading" Version="17.13.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Shared\Shared.csproj" />
+  </ItemGroup>
+
 </Project>

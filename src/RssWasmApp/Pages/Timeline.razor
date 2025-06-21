@@ -1,0 +1,26 @@
+@page "/timeline"
+@inherits PostPageBase
+@rendermode InteractiveWebAssembly
+@attribute [StreamRendering]
+@attribute [Authorize]
+@inject ILogger<Timeline> logger
+@inject IJSRuntime jsRuntime
+
+<PageTitle>Timeline</PageTitle>
+<SectionContent SectionName="page-title">Timeline</SectionContent>
+
+<CascadingValue Value="@Page" Name="Page">
+<CascadingValue Value="@Items" Name="Posts">
+    <PostTable OnPageChanged="UpdatePage" FeedClient="@this.feedClient" OnRefreshTriggered="RefreshItems" />
+</CascadingValue>
+</CascadingValue>
+
+@code {
+
+    protected override async Task<List<NewsFeedItem>> GetPostsAsync()
+    {
+        var posts = await this.feedClient.GetTimelineAsync(Page);
+        //this.logger.LogInformation("got timeline posts " + posts.Count());
+        return posts?.ToList() ?? new List<NewsFeedItem>();
+    }
+}

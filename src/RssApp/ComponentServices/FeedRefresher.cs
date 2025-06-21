@@ -5,7 +5,7 @@ using RssApp.ComponentServices;
 
 namespace RssApp.RssClient;
 
-public class FeedRefresher : IDisposable
+public class FeedRefresher : IFeedRefresher, IDisposable
 {
     private static readonly bool EnableHttpLookup = true;
     private readonly IHttpClientFactory httpClientFactory;

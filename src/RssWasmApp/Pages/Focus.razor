@@ -1,0 +1,215 @@
+@page "/focus"
+@inherits PostPageBase
+@rendermode InteractiveWebAssembly
+@attribute [StreamRendering]
+@attribute [Authorize]
+@inject ILogger<Timeline> logger
+@inject IJSRuntime jsRuntime
+@inject ILogger<Focus> logger
+@inject IJSRuntime jsRuntime
+
+<PageTitle>Focused Feed</PageTitle>
+@if (isLoading)
+{
+    <div class="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+}
+
+<div id="focus-post-table">
+@if (CurrentPost != null)
+{
+    var post = CurrentPost;
+
+    <div>
+    @{
+        var thumbnailUrl = post.GetThumbnailUrl();
+        if (!String.IsNullOrWhiteSpace(thumbnailUrl))
+        {
+            <img src="@post.GetThumbnailUrl()" alt="Thumbnail" />
+        }
+    }
+    </div>
+
+    @* <div id ="focus-post-spacer"></div> *@
+    <div id="focus-post-content">
+        <div id="focus-post-content-container" class="@(isExpanded ? "expanded" : "") @swipeClass"
+             @ontouchstart="HandleTouchStart"
+             @ontouchmove="HandleTouchMove"
+             @ontouchend="HandleTouchEnd"
+             @onclick="HandleContentClick">
+
+
+<div class="row">
+    <div class="" style="flex: 1; text-align: center;">
+        <button class="link" @onclick="() => PrevPost()">←</button>
+        <button class="link" @onclick="() => NextPost()">→</button>
+    </div>
+</div>
+        <p>
+            <a tooltip="@post.ParsedDate?.ToString("f")" href="@post.Href" target="_blank" @onclick:stopPropagation="true">@post.Title</a><br/>
+        </p>
+        <p>
+            @if (!String.IsNullOrWhiteSpace(post.CommentsHref))
+            {
+                <a href="@post.CommentsHref">[Go to comments]</a>
+            }
+        </p>
+        <p>
+            @post.Href.GetRootDomain()<br/>
+        </p>
+        <p>
+            @(post.FeedTags.Any() ? $"[{string.Join(",", post.FeedTags)}]" : "")
+        </p>
+        <p>
+            Published on @post.ParsedDate?.ToString("f")
+        </p>
+        <p>
+            @((MarkupString)HtmlSanitizer.Sanitize(post.Content))
+        </p>
+        <p>
+            <a href="/Items?feedUrl=@System.Net.WebUtility.UrlEncode(post.FeedUrl)" onclick="event.stopPropagation()">View all Items from this feed</a><br/>
+        </p>
+        </div>
+    </div>
+}
+</div>
+
+@code {
+
+    public int PostIndex { get; set; } = 0;
+    public NewsFeedItem CurrentPost { get; set; } = null;
+    private bool isLoading = false;
+
+    private double touchStartX;
+    private double touchStartY;
+    private string swipeClass = "";
+    private bool isExpanded = false;
+    private const int SWIPE_THRESHOLD = 50;
+    private bool isHorizontalSwipe = false;
+    private bool isAnimating = false;
+
+    private void HandleContentClick()
+    {
+        // Toggle expanded state
+        isExpanded = !isExpanded;
+        StateHasChanged();
+    }
+
+    private void HandleTouchStart(TouchEventArgs e)
+    {
+        if (isAnimating) return;
+        touchStartX = e.Touches[0].ClientX;
+        touchStartY = e.Touches[0].ClientY;
+        isHorizontalSwipe = false;
+    }
+
+    private void HandleTouchMove(TouchEventArgs e)
+    {
+        if (touchStartX == 0 || isAnimating) return;
+        
+        var deltaX = e.Touches[0].ClientX - touchStartX;
+        var deltaY = e.Touches[0].ClientY - touchStartY;
+
+        if (!isHorizontalSwipe && Math.Abs(deltaX) > Math.Abs(deltaY) && Math.Abs(deltaX) > 10)
+        {
+            isHorizontalSwipe = true;
+        }
+
+        if (isHorizontalSwipe && Math.Abs(deltaX) > SWIPE_THRESHOLD)
+        {
+            swipeClass = deltaX > 0 ? "swipe-right" : "swipe-left";
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleTouchEnd(TouchEventArgs e)
+    {
+        if (string.IsNullOrEmpty(swipeClass) || isAnimating) return;
+
+        isAnimating = true;
+        var currentSwipeClass = swipeClass;
+
+        // Let the animation complete before changing state
+        await Task.Delay(400);
+
+        if (currentSwipeClass == "swipe-right")
+        {
+            await PrevPost();
+        }
+        else if (currentSwipeClass == "swipe-left")
+        {
+            await NextPost();
+        }
+
+        // Auto-collapse after swipe
+        isExpanded = false;
+        swipeClass = "";
+        touchStartX = 0;
+        isAnimating = false;
+        StateHasChanged();
+    }
+
+    private async Task PrevPost()
+    {
+        this.PostIndex -= 1;
+        if (this.PostIndex < 0)
+        {
+            this.PostIndex = this.Items.Count - 1;
+            await PrevPage();
+        }
+
+        this.CurrentPost = this.Items[this.PostIndex];
+        this.StateHasChanged();
+    }
+
+    private async Task NextPost()
+    {
+        this.PostIndex += 1;
+        if (this.PostIndex >= this.Items.Count)
+        {
+            this.PostIndex = 0;
+            await NextPage();
+        }
+
+        this.CurrentPost = this.Items[this.PostIndex];
+        this.StateHasChanged();
+    }
+
+    private async Task PrevPage()
+    {
+        if (!initialized)
+        {
+            return;
+        }
+
+        await this.UpdatePage(this.Page - 1);
+    }
+
+    private async Task NextPage()
+    {
+        if (!initialized)
+        {
+            return;
+        }
+
+        await this.UpdatePage(this.Page + 1);
+    }
+
+    protected override async Task<List<NewsFeedItem>> GetPostsAsync()
+    {
+        var items = await this.feedClient.GetTimelineAsync(Page, pageSize: 20);
+        return items?.ToList() ?? new List<NewsFeedItem>();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+
+        if (this.Items != null && this.Items.Count > 0)
+        {
+            this.CurrentPost = this.Items[this.PostIndex];
+            this.StateHasChanged();
+        }
+    }
+}

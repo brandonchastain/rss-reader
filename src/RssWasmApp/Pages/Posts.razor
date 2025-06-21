@@ -1,0 +1,38 @@
+﻿@page "/posts"
+@inherits PostPageBase
+@rendermode InteractiveWebAssembly
+@attribute [StreamRendering]
+@attribute [Authorize]
+@inject ILogger<Posts> logger
+@inject IJSRuntime jsRuntime
+
+<PageTitle>Posts</PageTitle>
+<SectionContent SectionName="page-title">Posts from @FeedUrl</SectionContent>
+
+<CascadingValue Value="@Page" Name="Page">
+<CascadingValue Value="@Items" Name="Posts">
+    <PostTable OnPageChanged="UpdatePage" FeedClient="@this.feedClient" OnRefreshTriggered="RefreshItems"/>
+</CascadingValue>
+</CascadingValue>
+
+@code {
+
+    [SupplyParameterFromQuery]
+    public string FeedUrl { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await this.jsRuntime.InvokeVoidAsync("rssApp.clearData");
+        }
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    protected override async Task<List<NewsFeedItem>> GetPostsAsync()
+    {
+        var decodedUrl = System.Net.WebUtility.UrlDecode(FeedUrl);
+        var posts = await this.feedClient.GetFeedItemsAsync(new NewsFeed(decodedUrl, this.CurrentUser.Id), Page);
+        return posts?.ToList() ?? new List<NewsFeedItem>();
+    }
+}
