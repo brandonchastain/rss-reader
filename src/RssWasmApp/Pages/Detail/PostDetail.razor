@@ -73,7 +73,7 @@
 
     private bool ShouldPostBeHidden(NewsFeedItem post)
     {
-        bool isFilteredByTag = this.FilterTag != null && !post.FeedTags.Contains(this.FilterTag);
+        bool isFilteredByTag = !string.IsNullOrWhiteSpace(this.FilterTag) && !post.FeedTags.Contains(this.FilterTag);
         bool isFilteredByUnread = !post.IsBeingPreviewed && this.IsFilterUnread && post.IsRead;
         return isFilteredByTag || isFilteredByUnread;
     }
