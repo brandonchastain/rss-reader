@@ -39,7 +39,6 @@ public class FeedRefresher : IDisposable
         TimeSpan cacheReloadInterval,
         TimeSpan cacheReloadStartupDelay)
     {
-
         var clientHandler = new HttpClientHandler
         {
             AllowAutoRedirect = true,
@@ -74,24 +73,24 @@ public class FeedRefresher : IDisposable
     {
         bool isJustStarted = this.startupTime + this.cacheReloadStartupDelay > DateTime.UtcNow;
         bool isRecentRefresh = this.lastCacheReloadTime + this.cacheReloadInterval > DateTime.UtcNow;
-        
+
         if (isJustStarted || isRecentRefresh || isRefreshing)
         {
             return;
         }
-        
+
         try
         {
             var allUsers = this.userStore.GetAllUsers();
             var totalFeeds = 0;
-            
+
             // Count total feeds first
             foreach (var user in allUsers)
             {
                 var feeds = this.persistedFeeds.GetFeeds(user);
                 totalFeeds += feeds.Count();
             }
-            
+
             if (totalFeeds == 0)
             {
                 this.lastCacheReloadTime = DateTime.UtcNow;
@@ -148,15 +147,42 @@ public class FeedRefresher : IDisposable
     {
         var url = feed.FeedUrl;
         var user = this.userStore.GetUserById(feed.UserId);
+
         if (user == null)
         {
             this.logger.LogError("User not found: {userId}", feed.UserId);
             return;
         }
 
+        var freshItems = await this.FetchItemsFromFeedAsync(user, url);
+        var newItems = new List<NewsFeedItem>();
+
+        foreach (var item in freshItems)
+        {
+            item.FeedUrl = url;
+            item.FeedTags = feed.Tags;
+
+            var existing = this.newsFeedItemStore.GetItem(user, url);
+            if (existing != null)
+            {
+                // Item already exists in the store, skip it
+                continue;
+            }
+
+            newItems.Add(item);
+        }
+
+        if (newItems.Any())
+        {
+            this.newsFeedItemStore.AddItems(newItems);
+            NotifyNewItems(newItems);
+        }
+    }
+
+    private async Task<HashSet<NewsFeedItem>> FetchItemsFromFeedAsync(RssUser user, string url)
+    {
         var freshItems = new HashSet<NewsFeedItem>();
         string? response = null;
-
         string[] agents = ["rssreader.brandonchastain.com/1.1", "curl/7.79.1"];
 
         foreach (string agent in agents)
@@ -171,7 +197,7 @@ public class FeedRefresher : IDisposable
                     browserRequest.Headers.Accept.ParseAdd("application/xml");
                     browserRequest.Headers.Accept.ParseAdd("application/rss+xml");
                     browserRequest.Headers.Accept.ParseAdd("application/atom+xml");
-        
+
                     var httpRes = await this.httpClient.SendAsync(browserRequest);
                     response = await httpRes.Content.ReadAsStringAsync();
 
@@ -183,7 +209,7 @@ public class FeedRefresher : IDisposable
                     }
 
                     freshItems = this.deserializer.FromString(response, user).ToHashSet();
-                    
+
                     // It worked. Exit the loop.
                     break;
                 }
@@ -201,19 +227,6 @@ public class FeedRefresher : IDisposable
             throw lastRefreshException;
         }
 
-        foreach (var item in freshItems)
-        {
-            item.FeedUrl = url;
-            item.FeedTags = feed.Tags;
-        }
-
-        var size = Math.Max(10, freshItems.Count);
-        var cachedItems = (await this.newsFeedItemStore.GetItemsAsync(feed, isFilterUnread: false, isFilterSaved: false, filterTag: default, page: 0, pageSize: size)).ToHashSet();
-        var newItems = freshItems.Except(cachedItems).ToList();
-        if (newItems.Any())
-        {
-            this.newsFeedItemStore.AddItems(newItems);
-            NotifyNewItems(newItems);
-        }
+        return freshItems;
     }
 }
