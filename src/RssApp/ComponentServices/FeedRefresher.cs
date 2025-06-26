@@ -166,6 +166,7 @@ public class FeedRefresher : IDisposable
             if (existing != null)
             {
                 // Item already exists in the store, skip it
+                this.logger.LogDebug("Skipping existing item: {itemId} from feed: {feedUrl}", item.Id, url);
                 continue;
             }
 
