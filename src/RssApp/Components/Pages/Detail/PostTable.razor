@@ -1,4 +1,5 @@
 @inherits PageBase
+@implements IDisposable
 @rendermode InteractiveServer
 @attribute [StreamRendering]
 @attribute [Authorize]
@@ -71,15 +72,21 @@
         feedRefresher.OnNewItemsAvailable += HandleNewItems;
     }
 
-    public void Dispose()
+    public new void Dispose()
     {
         feedRefresher.OnNewItemsAvailable -= HandleNewItems;
+        feedClient?.Dispose();
+        Posts?.Clear();
+        base.Dispose();
     }
 
     private void HandleNewItems(object? sender, List<NewsFeedItem> newItems)
     {
         // Add new items to the beginning of the Posts list
+        int size = Posts.Count;
         Posts.InsertRange(0, newItems);
+        Posts = Posts.OrderByDescending(p => p.ParsedDate).ToList();
+        Posts.RemoveRange(size, Posts.Count - size);
         InvokeAsync(StateHasChanged);
     }
 

@@ -47,7 +47,7 @@ rm -rf bin/$RELEASE_DEBUG/net9.0/linux-x64/publish
 dotnet publish -c $RELEASE_DEBUG -r linux-x64 --output bin/$RELEASE_DEBUG/net9.0/linux-x64/publish
 
 pushd bin/$RELEASE_DEBUG/net9.0/linux-x64/publish/
-zip -r ../../../../../archive.zip ./*
+zip -rv ../../../../../archive.zip ./*
 popd
 
 # Deploy

@@ -172,6 +172,16 @@ public class FeedClient : IFeedClient, IDisposable
         item.IsSaved = false;
     }
 
+    public string GetItemContent(NewsFeedItem item)
+    {
+        if (item == null)
+        {
+            return string.Empty;
+        }
+
+        return this.newsFeedItemStore.GetItemContent(item);
+    }
+
     private async Task<IEnumerable<NewsFeedItem>> GetFeedItemsHelperAsync(NewsFeed feed, int page, int pageSize = PageSize)
     {
         var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.IsFilterUnread, this.IsFilterSaved, this.filterTag, page, pageSize)).ToHashSet();

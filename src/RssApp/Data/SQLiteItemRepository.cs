@@ -67,6 +67,21 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 )";
             command.ExecuteNonQuery();
 
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS ItemContent (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    FeedUrl TEXT NOT NULL,
+                    Href TEXT,
+                    Title TEXT,
+                    PublishDate TEXT,
+                    Content TEXT,
+                    UserId INTEGER NOT NULL,
+                    UNIQUE (FeedUrl, UserId, Href),
+                    FOREIGN KEY (UserId) REFERENCES Users(Id)
+                )";
+            command.ExecuteNonQuery();
+
             // FTS5 virtual table for full-text search
             command = connection.CreateCommand();
             command.CommandText = @"
@@ -77,7 +92,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     Href,
                     FeedUrl,
                     UserId UNINDEXED,
-                    content='Items',
+                    content='ItemContent',
                     content_rowid='Id'
                 );";
             command.ExecuteNonQuery();
@@ -86,7 +101,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command = connection.CreateCommand();
             command.CommandText = @"
                 CREATE TRIGGER IF NOT EXISTS Items_after_insert
-                AFTER INSERT ON Items
+                AFTER INSERT ON ItemContent
                 BEGIN
                     INSERT INTO Items_fts (rowid, Title, Content, Href, FeedUrl, UserId)
                     VALUES (new.Id, new.Title, new.Content, new.Href, new.FeedUrl, new.UserId);
@@ -96,7 +111,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             // Update trigger
             command = connection.CreateCommand();
             command.CommandText = @"
-                CREATE TRIGGER IF NOT EXISTS Items_au AFTER UPDATE ON Items
+                CREATE TRIGGER IF NOT EXISTS Items_au AFTER UPDATE ON ItemContent
                 BEGIN
                     INSERT INTO Items_fts(Items_fts, rowid, Title, Content, Href, FeedUrl, UserId)
                     VALUES('delete', old.Id, old.Title, old.Content, old.Href, old.FeedUrl, old.UserId);
@@ -108,7 +123,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command = connection.CreateCommand();
             command.CommandText = @"
                 CREATE TRIGGER IF NOT EXISTS Items_after_delete
-                AFTER DELETE ON Items
+                AFTER DELETE ON ItemContent
                 BEGIN
                     DELETE FROM Items_fts WHERE rowid = old.Id;
                 END;";
@@ -348,6 +363,26 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         }
     }
 
+    public string GetItemContent(NewsFeedItem item)
+    {
+        using (var connection = new SqliteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT Content 
+                FROM ItemContent 
+                WHERE FeedUrl = @feedUrl AND Href = @href AND UserId = @userId";
+            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
+            command.Parameters.AddWithValue("@href", item.Href);
+            command.Parameters.AddWithValue("@userId", item.UserId);
+
+            var content = command.ExecuteScalar() as string;
+            //logger.LogError("content: {Content}", content);
+            return content ?? string.Empty;
+        }
+    }
+
     public void AddItems(IEnumerable<NewsFeedItem> items)
     {
         this.semaphore.Wait();
@@ -362,7 +397,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     try
                     {
                         var feedTags = new Dictionary<string, IEnumerable<string>>(StringComparer.OrdinalIgnoreCase);
-                        
+
                         foreach (var item in items)
                         {
                             try
@@ -382,6 +417,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                     continue;
                                 }
 
+                                item.SetThumbnailUrl(item.Content);
+
                                 var command = connection.CreateCommand();
                                 command.CommandText = @"
                                     INSERT INTO Items (
@@ -390,21 +427,38 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                         CommentsHref,
                                         Title,
                                         PublishDate,
-                                        Content,
                                         UserId,
                                         ThumbnailUrl,
                                         Tags
                                     ) 
-                                    VALUES (@feedUrl, @href, @commentsHref, @title, @publishDate, @content, @userId, @thumbnailUrl, @tags)";
+                                    VALUES (@feedUrl, @href, @commentsHref, @title, @publishDate, @userId, @thumbnailUrl, @tags)";
                                 command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
                                 command.Parameters.AddWithValue("@href", item.Href ?? "");
                                 command.Parameters.AddWithValue("@commentsHref", (object?)item.CommentsHref ?? DBNull.Value);
                                 command.Parameters.AddWithValue("@title", item.Title ?? "");
                                 command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
-                                command.Parameters.AddWithValue("@content", (object?)item.Content ?? DBNull.Value);
                                 command.Parameters.AddWithValue("@userId", item.UserId);
                                 command.Parameters.AddWithValue("@thumbnailUrl", (object?)item.ThumbnailUrl ?? DBNull.Value);
                                 command.Parameters.AddWithValue("@tags", string.Join(",", feedTags[item.FeedUrl]));
+                                command.ExecuteNonQuery();
+
+                                command = connection.CreateCommand();
+                                command.CommandText = @"
+                                    INSERT INTO ItemContent (
+                                        FeedUrl,
+                                        Href,
+                                        Title,
+                                        PublishDate,
+                                        Content,
+                                        UserId
+                                    ) 
+                                    VALUES (@feedUrl, @href, @title, @publishDate, @content, @userId)";
+                                command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
+                                command.Parameters.AddWithValue("@href", item.Href ?? "");
+                                command.Parameters.AddWithValue("@title", item.Title ?? "");
+                                command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
+                                command.Parameters.AddWithValue("@content", item.Content ?? "");
+                                command.Parameters.AddWithValue("@userId", item.UserId);
                                 command.ExecuteNonQuery();
                             }
                             catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.Message.Contains("UNIQUE"))

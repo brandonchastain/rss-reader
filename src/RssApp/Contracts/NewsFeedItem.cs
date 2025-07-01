@@ -1,7 +1,7 @@
 namespace RssApp.Contracts;
 
 using RssApp.Contracts.FeedTypes;
-
+using RssApp.RssClient;
 
 public class NewsFeedItem : IEquatable<NewsFeedItem>
 {
@@ -62,34 +62,32 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
             string.Equals(this.Href, other.Href, StringComparison.OrdinalIgnoreCase);
     }
 
-    public string GetThumbnailUrl()
+    public void SetThumbnailUrl(string? content)
     {
-        if (!string.IsNullOrEmpty(this.ThumbnailUrl))
-        {
-            return this.ThumbnailUrl;
-        }
-
         var favicon = "/placeholder.jpg";
-        if (string.IsNullOrEmpty(this.Content))
+        if (string.IsNullOrEmpty(content))
         {
-            return favicon;
+            this.ThumbnailUrl = favicon;
+            return;
         }
 
         var doc = new HtmlAgilityPack.HtmlDocument();
-        doc.LoadHtml(this.Content);
+        doc.LoadHtml(content);
         var img = doc.DocumentNode.SelectSingleNode("//img");
         if (img == null)
         {
-            return favicon;
+            this.ThumbnailUrl = favicon;
+            return;
         }
 
         var src = img.GetAttributeValue("src", null);
         if (string.IsNullOrEmpty(src))
         {
-            return favicon;
+            this.ThumbnailUrl = favicon;
+            return;
         }
 
-        return src;
+        this.ThumbnailUrl = src;
     }
 
     public override int GetHashCode()

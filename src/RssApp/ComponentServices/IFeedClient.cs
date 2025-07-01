@@ -2,7 +2,7 @@ using RssApp.Contracts;
 
 namespace RssApp.RssClient;
 
-public interface IFeedClient
+public interface IFeedClient : IDisposable
 {
     Task<IEnumerable<NewsFeed>> GetFeedsAsync();
     Task AddFeedAsync(NewsFeed feed);
@@ -16,6 +16,8 @@ public interface IFeedClient
     IEnumerable<string> GetUserTags(RssUser user);
     Task SavePostAsync(NewsFeedItem item);
     Task UnsavePostAsync(NewsFeedItem item);
+
+    string GetItemContent(NewsFeedItem item);
     bool IsFilterUnread { get; set; }
     string FilterTag { get; set; }
     bool IsFilterSaved { get; set; }

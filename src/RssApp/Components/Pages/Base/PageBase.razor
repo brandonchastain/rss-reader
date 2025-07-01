@@ -1,4 +1,5 @@
 @inject ILogger<PageBase> logger
+@implements IDisposable
 
 @code {
     public RssUser CurrentUser { get; set; }
@@ -17,6 +18,11 @@
             initialized = true;
             await this.GetUsernameAsync();
         }
+    }
+
+    public void Dispose()
+    {
+        this.feedClient.Dispose();
     }
 
     protected async Task GetUsernameAsync()

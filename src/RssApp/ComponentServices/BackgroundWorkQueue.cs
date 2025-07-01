@@ -4,7 +4,7 @@ namespace RssApp.ComponentServices;
 public class BackgroundWorkQueue
 {
     private readonly Channel<Func<CancellationToken, Task>> _queue =
-        Channel.CreateUnbounded<Func<CancellationToken, Task>>();
+        Channel.CreateBounded<Func<CancellationToken, Task>>(5); // Limit to 5 concurrent work items
 
     public async Task QueueBackgroundWorkItemAsync(Func<CancellationToken, Task> workItem)
     {

@@ -1,4 +1,5 @@
 @inherits PageBase
+@implements IDisposable
 @inject ILogger<PostPageBase> logger
 @inject IJSRuntime jsRuntime
 
@@ -7,6 +8,12 @@
     public int Page { get; set; } = 0;
     protected bool initialized = false;
     protected int loadedPage = -1;
+
+    public new void Dispose()
+    {
+        base.Dispose();
+        this.Items.Clear();
+    }
 
     protected virtual async Task<List<NewsFeedItem>> GetPostsAsync()
     {
