@@ -61,6 +61,11 @@ public class FeedClient : IFeedClient
         set { this.isFilterSaved = value; }
     }
 
+    public void Dispose()
+    {
+        
+    }
+
     public IEnumerable<string> GetUserTags(RssUser user)
     {
         var tags = this.persistedFeeds.GetFeeds(user)
