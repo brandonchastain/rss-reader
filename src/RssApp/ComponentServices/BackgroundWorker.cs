@@ -16,11 +16,21 @@ public class BackgroundWorker : BackgroundService
     {
         _logger.LogInformation("BackgroundService is starting.");
 
-        while (!stoppingToken.IsCancellationRequested)
+        int workerCount = 5; // Set your desired concurrency here
+        var tasks = new List<Task>();
+        for (int i = 0; i < workerCount; i++)
         {
-            var workItem = await _queue.DequeueAsync(stoppingToken);
-            await workItem(stoppingToken);
+            tasks.Add(Task.Run(async () =>
+            {
+                while (!stoppingToken.IsCancellationRequested)
+                {
+                    var workItem = await _queue.DequeueAsync(stoppingToken);
+                    await workItem(stoppingToken);
+                }
+            }, stoppingToken));
         }
+
+        await Task.WhenAll(tasks);
 
         _logger.LogInformation("BackgroundService is stopping.");
     }

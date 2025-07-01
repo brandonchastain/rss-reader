@@ -6,7 +6,9 @@
 @using RssApp.Components.Pages.Base
 
 @inherits PageBase
+@implements IDisposable
 @attribute [StreamRendering]
+
 @attribute [Authorize]
 @inject IFeedRepository feedStore
 @inject IFeedClient feedClient
@@ -90,6 +92,13 @@ else
 
     [SupplyParameterFromForm]
     private string NewFeedUrl { get; set; }
+
+    public new void Dispose()
+    {
+        feedClient?.Dispose();
+        feeds = null;
+        base.Dispose();
+    }
 
     protected override void OnInitialized()
     {

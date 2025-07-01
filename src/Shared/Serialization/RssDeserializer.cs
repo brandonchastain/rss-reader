@@ -20,6 +20,8 @@ public class RssDeserializer
     public IEnumerable<NewsFeedItem> FromString(string responseContent, RssUser user)
     {
         var now = FormatDateString(DateTime.UtcNow.ToString(IsoDateFormat));
+        var defaultDate = DateTime.UtcNow - TimeSpan.FromDays(1); // Default to 1 day ago if no date is provided
+
         try
         {
             // Strip out darkreader-related content
@@ -34,9 +36,9 @@ public class RssDeserializer
                 XmlSerializer xs = new XmlSerializer(typeof(RdfFeed));
                 var reader = new StringReader(responseContent);
                 RdfFeed rdfFeedModel = (RdfFeed)xs.Deserialize(reader);
-                return rdfFeedModel.Items.Select(x => 
+                return rdfFeedModel.Items.Select(x =>
                 {
-                    var date = FormatDateString(x.PublishDate) ?? now;
+                    var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
                     return new NewsFeedItem(
                         x.Id,
                         user.Id,
@@ -55,7 +57,7 @@ public class RssDeserializer
                 RssDocument rssFeedModel = (RssDocument)xs.Deserialize(reader);
                 return rssFeedModel.Feed.Entries.Select(x =>
                 {
-                    var date = FormatDateString(x.PublishDate) ?? now;
+                    var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
 
                     return new NewsFeedItem(
                         x.Id,
@@ -75,7 +77,7 @@ public class RssDeserializer
                 AtomFeed rssFeedModel = (AtomFeed)xs.Deserialize(reader);
                 return rssFeedModel.Entries.Select(x =>
                 {
-                    var date = FormatDateString(x.PublishDate) ?? now;
+                    var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
                     return new NewsFeedItem(
                         x.Id,
                         user.Id,

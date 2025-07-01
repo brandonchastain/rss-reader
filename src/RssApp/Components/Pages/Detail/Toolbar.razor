@@ -121,7 +121,7 @@
     private async Task RefreshAsync()
     {
         refreshState = "refreshing...";
-        await feedRefresher.RefreshAsync();
+        feedRefresher.RefreshAsync();
         
         // invoke js to scroll to top
         await JS.InvokeVoidAsync("window.scrollTo", 0, 0);

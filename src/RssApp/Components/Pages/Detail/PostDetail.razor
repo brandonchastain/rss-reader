@@ -9,10 +9,10 @@
 <div class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="() => HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
     <div class="col thumbnail">
         @{
-            var thumbnailUrl = Post.GetThumbnailUrl();
+            var thumbnailUrl = Post.ThumbnailUrl;
             if (!String.IsNullOrWhiteSpace(thumbnailUrl))
             {
-                <img src="@Post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" />
+                <img src="@thumbnailUrl" alt="Thumbnail" class="thumbnail" />
             }
         }
     </div>
@@ -38,14 +38,17 @@
                 Published on @Post.ParsedDate?.ToString("f")
             </p>
             <p>
-                @if (!Post.GetThumbnailUrl().EndsWith("placeholder.jpg"))
+                @if (!Post.ThumbnailUrl.EndsWith("placeholder.jpg"))
                 {
-                    <img src="@Post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" />
+                    <img src="@Post.ThumbnailUrl" alt="Thumbnail" class="thumbnail" />
                 }
             </p>
-            <p>
-                @((MarkupString)HtmlSanitizer.Sanitize(Post.Content))
-            </p>
+                @if (Content.ContainsKey(Post.Href))
+                {
+                    <p>
+                        @((MarkupString)(@HtmlSanitizer.Sanitize(Content[Post.Href])))
+                    </p>
+                }
             <p>
                 <a href="/posts?feedUrl=@System.Net.WebUtility.UrlEncode(Post.FeedUrl)" onclick="event.stopPropagation()">View all posts from this feed</a><br/>
             </p>
@@ -71,6 +74,8 @@
     [Parameter]
     public EventCallback OnPostClicked { get; set; }
 
+    private Dictionary<string, string> Content { get; set; } = new Dictionary<string, string>();
+
     private bool ShouldPostBeHidden(NewsFeedItem post)
     {
         bool isFilteredByTag = this.FilterTag != null && !post.FeedTags.Contains(this.FilterTag);
@@ -89,6 +94,12 @@
     private void PreviewPost(NewsFeedItem post)
     {
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
+
+        if (!Content.ContainsKey(post.Href))
+        {
+            Content[post.Href] = feedClient.GetItemContent(post);
+        }
+
         InvokeAsync(this.StateHasChanged);
         MarkAsRead(post, true);
     }

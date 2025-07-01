@@ -75,6 +75,7 @@
     private void HandleNewItems(object? sender, List<NewsFeedItem> newItems)
     {
         // Add new items to the beginning of the Posts list
+        int size = Posts.Count;
         Posts.InsertRange(0, newItems);
         
         // Trim the list if it gets too large

@@ -8,7 +8,7 @@ namespace RssWasmApp.Mocks
 {
     public class MockFeedClient : IFeedClient
     {
-        public Task<IEnumerable<NewsFeed>> GetFeedsAsync() => Task.FromResult<IEnumerable<NewsFeed>>(new List<NewsFeed>{ new NewsFeed("Mock Feed", 1) });
+        public Task<IEnumerable<NewsFeed>> GetFeedsAsync() => Task.FromResult<IEnumerable<NewsFeed>>(new List<NewsFeed> { new NewsFeed("Mock Feed", 1) });
         public Task AddFeedAsync(NewsFeed feed) => Task.CompletedTask;
         public Task AddTagAsync(NewsFeed feed, string tag) => Task.CompletedTask;
         public Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20) => Task.FromResult<IEnumerable<NewsFeedItem>>(new List<NewsFeedItem> { new NewsFeedItem("1", 1, "fake", "https://abc.com", null, "1/1/2021", "abcdef", null) });
@@ -22,5 +22,12 @@ namespace RssWasmApp.Mocks
         public bool IsFilterUnread { get; set; }
         public string FilterTag { get; set; } = string.Empty;
         public bool IsFilterSaved { get; set; }
+
+        public string GetItemContent(NewsFeedItem item)
+        {
+            return "testing";
+        }
+
+        public void Dispose() { return; }
     }
 }

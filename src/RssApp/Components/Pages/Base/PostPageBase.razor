@@ -9,8 +9,9 @@
     protected bool initialized = false;
     protected int loadedPage = -1;
 
-    public void Dispose()
+    public new void Dispose()
     {
+        base.Dispose();
         this.Items.Clear();
     }
 

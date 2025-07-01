@@ -22,6 +22,13 @@ namespace RssWasmApp.Mocks
             return new NewsFeedItem("1", 1, "fake", href, null, "1/1/2021", "abcdef", null);
         }
 
+        public string GetItemContent(NewsFeedItem item)
+        {
+            return "testing";
+        }
+
+        public void Dispose() { }
+
         public void AddItems(IEnumerable<NewsFeedItem> item) { }
         public void MarkAsRead(NewsFeedItem item, bool isRead) { }
         public void SavePost(NewsFeedItem item, RssUser user) { }
