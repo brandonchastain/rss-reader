@@ -25,13 +25,8 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
     public string Content { get; set; }
     public bool IsRead { get; set; }
     public string ThumbnailUrl { get; set; }
-
-    // ignore below for serialization
-    public bool IsPaywalled { get; set; }
     public bool IsSaved { get; set; }
-
     public bool IsBeingPreviewed { get; set; }
-
     public ICollection<string> FeedTags { get; set; } = new List<string>();
     
     public DateTime? ParsedDate {

@@ -37,10 +37,10 @@ public class OpmlSerializer
         {
             XmlElement outlineElement = doc.CreateElement("outline");
             outlineElement.SetAttribute("type", "rss");
-            outlineElement.SetAttribute("xmlUrl", feed.FeedUrl);
+            outlineElement.SetAttribute("xmlUrl", feed.Href);
             
             // Add title if available, otherwise use URL
-            outlineElement.SetAttribute("text", feed.FeedUrl);
+            outlineElement.SetAttribute("text", feed.Href);
             
             // Add tags as category attribute if available
             if (feed.Tags != null && feed.Tags.Any())

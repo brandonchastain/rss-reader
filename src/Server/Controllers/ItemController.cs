@@ -28,15 +28,17 @@ namespace Server.Controllers
 
         // GET: api/item/timeline
         [HttpGet("timeline")]
-        public async Task<IActionResult> Timeline(int? userId, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
+        public async Task<IActionResult> Timeline(string username, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
         {
-            if (userId == null)
+            if (username == null)
             {
-                return BadRequest("User ID is required.");
+                return BadRequest("username is required.");
             }
 
+            var user = this.userRepository.GetUserByName(username);
+
             // TODO: authenticate the real user
-            var feed = new NewsFeed("%", userId.Value);
+            var feed = new NewsFeed("%", user.Id);
             var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize);
             var result = items
                 .DistinctBy(i => i.Href)

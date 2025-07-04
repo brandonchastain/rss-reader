@@ -2,24 +2,22 @@ namespace RssApp.Contracts;
 
 public class NewsFeed : IEquatable<NewsFeed>
 {
-    public NewsFeed(string url, int userId)
-    : this(-1, url, userId, false)
+    public NewsFeed(string href, int userId)
+    : this(-1, href, userId)
     {
         // for testing only
     }
 
-    public NewsFeed(int id, string url, int userId, bool isPaywalled = false)
+    public NewsFeed(int id, string href, int userId)
     {
         this.FeedId = id;
-        this.FeedUrl = url;
+        this.Href = href;
         this.UserId = userId;
         this.Tags = new List<string>();
-        this.IsPaywalled = isPaywalled;
     }
 
     public int FeedId { get; set; }
-    public string FeedUrl { get; set; }
-    public bool IsPaywalled { get; set; }
+    public string Href { get; set; }
     public int UserId { get; set; }
     public ICollection<string> Tags { get; set; }
 
@@ -30,11 +28,13 @@ public class NewsFeed : IEquatable<NewsFeed>
             return false;
         }
 
-        return string.Equals(this.FeedUrl, other.FeedUrl, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(this.Href, other.Href, StringComparison.OrdinalIgnoreCase)
+            && this.UserId == other.UserId;
     }
 
     public override int GetHashCode()
     {
-        return this.FeedUrl?.GetHashCode() ?? 0;
+        return this.Href?.GetHashCode() ?? 0
+            ^ this.UserId.GetHashCode();
     }
 }
