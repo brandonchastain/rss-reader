@@ -48,12 +48,18 @@ namespace Server.Controllers
             return Ok(user);
         }
 
-        // POST: api/user
-        [HttpPost]
-        public IActionResult CreateUser([FromBody] RssUser user)
+        // GET: api/user/register
+        [HttpPost("register")]
+        public IActionResult Register(string username)
         {
-            // Placeholder: create a new user
-            return CreatedAtAction(nameof(RssUser), new { id = 1 }, user);
+            var user = this.userRepository.GetUserByName(username);
+            if (user != null)
+            {
+                return Ok();
+            }
+
+            var newUser = this.userRepository.AddUser(username);
+            return Ok(newUser);
         }
     }
 }

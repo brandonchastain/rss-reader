@@ -9,14 +9,16 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services
-    .AddScoped(sp => new HttpClient { BaseAddress = new Uri("http://localhost:5264") })
+    .AddScoped(sp => new HttpClient { BaseAddress = new Uri("https://localhost:5264") })
     .AddTransient<IFeedClient, FeedClient>();
 
 builder.Services.AddOidcAuthentication(options =>
 {
-    // Configure your authentication provider options here.
-    // For more information, see https://aka.ms/blazor-standalone-auth
-    builder.Configuration.Bind("Local", options.ProviderOptions);
+    var azureAd = builder.Configuration.GetSection("AzureAd");
+    options.ProviderOptions.Authority = azureAd["Authority"];
+    options.ProviderOptions.ClientId = azureAd["ClientId"];
+    options.ProviderOptions.DefaultScopes.Add("openid");
+    options.ProviderOptions.DefaultScopes.Add("profile");
 });
 
 await builder.Build().RunAsync();

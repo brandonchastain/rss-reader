@@ -61,7 +61,7 @@ namespace WasmApp.Services
 
         public async Task<RssUser> RegisterUserAsync(string username)
         {
-            var response = await _httpClient.PostAsJsonAsync("api/user/register", username);
+            var response = await _httpClient.PostAsJsonAsync($"api/user/register", username);
             return await response.Content.ReadFromJsonAsync<RssUser>();
         }
 

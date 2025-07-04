@@ -5,7 +5,14 @@ using RssApp.Data;
 var config = RssAppConfig.LoadFromEnvironment();
 
 var builder = WebApplication.CreateBuilder(args);
-
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(name: "AllowSpecificOrigins",
+                      policy  =>
+                      {
+                          policy.WithOrigins("https://localhost:7085");
+                      });
+});
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
@@ -62,6 +69,10 @@ app.MapGet("/weatherforecast", () =>
     return forecast;
 })
 .WithName("GetWeatherForecast");
+
+app.UseCors("AllowSpecificOrigins");
+//app.UseCors();
+//app.UseAuthorization();
 
 app.MapControllers();
 app.Run();
