@@ -1,0 +1,90 @@
+﻿@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Sections
+
+@rendermode InteractiveWebAssembly
+
+<div class="navbar-toggler">
+    <span  @onclick="ToggleNavMenu">
+        <span class="navbar-toggler-icon"></span>
+        <SectionOutlet SectionName="page-title" />
+    </span>
+    <div style="display: inline; overflow-x: auto; white-space: nowrap;">
+        <SectionOutlet SectionName="toolbar" />
+    </div>
+</div>
+
+<div class="@NavMenuCssClass nav-menu" @onclick="CollapseNavMenu">
+    <nav class="flex-column">
+
+        <div class="nav-item px-3">
+            <span class="navbar-toggler-icon"></span>
+            RssReader
+        </div>
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/timeline">
+                        Timeline
+                    </NavLink>
+                </div>
+                @* <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/focus">
+                        Focus
+                    </NavLink>
+                </div> *@
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/search">
+                        Search
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/feeds">
+                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Feeds
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/Account/Manage">
+                        @context.User.Identity?.Name
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <form action="Account/Logout" method="post">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="ReturnUrl" value="" />
+                        <button type="submit" class="nav-link">
+                            <span class="bi bi-arrow-bar-left-nav-menu" aria-hidden="true"></span> Logout
+                        </button>
+                    </form>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/authentication/Register">
+                        Register
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="/authentication/Login">
+                        Login
+                    </NavLink>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+
+    private void CollapseNavMenu()
+    {
+        collapseNavMenu = true;
+    }
+}

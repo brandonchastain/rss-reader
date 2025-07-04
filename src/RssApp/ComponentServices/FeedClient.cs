@@ -184,8 +184,7 @@ public class FeedClient : IFeedClient
         var response = (await this.newsFeedItemStore.GetItemsAsync(feed, this.IsFilterUnread, this.IsFilterSaved, this.filterTag, page, pageSize)).ToHashSet();
         var items = response.ToList();
 
-        var result = items
-            .DistinctBy(i => i.Href)
+        var result = items.DistinctBy(i => i.Href)
             .OrderByDescending(i => i.ParsedDate)
             .Where(i => this.filterTag == null || (i.FeedTags?.Contains(this.filterTag) ?? false));
 
