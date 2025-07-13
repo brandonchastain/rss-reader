@@ -5,29 +5,36 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using RssApp.Contracts;
 using RssApp.RssClient;
+using Microsoft.AspNetCore.Components.Authorization;
 
 namespace WasmApp.Services
 {
     public class FeedClient : IFeedClient
     {
         private readonly HttpClient _httpClient;
+        private readonly AuthenticationStateProvider _authenticationStateProvider;
         public bool IsFilterUnread { get; set; }
         public string FilterTag { get; set; }
         public bool IsFilterSaved { get; set; }
         private bool _disposed;
 
-        public FeedClient(HttpClient httpClient)
+        public FeedClient(HttpClient httpClient, AuthenticationStateProvider authenticationStateProvider)
         {
-            _httpClient = httpClient;
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _authenticationStateProvider = authenticationStateProvider ?? throw new ArgumentNullException(nameof(authenticationStateProvider));
         }
 
         public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
         {
-            return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeed>>("api/feed");
+            var user = await GetFeedUser();
+            return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeed>>($"api/feed?username={user.Username}");
         }
 
         public async Task AddFeedAsync(NewsFeed feed)
         {
+            var user = await GetFeedUser();
+            feed.UserId = user.Id;
+            
             await _httpClient.PostAsJsonAsync("api/feed", feed);
         }
 
@@ -38,13 +45,15 @@ namespace WasmApp.Services
 
         public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20)
         {
-            var url = $"api/item/timeline?username={feedUser()}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
+            var user = await GetFeedUser();
+            var url = $"api/item/timeline?username={user.Username}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
         public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page)
         {
-            var url = $"api/item/feed?username={feedUser()}&href={Uri.EscapeDataString(feed.Href)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}";
+            var user = await GetFeedUser();
+            var url = $"api/item/feed?username={user.Username}&href={Uri.EscapeDataString(feed.Href)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
@@ -81,14 +90,28 @@ namespace WasmApp.Services
             await _httpClient.PostAsJsonAsync("api/item/unsave", item);
         }
 
-        public string GetItemContent(NewsFeedItem item)
+        public async Task<string> GetItemContent(NewsFeedItem item)
         {
-            // This should be async, but IFeedClient defines it as sync
-            // Consider refactoring interface if possible
-            throw new NotImplementedException();
+            var user = await GetFeedUser();
+            var content = await _httpClient.GetFromJsonAsync<string>($"api/item/content?username={user.Username}&itemId={item.Id}");
+            return content;
         }
 
-        private string feedUser() => "demo"; // Replace with actual user context
+        public async Task DeleteFeedAsync(string feedHref)
+        {
+            var user = await GetFeedUser();
+            var url = $"api/feed/delete?href={Uri.EscapeDataString(feedHref)}&username={user.Username}";
+            await _httpClient.PostAsync(url, null);
+        }
+
+        
+
+        public async Task<RssUser> GetFeedUser()
+        {
+            var state = await _authenticationStateProvider.GetAuthenticationStateAsync();
+            var username = state.User.Claims.FirstOrDefault(c => c.Type == "email").Value;
+            return await this.RegisterUserAsync(username);
+        }
 
         public void Dispose()
         {

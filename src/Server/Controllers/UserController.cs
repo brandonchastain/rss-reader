@@ -50,12 +50,12 @@ namespace Server.Controllers
 
         // GET: api/user/register
         [HttpPost("register")]
-        public IActionResult Register(string username)
+        public IActionResult Register([FromBody] string username)
         {
             var user = this.userRepository.GetUserByName(username);
             if (user != null)
             {
-                return Ok();
+                return Ok(user);
             }
 
             var newUser = this.userRepository.AddUser(username);

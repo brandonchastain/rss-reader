@@ -6,7 +6,7 @@
 
 @if (Post != null)
 {
-<div class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="() => HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
+<div class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="async () => await HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
     <div class="col thumbnail">
         @{
             var thumbnailUrl = Post.ThumbnailUrl;
@@ -91,13 +91,13 @@
         InvokeAsync(StateHasChanged);
     }
 
-    private void PreviewPost(NewsFeedItem post)
+    private async Task PreviewPost(NewsFeedItem post)
     {
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
 
         if (!Content.ContainsKey(post.Href))
         {
-            Content[post.Href] = feedClient.GetItemContent(post);
+            Content[post.Href] = await feedClient.GetItemContent(post);
         }
 
         InvokeAsync(this.StateHasChanged);
@@ -120,11 +120,11 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private void HandleClick(NewsFeedItem post, bool preview = true)
+    private async Task HandleClick(NewsFeedItem post, bool preview = true)
     {
         if (preview)
         {
-            PreviewPost(post);
+            await PreviewPost(post);
         }
 
         if (OnPostClicked.HasDelegate)

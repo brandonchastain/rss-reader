@@ -2,6 +2,14 @@ namespace RssApp.Contracts;
 
 public class NewsFeed : IEquatable<NewsFeed>
 {
+    public NewsFeed()
+    {
+        this.FeedId = -1;
+        this.Href = string.Empty;
+        this.UserId = -1;
+        this.Tags = new List<string>();
+    }
+    
     public NewsFeed(string href, int userId)
     : this(-1, href, userId)
     {

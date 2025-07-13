@@ -9,6 +9,7 @@ public interface IFeedClient : IDisposable
     Task<IEnumerable<NewsFeed>> GetFeedsAsync();
     Task AddFeedAsync(NewsFeed feed);
     Task AddTagAsync(NewsFeed feed, string tag);
+    Task<RssUser> GetFeedUser();
 
     Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20);
     Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page);
@@ -19,7 +20,11 @@ public interface IFeedClient : IDisposable
     Task SavePostAsync(NewsFeedItem item);
     Task UnsavePostAsync(NewsFeedItem item);
 
-    string GetItemContent(NewsFeedItem item);
+    Task DeleteFeedAsync(string feedHref);
+
+    Task<string> GetItemContent(NewsFeedItem item);
+
+    
     bool IsFilterUnread { get; set; }
     string FilterTag { get; set; }
     bool IsFilterSaved { get; set; }

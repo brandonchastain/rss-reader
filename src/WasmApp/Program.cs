@@ -9,7 +9,7 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services
-    .AddScoped(sp => new HttpClient { BaseAddress = new Uri("https://localhost:5264") })
+    .AddScoped(sp => new HttpClient { BaseAddress = new Uri("https://localhost:7034") })
     .AddTransient<IFeedClient, FeedClient>();
 
 builder.Services.AddOidcAuthentication(options =>

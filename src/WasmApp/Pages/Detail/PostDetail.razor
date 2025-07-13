@@ -86,9 +86,11 @@
         InvokeAsync(StateHasChanged);
     }
 
-    private void PreviewPost(NewsFeedItem post)
+    private async Task PreviewPost(NewsFeedItem post)
     {
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
+
+        post.Content = await this.feedClient.GetItemContent(post);
         InvokeAsync(this.StateHasChanged);
         MarkAsRead(post, true);
     }
@@ -109,11 +111,11 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private void HandleClick(NewsFeedItem post, bool preview = true)
+    private async Task HandleClick(NewsFeedItem post, bool preview = true)
     {
         if (preview)
         {
-            PreviewPost(post);
+            await PreviewPost(post);
         }
 
         if (OnPostClicked.HasDelegate)

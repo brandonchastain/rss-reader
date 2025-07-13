@@ -84,9 +84,9 @@ namespace Server.Controllers
             return NotFound("not there yet");
         }
 
-        // GET: api/item/content/{itemId}
-        [HttpGet("content/{itemId}")]
-        public IActionResult GetItemContent(string username, string href)
+        // GET: api/item/content
+        [HttpGet("content")]
+        public IActionResult GetItemContent(string username, int itemId)
         {
             if (username == null)
             {
@@ -94,7 +94,7 @@ namespace Server.Controllers
             }
 
             var user = this.userRepository.GetUserByName(username);
-            var item = this.itemRepository.GetItem(user, href);
+            var item = this.itemRepository.GetItem(user, itemId);
 
             if (item == null)
             {
@@ -106,6 +106,9 @@ namespace Server.Controllers
             {
                 return NotFound("Content not found for the specified item.");
             }
+
+            // Return content as a json-encoded string
+            content = System.Text.Json.JsonSerializer.Serialize(content);
 
             return Ok(content);
         }

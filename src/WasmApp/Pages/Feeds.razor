@@ -12,12 +12,12 @@
 @inherits PageBase
 @attribute [StreamRendering]
 @attribute [Authorize]
-@inject IFeedRepository feedStore
+@* @inject IFeedRepository feedStore *@
 @inject IFeedClient feedClient
 @inject ILogger<Feeds> logger
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IJSRuntime jsRuntime
-@inject OpmlSerializer OpmlSerializer
+@* @inject OpmlSerializer OpmlSerializer *@
 @rendermode InteractiveWebAssembly
 
 <PageTitle>Feeds</PageTitle>
@@ -87,16 +87,9 @@ else
     [SupplyParameterFromForm]
     private string NewFeedUrl { get; set; }
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        if (CurrentUser != null)
-        {
-            feeds = this.GetFeedUrls();
-        }
-        else
-        {
-            feeds = Enumerable.Empty<NewsFeed>();
-        }
+        feeds = await this.GetFeedUrls();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -104,7 +97,7 @@ else
         await base.OnAfterRenderAsync(firstRender);
         if (firstRender)
         {
-            feeds = this.GetFeedUrls();
+            feeds = await this.GetFeedUrls();
             this.StateHasChanged();
         }
     }
@@ -130,8 +123,8 @@ else
                 NewFeedUrl = "https://" + NewFeedUrl;
             }
 
-            this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
-            await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
+            // this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
+            await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, userId: -1));
         }
         catch (HttpRequestException ex)
         {
@@ -149,13 +142,13 @@ else
 
     private async Task DeleteAsync(string feed)
     {
-        this.feedStore.DeleteFeed(this.CurrentUser, feed);
+        await this.feedClient.DeleteFeedAsync(feed);
         await this.OnInitializedAsync();
     }
 
-    private IEnumerable<NewsFeed> GetFeedUrls()
+    private async Task<IEnumerable<NewsFeed>> GetFeedUrls()
     {
-        return this.feedStore.GetFeeds(this.CurrentUser);
+        return await this.feedClient.GetFeedsAsync();
     }
 
     private void UpdateTagInput(NewsFeed feed, string value)
@@ -179,8 +172,9 @@ else
 
     private async Task ExportOpml()
     {
-        var opmlContent = OpmlSerializer.GenerateOpmlContent(feeds);
-        await jsRuntime.InvokeVoidAsync("downloadFile", "feeds.opml", "application/xml", opmlContent);
+        // var opmlContent = OpmlSerializer.GenerateOpmlContent(feeds);
+        //await jsRuntime.InvokeVoidAsync("downloadFile", "feeds.opml", "application/xml", opmlContent);
+        await Task.Yield();
     }
 
     private async Task ImportOpml(InputFileChangeEventArgs e)
@@ -197,20 +191,20 @@ else
             using var reader = new StreamReader(stream);
             var opmlContent = await reader.ReadToEndAsync();
             
-            var importedFeeds = OpmlSerializer.ParseOpmlContent(opmlContent, CurrentUser.Id).ToHashSet();
+            //var importedFeeds = OpmlSerializer.ParseOpmlContent(opmlContent, CurrentUser.Id).ToHashSet();
             
             // Import the parsed feeds
-            feedStore.ImportFeeds(CurrentUser, importedFeeds);
-            var feeds = this.feedStore.GetFeeds(CurrentUser);
-            var newFeeds = feeds.Where(f => importedFeeds.Contains(f));
-            foreach (var feed in newFeeds)
-            {
-                await this.feedClient.AddFeedAsync(feed);
-            }
-            
-            // Refresh the feed list
-            feeds = GetFeedUrls();
-            StateHasChanged();
+            // feedStore.ImportFeeds(CurrentUser, importedFeeds);
+            // var feeds = this.feedStore.GetFeeds(CurrentUser);
+            // var newFeeds = feeds.Where(f => importedFeeds.Contains(f));
+            // foreach (var feed in newFeeds)
+            // {
+            //     await this.feedClient.AddFeedAsync(feed);
+            // }
+            //
+            // // Refresh the feed list
+            // feeds = GetFeedUrls();
+            // StateHasChanged();
         }
         catch (Exception ex)
         {

@@ -8,6 +8,7 @@ public interface IItemRepository : IDisposable
     //Task<IEnumerable<NewsFeedItem>> GetItemsWithCursorAsync(NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string filterTag, int pageSize, long? lastId = null, string? lastPublishDate = null);
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize);
     NewsFeedItem? GetItem(RssUser user, string href);
+    NewsFeedItem? GetItem(RssUser user, int itemId);
     void AddItems(IEnumerable<NewsFeedItem> item);
     void MarkAsRead(NewsFeedItem item, bool isRead);
     void SavePost(NewsFeedItem item, RssUser user);

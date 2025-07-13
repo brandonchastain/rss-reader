@@ -5,6 +5,6 @@ namespace RssApp.ComponentServices
     public interface IFeedRefresher : IDisposable
     {
         Task AddFeedAsync(NewsFeed feed);
-        Task RefreshAsync();
+        Task RefreshAsync(RssUser user);
     }
 }

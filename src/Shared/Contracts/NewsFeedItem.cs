@@ -2,6 +2,18 @@ namespace RssApp.Contracts;
 
 public class NewsFeedItem : IEquatable<NewsFeedItem>
 {
+    public NewsFeedItem()
+    {
+        this.Id = string.Empty;
+        this.FeedUrl = string.Empty;
+        this.UserId = -1;
+        this.Title = string.Empty;
+        this.Href = string.Empty;
+        this.CommentsHref = string.Empty;
+        this.PublishDate = string.Empty;
+        this.Content = string.Empty;
+        this.ThumbnailUrl = "/placeholder.jpg";
+    }
 
     public NewsFeedItem(string id, int userId, string title, string href, string commentsHref, string publishDate, string content, string thumbnailUrl)
     {

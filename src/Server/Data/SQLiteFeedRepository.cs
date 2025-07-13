@@ -84,6 +84,11 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@url", url);
             using (var reader = command.ExecuteReader())
             {
+                if (!reader.HasRows)
+                {
+                    return null;
+                }
+                
                 if (reader.Read())
                 {
                     var res = ReadSingleRecord(reader);

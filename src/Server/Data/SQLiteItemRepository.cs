@@ -151,7 +151,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 await connection.OpenAsync();
                 var command = connection.CreateCommand();
                 command.CommandText = """
-                    SELECT 
+                    SELECT
+                        i.Id,
                         i.FeedUrl,
                         i.Href,
                         i.CommentsHref,
@@ -231,6 +232,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 var command = connection.CreateCommand();
                 command.CommandText = """
                     SELECT
+                        i.Id,
                         i.FeedUrl,
                         i.Href,
                         i.CommentsHref,
@@ -245,7 +247,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     FROM Items i
                 """;
 
-                command.CommandText += " WHERE 1=1";
+                command.CommandText += " WHERE UserId=@userId";
                 command.Parameters.AddWithValue("@userId", user.Id);
 
                 if (feed.Href != "%")
@@ -311,8 +313,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     private NewsFeedItem ReadItemFromResults(DbDataReader reader)
     {
-        //var id = reader.IsDBNull(reader.GetOrdinal("NewsFeedItemId")) ? "" : reader.GetString(reader.GetOrdinal("NewsFeedItemId"));
-        var id = "1";
+        var id = reader.IsDBNull(reader.GetOrdinal("Id")) ? "" : reader.GetString(reader.GetOrdinal("Id"));
         var userId = reader.IsDBNull(reader.GetOrdinal("UserId")) ? 1 : reader.GetInt32(reader.GetOrdinal("UserId"));
         var href = reader.IsDBNull(reader.GetOrdinal("Href")) ? "" : reader.GetString(reader.GetOrdinal("Href"));
         var commentsHref = reader.IsDBNull(reader.GetOrdinal("CommentsHref")) ? "" : reader.GetString(reader.GetOrdinal("CommentsHref"));
@@ -328,7 +329,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         
         var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
         {
-            Href = url,
+            FeedUrl = url,
             IsRead = isRead,
             FeedTags = string.IsNullOrWhiteSpace(tags) ? [] : tags.Split(","),
             IsSaved = isSaved
@@ -349,6 +350,33 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 WHERE Items.Href = @href AND Items.UserId = @userId
             """;
             command.Parameters.AddWithValue("@href", href);
+            command.Parameters.AddWithValue("@userId", user.Id);
+
+            using (var reader = command.ExecuteReader())
+            {
+                if (!reader.Read())
+                {
+                    return null;
+                }
+
+                var item = this.ReadItemFromResults(reader);
+                return item;
+            }
+        }
+    }
+
+    public NewsFeedItem? GetItem(RssUser user, int itemId)
+    {
+        using (var connection = new SqliteConnection(this.connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT * FROM Items
+                LEFT JOIN Feeds ON Items.FeedUrl = Feeds.Url
+                WHERE Items.Id = @id AND Items.UserId = @userId
+            """;
+            command.Parameters.AddWithValue("@id", itemId);
             command.Parameters.AddWithValue("@userId", user.Id);
 
             using (var reader = command.ExecuteReader())

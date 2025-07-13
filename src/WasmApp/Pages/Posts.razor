@@ -1,10 +1,12 @@
 ﻿@page "/posts"
+@using WasmApp.Pages.Detail
 @inherits PostPageBase
 @rendermode InteractiveWebAssembly
 @attribute [StreamRendering]
 @attribute [Authorize]
 @inject ILogger<Posts> logger
 @inject IJSRuntime jsRuntime
+
 
 <PageTitle>Posts</PageTitle>
 <SectionContent SectionName="page-title">Posts from @FeedUrl</SectionContent>
@@ -32,7 +34,7 @@
     protected override async Task<List<NewsFeedItem>> GetPostsAsync()
     {
         var decodedUrl = System.Net.WebUtility.UrlDecode(FeedUrl);
-        var posts = await this.feedClient.GetFeedItemsAsync(new NewsFeed(decodedUrl, this.CurrentUser.Id), Page);
+        var posts = await this.feedClient.GetFeedItemsAsync(new NewsFeed(decodedUrl, -1), Page);
         return posts?.ToList() ?? new List<NewsFeedItem>();
     }
 }

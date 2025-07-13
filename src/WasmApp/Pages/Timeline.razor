@@ -1,4 +1,5 @@
 @page "/timeline"
+@using WasmApp.Pages.Detail
 @inherits PostPageBase
 @rendermode InteractiveWebAssembly
 @attribute [StreamRendering]
@@ -22,5 +23,16 @@
         var posts = await this.feedClient.GetTimelineAsync(Page);
         //this.logger.LogInformation("got timeline posts " + posts.Count());
         return posts?.ToList() ?? new List<NewsFeedItem>();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+
+        if (firstRender && this.Items != null && this.Items.Any())
+        {
+            this.Items = await GetPostsAsync();
+            this.StateHasChanged();
+        }
     }
 }

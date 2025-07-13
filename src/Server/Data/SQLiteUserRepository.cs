@@ -46,11 +46,10 @@ public class SQLiteUserRepository : IUserRepository
             {
                 if (!reader.Read())
                 {
-                    return null;
+                    return this.AddUser(username);
                 }
                 
-                var item = this.ReadItemFromResults(reader);
-                return item;
+                return this.ReadItemFromResults(reader);
             }
         }
     }
