@@ -40,7 +40,10 @@
             <p>
                 @if (!Post?.ThumbnailUrl?.EndsWith("placeholder.jpg") ?? false)
                 {
-                    <img src="@Post.ThumbnailUrl" alt="Thumbnail" class="thumbnail" />
+                    if (Post.Content.TrimStart().IndexOf(Post.ThumbnailUrl) < 0)
+                    {
+                        <img src="@Post.ThumbnailUrl" alt="Thumbnail" class="thumbnail" />
+                    }
                 }
             </p>
             <p>
@@ -88,10 +91,10 @@
 
     private async Task PreviewPost(NewsFeedItem post)
     {
-        post.IsBeingPreviewed = !post.IsBeingPreviewed;
-
         post.Content = await this.feedClient.GetItemContent(post);
-        InvokeAsync(this.StateHasChanged);
+        this.StateHasChanged();
+        post.IsBeingPreviewed = !post.IsBeingPreviewed;
+        this.StateHasChanged();
         MarkAsRead(post, true);
     }
 

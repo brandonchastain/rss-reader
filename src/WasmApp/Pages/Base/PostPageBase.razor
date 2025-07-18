@@ -58,26 +58,27 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await base.OnAfterRenderAsync(firstRender);
+
         if (!firstRender)
         {
             return;
         }
-        Items = await this.GetPostsAsync();
+
         if (!initialized)
         {
             try
             {
                 // Try to restore last post
-                var lastPostHref = await jsRuntime.InvokeAsync<string>("rssApp.getLastPostId");
-                var isUnread = await jsRuntime.InvokeAsync<bool>("rssApp.getIsFilterUnread");
+                //var lastPostHref = await jsRuntime.InvokeAsync<string>("rssApp.getLastPostId");
+                @* var isUnread = await jsRuntime.InvokeAsync<bool>("rssApp.getIsFilterUnread");
                 var isSaved = await jsRuntime.InvokeAsync<bool>("rssApp.getIsFilterSaved");
                 var filterTag = await jsRuntime.InvokeAsync<string>("rssApp.getFilterTags");
                 if (filterTag == "null")
                 {
                     filterTag = null;
                 }
-                var lastSetStr = await jsRuntime.InvokeAsync<string>("rssApp.getLastSet");
                 
+                var lastSetStr = await jsRuntime.InvokeAsync<string>("rssApp.getLastSet");
                 if (string.IsNullOrEmpty(lastSetStr))
                 {
                     return;
@@ -92,13 +93,12 @@
                 this.feedClient.IsFilterUnread = isUnread;
                 this.feedClient.IsFilterSaved = isSaved;
                 this.feedClient.FilterTag = filterTag;
-                
-                Items = await this.GetPostsAsync();
-                await jsRuntime.InvokeVoidAsync("rssApp.scrollToLastPost");
-                await jsRuntime.InvokeVoidAsync("rssApp.clearData");
+
+                await jsRuntime.InvokeVoidAsync("rssApp.clearData"); *@
             }
             finally 
             {
+                Items = await this.GetPostsAsync();
                 this.initialized = true;
                 this.StateHasChanged();
             }

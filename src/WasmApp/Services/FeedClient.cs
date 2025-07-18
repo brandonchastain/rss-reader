@@ -94,7 +94,8 @@ namespace WasmApp.Services
         {
             var user = await GetFeedUser();
             var content = await _httpClient.GetFromJsonAsync<string>($"api/item/content?username={user.Username}&itemId={item.Id}");
-            return content;
+            var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content));
+            return decoded;
         }
 
         public async Task DeleteFeedAsync(string feedHref)
@@ -104,7 +105,12 @@ namespace WasmApp.Services
             await _httpClient.PostAsync(url, null);
         }
 
-        
+        public async Task RefreshFeedsAsync()
+        {
+            var user = await this.GetFeedUser();
+            var url = $"api/feed/refresh?username={user.Username}";
+            await _httpClient.GetAsync(url);
+        }
 
         public async Task<RssUser> GetFeedUser()
         {

@@ -1,5 +1,7 @@
+@using WasmApp.Services
 @implements IDisposable
 @inject IJSRuntime JS
+@inject IFeedClient FeedClient
 <div class="toolbar">
 
     <button class="btn-link" @onclick="() => RefreshAsync()">
@@ -123,12 +125,7 @@
     private async Task RefreshAsync()
     {
         refreshState = "refreshing...";
-        //await feedRefresher.RefreshAsync(); *@
-        
-        // invoke js to scroll to top
-        await JS.InvokeVoidAsync("window.scrollTo", 0, 0);
-
-        // Note: Don't set refreshState here, wait for the OnRefreshComplete event
+        await FeedClient.RefreshFeedsAsync();
     }
 
     private async Task ToggleShowFilters()

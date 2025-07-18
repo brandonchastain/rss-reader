@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using RssApp.Data;
 using RssApp.Contracts;
+using System.Buffers.Text;
+using System.Text;
 
 
 namespace Server.Controllers
@@ -107,10 +109,11 @@ namespace Server.Controllers
                 return NotFound("Content not found for the specified item.");
             }
 
-            // Return content as a json-encoded string
-            content = System.Text.Json.JsonSerializer.Serialize(content);
+            // encode content into base64
+            var base64Content = Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
+            base64Content = System.Text.Json.JsonSerializer.Serialize(base64Content);
 
-            return Ok(content);
+            return Ok(base64Content);
         }
     }
 }
