@@ -1,0 +1,151 @@
+@inherits PageBase
+
+@rendermode InteractiveWebAssembly
+@attribute [StreamRendering]
+@attribute [Authorize]
+@inject IJSRuntime jsRuntime
+
+@if (Post != null)
+{
+<div class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="() => HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
+    <div class="col thumbnail">
+        @{
+            var thumbnailUrl = Post.ThumbnailUrl;
+            if (!String.IsNullOrWhiteSpace(thumbnailUrl))
+            {
+                <img src="@Post.ThumbnailUrl" alt="Thumbnail" class="thumbnail" />
+            }
+        }
+    </div>
+    <div class="col">
+        <p class="post-title">
+            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick="() => { HandleClick(Post, false);}">@Post.Title</a><br/>
+            @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
+            {
+                <a href="@Post.CommentsHref">[comments]</a>
+            }
+            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(Post)">[mark @(!Post.IsRead ? "read" : "unread")]</button>
+            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)">[@(!Post.IsSaved ? "save" : "unsave")]</button>
+            @Post.Href.GetRootDomain()<br/>
+            @(Post.FeedTags.Any() ? $"[{string.Join(",", Post.FeedTags)}]" : "")
+        </p>
+    </div>
+</div>
+<div class="postContent" hidden=@(!Post.IsBeingPreviewed)>
+    @if (Post != null)
+    {
+        <div class="">
+            <p>
+                Published on @Post.ParsedDate?.ToString("f")
+            </p>
+            <p>
+                <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)">[speak this text]</button>
+            </p>
+            <p>
+                @if (!Post?.ThumbnailUrl?.EndsWith("placeholder.jpg") ?? false)
+                {
+                    if (Post.Content.TrimStart().IndexOf(Post.ThumbnailUrl) < 0)
+                    {
+                        <img src="@Post.ThumbnailUrl" alt="Thumbnail" class="thumbnail" />
+                    }
+                }
+            </p>
+            <p>
+                @((MarkupString)HtmlSanitizer.Sanitize(Post.Content))
+            </p>
+            <p>
+                <a href="/posts?feedUrl=@System.Net.WebUtility.UrlEncode(Post.FeedUrl)" onclick="event.stopPropagation()">View all posts from this feed</a><br/>
+            </p>
+        </div>
+    }
+    else
+    {
+        <p>Loading...</p>
+    }
+</div>
+}
+
+@code {
+    [Parameter]
+    public NewsFeedItem Post { get; set; }
+
+    [Parameter]
+    public string? FilterTag { get; set; }
+
+    [Parameter]
+    public bool IsFilterUnread { get; set; }
+
+    [Parameter]
+    public EventCallback OnPostClicked { get; set; }
+
+    private bool speaking;
+
+    private async Task OnSpeakTextClicked(NewsFeedItem post)
+    {
+        if (post?.Content != null)
+        {
+            await jsRuntime.InvokeVoidAsync("speakThisText", post.Content);
+        }
+    }
+
+    private bool ShouldPostBeHidden(NewsFeedItem post)
+    {
+        bool isFilteredByTag = !string.IsNullOrWhiteSpace(this.FilterTag) && !post.FeedTags.Contains(this.FilterTag);
+        bool isFilteredByUnread = !post.IsBeingPreviewed && this.IsFilterUnread && post.IsRead;
+        return isFilteredByTag || isFilteredByUnread;
+    }
+
+    private void MarkAsRead(NewsFeedItem item, bool? isRead = null)
+    {
+        bool val = isRead ?? !item.IsRead;
+
+        if (val != item.IsRead)
+        {
+            item.IsRead = val;
+            this.feedClient.MarkAsRead(item, val);
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PreviewPost(NewsFeedItem post)
+    {
+        if (string.IsNullOrWhiteSpace(post.Content))
+        {
+            post.Content = await this.feedClient.GetItemContent(post);
+            this.StateHasChanged();
+        }
+        post.IsBeingPreviewed = !post.IsBeingPreviewed;
+        this.StateHasChanged();
+        MarkAsRead(post, true);
+    }
+
+    private async Task SavePost(NewsFeedItem post)
+    {
+        if (!post.IsSaved)
+        {
+            await this.feedClient.SavePostAsync(post);
+            post.IsSaved = true;
+        }
+        else    
+        {
+            await this.feedClient.UnsavePostAsync(post);
+            post.IsSaved = false;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleClick(NewsFeedItem post, bool preview = true)
+    {
+        if (preview)
+        {
+            await PreviewPost(post);
+        }
+
+        if (OnPostClicked.HasDelegate)
+        {
+            OnPostClicked.InvokeAsync(post);
+        }
+    }
+}

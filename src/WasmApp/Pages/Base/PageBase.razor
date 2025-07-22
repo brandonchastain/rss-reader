@@ -1,0 +1,40 @@
+@using RssApp.Contracts
+@using RssApp.RssClient
+@inject ILogger<PageBase> logger
+
+@code {
+    public RssUser CurrentUser { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationState { get; set; }
+
+    [Inject]
+    protected IFeedClient feedClient { get; set; }
+    private bool initialized = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!initialized && firstRender)
+        {
+            initialized = true;
+            //await this.GetUsernameAsync();
+        }
+    }
+
+    protected async Task GetUsernameAsync()
+    {
+        if (this.CurrentUser == null && authenticationState is not null)
+        {
+            var authState = await authenticationState;
+            var user = authState?.User;
+
+            if (user?.Identity is not null && user.Identity.IsAuthenticated)
+            {
+                this.CurrentUser = await this.feedClient.RegisterUserAsync(user?.Identity?.Name ?? "unknown_user");
+                StateHasChanged();
+            }
+        }
+
+        //throw new InvalidOperationException("User not authenticated");
+    }
+}

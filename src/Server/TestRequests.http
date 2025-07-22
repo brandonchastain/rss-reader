@@ -1,0 +1,23 @@
+@Server_HostAddress = https://localhost:7034
+
+GET {{Server_HostAddress}}/api/user/1
+Accept: application/json
+
+###
+
+
+GET {{Server_HostAddress}}/api/feed?username=brandonchastain@gmail.com
+Accept: application/json
+
+###
+
+
+GET {{Server_HostAddress}}/api/item/timeline?username=brandonchastain@gmail.com
+Accept: application/json
+
+
+###
+
+
+GET {{Server_HostAddress}}/api/item/timeline?username=demo&isFilterUnread=False&isFilterSaved=False&filterTag=&page=0&pageSize=20
+Accept: application/json

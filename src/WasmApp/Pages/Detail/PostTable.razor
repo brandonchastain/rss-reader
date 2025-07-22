@@ -1,0 +1,143 @@
+@inherits PageBase
+@implements IDisposable
+@rendermode InteractiveWebAssembly
+@attribute [StreamRendering]
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Sve.Blazor.InfiniteScroll.Components
+@inject ILogger<Posts> logger
+@inject IJSRuntime jsRuntime
+
+@* @inject IFeedRefresher feedRefresher *@
+
+<SectionContent SectionName="toolbar">
+<Toolbar
+    filterTag="@filterTag"
+    IsFilterUnread="@IsFilterUnread"
+    IsFilterSaved="@IsFilterSaved"
+    userTags="@userTags"
+    ToggleUnreadFilterAsync="@ToggleUnreadFilterAsync"
+    ToggleSavedFilterAsync="@ToggleSavedFilterAsync"
+    FilterForTag="@FilterForTag"
+/>
+</SectionContent>
+
+
+<div id="post-table" class="table">
+    <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
+        @foreach (var post in Posts)
+        {
+            <PostDetail 
+                Post="@post"
+                FilterTag="@this.filterTag"
+                IsFilterUnread="@this.IsFilterUnread"
+                OnPostClicked="() => OnPostClicked(post)" />
+        }
+
+        <div class="row">
+            <div id="observerTarget">
+                RssApp
+            </div>
+        </div>
+        
+    </InfiniteScroll>
+</div>
+
+@code {
+    [CascadingParameter(Name = "Posts")]
+    public List<NewsFeedItem> Posts { get; set; }
+    
+    [CascadingParameter(Name = "Page")]
+    private int Page { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnPageChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<(bool, bool, string)> OnRefreshTriggered { get; set; }
+
+    [Parameter]
+    public IFeedClient FeedClient { get; set; }
+
+    public bool IsFilterUnread => FeedClient.IsFilterUnread;
+    public bool IsFilterSaved => FeedClient.IsFilterSaved;
+    public IEnumerable<string> userTags = null;
+    private string filterTag => FeedClient.FilterTag;
+    private bool initialized = false;
+
+    private const int MaxPostsToKeep = 100;  // Adjust this number based on your needs
+    
+    protected override void OnInitialized()
+    {
+        @* feedRefresher.OnNewItemsAvailable += HandleNewItems; *@
+    }
+
+    private void HandleNewItems(object? sender, List<NewsFeedItem> newItems)
+    {
+        // Add new items to the beginning of the Posts list
+        Posts.InsertRange(0, newItems);
+        
+        // Trim the list if it gets too large
+        if (Posts.Count > MaxPostsToKeep)
+        {
+            Posts.RemoveRange(MaxPostsToKeep, Posts.Count - MaxPostsToKeep);
+        }
+        
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        try 
+        {
+            @* feedRefresher.OnNewItemsAvailable -= HandleNewItems; *@
+            Posts?.Clear();  // Help the GC by clearing the list
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error disposing PostTable");
+        }
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (firstRender)
+        {
+            this.userTags = await FeedClient.GetUserTags(CurrentUser);
+        }
+    }
+
+    private async Task ToggleUnreadFilterAsync()
+    {
+        await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+    }
+
+    private async Task ToggleSavedFilterAsync()
+    {
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag));
+    }
+
+    private async Task FilterForTag(string tag)
+    {
+        if (this.filterTag == tag)
+        {
+            tag = null;
+        }
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, tag));
+    }
+
+    private async Task Next()
+    {
+        await this.OnPageChanged.InvokeAsync(this.Page + 1);
+        await InvokeAsync(this.StateHasChanged);
+    }
+
+    private async Task OnPostClicked(NewsFeedItem post)
+    {
+        if (post?.Id != null)
+        {
+            await jsRuntime.InvokeVoidAsync("rssApp.setLastPostId", post.Href, this.IsFilterUnread, this.IsFilterSaved, this.filterTag, DateTime.UtcNow.ToString("o"));
+        }
+    }
+}
