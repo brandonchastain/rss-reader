@@ -18,17 +18,35 @@ builder.Services.AddLogging(loggingBuilder =>
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(name: "AllowSpecificOrigins",
-                      policy  =>
+                      policy =>
                       {
                           policy.WithOrigins("*")
                             .AllowAnyHeader()
                             .AllowAnyMethod();
                       });
 });
+
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
+
+if (!builder.Environment.IsDevelopment())
+{
+    builder.Services.AddLettuceEncrypt();
+}
+
+if (!builder.Environment.IsDevelopment())
+{
+    builder.WebHost.UseKestrel(k =>
+    {
+        var appServices = k.ApplicationServices;
+        k.ConfigureHttpsDefaults(h =>
+        {
+                h.UseLettuceEncrypt(appServices);
+        });
+    });
+}
 
 builder.Services
 .AddSingleton<IUserRepository>(sb =>
