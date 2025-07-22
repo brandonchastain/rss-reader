@@ -66,12 +66,12 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no brandonchastain@${VM_IP} '
     sudo apt-get install -y unzip authbind
 
     # Install Microsoft package repository and .NET SDK
-    wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
-    sudo dpkg -i packages-microsoft-prod.deb
-    rm packages-microsoft-prod.deb
+    #wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+    #sudo dpkg -i packages-microsoft-prod.deb
+    #rm packages-microsoft-prod.deb
     
     sudo apt-get update
-    sudo apt-get install -y dotnet-sdk-9.0
+    #sudo apt-get install -y dotnet-sdk-9.0
 
     # Configure authbind for port 443
     sudo touch /etc/authbind/byport/443
@@ -83,7 +83,6 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no brandonchastain@${VM_IP} '
     unzip -o ~/archive.zip -d ~/app
     cd ~/app
     chmod +x Server
-    sudo systemctl stop rssapp || true
     sudo systemctl stop rssserver || true
     sudo tee /etc/systemd/system/rssserver.service << EOF
 [Unit]

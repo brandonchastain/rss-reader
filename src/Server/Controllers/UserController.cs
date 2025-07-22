@@ -48,7 +48,7 @@ namespace Server.Controllers
             return Ok(user);
         }
 
-        // GET: api/user/register
+        // POST: api/user/register
         [HttpPost("register")]
         public IActionResult Register([FromBody] string username)
         {
