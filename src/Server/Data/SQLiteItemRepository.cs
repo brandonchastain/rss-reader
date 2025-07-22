@@ -285,22 +285,16 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     while (await reader.ReadAsync())
                     {
                         var item = this.ReadItemFromResults(reader);
+
+                        if (item.FeedTags == null || !item.FeedTags.Any())
+                        {
+                            item.FeedTags = feed.Tags;
+                        }
                         items.Add(item);
                     }
                 }
             }
 
-            // var feedTags = new Dictionary<string, IEnumerable<string>>(StringComparer.OrdinalIgnoreCase);
-            // foreach (var item in items)
-            // {
-            //     if (!feedTags.ContainsKey(item.FeedUrl))
-            //     {
-            //         var feedItem = this.feedStore.GetFeed(user, item.FeedUrl);
-            //         feedTags[item.FeedUrl] = feedItem.Tags;
-            //     }
-
-            //     item.FeedTags = feedTags[item.FeedUrl]?.ToList();
-            // }            
             return items;
         }
         finally

@@ -3,9 +3,9 @@ using RssApp.Contracts;
 
 namespace RssApp.Serialization;
 
-public class OpmlSerializer
+public static class OpmlSerializer
 {
-    public string GenerateOpmlContent(IEnumerable<NewsFeed> feeds)
+    public static string GenerateOpmlContent(IEnumerable<NewsFeed> feeds)
     {
         XmlDocument doc = new XmlDocument();
         
@@ -58,7 +58,7 @@ public class OpmlSerializer
         return stringWriter.ToString();
     }
 
-    public IEnumerable<NewsFeed> ParseOpmlContent(string opmlContent, int userId)
+    public static IEnumerable<NewsFeed> ParseOpmlContent(string opmlContent, int userId)
     {
         var feeds = new List<NewsFeed>();
         

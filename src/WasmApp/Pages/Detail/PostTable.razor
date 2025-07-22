@@ -104,7 +104,7 @@
         await base.OnAfterRenderAsync(firstRender);
         if (firstRender)
         {
-            this.userTags = FeedClient.GetUserTags(CurrentUser);
+            this.userTags = await FeedClient.GetUserTags(CurrentUser);
         }
     }
 

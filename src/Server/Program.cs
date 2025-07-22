@@ -4,10 +4,17 @@ using RssApp.Data;
 using RssApp.RssClient;
 using RssApp.Serialization;
 
-
 var config = RssAppConfig.LoadFromEnvironment();
-
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddLogging(loggingBuilder =>
+{
+    loggingBuilder.ClearProviders();
+    loggingBuilder.AddConsole();
+    loggingBuilder.AddDebug();
+    loggingBuilder.AddAzureWebAppDiagnostics();
+});
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(name: "AllowSpecificOrigins",
@@ -69,9 +76,11 @@ builder.Services.AddHttpClient<FeedRefresher>()
         UseDefaultCredentials = true
     });
 
-
-
 var app = builder.Build();
+
+var a = app.Services.GetRequiredService<IFeedRepository>();
+var b = app.Services.GetRequiredService<IUserRepository>();
+var c = app.Services.GetRequiredService<IItemRepository>();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

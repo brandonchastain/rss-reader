@@ -3,6 +3,7 @@
 @rendermode InteractiveWebAssembly
 @attribute [StreamRendering]
 @attribute [Authorize]
+@inject IJSRuntime jsRuntime
 
 @if (Post != null)
 {
@@ -18,7 +19,7 @@
     </div>
     <div class="col">
         <p class="post-title">
-            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick="() => { HandleClick(Post, false); MarkAsRead(Post, true);}">@Post.Title</a><br/>
+            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick="() => { HandleClick(Post, false);}">@Post.Title</a><br/>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
                 <a href="@Post.CommentsHref">[comments]</a>
@@ -36,6 +37,9 @@
         <div class="">
             <p>
                 Published on @Post.ParsedDate?.ToString("f")
+            </p>
+            <p>
+                <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)">[speak this text]</button>
             </p>
             <p>
                 @if (!Post?.ThumbnailUrl?.EndsWith("placeholder.jpg") ?? false)
@@ -74,6 +78,16 @@
     [Parameter]
     public EventCallback OnPostClicked { get; set; }
 
+    private bool speaking;
+
+    private async Task OnSpeakTextClicked(NewsFeedItem post)
+    {
+        if (post?.Content != null)
+        {
+            await jsRuntime.InvokeVoidAsync("speakThisText", post.Content);
+        }
+    }
+
     private bool ShouldPostBeHidden(NewsFeedItem post)
     {
         bool isFilteredByTag = !string.IsNullOrWhiteSpace(this.FilterTag) && !post.FeedTags.Contains(this.FilterTag);
@@ -84,15 +98,23 @@
     private void MarkAsRead(NewsFeedItem item, bool? isRead = null)
     {
         bool val = isRead ?? !item.IsRead;
-        item.IsRead = val;
-        this.feedClient.MarkAsRead(item, val);
+
+        if (val != item.IsRead)
+        {
+            item.IsRead = val;
+            this.feedClient.MarkAsRead(item, val);
+        }
+
         InvokeAsync(StateHasChanged);
     }
 
     private async Task PreviewPost(NewsFeedItem post)
     {
-        post.Content = await this.feedClient.GetItemContent(post);
-        this.StateHasChanged();
+        if (string.IsNullOrWhiteSpace(post.Content))
+        {
+            post.Content = await this.feedClient.GetItemContent(post);
+            this.StateHasChanged();
+        }
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
         this.StateHasChanged();
         MarkAsRead(post, true);

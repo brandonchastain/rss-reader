@@ -14,16 +14,17 @@ public interface IFeedClient : IDisposable
     Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20);
     Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page);
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, int page, int pageSize = 20);
-    void MarkAsRead(NewsFeedItem item, bool isRead);
+    Task MarkAsRead(NewsFeedItem item, bool isRead);
     Task<RssUser> RegisterUserAsync(string username);
     Task RefreshFeedsAsync();
-    IEnumerable<string> GetUserTags(RssUser user);
+    Task<IEnumerable<string>> GetUserTags(RssUser user);
     Task SavePostAsync(NewsFeedItem item);
     Task UnsavePostAsync(NewsFeedItem item);
 
     Task DeleteFeedAsync(string feedHref);
 
     Task<string> GetItemContent(NewsFeedItem item);
+    Task ImportOpml(string opmlContent);
 
     
     bool IsFilterUnread { get; set; }

@@ -115,5 +115,26 @@ namespace Server.Controllers
 
             return Ok(base64Content);
         }
+
+        [HttpGet("markAsRead")]
+        public IActionResult MarkAsRead(string username, int itemId)
+        {
+            if (username == null)
+            {
+                return BadRequest("username is required.");
+            }
+
+            var user = this.userRepository.GetUserByName(username);
+            var item = this.itemRepository.GetItem(user, itemId);
+
+            if (item == null)
+            {
+                return NotFound($"Item not found.");
+            }
+
+
+            this.itemRepository.MarkAsRead(item, !item.IsRead);
+            return Ok();
+        }
     }
 }

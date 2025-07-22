@@ -1,3 +1,21 @@
+const synth = window.speechSynthesis;
+var speaking = false;
+
+synth.addEventListener("end", () => {
+  speaking = false;
+});
+
+window.speakThisText = function(text) {
+  if (speaking) {
+    synth.cancel();
+    return;
+  }
+
+  const utterThis = new SpeechSynthesisUtterance(text);
+  synth.speak(utterThis);
+  speaking = true;
+}
+
 // Function to download a file
 window.downloadFile = function (filename, contentType, content) {
     // Create a Blob with the file content

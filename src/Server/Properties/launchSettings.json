@@ -7,7 +7,10 @@
       "launchBrowser": false,
       "applicationUrl": "https://localhost:7034",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "RSS_BC_USER_DB": "storage.db",
+        "RSS_BC_FEED_DB": "storage.db",
+        "RSS_BC_ITEM_DB": "storage.db"
       }
     }
   }

@@ -6,12 +6,13 @@ using WasmApp;
 using WasmApp.Services;
 
 var config = RssWasmConfig.LoadFromEnvironment();
+System.Diagnostics.Debug.Print("testing:" + config.ApiBaseUrl);
+
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
-
 builder.Services
-    .AddScoped(sp => new HttpClient { BaseAddress = new Uri(config.ApiBaseUrl) })
+    .AddSingleton<RssWasmConfig>(_ => config)
     .AddTransient<IFeedClient, FeedClient>();
 
 builder.Services.AddOidcAuthentication(options =>

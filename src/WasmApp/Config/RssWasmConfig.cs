@@ -5,6 +5,7 @@ namespace RssApp.Config
     {
         private RssWasmConfig()
         {
+            
         }
 
         public string ApiBaseUrl { get; set; } = "https://localhost:7034";
@@ -13,7 +14,9 @@ namespace RssApp.Config
         {
             return new RssWasmConfig
             {
-                ApiBaseUrl = Environment.GetEnvironmentVariable("RSS_WASM_API_BASE_URL") ?? "https://localhost:7034"
+                //TODO figure out how to configure this in blazor wasm with static web apps
+                // (env vars not supported in blazorwasm)
+                ApiBaseUrl = Environment.GetEnvironmentVariable("RSS_WASM_API_BASE_URL") ?? "https://rssserver-hfe2gydwbhhte8ce.westus2-01.azurewebsites.net/",
             };
         }
     }
