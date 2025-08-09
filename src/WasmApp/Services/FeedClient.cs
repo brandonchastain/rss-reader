@@ -27,13 +27,13 @@ namespace WasmApp.Services
 
         public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
         {
-            var user = await GetFeedUser();
+            var user = await GetFeedUserAsync();
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeed>>($"{_config.ApiBaseUrl}api/feed?username={user.Username}");
         }
 
         public async Task AddFeedAsync(NewsFeed feed)
         {
-            var user = await GetFeedUser();
+            var user = await GetFeedUserAsync();
             feed.UserId = user.Id;
             
             await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/feed", feed);
@@ -48,14 +48,14 @@ namespace WasmApp.Services
 
         public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20)
         {
-            var user = await GetFeedUser();
+            var user = await GetFeedUserAsync();
             var url = $"{_config.ApiBaseUrl}api/item/timeline?username={user.Username}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
         public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page)
         {
-            var user = await GetFeedUser();
+            var user = await GetFeedUserAsync();
             var url = $"{_config.ApiBaseUrl}api/item/feed?username={user.Username}&href={Uri.EscapeDataString(feed.Href)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
@@ -66,9 +66,9 @@ namespace WasmApp.Services
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
-        public async Task MarkAsRead(NewsFeedItem item, bool isRead)
+        public async Task MarkAsReadAsync(NewsFeedItem item, bool isRead)
         {
-            var user = await GetFeedUser();
+            var user = await GetFeedUserAsync();
             await _httpClient.GetFromJsonAsync<string>($"{_config.ApiBaseUrl}api/item/markAsRead?username={user.Username}&itemId={item.Id}");
         }
 
@@ -78,9 +78,9 @@ namespace WasmApp.Services
             return await response.Content.ReadFromJsonAsync<RssUser>();
         }
 
-        public async Task<IEnumerable<string>> GetUserTags(RssUser _)
+        public async Task<IEnumerable<string>> GetUserTagsAsync(RssUser _)
         {
-            var user = await GetFeedUser();
+            var user = await GetFeedUserAsync();
             var content = await _httpClient.GetFromJsonAsync<List<string>>($"{_config.ApiBaseUrl}api/feed/tags?userId={user.Id}");
             return content;
         }
@@ -95,9 +95,9 @@ namespace WasmApp.Services
             await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/item/unsave", item);
         }
 
-        public async Task<string> GetItemContent(NewsFeedItem item)
+        public async Task<string> GetItemContentAsync(NewsFeedItem item)
         {
-            var user = await GetFeedUser();
+            var user = await GetFeedUserAsync();
             var content = await _httpClient.GetFromJsonAsync<string>($"{_config.ApiBaseUrl}api/item/content?username={user.Username}&itemId={item.Id}");
             var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content));
             return decoded;
@@ -105,28 +105,28 @@ namespace WasmApp.Services
 
         public async Task DeleteFeedAsync(string feedHref)
         {
-            var user = await GetFeedUser();
+            var user = await GetFeedUserAsync();
             var url = $"{_config.ApiBaseUrl}api/feed/delete?href={Uri.EscapeDataString(feedHref)}&username={user.Username}";
             await _httpClient.PostAsync(url, null);
         }
 
         public async Task RefreshFeedsAsync()
         {
-            var user = await this.GetFeedUser();
+            var user = await this.GetFeedUserAsync();
             var url = $"{_config.ApiBaseUrl}api/feed/refresh?username={user.Username}";
             await _httpClient.GetAsync(url);
         }
 
-        public async Task<RssUser> GetFeedUser()
+        public async Task<RssUser> GetFeedUserAsync()
         {
             var state = await _authenticationStateProvider.GetAuthenticationStateAsync();
             var username = state.User.Claims.FirstOrDefault(c => c.Type == "email").Value;
             return await this.RegisterUserAsync(username);
         }
 
-        public async Task ImportOpml(string opmlContent)
+        public async Task ImportOpmlAsync(string opmlContent)
         {
-            var user = await GetFeedUser();
+            var user = await GetFeedUserAsync();
             var url = $"{_config.ApiBaseUrl}api/feed/importOpml/";
             var data = new OpmlImport()
             {

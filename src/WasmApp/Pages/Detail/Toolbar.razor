@@ -21,13 +21,13 @@
         <button class="btn-link" @onclick="() => ToggleShowFilters()">[filters]</button>
 
         <div class="filter-dropdown @(tagsAreHidden ? "" : "show")" id="filter-tags">
-            <button class="btn-link" @onclick="() => {ToggleUnreadFilterAsync.InvokeAsync(); ToggleShowFilters();}">@(this.IsFilterUnread ? "[all]" : "[unread]")</button>
-            <button class="btn-link" @onclick="() => {ToggleSavedFilterAsync.InvokeAsync(); ToggleShowFilters();}">@(this.IsFilterSaved ? "[all]" : "[saved]")</button>
+            <button class="btn-link" @onclick="async () => {await ToggleUnreadFilterAsync.InvokeAsync(); await ToggleShowFilters();}">@(this.IsFilterUnread ? "[all]" : "[unread]")</button>
+            <button class="btn-link" @onclick="async () => {await ToggleSavedFilterAsync.InvokeAsync(); await ToggleShowFilters();}">@(this.IsFilterSaved ? "[all]" : "[saved]")</button>
             @if (this.userTags != null)
             {
                 @foreach (var tag in this.userTags)
                 {
-                    <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="() => {FilterForTag.InvokeAsync(tag); ToggleShowFilters();}">[@tag]</button>
+                    <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="async () => {await FilterForTag.InvokeAsync(tag); await ToggleShowFilters();}">[@tag]</button>
                 }
             }
         </div>
@@ -75,7 +75,7 @@
     // public IFeedRefresher feedRefresher { get; set; }
 
     [Parameter]
-    public string? filterTag { get; set; }
+    public string filterTag { get; set; }
 
     [Parameter]
     public bool IsFilterUnread { get; set; }
@@ -93,9 +93,7 @@
     public EventCallback ToggleSavedFilterAsync { get; set; }
     
     [Parameter]
-    public EventCallback<string?> FilterForTag { get; set; }
-
-    private string refreshState = "refresh";
+    public EventCallback<string> FilterForTag { get; set; }
     private bool tagsAreHidden = true;
 
     protected override void OnInitialized()
@@ -110,21 +108,8 @@
         //feedRefresher.OnRefreshComplete -= HandleRefreshComplete; *@
     }
 
-    private void HandleNewItems(object? sender, List<NewsFeedItem> newItems)
-    {
-        refreshState = "refresh";
-        InvokeAsync(StateHasChanged);
-    }
-
-    private void HandleRefreshComplete(object? sender, EventArgs e)
-    {
-        refreshState = "refresh";
-        InvokeAsync(StateHasChanged);
-    }
-
     private async Task RefreshAsync()
     {
-        refreshState = "refreshing...";
         await FeedClient.RefreshFeedsAsync();
     }
 

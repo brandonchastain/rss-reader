@@ -63,7 +63,6 @@
     public bool IsFilterSaved => FeedClient.IsFilterSaved;
     public IEnumerable<string> userTags = null;
     private string filterTag => FeedClient.FilterTag;
-    private bool initialized = false;
 
     private const int MaxPostsToKeep = 100;  // Adjust this number based on your needs
     
@@ -72,7 +71,7 @@
         @* feedRefresher.OnNewItemsAvailable += HandleNewItems; *@
     }
 
-    private void HandleNewItems(object? sender, List<NewsFeedItem> newItems)
+    private void HandleNewItems(object sender, List<NewsFeedItem> newItems)
     {
         // Add new items to the beginning of the Posts list
         Posts.InsertRange(0, newItems);
@@ -104,7 +103,7 @@
         await base.OnAfterRenderAsync(firstRender);
         if (firstRender)
         {
-            this.userTags = await FeedClient.GetUserTags(CurrentUser);
+            this.userTags = await FeedClient.GetUserTagsAsync(CurrentUser);
         }
     }
 

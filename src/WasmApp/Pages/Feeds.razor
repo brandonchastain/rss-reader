@@ -13,7 +13,6 @@
 @attribute [StreamRendering]
 @attribute [Authorize]
 @* @inject IFeedRepository feedStore *@
-@inject IFeedClient feedClient
 @inject ILogger<Feeds> logger
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IJSRuntime jsRuntime
@@ -190,7 +189,7 @@ else
             using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024); // 1MB max size
             using var reader = new StreamReader(stream);
             var opmlContent = await reader.ReadToEndAsync();
-            await this.feedClient.ImportOpml(opmlContent);
+            await this.feedClient.ImportOpmlAsync(opmlContent);
             // Import the parsed feeds
             // feedStore.ImportFeeds(CurrentUser, importedFeeds);
             // var feeds = this.feedStore.GetFeeds(CurrentUser);

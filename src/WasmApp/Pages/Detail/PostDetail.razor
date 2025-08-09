@@ -19,7 +19,7 @@
     </div>
     <div class="col">
         <p class="post-title">
-            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick="() => { HandleClick(Post, false);}">@Post.Title</a><br/>
+            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick="async () => { await HandleClick(Post, false);}">@Post.Title</a><br/>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
                 <a href="@Post.CommentsHref">[comments]</a>
@@ -70,15 +70,13 @@
     public NewsFeedItem Post { get; set; }
 
     [Parameter]
-    public string? FilterTag { get; set; }
+    public string FilterTag { get; set; }
 
     [Parameter]
     public bool IsFilterUnread { get; set; }
 
     [Parameter]
     public EventCallback OnPostClicked { get; set; }
-
-    private bool speaking;
 
     private async Task OnSpeakTextClicked(NewsFeedItem post)
     {
@@ -102,7 +100,7 @@
         if (val != item.IsRead)
         {
             item.IsRead = val;
-            this.feedClient.MarkAsRead(item, val);
+            this.feedClient.MarkAsReadAsync(item, val);
         }
 
         InvokeAsync(StateHasChanged);
@@ -112,7 +110,7 @@
     {
         if (string.IsNullOrWhiteSpace(post.Content))
         {
-            post.Content = await this.feedClient.GetItemContent(post);
+            post.Content = await this.feedClient.GetItemContentAsync(post);
             this.StateHasChanged();
         }
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
@@ -145,7 +143,7 @@
 
         if (OnPostClicked.HasDelegate)
         {
-            OnPostClicked.InvokeAsync(post);
+            await OnPostClicked.InvokeAsync(post);
         }
     }
 }
