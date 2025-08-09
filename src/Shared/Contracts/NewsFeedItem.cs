@@ -66,7 +66,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
             string.Equals(this.Href, other.Href, StringComparison.OrdinalIgnoreCase);
     }
 
-    public void SetThumbnailUrl(string? content)
+    public void SetThumbnailUrl(string content)
     {
         var favicon = "/placeholder.jpg";
         if (string.IsNullOrEmpty(content))
