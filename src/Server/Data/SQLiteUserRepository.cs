@@ -33,7 +33,7 @@ public class SQLiteUserRepository : IUserRepository
         }
     }
 
-    public RssUser? GetUserByName(string username)
+    public RssUser GetUserByName(string username)
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
@@ -54,7 +54,7 @@ public class SQLiteUserRepository : IUserRepository
         }
     }
 
-    public RssUser? GetUserById(int userId)
+    public RssUser GetUserById(int userId)
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {

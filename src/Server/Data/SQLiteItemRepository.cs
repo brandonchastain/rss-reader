@@ -215,7 +215,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         int? page = null,
         int? pageSize = null,
         long? lastId = null,
-        string? lastPublishDate = null)
+        string lastPublishDate = null)
     {
         var sw = Stopwatch.StartNew();
         await this.semaphore.WaitAsync();
@@ -332,7 +332,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         return item;
     }
 
-    public NewsFeedItem? GetItem(RssUser user, string href)
+    public NewsFeedItem GetItem(RssUser user, string href)
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
@@ -359,7 +359,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         }
     }
 
-    public NewsFeedItem? GetItem(RssUser user, int itemId)
+    public NewsFeedItem GetItem(RssUser user, int itemId)
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
@@ -457,11 +457,11 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                     VALUES (@feedUrl, @href, @commentsHref, @title, @publishDate, @userId, @thumbnailUrl, @tags)";
                                 command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
                                 command.Parameters.AddWithValue("@href", item.Href ?? "");
-                                command.Parameters.AddWithValue("@commentsHref", (object?)item.CommentsHref ?? DBNull.Value);
+                                command.Parameters.AddWithValue("@commentsHref", (object)item.CommentsHref ?? DBNull.Value);
                                 command.Parameters.AddWithValue("@title", item.Title ?? "");
                                 command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
                                 command.Parameters.AddWithValue("@userId", item.UserId);
-                                command.Parameters.AddWithValue("@thumbnailUrl", (object?)item.ThumbnailUrl ?? DBNull.Value);
+                                command.Parameters.AddWithValue("@thumbnailUrl", (object)item.ThumbnailUrl ?? DBNull.Value);
                                 command.Parameters.AddWithValue("@tags", string.Join(",", feedTags[item.FeedUrl]));
                                 command.ExecuteNonQuery();
 

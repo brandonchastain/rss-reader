@@ -158,7 +158,7 @@ public class SQLiteFeedRepository : IFeedRepository
     {
     }
 
-    public string? GetTagByFeedId(int feedId, string tagName)
+    public string GetTagByFeedId(int feedId, string tagName)
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {

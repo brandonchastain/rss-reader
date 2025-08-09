@@ -34,8 +34,9 @@ namespace Server.Controllers
 
         [HttpPost]
         [Route("importOpml")]
-        public async Task<IActionResult> ImportOpml(OpmlImport import)
+        public async Task<IActionResult> ImportOpmlAsync(OpmlImport import)
         {
+            await Task.Yield();
             var userId = import.UserId;
             var opmlContent = import.OpmlContent;
             var user = this.userRepository.GetUserById(userId);
@@ -51,7 +52,7 @@ namespace Server.Controllers
 
         [HttpGet]
         [Route("refresh")]
-        public async Task<IActionResult> RefreshFeeds(string username)
+        public async Task<IActionResult> RefreshFeedsAsync(string username)
         {
             if (username == null)
             {
@@ -66,7 +67,7 @@ namespace Server.Controllers
         //            await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/feed/tags", feed);
         [HttpPost]
         [Route("tags")]
-        public async Task<IActionResult> AddTag([FromBody] NewsFeed feed)
+        public async Task<IActionResult> AddTagAsync([FromBody] NewsFeed feed)
         {
             if (feed == null || string.IsNullOrWhiteSpace(feed.Href) || feed.UserId <= 0)
             {
@@ -111,8 +112,9 @@ namespace Server.Controllers
 
         [HttpGet]
         [Route("tags")]
-        public async Task<IActionResult> GetUserTags(int userId)
+        public async Task<IActionResult> GetUserTagsAsync(int userId)
         {
+            await Task.Yield();
             var user = this.userRepository.GetUserById(userId);
             if (user == null)
             {
@@ -153,7 +155,7 @@ namespace Server.Controllers
 
         // POST: api/feed
         [HttpPost]
-        public async Task<IActionResult> AddFeed([FromBody] NewsFeed feed)
+        public async Task<IActionResult> AddFeedAsync([FromBody] NewsFeed feed)
         {
             if (feed == null)
             {
@@ -186,8 +188,9 @@ namespace Server.Controllers
 
         [HttpPost]
         [Route("delete")]
-        public async Task<IActionResult> DeleteFeed([FromQuery]string username, [FromQuery]string href)
+        public async Task<IActionResult> DeleteFeedAsync([FromQuery]string username, [FromQuery]string href)
         {
+            await Task.Yield();
             if (username == null || href == null)
             {
                 return BadRequest("Username and feed URL are required.");

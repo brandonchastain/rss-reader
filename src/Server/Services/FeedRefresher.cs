@@ -19,13 +19,12 @@ public class FeedRefresher : IFeedRefresher, IDisposable
     private readonly BackgroundWorkQueue backgroundWorkQueue;
     private DateTime? lastCacheReloadTime;
     private DateTime startupTime = DateTime.UtcNow;
-    private Exception? lastRefreshException;
-    private bool doRefresh;
+    private Exception lastRefreshException;
     private int pendingRefreshes = 0;
     private bool isRefreshing;
 
-    public event EventHandler<List<NewsFeedItem>>? OnNewItemsAvailable;
-    public event EventHandler? OnRefreshComplete;
+    public event EventHandler<List<NewsFeedItem>> OnNewItemsAvailable;
+    public event EventHandler OnRefreshComplete;
 
     public bool IsRefreshing => isRefreshing;
 
@@ -168,7 +167,7 @@ public class FeedRefresher : IFeedRefresher, IDisposable
     private async Task<HashSet<NewsFeedItem>> FetchItemsFromFeedAsync(RssUser user, string url)
     {
         var freshItems = new HashSet<NewsFeedItem>();
-        string? response = null;
+        string response = null;
         string[] agents = ["rssreader.brandonchastain.com/1.1", "curl/7.79.1"];
 
         foreach (string agent in agents)

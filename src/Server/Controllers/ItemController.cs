@@ -30,7 +30,7 @@ namespace Server.Controllers
 
         // GET: api/item/timeline
         [HttpGet("timeline")]
-        public async Task<IActionResult> Timeline(string username, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
+        public async Task<IActionResult> TimelineAsync(string username, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
         {
             if (username == null)
             {
@@ -53,7 +53,7 @@ namespace Server.Controllers
 
         // GET: api/item/feed/?username={}href={feedUrl}&isFilterUnread={isFilterUnread}&isFilterSaved={isFilterSaved}&filterTag={filterTag}&page={page}&pageSize={pageSize}
         [HttpGet("feed")]
-        public async Task<IActionResult> Feed(string username, string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
+        public async Task<IActionResult> FeedAsync(string username, string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
         {
             if (username == null)
             {
