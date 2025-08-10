@@ -11,7 +11,7 @@ namespace WasmApp.Services
     {
         private readonly HttpClient _httpClient;
         private readonly RssWasmConfig _config;
-        private readonly UserClient userClient;
+        private readonly IUserClient userClient;
         public bool IsFilterUnread { get; set; }
         public string FilterTag { get; set; }
         public bool IsFilterSaved { get; set; }
@@ -23,7 +23,7 @@ namespace WasmApp.Services
 
         private bool _disposed;
 
-        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, UserClient userClient)
+        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, IUserClient userClient)
         {
             _httpClient = new HttpClient();
             _config = config;
@@ -81,8 +81,7 @@ namespace WasmApp.Services
         public async Task<IEnumerable<string>> GetUserTagsAsync(RssUser _)
         {
             var user = await GetFeedUserAsync();
-            var content = await _httpClient.GetFromJsonAsync<List<string>>($"{_config.ApiBaseUrl}api/feed/tags?userId={user.Id}");
-            return content;
+            return await _httpClient.GetFromJsonAsync<List<string>>($"{_config.ApiBaseUrl}api/feed/tags?userId={user.Id}");
         }
 
         public async Task SavePostAsync(NewsFeedItem item)
@@ -98,9 +97,18 @@ namespace WasmApp.Services
         public async Task<string> GetItemContentAsync(NewsFeedItem item)
         {
             var user = await GetFeedUserAsync();
-            var content = await _httpClient.GetFromJsonAsync<string>($"{_config.ApiBaseUrl}api/item/content?username={user.Username}&itemId={item.Id}");
-            var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content));
-            return decoded;
+            try
+            {
+                var content = await _httpClient.GetFromJsonAsync<string>($"{_config.ApiBaseUrl}api/item/content?username={user.Username}&itemId={item.Id}");
+                var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content));
+                return decoded;
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // a 404 can happen. Ignore this. It probably means content was totally empty.
+            }
+
+            return "[no content found]";
         }
 
         public async Task DeleteFeedAsync(string feedHref)

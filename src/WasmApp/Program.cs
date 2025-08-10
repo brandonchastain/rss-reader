@@ -18,7 +18,7 @@ var config = RssWasmConfig.LoadFromAppSettings(builder.Configuration);
 builder.Services
     .AddSingleton<RssWasmConfig>(_ => config)
     .AddTransient<IFeedClient, FeedClient>()
-    .AddTransient<UserClient>();
+    .AddTransient<IUserClient, UserClient>();
 
 var app = builder.Build();
 await app.RunAsync();

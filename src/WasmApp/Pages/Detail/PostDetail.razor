@@ -44,7 +44,7 @@
             <p>
                 @if (!Post?.ThumbnailUrl?.EndsWith("placeholder.jpg") ?? false)
                 {
-                    if (Post.Content.TrimStart().IndexOf(Post.ThumbnailUrl) < 0)
+                    if (Post.Content?.TrimStart().IndexOf(Post.ThumbnailUrl) < 0)
                     {
                         <img src="@Post.ThumbnailUrl" alt="Thumbnail" class="thumbnail" />
                     }
@@ -54,7 +54,13 @@
                 @((MarkupString)HtmlSanitizer.Sanitize(Post.Content))
             </p>
             <p>
-                <a href="/posts?feedUrl=@System.Net.WebUtility.UrlEncode(Post.FeedUrl)" onclick="event.stopPropagation()">View all posts from this feed</a><br/>
+                <a href="@Post.Href" rel="noopener noreferrer">View full post</a>
+            </p>
+            <p>
+                <a href="/posts?href=@System.Net.WebUtility.UrlEncode(Post.FeedUrl)" onclick="event.stopPropagation()">View all posts from this feed</a><br/>
+            </p>
+            <p>
+                <button class="btn-link" @onclick="() => HandleClick(Post)">Collapse</button>
             </p>
         </div>
     }
@@ -108,11 +114,12 @@
 
     private async Task PreviewPost(NewsFeedItem post)
     {
-        if (string.IsNullOrWhiteSpace(post.Content))
+        if (post.Content == null)
         {
             post.Content = await this.feedClient.GetItemContentAsync(post);
             this.StateHasChanged();
         }
+
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
         this.StateHasChanged();
         MarkAsRead(post, true);

@@ -5,7 +5,7 @@ using RssApp.Config;
 
 namespace WasmApp.Services;
 
-public class UserClient
+public class UserClient : IUserClient
 {
     private readonly HttpClient _httpClient;
     private readonly RssWasmConfig _config;

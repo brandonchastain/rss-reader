@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using RssApp.Data;
 using RssApp.Contracts;
-using System.Buffers.Text;
 using System.Text;
 
 
@@ -134,6 +133,42 @@ namespace Server.Controllers
 
 
             this.itemRepository.MarkAsRead(item, !item.IsRead);
+            return Ok();
+        }
+
+        [HttpPost("save")]
+        public IActionResult SavePost([FromBody] NewsFeedItem item)
+        {
+            if (item == null)
+            {
+                return BadRequest("Item is required.");
+            }
+
+            var user = this.userRepository.GetUserById(item.UserId);
+            if (user == null)
+            {
+                return NotFound($"User not found.");
+            }
+
+            this.itemRepository.SavePost(item, user);
+            return Ok();
+        }
+
+        [HttpPost("unsave")]
+        public IActionResult UnsavePost([FromBody] NewsFeedItem item)
+        {
+            if (item == null)
+            {
+                return BadRequest("Item is required.");
+            }
+
+            var user = this.userRepository.GetUserById(item.UserId);
+            if (user == null)
+            {
+                return NotFound($"User not found.");
+            }
+
+            this.itemRepository.UnsavePost(item, user);
             return Ok();
         }
     }

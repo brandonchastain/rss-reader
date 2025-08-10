@@ -11,7 +11,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
         this.Href = string.Empty;
         this.CommentsHref = string.Empty;
         this.PublishDate = string.Empty;
-        this.Content = string.Empty;
+        this.Content = null;
         this.ThumbnailUrl = "/placeholder.jpg";
     }
 
