@@ -5,26 +5,15 @@
 @code {
     public RssUser CurrentUser { get; set; }
 
-    [CascadingParameter]
-    private Task<AuthenticationState> authenticationState { get; set; }
-
     [Inject]
     protected IFeedClient feedClient { get; set; }
 
     protected async Task GetUsernameAsync()
     {
-        if (this.CurrentUser == null && authenticationState is not null)
+        if (this.CurrentUser == null)
         {
-            var authState = await authenticationState;
-            var user = authState?.User;
-
-            if (user?.Identity is not null && user.Identity.IsAuthenticated)
-            {
-                this.CurrentUser = await this.feedClient.RegisterUserAsync(user?.Identity?.Name ?? "unknown_user");
-                StateHasChanged();
-            }
+            this.CurrentUser = await this.feedClient.GetFeedUserAsync();
+            StateHasChanged();
         }
-
-        //throw new InvalidOperationException("User not authenticated");
     }
 }

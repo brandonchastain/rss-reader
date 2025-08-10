@@ -1,21 +1,12 @@
 ﻿@page "/"
 @page "/index"
+@using WasmApp.Services
 @inject NavigationManager NavigationManager
 @inject ILogger<Index> logger
+@inject UserClient userClient
 
 <PageTitle>RssReader | A simple browser-based RSS reader</PageTitle>
 
-<AuthorizeView>
-    <Authorized>
-        @{
-            var currentPath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
-            if (string.IsNullOrEmpty(currentPath))
-            {
-                NavigationManager.NavigateTo("/timeline", true);
-            }
-        }
-    </Authorized>
-</AuthorizeView>
 <article class="container-fluid py-4">
     <div class="row">
         <div class="col-12 col-lg-10 mx-auto">
@@ -40,3 +31,21 @@
         </div>
     </div>
 </article>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var currentUser = await userClient.GetUsernameAsync();
+            if (!string.IsNullOrEmpty(currentUser) && !string.Equals(currentUser, "Guest", StringComparison.OrdinalIgnoreCase))
+            {
+                NavigationManager.NavigateTo("/timeline", true);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get user information");
+        }
+    }
+}

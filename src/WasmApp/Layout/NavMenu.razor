@@ -1,5 +1,8 @@
 ﻿@using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Sections
+@using WasmApp.Services
+
+@inject UserClient userClient
 
 @rendermode InteractiveWebAssembly
 
@@ -20,8 +23,8 @@
             <span class="navbar-toggler-icon"></span>
             RssReader
         </div>
-        <AuthorizeView>
-            <Authorized>
+            @if (username != null && !string.Equals(username, "Guest", StringComparison.OrdinalIgnoreCase))
+            {
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="/timeline">
                         Timeline
@@ -43,40 +46,41 @@
                     </NavLink>
                 </div>
                 <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="/Account/Manage">
-                        @context.User.Identity?.Name
+                    <NavLink class="nav-link" href="/.auth/logout">
+                        Logout
                     </NavLink>
                 </div>
+                
+            }
+            else
+            {
                 <div class="nav-item px-3">
-                    <form action="Account/Logout" method="post">
-                        <AntiforgeryToken />
-                        <input type="hidden" name="ReturnUrl" value="" />
-                        <button type="submit" class="nav-link">
-                            <span class="bi bi-arrow-bar-left-nav-menu" aria-hidden="true"></span> Logout
-                        </button>
-                    </form>
-                </div>
-            </Authorized>
-            <NotAuthorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="/authentication/Register">
-                        Register
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="/authentication/Login">
+                    <NavLink class="nav-link" href="/.auth/login/aad">
                         Login
                     </NavLink>
                 </div>
+            }
+            @* </Authorized>
+            <NotAuthorized>
             </NotAuthorized>
-        </AuthorizeView>
+        </AuthorizeView> *@
     </nav>
 </div>
 
 @code {
+    private string username = null;
     private bool collapseNavMenu = true;
 
     private string NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        username = await userClient.GetUsernameAsync();
+        if (string.IsNullOrEmpty(username))
+        {
+            username = "Guest";
+        }
+    }
 
     private void ToggleNavMenu()
     {

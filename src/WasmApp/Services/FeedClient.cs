@@ -10,19 +10,19 @@ namespace WasmApp.Services
     public class FeedClient : IFeedClient
     {
         private readonly HttpClient _httpClient;
-        private readonly AuthenticationStateProvider _authenticationStateProvider;
         private readonly RssWasmConfig _config;
+        private readonly UserClient _userClient;
         public bool IsFilterUnread { get; set; }
         public string FilterTag { get; set; }
         public bool IsFilterSaved { get; set; }
         private bool _disposed;
 
-        public FeedClient(AuthenticationStateProvider authenticationStateProvider, RssWasmConfig config, ILogger<FeedClient> logger)
+        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, UserClient _userClient)
         {
             _httpClient = new HttpClient();
-            _authenticationStateProvider = authenticationStateProvider ?? throw new ArgumentNullException(nameof(authenticationStateProvider));
             _config = config;
             logger.LogInformation(_config.ApiBaseUrl);
+            this._userClient = _userClient;
         }
 
         public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
@@ -35,7 +35,7 @@ namespace WasmApp.Services
         {
             var user = await GetFeedUserAsync();
             feed.UserId = user.Id;
-            
+
             await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/feed", feed);
         }
 
@@ -74,8 +74,7 @@ namespace WasmApp.Services
 
         public async Task<RssUser> RegisterUserAsync(string username)
         {
-            var response = await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/user/register", username);
-            return await response.Content.ReadFromJsonAsync<RssUser>();
+            return await this._userClient.RegisterUserAsync(username);
         }
 
         public async Task<IEnumerable<string>> GetUserTagsAsync(RssUser _)
@@ -117,11 +116,14 @@ namespace WasmApp.Services
             await _httpClient.GetAsync(url);
         }
 
+        public async Task<string> GetUsernameAsync()
+        {
+            return await this._userClient.GetUsernameAsync();
+        }
+
         public async Task<RssUser> GetFeedUserAsync()
         {
-            var state = await _authenticationStateProvider.GetAuthenticationStateAsync();
-            var username = state.User.Claims.FirstOrDefault(c => c.Type == "email").Value;
-            return await this.RegisterUserAsync(username);
+            return await this._userClient.GetFeedUserAsync();
         }
 
         public async Task ImportOpmlAsync(string opmlContent)

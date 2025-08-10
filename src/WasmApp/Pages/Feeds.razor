@@ -11,10 +11,9 @@
 
 @inherits PageBase
 @attribute [StreamRendering]
-@attribute [Authorize]
+@* @attribute [Authorize] *@
 @* @inject IFeedRepository feedStore *@
 @inject ILogger<Feeds> logger
-@inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IJSRuntime jsRuntime
 @* @inject OpmlSerializer OpmlSerializer *@
 @rendermode InteractiveWebAssembly

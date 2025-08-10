@@ -16,7 +16,7 @@ namespace RssApp.Config
             {
                 //TODO figure out how to configure this in blazor wasm with static web apps
                 // (env vars not supported in blazorwasm)
-                // ApiBaseUrl = Environment.GetEnvironmentVariable("RSS_WASM_API_BASE_URL") ?? "https://rssreader.brandonchastain.com/",
+                ApiBaseUrl = Environment.GetEnvironmentVariable("RSS_WASM_API_BASE_URL") ?? "https://rssreader.brandonchastain.com/",
             };
         }
     }
