@@ -69,11 +69,12 @@ builder.Services
         cacheReloadInterval: TimeSpan.FromMinutes(5),
         cacheReloadStartupDelay: TimeSpan.FromSeconds(10));
 })
-.AddHttpClient<FeedRefresher>()
+.AddTransient<RedirectWithDowngradeHandler>()
+.AddHttpClient("RssClient")
+.AddHttpMessageHandler<RedirectWithDowngradeHandler>()
 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
-    AllowAutoRedirect = true,
-    MaxAutomaticRedirections = 5,
+    AllowAutoRedirect = false,
     UseDefaultCredentials = true
 });
 

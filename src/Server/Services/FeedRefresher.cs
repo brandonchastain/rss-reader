@@ -176,20 +176,21 @@ public class FeedRefresher : IFeedRefresher, IDisposable
             {
                 if (EnableHttpLookup)
                 {
-                    using var httpClient = httpClientFactory.CreateClient();
+                    using var httpClient = httpClientFactory.CreateClient("RssClient");
                     using var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
                     browserRequest.Headers.UserAgent.ParseAdd(agent);
                     browserRequest.Headers.Accept.ParseAdd("text/xml");
                     browserRequest.Headers.Accept.ParseAdd("application/xml");
                     browserRequest.Headers.Accept.ParseAdd("application/rss+xml");
                     browserRequest.Headers.Accept.ParseAdd("application/atom+xml");
-        
+
                     using var httpRes = await httpClient.SendAsync(browserRequest);
                     response = await httpRes.Content.ReadAsStringAsync();
-                    
+
                     if (string.IsNullOrEmpty(response))
                     {
                         this.logger.LogWarning($"Empty response when refreshing feed: {url}");
+                        this.logger.LogWarning($"Empty response headers: {httpRes.Headers}" );
                         this.logger.LogError($"Error response: {response}");
                         continue;
                     }
@@ -197,23 +198,23 @@ public class FeedRefresher : IFeedRefresher, IDisposable
                     var items = this.deserializer.FromString(response, user);
                     freshItems.UnionWith(items);
                     response = null;  // Help GC by clearing the response string
-                    
+
                     // It worked. Exit the loop.
                     break;
                 }
             }
             catch (Exception ex)
             {
+                if (lastRefreshException != null)
+                {
+                    throw;
+                }
+
                 int len = Math.Min(500, response?.Length ?? 0);
                 this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
                 lastRefreshException = ex;
                 response = null;  // Help GC by clearing the response string
             }
-        }
-
-        if (lastRefreshException != null && (freshItems == null || !freshItems.Any()))
-        {
-            throw lastRefreshException;
         }
 
         return freshItems;

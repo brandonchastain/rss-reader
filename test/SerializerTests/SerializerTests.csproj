@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\RssApp\RssApp.csproj" />
+    <ProjectReference Include="..\..\src\Shared\Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>
