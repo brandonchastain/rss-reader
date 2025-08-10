@@ -11,18 +11,24 @@ namespace WasmApp.Services
     {
         private readonly HttpClient _httpClient;
         private readonly RssWasmConfig _config;
-        private readonly UserClient _userClient;
+        private readonly UserClient userClient;
         public bool IsFilterUnread { get; set; }
         public string FilterTag { get; set; }
         public bool IsFilterSaved { get; set; }
+        public string[][] DefaultFeeds { get; private set; } = [
+            ["https://api.quantamagazine.org/feed/", "sci"],
+            ["https://css-tricks.com/feed", "tech"],
+            ["https://www.theguardian.com/us-news/rss", "news"]
+        ];
+
         private bool _disposed;
 
-        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, UserClient _userClient)
+        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, UserClient userClient)
         {
             _httpClient = new HttpClient();
             _config = config;
             logger.LogInformation(_config.ApiBaseUrl);
-            this._userClient = _userClient;
+            this.userClient = userClient;
         }
 
         public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
@@ -72,11 +78,6 @@ namespace WasmApp.Services
             await _httpClient.GetFromJsonAsync<string>($"{_config.ApiBaseUrl}api/item/markAsRead?username={user.Username}&itemId={item.Id}");
         }
 
-        public async Task<RssUser> RegisterUserAsync(string username)
-        {
-            return await this._userClient.RegisterUserAsync(username);
-        }
-
         public async Task<IEnumerable<string>> GetUserTagsAsync(RssUser _)
         {
             var user = await GetFeedUserAsync();
@@ -118,12 +119,26 @@ namespace WasmApp.Services
 
         public async Task<string> GetUsernameAsync()
         {
-            return await this._userClient.GetUsernameAsync();
+            return await this.userClient.GetUsernameAsync();
         }
 
         public async Task<RssUser> GetFeedUserAsync()
         {
-            return await this._userClient.GetFeedUserAsync();
+            (var user, bool isNew) = await this.userClient.GetFeedUserAsync();
+
+            if (isNew)
+            {
+                foreach (string[] parts in DefaultFeeds)
+                {
+                    var href = parts[0];
+                    var tag = parts[1];
+                    var newFeed = new NewsFeed(href, user.Id);
+                    newFeed.Tags = new List<string> { tag };
+                    await this.AddFeedAsync(newFeed);
+                }
+            }
+
+            return user;
         }
 
         public async Task ImportOpmlAsync(string opmlContent)

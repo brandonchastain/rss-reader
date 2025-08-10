@@ -41,7 +41,7 @@
 #     --port 80
 
 # Build and package
-RELEASE_DEBUG="debug"
+RELEASE_DEBUG="release"
 rm -f archive.zip
 rm -rf bin/$RELEASE_DEBUG/net9.0/linux-x64/publish
 dotnet publish -c $RELEASE_DEBUG -r linux-x64 --output bin/$RELEASE_DEBUG/net9.0/linux-x64/publish
@@ -62,21 +62,21 @@ scp -i "$SSH_KEY" -o StrictHostKeyChecking=no bin/$RELEASE_DEBUG/net9.0/linux-x6
 # SSH into VM and deploy
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no brandonchastain@${VM_IP} '
     # Install dependencies
-    sudo apt-get update
-    sudo apt-get install -y unzip authbind
+    #sudo apt-get update
+    #sudo apt-get install -y unzip authbind
 
     # Install Microsoft package repository and .NET SDK
     #wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
     #sudo dpkg -i packages-microsoft-prod.deb
     #rm packages-microsoft-prod.deb
     
-    sudo apt-get update
+    #sudo apt-get update
     #sudo apt-get install -y dotnet-sdk-9.0
 
     # Configure authbind for port 443
-    sudo touch /etc/authbind/byport/443
-    sudo chmod 500 /etc/authbind/byport/443
-    sudo chown brandonchastain /etc/authbind/byport/443
+    #sudo touch /etc/authbind/byport/443
+    #sudo chmod 500 /etc/authbind/byport/443
+    #sudo chown brandonchastain /etc/authbind/byport/443
 
     # Deploy app
     mkdir -p ~/app
@@ -100,7 +100,7 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-    sudo systemctl daemon-reload
+    #sudo systemctl daemon-reload
     sudo systemctl enable rssserver
     sudo systemctl start rssserver
 '

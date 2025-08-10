@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using RssApp.Data;
 using RssApp.Contracts;
+using System.Threading.Tasks;
 
 
 namespace Server.Controllers
@@ -11,6 +12,7 @@ namespace Server.Controllers
     {
         private readonly IUserRepository userRepository;
         private readonly ILogger<UserController> logger;
+        private readonly SemaphoreSlim locker = new SemaphoreSlim(1, 1);
 
         public UserController(
             IUserRepository userRepository,
@@ -50,16 +52,24 @@ namespace Server.Controllers
 
         // POST: api/user/register
         [HttpPost("register")]
-        public IActionResult Register([FromBody] string username)
+        public async Task<IActionResult> RegisterAsync([FromBody] string username)
         {
-            var user = this.userRepository.GetUserByName(username);
-            if (user != null)
+            await locker.WaitAsync();
+            try
             {
-                return Ok(user);
-            }
+                var user = this.userRepository.GetUserByName(username);
+                if (user != null)
+                {
+                    return Ok(user);
+                }
 
-            var newUser = this.userRepository.AddUser(username);
-            return Ok(newUser);
+                var newUser = this.userRepository.AddUser(username);
+                return Created(nameof(RegisterAsync), newUser);
+            }
+            finally
+            {
+                locker.Release();
+            }
         }
     }
 }

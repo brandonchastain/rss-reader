@@ -15,7 +15,6 @@ public interface IFeedClient : IDisposable
     Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page);
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, int page, int pageSize = 20);
     Task MarkAsReadAsync(NewsFeedItem item, bool isRead);
-    Task<RssUser> RegisterUserAsync(string username);
     Task RefreshFeedsAsync();
     Task<IEnumerable<string>> GetUserTagsAsync(RssUser user);
     Task SavePostAsync(NewsFeedItem item);
