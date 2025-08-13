@@ -1,5 +1,5 @@
 # Build and package
-RELEASE_DEBUG="debug"
+RELEASE_DEBUG="release"
 NET_VERSION="net9.0"
 PLATFORM="win-x64" #linux-x64
 rm -rf bin/
