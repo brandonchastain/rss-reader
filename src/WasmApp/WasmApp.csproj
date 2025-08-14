@@ -6,7 +6,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>a7167d8a-6fb6-43ae-a671-d8e0063226e5</UserSecretsId>
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
-    <RunAOTCompilation>false</RunAOTCompilation> <!-- true not working with built-in swa auth -->
   </PropertyGroup>
   <ItemGroup>
     <ServiceWorker Include="wwwroot\service-worker.js" PublishedContent="wwwroot\service-worker.published.js" />
@@ -21,6 +20,7 @@
     <PackageReference Include="Microsoft.Authentication.WebAssembly.Msal" Version="9.0.8" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.8" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.8" />
+    <PackageReference Include="Sve.Blazor.InfiniteScroll" Version="1.0.0-alpha" />
   </ItemGroup>
 
   <ItemGroup>

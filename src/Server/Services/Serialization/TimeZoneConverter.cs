@@ -3,7 +3,7 @@ namespace RssApp.Serialization;
 /// <summary>
 /// Provides utilities for handling timezone abbreviations and conversions
 /// </summary>
-public static class TimeZoneConverter
+internal static class TimeZoneConverter
 {
     /// <summary>
     /// Maps common timezone abbreviations to their UTC offsets
