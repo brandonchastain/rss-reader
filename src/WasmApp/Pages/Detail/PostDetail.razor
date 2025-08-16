@@ -19,7 +19,7 @@
     </div>
     <div class="col">
         <p class="post-title">
-            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick="async () => { await HandleClick(Post, false);}">@Post.Title</a><br/>
+            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick="async () => { await HandleClick(Post, false); MarkAsRead(Post);}">@Post.Title</a><br/>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
                 <a href="@Post.CommentsHref">[comments]</a>

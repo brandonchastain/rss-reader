@@ -7,6 +7,12 @@ namespace WasmApp.Services;
 
 public class UserClient : IUserClient
 {
+    private static readonly string[][] DefaultFeeds = [
+        ["https://api.quantamagazine.org/feed/", "sci"],
+        ["https://css-tricks.com/feed", "tech"],
+        ["https://www.theguardian.com/us-news/rss", "news"]
+    ];
+
     private readonly HttpClient _httpClient;
     private readonly RssWasmConfig _config;
 
@@ -19,16 +25,34 @@ public class UserClient : IUserClient
 
     public async Task<string> GetUsernameAsync()
     {
+        if (_config.EnableTestAuth)
+        {
+            return string.IsNullOrWhiteSpace(_config.TestAuthUsername) ? "testuser" : _config.TestAuthUsername;
+        }
+
         var url = $"{_config.AuthApiBaseUrl}.auth/me";
         var user = await _httpClient.GetFromJsonAsync<AadUser>(url);
         return user?.ClientPrincipal?.UserDetails ?? "Guest";
     }
 
-    public async Task<(RssUser, bool)> GetFeedUserAsync()
+    public async Task<RssUser> GetFeedUserAsync()
     {
         string username = await this.GetUsernameAsync();
         (RssUser user, bool isNew) = await this.RegisterUserAsync(username);
-        return (user, isNew);
+
+        if (isNew)
+        {
+            foreach (string[] parts in DefaultFeeds)
+            {
+                var href = parts[0];
+                var tag = parts[1];
+                var newFeed = new NewsFeed(href, user.Id);
+                newFeed.Tags = new List<string> { tag };
+                // TODO: fix adding default feeds
+                //await this.AddFeedAsync(newFeed);
+            }
+        }
+        return user;
     }
 
     public async Task<(RssUser, bool)> RegisterUserAsync(string username)
@@ -47,19 +71,14 @@ public class UserClient : IUserClient
     {
         public ClientPrincipal ClientPrincipal { get; set; }
     }
-
-    // "identityProvider": "aad",
-    // "userId": "c2a1d6db9a3b46df81797d589ff232a5",
-    // "userDetails": "brandonchastain@protonmail.com",
-    // "userRoles": [
-    // "anonymous",
-    // "authenticated"
-    // ]
+    
     private class ClientPrincipal
     {
         public string IdentityProvider { get; set; }
         public string UserId { get; set; }
         public string UserDetails { get; set; }
+
+        // This is a list of roles the user has, e.g., "anonymous", "authenticated"
         public List<string> UserRoles { get; set; }
     }
 }

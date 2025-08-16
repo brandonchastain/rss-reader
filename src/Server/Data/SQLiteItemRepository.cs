@@ -56,6 +56,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     Href TEXT,
                     CommentsHref TEXT,
                     Title TEXT,
+                    PublishDateOrder INTEGER NOT NULL DEFAULT 0,
                     PublishDate TEXT,
                     Content TEXT,
                     IsRead BOOLEAN DEFAULT 0,
@@ -75,6 +76,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     FeedUrl TEXT NOT NULL,
                     Href TEXT,
                     Title TEXT,
+                    PublishDateOrder INTEGER NOT NULL DEFAULT 0,
                     PublishDate TEXT,
                     Content TEXT,
                     UserId INTEGER NOT NULL,
@@ -157,6 +159,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         i.Href,
                         i.CommentsHref,
                         i.Title,
+                        i.PublishDateOrder,
                         i.PublishDate,
                         i.Content,
                         i.IsRead,
@@ -172,7 +175,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         WHERE Items_fts MATCH @query)
                         OR i.Title LIKE @plainQuery)
                     AND i.UserId = @userId
-                    ORDER BY i.PublishDate DESC
+                    ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC
                     LIMIT @pageSize OFFSET @offset
                 """;
                 
@@ -237,6 +240,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         i.Href,
                         i.CommentsHref,
                         i.Title,
+                        i.PublishDateOrder,
                         i.PublishDate,
                         i.Content,
                         i.IsRead,
@@ -272,8 +276,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     command.CommandText += " AND i.Tags LIKE @tagName";
                     command.Parameters.AddWithValue("@tagName", $"%{filterTag}%");
                 }
-
-                command.CommandText += " ORDER BY i.PublishDate DESC /* USING INDEX idx_items_timeline */";
+    
+                command.CommandText += " ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC /* USING INDEX idx_items_timeline */";
                 pageSize ??= 20; // Default page size if not provided
                 page ??= 0;
                 command.CommandText += " LIMIT @pageSize OFFSET @offset";
@@ -312,6 +316,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var href = reader.IsDBNull(reader.GetOrdinal("Href")) ? "" : reader.GetString(reader.GetOrdinal("Href"));
         var commentsHref = reader.IsDBNull(reader.GetOrdinal("CommentsHref")) ? "" : reader.GetString(reader.GetOrdinal("CommentsHref"));
         var title = reader.IsDBNull(reader.GetOrdinal("Title")) ? "" : reader.GetString(reader.GetOrdinal("Title"));
+        var publishDateOrder = reader.IsDBNull(reader.GetOrdinal("PublishDateOrder")) ? 0 : reader.GetInt64(reader.GetOrdinal("PublishDateOrder"));
         var publishDate = reader.IsDBNull(reader.GetOrdinal("PublishDate")) ? "" : reader.GetString(reader.GetOrdinal("PublishDate"));
         string content = reader.IsDBNull(reader.GetOrdinal("Content")) ? null : reader.GetString(reader.GetOrdinal("Content"));
         var url = reader.IsDBNull(reader.GetOrdinal("FeedUrl")) ? "" : reader.GetString(reader.GetOrdinal("FeedUrl"));
@@ -319,14 +324,15 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var tags = reader.IsDBNull(reader.GetOrdinal("Tags")) ? "" : reader.GetString(reader.GetOrdinal("Tags"));
         var thumbnailUrl = reader.IsDBNull(reader.GetOrdinal("ThumbnailUrl")) ? "" : reader.GetString(reader.GetOrdinal("ThumbnailUrl"));
         //var isPaywalled = reader.IsDBNull(reader.GetOrdinal("IsPaywalled")) ? false : reader.GetBoolean(reader.GetOrdinal("IsPaywalled"));
-        var isSaved = reader.IsDBNull(reader.GetOrdinal("IsSaved"));;
+        var isSaved = reader.IsDBNull(reader.GetOrdinal("IsSaved")) ? false : reader.GetBoolean(reader.GetOrdinal("IsSaved"));
         
         var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
         {
             FeedUrl = url,
             IsRead = isRead,
             FeedTags = string.IsNullOrWhiteSpace(tags) ? [] : tags.Split(","),
-            IsSaved = isSaved
+            IsSaved = isSaved,
+            PublishDateOrder = publishDateOrder
         };
 
         return item;
@@ -449,16 +455,18 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                         Href,
                                         CommentsHref,
                                         Title,
+                                        PublishDateOrder,
                                         PublishDate,
                                         UserId,
                                         ThumbnailUrl,
                                         Tags
                                     ) 
-                                    VALUES (@feedUrl, @href, @commentsHref, @title, @publishDate, @userId, @thumbnailUrl, @tags)";
+                                    VALUES (@feedUrl, @href, @commentsHref, @title, @publishDateOrder, @publishDate, @userId, @thumbnailUrl, @tags)";
                                 command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
                                 command.Parameters.AddWithValue("@href", item.Href ?? "");
                                 command.Parameters.AddWithValue("@commentsHref", (object)item.CommentsHref ?? DBNull.Value);
                                 command.Parameters.AddWithValue("@title", item.Title ?? "");
+                                command.Parameters.AddWithValue("@publishDateOrder", item.PublishDateOrder);
                                 command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
                                 command.Parameters.AddWithValue("@userId", item.UserId);
                                 command.Parameters.AddWithValue("@thumbnailUrl", (object)item.ThumbnailUrl ?? DBNull.Value);
@@ -471,14 +479,16 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                         FeedUrl,
                                         Href,
                                         Title,
+                                        PublishDateOrder,
                                         PublishDate,
                                         Content,
                                         UserId
                                     ) 
-                                    VALUES (@feedUrl, @href, @title, @publishDate, @content, @userId)";
+                                    VALUES (@feedUrl, @href, @title, @publishDateOrder, @publishDate, @content, @userId)";
                                 command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
                                 command.Parameters.AddWithValue("@href", item.Href ?? "");
                                 command.Parameters.AddWithValue("@title", item.Title ?? "");
+                                command.Parameters.AddWithValue("@publishDateOrder", item.PublishDateOrder);
                                 command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
                                 command.Parameters.AddWithValue("@content", item.Content ?? "");
                                 command.Parameters.AddWithValue("@userId", item.UserId);

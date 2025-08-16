@@ -21,10 +21,10 @@ public class AtomEntry
     public string Id { get; set; }
 
     [XmlElement("title")]
-    public  string Title { get; set; }
+    public string Title { get; set; }
 
     [XmlElement("published")]
-    public  string PublishDate { get; set; }
+    public string PublishDate { get; set; }
     
     [XmlElement("link")]
     public  List<AtomLink> Links { get; set; }

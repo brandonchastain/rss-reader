@@ -5,6 +5,7 @@ using System.Xml.Serialization;
 using Microsoft.Extensions.Logging;
 using RssApp.Contracts;
 using RssApp.Contracts.FeedTypes;
+using Server.Controllers;
 
 namespace RssApp.Serialization;
 
@@ -20,8 +21,7 @@ public class RssDeserializer
     public IEnumerable<NewsFeedItem> FromString(string responseContent, RssUser user)
     {
         var now = FormatDateString(DateTime.UtcNow.ToString(IsoDateFormat));
-        var defaultDate = DateTime.UtcNow - TimeSpan.FromDays(1); // Default to 1 day ago if no date is provided
-
+        var defaultDate = DateTime.UtcNow - TimeSpan.FromDays(7); // Default to 7 days ago if no date is provided
         try
         {
             // Strip out darkreader-related content
@@ -39,7 +39,7 @@ public class RssDeserializer
                 return rdfFeedModel.Items.Select(x =>
                 {
                     var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
-                    return new NewsFeedItem(
+                    var item = new NewsFeedItem(
                         x.Id,
                         user.Id,
                         x.Title,
@@ -48,6 +48,8 @@ public class RssDeserializer
                         date,
                         x.Description,
                         thumbnailUrl: null);
+                    item.PublishDateOrder = item.ParsedDate?.Ticks ?? DateTime.UtcNow.Ticks;
+                    return item;
                 });
             }
             else if (root.Name.LocalName.Equals("rss", StringComparison.OrdinalIgnoreCase))
@@ -59,7 +61,7 @@ public class RssDeserializer
                 {
                     var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
 
-                    return new NewsFeedItem(
+                    var item = new NewsFeedItem(
                         x.Id,
                         user.Id,
                         x.Title,
@@ -68,6 +70,9 @@ public class RssDeserializer
                         date,
                         x.Description,
                         x.MediaContents?.FirstOrDefault()?.Url);
+
+                    item.PublishDateOrder = item.ParsedDate?.Ticks ?? DateTime.UtcNow.Ticks;
+                    return item;
                 });
             }
             else if (root.Name.LocalName.Equals("feed", StringComparison.OrdinalIgnoreCase))
@@ -78,7 +83,7 @@ public class RssDeserializer
                 return rssFeedModel.Entries.Select(x =>
                 {
                     var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
-                    return new NewsFeedItem(
+                    var item = new NewsFeedItem(
                         x.Id,
                         user.Id,
                         x.Title,
@@ -87,6 +92,8 @@ public class RssDeserializer
                         date,
                         x.Content?.ToString(),
                         thumbnailUrl: null);
+                    item.PublishDateOrder = item.ParsedDate?.Ticks ?? DateTime.UtcNow.Ticks;
+                    return item;
                 });
             }
             else

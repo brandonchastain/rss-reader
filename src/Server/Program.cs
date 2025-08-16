@@ -68,9 +68,9 @@ builder.Services
         cacheReloadInterval: TimeSpan.FromMinutes(5),
         cacheReloadStartupDelay: TimeSpan.FromSeconds(10));
 })
-.AddTransient<RedirectWithDowngradeHandler>()
+.AddTransient<RedirectDowngradeHandler>()
 .AddHttpClient("RssClient")
-.AddHttpMessageHandler<RedirectWithDowngradeHandler>()
+.AddHttpMessageHandler<RedirectDowngradeHandler>()
 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     AllowAutoRedirect = false,

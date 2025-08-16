@@ -7,7 +7,7 @@ namespace RssApp.RssClient;
 /// This is useful for handling cases where a feed URL redirects from HTTPS to HTTP.
 /// The standard HttpClientHandler (with AllowAutoRedirect enabled) does not support such a downgrade.
 /// </summary>
-public class RedirectWithDowngradeHandler : DelegatingHandler
+public class RedirectDowngradeHandler : DelegatingHandler
 {
     private const int MaxRedirects = 10;
 

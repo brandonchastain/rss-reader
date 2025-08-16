@@ -2,6 +2,7 @@ using RssApp.Contracts;
 using RssApp.Serialization;
 using RssApp.Data;
 using RssApp.ComponentServices;
+using System.Threading.Tasks;
 
 namespace RssApp.RssClient;
 
@@ -17,16 +18,12 @@ public class FeedRefresher : IFeedRefresher, IDisposable
     private readonly TimeSpan cacheReloadInterval;
     private readonly TimeSpan cacheReloadStartupDelay;
     private readonly BackgroundWorkQueue backgroundWorkQueue;
+    private readonly SemaphoreSlim semaphore = new(1, 1);
+    private readonly Dictionary<RssUser, bool> hasNewItems = new();
     private DateTime? lastCacheReloadTime;
     private DateTime startupTime = DateTime.UtcNow;
     private Exception lastRefreshException;
     private int pendingRefreshes = 0;
-    private bool isRefreshing;
-
-    public event EventHandler<List<NewsFeedItem>> OnNewItemsAvailable;
-    public event EventHandler OnRefreshComplete;
-
-    public bool IsRefreshing => isRefreshing;
 
     public FeedRefresher(
         IHttpClientFactory httpClientFactory,
@@ -48,7 +45,6 @@ public class FeedRefresher : IFeedRefresher, IDisposable
         this.cacheReloadInterval = cacheReloadInterval;
         this.cacheReloadStartupDelay = cacheReloadStartupDelay;
         this.backgroundWorkQueue = backgroundWorkQueue;
-        this.isRefreshing = false;
     }
 
     public DateTime? LastCacheReloadTime => this.lastCacheReloadTime;
@@ -56,6 +52,27 @@ public class FeedRefresher : IFeedRefresher, IDisposable
     public void Dispose()
     {
         // Remove httpClient.Dispose() since we're using HttpClientFactory
+    }
+
+    public async Task<bool> HasNewItemsAsync(RssUser user)
+    {
+        await this.semaphore.WaitAsync();
+        try
+        {
+            this.hasNewItems.TryGetValue(user, out var hasNewItems);
+
+            if (hasNewItems)
+            {
+                // Reset the flag after checking
+                this.hasNewItems[user] = false;
+            }
+
+            return hasNewItems;
+        }
+        finally
+        {
+            this.semaphore.Release();
+        }
     }
 
     public async Task AddFeedAsync(NewsFeed feed)
@@ -68,8 +85,19 @@ public class FeedRefresher : IFeedRefresher, IDisposable
         bool isJustStarted = this.startupTime + this.cacheReloadStartupDelay > DateTime.UtcNow;
         bool isRecentRefresh = this.lastCacheReloadTime + this.cacheReloadInterval > DateTime.UtcNow;
 
-        if (isJustStarted || isRecentRefresh || isRefreshing)
+        if (isJustStarted || isRecentRefresh)
         {
+            // Set this so the client completes early instead of
+            // waiting for timeout.
+            await semaphore.WaitAsync();
+            try
+            {
+                hasNewItems[user] = true;
+            }
+            finally
+            {
+                semaphore.Release();
+            }
             return;
         }
 
@@ -82,49 +110,65 @@ public class FeedRefresher : IFeedRefresher, IDisposable
             if (totalFeeds == 0)
             {
                 this.lastCacheReloadTime = DateTime.UtcNow;
-                OnRefreshComplete?.Invoke(this, EventArgs.Empty);
                 return;
             }
 
-            isRefreshing = true;
-            Interlocked.Exchange(ref pendingRefreshes, totalFeeds);
-            
-            foreach (var feed in feeds)
+            try
             {
-                await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
+                await this.semaphore.WaitAsync();
+                this.pendingRefreshes = totalFeeds;
+
+                foreach (var feed in feeds)
                 {
-                    try
+                    await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
                     {
-                        await ReloadCachedItemsAsync(feed);
-                    }
-                    catch (Exception ex)
-                    {
-                        this.logger.LogError(ex, "Error reloading feed: {feed}", feed.Href);
-                    }
-                    finally
-                    {
-                        if (Interlocked.Decrement(ref pendingRefreshes) == 0)
+                        try
                         {
-                            this.lastCacheReloadTime = DateTime.UtcNow;
-                            isRefreshing = false;
-                            OnRefreshComplete?.Invoke(this, EventArgs.Empty);
+                            await ReloadCachedItemsAsync(feed);
                         }
-                    }
-                });
+                        catch (Exception ex)
+                        {
+                            this.logger.LogError(ex, "Error reloading feed: {feed}", feed.Href);
+                        }
+                        finally
+                        {
+                            bool lockTaken = false;
+                            try
+                            {
+                                if (this.semaphore.CurrentCount != 0)
+                                {
+                                    await this.semaphore.WaitAsync();
+                                    lockTaken = true;
+                                }
+
+                                this.pendingRefreshes--;
+                                if (this.pendingRefreshes == 0)
+                                {
+                                    this.lastCacheReloadTime = DateTime.UtcNow;
+                                    this.hasNewItems[user] = true;
+                                }
+                            }
+                            finally
+                            {
+                                if (lockTaken)
+                                {
+                                    this.semaphore.Release();
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            finally
+            {
+                this.semaphore.Release();
             }
         }
         catch (Exception ex)
         {
             this.logger.LogError(ex, "Error reloading cache");
             Interlocked.Exchange(ref pendingRefreshes, 0);
-            isRefreshing = false;
-            OnRefreshComplete?.Invoke(this, EventArgs.Empty);
         }
-    }
-
-    private void NotifyNewItems(List<NewsFeedItem> newItems)
-    {
-        OnNewItemsAvailable?.Invoke(this, newItems);
     }
 
     private async Task ReloadCachedItemsAsync(NewsFeed feed)
@@ -160,7 +204,6 @@ public class FeedRefresher : IFeedRefresher, IDisposable
         if (newItems.Any())
         {
             this.newsFeedItemStore.AddItems(newItems);
-            NotifyNewItems(newItems);
         }
     }
 

@@ -32,6 +32,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
     public string Title { get; set; }
     public string Href { get; set; }
     public string CommentsHref { get; set; }
+    public long PublishDateOrder { get; set; }
     public string PublishDate { get; set; }
     public string Id { get; set; }
     public string Content { get; set; }

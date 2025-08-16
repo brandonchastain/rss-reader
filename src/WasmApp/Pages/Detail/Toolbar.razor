@@ -2,19 +2,20 @@
 @implements IDisposable
 @inject IJSRuntime JS
 @inject IFeedClient FeedClient
+@inject ILogger<Toolbar> Logger
+@inject NavigationManager NavigationManager
+
 <div class="toolbar">
 
     <button class="btn-link" @onclick="() => RefreshAsync()">
-        @* @if (feedRefresher.IsRefreshing)
+        @if (isRefreshing)
         {
             <i class="fas fa-sync fa-spin"></i>
         }
         else
         {
             <i class="fas fa-sync"></i>
-        } *@
-
-        <i class="fas fa-sync"></i>
+        }
     </button>
 
     <div class="dropdown-container">
@@ -94,7 +95,15 @@
     
     [Parameter]
     public EventCallback<string> FilterForTag { get; set; }
+
+    [Parameter]
+    public List<NewsFeedItem> Posts { get; set; }
+
+    [Parameter]
+    public int Page { get; set; }
+
     private bool tagsAreHidden = true;
+    private bool isRefreshing = false;
 
     protected override void OnInitialized()
     {
@@ -110,7 +119,19 @@
 
     private async Task RefreshAsync()
     {
+        isRefreshing = true;
+        StateHasChanged();
+        Logger.LogInformation("Refreshing feeds...");
         await FeedClient.RefreshFeedsAsync();
+        isRefreshing = false;
+        StateHasChanged();
+
+        // Clear and refresh posts by toggling the unread filter twice.
+        // It's a slight hack but it works.
+        Posts.Clear();
+        Page = 0;
+        await ToggleUnreadFilterAsync.InvokeAsync();
+        await ToggleUnreadFilterAsync.InvokeAsync();
     }
 
     private async Task ToggleShowFilters()

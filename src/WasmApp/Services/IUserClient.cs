@@ -6,6 +6,6 @@ namespace WasmApp.Services;
 public interface IUserClient
 {
     Task<string> GetUsernameAsync();
-    Task<(RssUser, bool)> GetFeedUserAsync();
+    Task<RssUser> GetFeedUserAsync();
     Task<(RssUser, bool)> RegisterUserAsync(string username);
 }

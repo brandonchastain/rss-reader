@@ -17,6 +17,8 @@ namespace Server.Controllers
         private readonly IFeedRefresher feedRefresher;
         private readonly IItemRepository itemRepository;
         private readonly ILogger<UserController> logger;
+        private readonly Dictionary<RssUser, bool> userRefreshInProgress = new();
+        private readonly SemaphoreSlim refreshSemaphore = new(1, 1);
 
         public FeedController(
             IUserRepository userRepository,
@@ -51,6 +53,24 @@ namespace Server.Controllers
         }
 
         [HttpGet]
+        [Route("exportOpml")]
+        public async Task<IActionResult> ExportOpmlAsync(int userId)
+        {
+            await Task.Yield();
+            var user = this.userRepository.GetUserById(userId);
+
+            if (user == null)
+            {
+                return NotFound($"User with ID '{userId}' not found.");
+            }
+
+            var feeds = this.feedRepository.GetFeeds(user);
+            var fileContent = OpmlSerializer.GenerateOpmlContent(feeds);
+
+            return Ok(fileContent);
+        }
+
+        [HttpGet]
         [Route("refresh")]
         public async Task<IActionResult> RefreshFeedsAsync(string username)
         {
@@ -60,8 +80,25 @@ namespace Server.Controllers
             }
 
             var user = this.userRepository.GetUserByName(username);
+
+            if (user == null)
+            {
+                return NotFound($"User '{username}' not found.");
+            }
+
             await this.feedRefresher.RefreshAsync(user);
-            return Ok();
+
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            while (!cts.IsCancellationRequested)
+            {
+                bool hasNewItems = await this.feedRefresher.HasNewItemsAsync(user);
+                if (hasNewItems)
+                {
+                    return Ok();
+                }
+            }
+
+            return NoContent();
         }
 
         //            await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/feed/tags", feed);

@@ -6,5 +6,6 @@ namespace RssApp.ComponentServices
     {
         Task AddFeedAsync(NewsFeed feed);
         Task RefreshAsync(RssUser user);
+        Task<bool> HasNewItemsAsync(RssUser user);
     }
 }

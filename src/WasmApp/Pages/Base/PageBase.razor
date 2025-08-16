@@ -1,5 +1,6 @@
 @using RssApp.Contracts
 @using RssApp.RssClient
+@using WasmApp.Services
 @inject ILogger<PageBase> logger
 
 @code {
@@ -8,11 +9,14 @@
     [Inject]
     protected IFeedClient feedClient { get; set; }
 
+    [Inject]
+    private IUserClient userClient { get; set; }
+
     protected async Task GetUsernameAsync()
     {
         if (this.CurrentUser == null)
         {
-            this.CurrentUser = await this.feedClient.GetFeedUserAsync();
+            this.CurrentUser = await this.userClient.GetFeedUserAsync();
             StateHasChanged();
         }
     }

@@ -169,9 +169,15 @@ else
 
     private async Task ExportOpml()
     {
-        // var opmlContent = OpmlSerializer.GenerateOpmlContent(feeds);
-        //await jsRuntime.InvokeVoidAsync("downloadFile", "feeds.opml", "application/xml", opmlContent);
-        await Task.Yield();
+        var opmlContent = await this.feedClient.ExportOpmlAsync();
+        
+        if (string.IsNullOrWhiteSpace(opmlContent))
+        {
+            this.logger.LogWarning("No feeds to export to OPML.");
+            return;
+        }
+
+        await jsRuntime.InvokeVoidAsync("downloadFile", "feeds.opml", "application/xml", opmlContent);
     }
 
     private async Task ImportOpml(InputFileChangeEventArgs e)
@@ -188,18 +194,7 @@ else
             using var reader = new StreamReader(stream);
             var opmlContent = await reader.ReadToEndAsync();
             await this.feedClient.ImportOpmlAsync(opmlContent);
-            // Import the parsed feeds
-            // feedStore.ImportFeeds(CurrentUser, importedFeeds);
-            // var feeds = this.feedStore.GetFeeds(CurrentUser);
-            // var newFeeds = feeds.Where(f => importedFeeds.Contains(f));
-            // foreach (var feed in newFeeds)
-            // {
-            //     await this.feedClient.AddFeedAsync(feed);
-            // }
-            //
-            // // Refresh the feed list
-            // feeds = GetFeedUrls();
-            // StateHasChanged();
+            StateHasChanged();
         }
         catch (Exception ex)
         {

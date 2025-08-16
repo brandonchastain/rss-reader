@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using RssApp.Data;
 using RssApp.Contracts;
 using System.Text;
+using System.Threading.Tasks;
 
 
 namespace Server.Controllers
@@ -43,7 +44,7 @@ namespace Server.Controllers
             var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize);
             var result = items
                 .DistinctBy(i => i.Href)
-                .OrderByDescending(i => i.ParsedDate)
+                .OrderByDescending(i => i.PublishDateOrder)
                 .Where(i => string.IsNullOrWhiteSpace(filterTag) || (i.FeedTags?.Contains(filterTag) ?? false))
                 .ToHashSet();
 
@@ -70,19 +71,31 @@ namespace Server.Controllers
             var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize);
             var result = items
                 .DistinctBy(i => i.Href)
-                .OrderByDescending(i => i.ParsedDate)
+                .OrderByDescending(i => i.PublishDateOrder)
                 .Where(i => string.IsNullOrWhiteSpace(filterTag) || (i.FeedTags?.Contains(filterTag) ?? false))
                 .ToHashSet();
 
             return Ok(result);
         }
 
-        // GET: api/item/search/?query={query}&isFilterUnread={isFilterUnread}&isFilterSaved={isFilterSaved}&filterTag={filterTag}&page={page}&pageSize={pageSize}
+        // GET: api/item/search/?username={username}&query={query}&isFilterUnread={isFilterUnread}&isFilterSaved={isFilterSaved}&filterTag={filterTag}&page={page}&pageSize={pageSize}
         [HttpGet("search")]
-        public IActionResult Search(string query, bool isFilterUnread = false, bool isFilterSaved
-    = false, string filterTag = null, int page = 0, int pageSize = 20)
+        public async Task<IActionResult> SearchAsync(string username, string query, int page = 0, int pageSize = 20)
         {
-            return NotFound("not there yet");
+            if (username == null)
+            {
+                return BadRequest("username is required.");
+            }
+
+            if (query == null)
+            {
+                return BadRequest("query is required.");
+            }
+
+            var user = this.userRepository.GetUserByName(username);
+            var items = await this.itemRepository.SearchItemsAsync(query, user, page, pageSize);
+
+            return Ok(items);
         }
 
         // GET: api/item/content

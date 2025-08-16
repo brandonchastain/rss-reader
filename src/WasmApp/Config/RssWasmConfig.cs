@@ -13,6 +13,9 @@ namespace RssApp.Config
 
         public string AuthApiBaseUrl { get; set; } = "https://localhost:7085/";
 
+        public bool EnableTestAuth { get; set; } = false;
+        public string TestAuthUsername { get; set; } = "testuser";
+
         public static RssWasmConfig LoadFromAppSettings(IConfiguration configuration)
         {
             var config = new RssWasmConfig();
