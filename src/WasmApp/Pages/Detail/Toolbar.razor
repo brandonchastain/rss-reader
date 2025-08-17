@@ -18,12 +18,12 @@
         }
     </button>
 
+    <button class="btn-link" style="@(this.IsFilterUnread ? "color: pink" : "")" @onclick="async () => {await ToggleUnreadFilterAsync.InvokeAsync(); }">[unread]</button>
+    <button class="btn-link" style="@(this.IsFilterSaved ? "color: pink" : "")" @onclick="async () => {await ToggleSavedFilterAsync.InvokeAsync(); }">[saved]</button>
+
     <div class="dropdown-container">
         <button class="btn-link" @onclick="() => ToggleShowFilters()">[filters]</button>
-
         <div class="filter-dropdown @(tagsAreHidden ? "" : "show")" id="filter-tags">
-            <button class="btn-link" @onclick="async () => {await ToggleUnreadFilterAsync.InvokeAsync(); await ToggleShowFilters();}">@(this.IsFilterUnread ? "[all]" : "[unread]")</button>
-            <button class="btn-link" @onclick="async () => {await ToggleSavedFilterAsync.InvokeAsync(); await ToggleShowFilters();}">@(this.IsFilterSaved ? "[all]" : "[saved]")</button>
             @if (this.userTags != null)
             {
                 @foreach (var tag in this.userTags)
