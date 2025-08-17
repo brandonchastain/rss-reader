@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using RssApp.Config;
@@ -19,6 +20,9 @@ builder.Services
     .AddSingleton<RssWasmConfig>(_ => config)
     .AddTransient<IFeedClient, FeedClient>()
     .AddTransient<IUserClient, UserClient>();
+
+builder.Services.AddAuthorizationCore();
+builder.Services.AddScoped<AuthenticationStateProvider, MyAuthenticationStateProvider>();
 
 var app = builder.Build();
 await app.RunAsync();

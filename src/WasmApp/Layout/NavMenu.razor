@@ -18,13 +18,12 @@
 
 <div class="@NavMenuCssClass nav-menu" @onclick="CollapseNavMenu">
     <nav class="flex-column">
-
         <div class="nav-item px-3">
             <span class="navbar-toggler-icon"></span>
-            RssReader
+            <a style="text-decoration: none; color: inherit;" href="/">RssReader</a>
         </div>
-            @if (username != null && !string.Equals(username, "Guest", StringComparison.OrdinalIgnoreCase))
-            {
+        <AuthorizeView>
+            <Authorized>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="/timeline">
                         Timeline
@@ -50,20 +49,15 @@
                         Logout
                     </NavLink>
                 </div>
-                
-            }
-            else
-            {
+            </Authorized>
+            <NotAuthorized>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="/.auth/login/aad">
                         Login
                     </NavLink>
                 </div>
-            }
-            @* </Authorized>
-            <NotAuthorized>
             </NotAuthorized>
-        </AuthorizeView> *@
+        </AuthorizeView>
     </nav>
 </div>
 

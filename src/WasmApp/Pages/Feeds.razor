@@ -10,11 +10,9 @@
 
 @inherits PageBase
 @attribute [StreamRendering]
-@* @attribute [Authorize] *@
-@* @inject IFeedRepository feedStore *@
+@attribute [Authorize]
 @inject ILogger<Feeds> logger
 @inject IJSRuntime jsRuntime
-@* @inject OpmlSerializer OpmlSerializer *@
 @rendermode InteractiveWebAssembly
 
 <PageTitle>Feeds</PageTitle>

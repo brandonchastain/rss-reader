@@ -66,19 +66,4 @@ public class UserClient : IUserClient
         }
         return (user, false);
     }
-
-    private class AadUser
-    {
-        public ClientPrincipal ClientPrincipal { get; set; }
-    }
-    
-    private class ClientPrincipal
-    {
-        public string IdentityProvider { get; set; }
-        public string UserId { get; set; }
-        public string UserDetails { get; set; }
-
-        // This is a list of roles the user has, e.g., "anonymous", "authenticated"
-        public List<string> UserRoles { get; set; }
-    }
 }
