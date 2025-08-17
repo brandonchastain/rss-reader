@@ -1,13 +1,15 @@
+@using System.Threading.Tasks
 @inherits PageBase
 
 @rendermode InteractiveWebAssembly
 @attribute [StreamRendering]
 @* @attribute [Authorize] *@
 @inject IJSRuntime jsRuntime
+@inject NavigationManager navigationManager
 
 @if (Post != null)
 {
-<div class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="() => HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
+<div class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="async () => await HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
     <div class="col thumbnail">
         @{
             var thumbnailUrl = Post.ThumbnailUrl;
@@ -19,12 +21,12 @@
     </div>
     <div class="col">
         <p class="post-title">
-            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick="async () => { await HandleClick(Post, false); MarkAsRead(Post);}">@Post.Title</a><br/>
+            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => { await MarkAsReadAsync(Post, true); navigationManager.NavigateTo(Post.Href); }">@Post.Title</a><br/>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
                 <a href="@Post.CommentsHref">[comments]</a>
             }
-            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => MarkAsRead(Post)">[mark @(!Post.IsRead ? "read" : "unread")]</button>
+            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await MarkAsReadAsync(Post, !Post.IsRead)">[mark @(!Post.IsRead ? "read" : "unread")]</button>
             <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)">[@(!Post.IsSaved ? "save" : "unsave")]</button>
             @Post.Href.GetRootDomain()<br/>
             @(Post.FeedTags.Any() ? $"[{string.Join(",", Post.FeedTags)}]" : "")
@@ -60,7 +62,7 @@
                 <a href="/posts?href=@System.Net.WebUtility.UrlEncode(Post.FeedUrl)" onclick="event.stopPropagation()">View all posts from this feed</a><br/>
             </p>
             <p>
-                <button class="btn-link" @onclick="() => HandleClick(Post)">Collapse</button>
+                <button class="btn-link" @onclick="async () => await HandleClick(Post)">Collapse</button>
             </p>
         </div>
     }
@@ -99,20 +101,23 @@
         return isFilteredByTag || isFilteredByUnread;
     }
 
-    private void MarkAsRead(NewsFeedItem item, bool? isRead = null)
+    private async Task MarkAsReadAsync(NewsFeedItem item, bool isRead)
     {
-        bool val = isRead ?? !item.IsRead;
-
-        if (val != item.IsRead)
+        if (isRead && !item.IsRead)
         {
-            item.IsRead = val;
-            this.feedClient.MarkAsReadAsync(item, val);
+            await this.feedClient.MarkAsReadAsync(item, true);
+            item.IsRead = true;
+        }
+        else if (!isRead && item.IsRead)
+        {
+            await this.feedClient.MarkAsReadAsync(item, false);
+            item.IsRead = false;
         }
 
-        InvokeAsync(StateHasChanged);
+        await InvokeAsync(StateHasChanged);
     }
 
-    private async Task PreviewPost(NewsFeedItem post)
+    private async Task PreviewPostAsync(NewsFeedItem post)
     {
         if (post.Content == null)
         {
@@ -121,8 +126,7 @@
         }
 
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
-        this.StateHasChanged();
-        MarkAsRead(post, true);
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task SavePost(NewsFeedItem post)
@@ -145,12 +149,8 @@
     {
         if (preview)
         {
-            await PreviewPost(post);
-        }
-
-        if (OnPostClicked.HasDelegate)
-        {
-            await OnPostClicked.InvokeAsync(post);
+            await PreviewPostAsync(post);
+            await MarkAsReadAsync(post, true);
         }
     }
 }

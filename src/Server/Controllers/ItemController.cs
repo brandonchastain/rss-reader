@@ -129,7 +129,7 @@ namespace Server.Controllers
         }
 
         [HttpGet("markAsRead")]
-        public IActionResult MarkAsRead(string username, int itemId)
+        public IActionResult MarkAsRead(string username, int itemId, bool isRead)
         {
             if (username == null)
             {
@@ -144,8 +144,7 @@ namespace Server.Controllers
                 return NotFound($"Item not found.");
             }
 
-
-            this.itemRepository.MarkAsRead(item, !item.IsRead);
+            this.itemRepository.MarkAsRead(item, isRead, user);
             return Ok();
         }
 

@@ -76,7 +76,7 @@ namespace WasmApp.Services
         public async Task MarkAsReadAsync(NewsFeedItem item, bool isRead)
         {
             var user = await userClient.GetFeedUserAsync();
-            await _httpClient.GetFromJsonAsync<string>($"{_config.ApiBaseUrl}api/item/markAsRead?username={user.Username}&itemId={item.Id}");
+            await _httpClient.GetAsync($"{_config.ApiBaseUrl}api/item/markAsRead?username={user.Username}&itemId={item.Id}&isRead={isRead}");
         }
 
         public async Task<IEnumerable<string>> GetUserTagsAsync(RssUser _)

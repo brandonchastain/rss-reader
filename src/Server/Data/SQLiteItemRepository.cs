@@ -262,8 +262,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
                 if (isFilterUnread)
                 {
-                    command.CommandText += " AND i.IsRead = @isRead";
-                    command.Parameters.AddWithValue("@isRead", false);
+                    command.CommandText += " AND i.IsRead = 0";
                 }
 
                 if (isFilterSaved)
@@ -334,6 +333,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             IsSaved = isSaved,
             PublishDateOrder = publishDateOrder
         };
+
+        logger.LogInformation("DEBUG: isread: {IsRead}", isRead);
 
         return item;
     }
@@ -530,7 +531,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command.CommandText = @"
                 UPDATE Items
                 SET Tags = @tags
-                WHERE FeedUrl = @feedUrl AND Href = @href AND UserId = @userId";
+                WHERE FeedUrl LIKE @feedUrl AND Href LIKE @href AND UserId = @userId";
             command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
             command.Parameters.AddWithValue("@href", item.Href);
             command.Parameters.AddWithValue("@tags", tags);
@@ -539,7 +540,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         }
     }
 
-    public void MarkAsRead(NewsFeedItem item, bool isRead)
+    public void MarkAsRead(NewsFeedItem item, bool isRead, RssUser user)
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
@@ -548,11 +549,11 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command.CommandText = @"
                 UPDATE Items
                 SET IsRead = @isRead
-                WHERE FeedUrl = @feedUrl AND Href = @href AND UserId = @userId";
+                WHERE FeedUrl LIKE @feedUrl AND Href LIKE @href AND UserId = @userId";
             command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
             command.Parameters.AddWithValue("@href", item.Href);
-            command.Parameters.AddWithValue("@isRead", isRead);
-            command.Parameters.AddWithValue("@userId", item.UserId);
+            command.Parameters.AddWithValue("@isRead", isRead ? 1 : 0);
+            command.Parameters.AddWithValue("@userId", user.Id);
             command.ExecuteNonQuery();
         }
     }
@@ -566,7 +567,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command.CommandText = @"
                 UPDATE Items
                 SET IsSaved = 1
-                WHERE UserId = @userId AND FeedUrl = @feedUrl AND Href = @href";
+                WHERE UserId = @userId AND FeedUrl LIKE @feedUrl AND Href LIKE @href";
             command.Parameters.AddWithValue("@userId", user.Id);
             command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
             command.Parameters.AddWithValue("@href", item.Href);

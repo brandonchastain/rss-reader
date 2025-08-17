@@ -10,7 +10,7 @@ public interface IItemRepository : IDisposable
     NewsFeedItem GetItem(RssUser user, string href);
     NewsFeedItem GetItem(RssUser user, int itemId);
     void AddItems(IEnumerable<NewsFeedItem> item);
-    void MarkAsRead(NewsFeedItem item, bool isRead);
+    void MarkAsRead(NewsFeedItem item, bool isRead, RssUser user);
     void SavePost(NewsFeedItem item, RssUser user);
     void UnsavePost(NewsFeedItem item, RssUser user);
     void UpdateTags(NewsFeedItem item, string tags);
