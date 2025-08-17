@@ -17,5 +17,7 @@
 
 ## Stack
 Primary language: C#
+
 Frontend: Blazor Webassembly, Javascript, HTML, CSS
+
 Backend: ASP.NET, SQLite
