@@ -12,10 +12,14 @@
 <div class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="async () => await HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
     <div class="col thumbnail">
         @{
-            var thumbnailUrl = Post.ThumbnailUrl;
+            var thumbnailUrl = Post.GetThumbnailUrl();
             if (!String.IsNullOrWhiteSpace(thumbnailUrl))
             {
-                <img src="@Post.ThumbnailUrl" alt="Thumbnail" class="thumbnail" />
+                <img src="@thumbnailUrl" alt="Thumbnail" class="thumbnail" />
+            }
+            else
+            {
+                <img src="/placeholder.jpg" alt="Placeholder" class="thumbnail" />
             }
         }
     </div>
@@ -44,11 +48,11 @@
                 <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)">[speak this text]</button>
             </p>
             <p>
-                @if (!Post?.ThumbnailUrl?.EndsWith("placeholder.jpg") ?? false)
+                @if (Post?.GetThumbnailUrl() != null)
                 {
-                    if (Post.Content?.TrimStart().IndexOf(Post.ThumbnailUrl) < 0)
+                    if (Post.Content?.TrimStart().IndexOf(Post.GetThumbnailUrl()) < 0)
                     {
-                        <img src="@Post.ThumbnailUrl" alt="Thumbnail" class="thumbnail" />
+                        <img src="@Post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" />
                     }
                 }
             </p>

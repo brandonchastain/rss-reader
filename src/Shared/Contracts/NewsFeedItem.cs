@@ -1,3 +1,5 @@
+using RssWasmApp.Pages;
+
 namespace RssApp.Contracts;
 
 public class NewsFeedItem : IEquatable<NewsFeedItem>
@@ -12,7 +14,7 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
         this.CommentsHref = string.Empty;
         this.PublishDate = string.Empty;
         this.Content = null;
-        this.ThumbnailUrl = "/placeholder.jpg";
+        this.ThumbnailUrl = null;
     }
 
     public NewsFeedItem(string id, int userId, string title, string href, string commentsHref, string publishDate, string content, string thumbnailUrl)
@@ -41,8 +43,9 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
     public bool IsSaved { get; set; }
     public bool IsBeingPreviewed { get; set; }
     public ICollection<string> FeedTags { get; set; } = new List<string>();
-    
-    public DateTime? ParsedDate {
+
+    public DateTime? ParsedDate
+    {
         get
         {
             if (DateTime.TryParse(PublishDate, out DateTime parsed))
@@ -67,32 +70,37 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
             string.Equals(this.Href, other.Href, StringComparison.OrdinalIgnoreCase);
     }
 
-    public void SetThumbnailUrl(string content)
+    public string GetThumbnailUrl()
     {
-        var favicon = "/placeholder.jpg";
-        if (string.IsNullOrEmpty(content))
+        if (!string.IsNullOrEmpty(this.ThumbnailUrl))
         {
-            this.ThumbnailUrl = favicon;
-            return;
+            return this.ThumbnailUrl;
+        }
+
+        var hostname = this.FeedUrl.GetRootDomain();
+        string favicon = $"https://icons.duckduckgo.com/ip2/{hostname}.ico";
+
+        if (string.IsNullOrEmpty(this.Content))
+        {
+            return favicon;
         }
 
         var doc = new HtmlAgilityPack.HtmlDocument();
-        doc.LoadHtml(content);
+        doc.LoadHtml(this.Content);
+
         var img = doc.DocumentNode.SelectSingleNode("//img");
         if (img == null)
         {
-            this.ThumbnailUrl = favicon;
-            return;
+            return favicon;
         }
 
         var src = img.GetAttributeValue("src", null);
         if (string.IsNullOrEmpty(src))
         {
-            this.ThumbnailUrl = favicon;
-            return;
+            return favicon;
         }
 
-        this.ThumbnailUrl = src;
+        return src;
     }
 
     public override int GetHashCode()

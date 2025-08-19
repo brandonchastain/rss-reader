@@ -446,8 +446,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                     this.logger.LogWarning($"Item already exists in the database: {item.Href}");
                                     continue;
                                 }
-
-                                item.SetThumbnailUrl(item.Content);
+                                item.ThumbnailUrl = item.GetThumbnailUrl();
 
                                 var command = connection.CreateCommand();
                                 command.CommandText = @"

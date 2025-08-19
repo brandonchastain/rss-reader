@@ -50,6 +50,7 @@
         var newPageRes = await this.GetPostsAsync();
         Items.AddRange(newPageRes);
         Items = Items.Distinct().ToList();
+        
         this.loadedPage = Page;
         
         this.StateHasChanged();
