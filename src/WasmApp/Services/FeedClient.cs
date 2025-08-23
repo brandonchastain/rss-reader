@@ -52,7 +52,7 @@ namespace WasmApp.Services
 
         public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20)
         {
-            pageSize = Math.Max(pageSize, 100);
+            pageSize = Math.Min(pageSize, 100);
             var user = await userClient.GetFeedUserAsync();
             var url = $"{_config.ApiBaseUrl}api/item/timeline?username={user.Username}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
@@ -67,7 +67,7 @@ namespace WasmApp.Services
 
         public async Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, int page, int pageSize = 20)
         {
-            pageSize = Math.Max(pageSize, 100);
+            pageSize = Math.Min(pageSize, 100);
             var user = await userClient.GetFeedUserAsync();
             var url = $"{_config.ApiBaseUrl}api/item/search?username={user.Username}&query={Uri.EscapeDataString(query)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);

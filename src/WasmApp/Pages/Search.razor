@@ -44,9 +44,7 @@ else
 
     private async Task SearchPosts()
     {
-        Page = 0;
         Items = await this.GetPostsAsync();
-        loadedPage = Page;
         initialized = true;
         await InvokeAsync(StateHasChanged);
     }
