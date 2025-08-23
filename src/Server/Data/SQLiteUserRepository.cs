@@ -46,7 +46,7 @@ public class SQLiteUserRepository : IUserRepository
             {
                 if (!reader.Read())
                 {
-                    return null; //this.AddUser(username);
+                    return null;
                 }
                 
                 return this.ReadItemFromResults(reader);

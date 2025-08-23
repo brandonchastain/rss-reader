@@ -1,9 +1,0 @@
-﻿@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
-@inject NavigationManager Navigation
-<NavLink href=".auth/logout">Log out</NavLink>
-@code{
-    public void BeginLogOut()
-    {
-        Navigation.NavigateToLogout(".auth/logout");
-    }
-}

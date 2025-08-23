@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace RssApp.RssClient;
 
-public class FeedRefresher : IFeedRefresher, IDisposable
+public class FeedRefresher : IFeedRefresher
 {
     private static readonly bool EnableHttpLookup = true;
     private readonly IHttpClientFactory httpClientFactory;
@@ -48,11 +48,6 @@ public class FeedRefresher : IFeedRefresher, IDisposable
     }
 
     public DateTime? LastCacheReloadTime => this.lastCacheReloadTime;
-
-    public void Dispose()
-    {
-        // Remove httpClient.Dispose() since we're using HttpClientFactory
-    }
 
     public async Task<bool> HasNewItemsAsync(RssUser user)
     {
@@ -240,7 +235,6 @@ public class FeedRefresher : IFeedRefresher, IDisposable
 
                     var items = this.deserializer.FromString(response, user);
                     freshItems.UnionWith(items);
-                    response = null;  // Help GC by clearing the response string
 
                     // It worked. Exit the loop.
                     break;
@@ -256,7 +250,6 @@ public class FeedRefresher : IFeedRefresher, IDisposable
                 int len = Math.Min(500, response?.Length ?? 0);
                 this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
                 lastRefreshException = ex;
-                response = null;  // Help GC by clearing the response string
             }
         }
 

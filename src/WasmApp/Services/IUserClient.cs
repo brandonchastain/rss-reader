@@ -3,7 +3,7 @@ using RssApp.Contracts;
 
 namespace WasmApp.Services;
 
-public interface IUserClient
+public interface IUserClient : IDisposable
 {
     Task<string> GetUsernameAsync();
     Task<RssUser> GetFeedUserAsync();

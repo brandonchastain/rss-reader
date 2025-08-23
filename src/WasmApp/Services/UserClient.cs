@@ -66,4 +66,9 @@ public class UserClient : IUserClient
         }
         return (user, false);
     }
+
+    public void Dispose()
+    {
+        _httpClient.Dispose();
+    }
 }

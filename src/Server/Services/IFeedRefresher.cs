@@ -2,7 +2,7 @@ using RssApp.Contracts;
 
 namespace RssApp.ComponentServices
 {
-    public interface IFeedRefresher : IDisposable
+    public interface IFeedRefresher
     {
         Task AddFeedAsync(NewsFeed feed);
         Task RefreshAsync(RssUser user);

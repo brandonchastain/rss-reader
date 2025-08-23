@@ -165,6 +165,9 @@ namespace WasmApp.Services
         {
             if (!_disposed)
             {
+                _httpClient.Dispose();
+                _refreshHttpClient.Dispose();
+                userClient.Dispose();
                 _disposed = true;
             }
         }

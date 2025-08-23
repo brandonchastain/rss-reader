@@ -91,7 +91,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/home/brandonchastain/app
-ExecStart='/usr/bin/authbind --deep /usr/bin/dotnet /home/brandonchastain/app/Server.dll --launch-profile https'
+ExecStart=/usr/bin/authbind --deep /usr/bin/dotnet /home/brandonchastain/app/Server.dll
 User=brandonchastain
 Environment=ASPNETCORE_URLS=https://+:443
 Environment=ASPNETCORE_ENVIRONMENT=Production
@@ -100,7 +100,9 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-    #sudo systemctl daemon-reload
+    sudo systemctl stop rssserver
+    sleep 5  # Give processes time to fully terminate
+    sudo systemctl daemon-reload
     sudo systemctl enable rssserver
     sudo systemctl start rssserver
 '

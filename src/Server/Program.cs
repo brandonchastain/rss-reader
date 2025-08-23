@@ -7,6 +7,14 @@ using RssApp.Serialization;
 
 var config = RssAppConfig.LoadFromEnvironment();
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxConcurrentConnections = 50;
+    serverOptions.Limits.MaxConcurrentUpgradedConnections = 50;
+    serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+});
+
 var configureCors = (CorsOptions options) => 
 {
     options.AddPolicy(

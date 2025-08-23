@@ -1,6 +1,8 @@
 namespace RssApp.ComponentServices;
+
 public class BackgroundWorker : BackgroundService
 {
+    private const int WorkerCount = 5;
     private readonly ILogger<BackgroundWorker> _logger;
     private readonly BackgroundWorkQueue _queue;
 
@@ -14,24 +16,24 @@ public class BackgroundWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("BackgroundService is starting.");
-
-        int workerCount = 5; // Set your desired concurrency here
         var tasks = new List<Task>();
-        for (int i = 0; i < workerCount; i++)
+
+        for (int i = 0; i < WorkerCount; i++)
         {
-            tasks.Add(Task.Run(async () =>
-            {
-                while (!stoppingToken.IsCancellationRequested)
-                {
-                    var workItem = await _queue.DequeueAsync(stoppingToken);
-                    await workItem(stoppingToken);
-                }
-            }, stoppingToken));
+            tasks.Add(DoWorkAsync(stoppingToken));
         }
 
-        await Task.WhenAll(tasks);
+        var allDone = Task.WhenAll(tasks);
+        var maxWait = TimeSpan.FromMinutes(1);
+        await Task.WhenAny(allDone, Task.Delay(maxWait, stoppingToken));
+    }
 
-        _logger.LogInformation("BackgroundService is stopping.");
+    private async Task DoWorkAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            var workItem = await _queue.DequeueAsync(stoppingToken);
+            await workItem(stoppingToken);
+        }
     }
 }

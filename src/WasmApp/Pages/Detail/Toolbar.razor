@@ -28,61 +28,23 @@
             {
                 @foreach (var tag in this.userTags)
                 {
-                    <button class="btn-link" style="@(this.filterTag == tag ? "color: pink" : "")" @onclick="async () => {await FilterForTag.InvokeAsync(tag); await ToggleShowFilters();}">[@tag]</button>
+                    <button class="btn-link" style="@(this.FilterTag == tag ? "color: pink" : "")" @onclick="async () => {await FilterForTag.InvokeAsync(tag); await ToggleShowFilters();}">[@tag]</button>
                 }
             }
         </div>
     </div>
 </div>
 
-<style>
-    .dropdown-container {
-        position: relative;
-        display: inline-block;
-    }
-
-    .filter-dropdown {
-        display: none;
-        position: absolute;
-        top: 100%;
-        left: 0;
-        background-color: #fff;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        z-index: 1000;
-        min-width: 150px;
-    }
-
-    .filter-dropdown.show {
-        display: block;
-    }
-
-    .filter-dropdown button {
-        display: block;
-        width: 100%;
-        text-align: left;
-        padding: 4px 8px;
-    }
-
-    .filter-dropdown button:hover {
-        background-color: #f5f5f5;
-    }
-</style>
-
 @code {
-    // [Parameter]
-    // public IFeedRefresher feedRefresher { get; set; }
-
-    [Parameter]
-    public string filterTag { get; set; }
 
     [Parameter]
     public bool IsFilterUnread { get; set; }
 
     [Parameter]
     public bool IsFilterSaved { get; set; }
+
+    [Parameter]
+    public string FilterTag { get; set; }
 
     [Parameter]
     public IEnumerable<string> userTags { get; set; }
@@ -105,31 +67,32 @@
     private bool tagsAreHidden = true;
     private bool isRefreshing = false;
 
-    protected override void OnInitialized()
-    {
-        //feedRefresher.OnNewItemsAvailable += HandleNewItems;
-        //feedRefresher.OnRefreshComplete += HandleRefreshComplete; *@
-    }
-
     public void Dispose()
     {
-        //feedRefresher.OnNewItemsAvailable -= HandleNewItems;
-        //feedRefresher.OnRefreshComplete -= HandleRefreshComplete; *@
+        if (FeedClient != null)
+        {
+            FeedClient.Dispose();
+        }
     }
 
     private async Task RefreshAsync()
     {
+        // Start UI animation
         isRefreshing = true;
         StateHasChanged();
-        Logger.LogInformation("Refreshing feeds...");
+
+        // Do the refresh
         await FeedClient.RefreshFeedsAsync();
+
+        // Stop UI animation
         isRefreshing = false;
         StateHasChanged();
 
-        // Clear and refresh posts by toggling the unread filter twice.
-        // It's a slight hack but it works.
+        // Clear current list of posts
         Posts.Clear();
         Page = 0;
+
+        // Refresh list contents by toggling the unread filter twice. It's a hack but it works.
         await ToggleUnreadFilterAsync.InvokeAsync();
         await ToggleUnreadFilterAsync.InvokeAsync();
     }

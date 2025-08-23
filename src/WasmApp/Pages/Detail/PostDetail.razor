@@ -3,7 +3,8 @@
 
 @rendermode InteractiveWebAssembly
 @attribute [StreamRendering]
-@* @attribute [Authorize] *@
+@attribute [Authorize]
+
 @inject IJSRuntime jsRuntime
 @inject NavigationManager navigationManager
 
@@ -86,9 +87,6 @@
 
     [Parameter]
     public bool IsFilterUnread { get; set; }
-
-    [Parameter]
-    public EventCallback OnPostClicked { get; set; }
 
     private async Task OnSpeakTextClicked(NewsFeedItem post)
     {

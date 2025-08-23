@@ -21,7 +21,6 @@
     protected override async Task<List<NewsFeedItem>> GetPostsAsync()
     {
         var posts = await this.feedClient.GetTimelineAsync(Page);
-        //this.logger.LogInformation("got timeline posts " + posts.Count());
         return posts?.ToList() ?? new List<NewsFeedItem>();
     }
 

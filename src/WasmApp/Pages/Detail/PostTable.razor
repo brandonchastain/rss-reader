@@ -2,23 +2,25 @@
 @implements IDisposable
 @rendermode InteractiveWebAssembly
 @attribute [StreamRendering]
-@* @attribute [Authorize] *@
+@attribute [Authorize]
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @using Sve.Blazor.InfiniteScroll.Components
+@using WasmApp.Pages.Detail
+
 @inject ILogger<Posts> logger
 @inject IJSRuntime jsRuntime
 
 <SectionContent SectionName="toolbar">
-<Toolbar
-    filterTag="@filterTag"
-    IsFilterUnread="@IsFilterUnread"
-    IsFilterSaved="@IsFilterSaved"
-    userTags="@userTags"
-    ToggleUnreadFilterAsync="@ToggleUnreadFilterAsync"
-    ToggleSavedFilterAsync="@ToggleSavedFilterAsync"
-    FilterForTag="@FilterForTag"
-    Posts="@Posts"
-/>
+    <Toolbar
+        filterTag="@filterTag"
+        IsFilterUnread="@IsFilterUnread"
+        IsFilterSaved="@IsFilterSaved"
+        userTags="@userTags"
+        ToggleUnreadFilterAsync="@ToggleUnreadFilterAsync"
+        ToggleSavedFilterAsync="@ToggleSavedFilterAsync"
+        FilterForTag="@FilterForTag"
+        Posts="@Posts"
+    />
 </SectionContent>
 
 
@@ -29,8 +31,7 @@
             <PostDetail 
                 Post="@post"
                 FilterTag="@this.filterTag"
-                IsFilterUnread="@this.IsFilterUnread"
-                OnPostClicked="() => OnPostClicked(post)" />
+                IsFilterUnread="@this.IsFilterUnread"/>
         }
 
         <div class="row">
@@ -58,24 +59,16 @@
     [Parameter]
     public IFeedClient FeedClient { get; set; }
 
+    public IEnumerable<string> userTags = null;
     public bool IsFilterUnread => FeedClient.IsFilterUnread;
     public bool IsFilterSaved => FeedClient.IsFilterSaved;
-    public IEnumerable<string> userTags = null;
     private string filterTag => FeedClient.FilterTag;
 
     private const int MaxPostsToKeep = 100;  // Adjust this number based on your needs
 
     public void Dispose()
     {
-        try 
-        {
-            @* feedRefresher.OnNewItemsAvailable -= HandleNewItems; *@
-            Posts?.Clear();  // Help the GC by clearing the list
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error disposing PostTable");
-        }
+        FeedClient.Dispose();
     }
     
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -110,13 +103,5 @@
     {
         await this.OnPageChanged.InvokeAsync(this.Page + 1);
         await InvokeAsync(this.StateHasChanged);
-    }
-
-    private async Task OnPostClicked(NewsFeedItem post)
-    {
-        if (post?.Id != null)
-        {
-            await jsRuntime.InvokeVoidAsync("rssApp.setLastPostId", post.Href, this.IsFilterUnread, this.IsFilterSaved, this.filterTag, DateTime.UtcNow.ToString("o"));
-        }
     }
 }

@@ -20,7 +20,8 @@ namespace Server.Controllers
             IItemRepository itemRepository,
             IFeedRepository feedRepository,
             IUserRepository userRepository,
-            ILogger<ItemController> logger)
+            ILogger<ItemController> logger
+        )
         {
             this.itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
@@ -51,7 +52,6 @@ namespace Server.Controllers
             return Ok(result);
         }
 
-        // GET: api/item/feed/?username={}href={feedUrl}&isFilterUnread={isFilterUnread}&isFilterSaved={isFilterSaved}&filterTag={filterTag}&page={page}&pageSize={pageSize}
         [HttpGet("feed")]
         public async Task<IActionResult> FeedAsync(string username, string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
         {
@@ -78,7 +78,6 @@ namespace Server.Controllers
             return Ok(result);
         }
 
-        // GET: api/item/search/?username={username}&query={query}&isFilterUnread={isFilterUnread}&isFilterSaved={isFilterSaved}&filterTag={filterTag}&page={page}&pageSize={pageSize}
         [HttpGet("search")]
         public async Task<IActionResult> SearchAsync(string username, string query, int page = 0, int pageSize = 20)
         {
@@ -121,7 +120,6 @@ namespace Server.Controllers
                 return NotFound("Content not found for the specified item.");
             }
 
-            // encode content into base64
             var base64Content = Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
             base64Content = System.Text.Json.JsonSerializer.Serialize(base64Content);
 

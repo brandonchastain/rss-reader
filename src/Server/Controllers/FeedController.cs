@@ -101,7 +101,6 @@ namespace Server.Controllers
             return NoContent();
         }
 
-        //            await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/feed/tags", feed);
         [HttpPost]
         [Route("tags")]
         public async Task<IActionResult> AddTagAsync([FromBody] NewsFeed feed)
