@@ -9,7 +9,15 @@ namespace RssWasmApp.Pages
                 return string.Empty;
             }
 
-            return new Uri(url).Authority;
+            string rootDomain = new Uri(url).Authority.ToLowerInvariant();
+
+            string prefix = "www.";
+            if (rootDomain.StartsWith(prefix))
+            {
+                rootDomain = rootDomain.Substring(prefix.Length);
+            }
+
+            return rootDomain;
         }
     }
 }

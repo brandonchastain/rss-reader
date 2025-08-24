@@ -42,16 +42,14 @@
 }
 else
 {
-    <div id="post-table" class="table">
-        @foreach (NewsFeed feed in feeds.OrderBy(f => f.Href))
+    <div id="post-table" class="">
+        @foreach (NewsFeed feed in feeds.OrderBy(f => f.Href.GetRootDomain()))
         {
-            <div class="row post-unread" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                <div class="col" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)">@feed.Href</a>
+            <div class="row" @onclick="() => ToggleFeed(feed.Href)">
+                <div class="col-auto">
+                    @feed.Href.GetRootDomain()
                 </div>
-            </div>
-            <div class="row" style="overflow: hidden;">
-                <p>
+                <div class="col-auto">
                     @if (!newTagInputs.ContainsKey(feed.Href))
                     {
                         newTagInputs[feed.Href] = string.Empty;
@@ -61,20 +59,34 @@ else
                     {
                         <span>Tags: @(string.Join(", ", feed.Tags))</span>
                     }
-
+                </div>
+            </div>
+            <div class="" hidden=@(openFeed != feed.Href)>
+                <div class="col">
+                    Feed URL: @feed.Href
+                </div>
+                <div class="col">
+                    <div>
+                        <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)">View feed posts</a>
+                    </div>
+                    <div>
+                        <button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed.Href)">Delete</button>
+                    </div>
+                </div>
+                <div class="col">
                     <input type="text" 
                         value="@newTagInputs[feed.Href]" 
                         @oninput="e => UpdateTagInput(feed, e.Value.ToString())" 
                         placeholder="Tag" @onsubmit="() => AddTag(feed)"/>
                     <button class="btn btn-link p-0" @onclick="() => AddTag(feed)">Add tag</button>
-                    <button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed.Href)">Delete</button>
-                </p>
+                </div>
             </div>
         }
     </div>
 }
 
 @code {
+    private string openFeed = null;
     private Dictionary<string, string> newTagInputs = new Dictionary<string, string>();
     private IEnumerable<NewsFeed> feeds;
     private string lastError = null;
@@ -95,6 +107,19 @@ else
             feeds = await this.GetFeedUrls();
             this.StateHasChanged();
         }
+    }
+
+    private void ToggleFeed(string feedHref)
+    {
+        if (openFeed == feedHref)
+        {
+            openFeed = null;
+        }
+        else
+        {
+            openFeed = feedHref;
+        }
+        StateHasChanged();
     }
 
     private async Task SubmitAsync()

@@ -127,6 +127,8 @@ namespace Server.Controllers
                 .Where(t => !string.IsNullOrWhiteSpace(t))
                 .Distinct()
                 .Except(existingTags)
+                .Select(t => t.Trim())
+                .Select(t => t.ToLowerInvariant())
                 .ToList() ?? new List<string>();
 
             var items = await this.itemRepository.GetItemsAsync(existingFeed, false, false, null, 0, 100);

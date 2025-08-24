@@ -158,14 +158,13 @@ public class SQLiteFeedRepository : IFeedRepository
     {
     }
 
-    public string GetTagByFeedId(int feedId, string tagName)
+    public string GetTagsByFeedId(int feedId)
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
             var command = connection.CreateCommand();
-            command.CommandText = "SELECT Tags FROM Feeds WHERE Tags LIKE @tagName AND Id = @feedId";
-            command.Parameters.AddWithValue("@tagName", $"%{tagName}%");
+            command.CommandText = "SELECT Tags FROM Feeds WHERE Id = @feedId";
             command.Parameters.AddWithValue("@feedId", feedId);
             using (var reader = command.ExecuteReader())
             {
@@ -181,7 +180,7 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public void AddTag(NewsFeed feed, string tag)
     {
-        var existing = GetTagByFeedId(feed.FeedId, tag)?.Split(',').ToList();
+        var existing = GetTagsByFeedId(feed.FeedId)?.Split(',').ToList();
         if (existing == null)
         {
             existing = new List<string>();
