@@ -4,9 +4,14 @@ using RssApp.Config;
 using RssApp.Data;
 using RssApp.RssClient;
 using RssApp.Serialization;
+using RssReader.Server.Services;
 
-var config = RssAppConfig.LoadFromEnvironment();
 var builder = WebApplication.CreateBuilder(args);
+
+// Add configuration from appsettings.json
+builder.Configuration.AddJsonFile("appsettings.json", optional: false)
+    .AddJsonFile("appsettings.Development.json", optional: true);    
+var config = RssAppConfig.LoadFromAppSettings(builder.Configuration);
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
@@ -40,6 +45,7 @@ builder.Services.AddControllers();
 
 // RSS services
 builder.Services
+.AddSingleton<RssAppConfig>(_ => config)
 .AddSingleton<IUserRepository>(sb =>
 {
     return new SQLiteUserRepository(
@@ -58,7 +64,8 @@ builder.Services
         $"Data Source={config.ItemDb}",
         sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
         sb.GetRequiredService<IFeedRepository>(),
-        sb.GetRequiredService<IUserRepository>());
+        sb.GetRequiredService<IUserRepository>(),
+        sb.GetRequiredService<FeedThumbnailRetriever>());
 })
 .AddSingleton<RssDeserializer>()
 .AddSingleton<BackgroundWorkQueue>()
@@ -76,6 +83,7 @@ builder.Services
         cacheReloadInterval: TimeSpan.FromMinutes(5),
         cacheReloadStartupDelay: TimeSpan.FromSeconds(10));
 })
+.AddSingleton<FeedThumbnailRetriever>()
 .AddTransient<RedirectDowngradeHandler>()
 .AddHttpClient("RssClient")
 .AddHttpMessageHandler<RedirectDowngradeHandler>()
@@ -107,6 +115,7 @@ var b = app.Services.GetRequiredService<IUserRepository>();
 var c = app.Services.GetRequiredService<IItemRepository>();
 
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseCors("AllowSpecificOrigins");
 // app.UseAuthorization();
 app.MapControllers();

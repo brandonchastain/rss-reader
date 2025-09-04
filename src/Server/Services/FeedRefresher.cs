@@ -198,7 +198,7 @@ public class FeedRefresher : IFeedRefresher
 
         if (newItems.Any())
         {
-            this.newsFeedItemStore.AddItems(newItems);
+            await this.newsFeedItemStore.AddItemsAsync(newItems);
         }
     }
 

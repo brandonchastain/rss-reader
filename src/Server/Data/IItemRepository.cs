@@ -8,7 +8,7 @@ public interface IItemRepository : IDisposable
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize);
     NewsFeedItem GetItem(RssUser user, string href);
     NewsFeedItem GetItem(RssUser user, int itemId);
-    void AddItems(IEnumerable<NewsFeedItem> item);
+    Task AddItemsAsync(IEnumerable<NewsFeedItem> item);
     void MarkAsRead(NewsFeedItem item, bool isRead, RssUser user);
     void SavePost(NewsFeedItem item, RssUser user);
     void UnsavePost(NewsFeedItem item, RssUser user);

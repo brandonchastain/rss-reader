@@ -9,12 +9,13 @@ using Moq;
 using RssApp.Data;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using RssReader.Server.Services;
 
 [TestClass]
 public sealed class ItemRepoTests
 {
     [TestMethod]
-    public void MarkItemAsRead_Should_Update_Item()
+    public async Task MarkItemAsRead_Should_Update_Item()
     {
         if (File.Exists("tests.db"))
         {
@@ -48,7 +49,8 @@ public sealed class ItemRepoTests
                 $"Data Source=tests.db",
                 sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
                 sb.GetRequiredService<IFeedRepository>(),
-                sb.GetRequiredService<IUserRepository>());
+                sb.GetRequiredService<IUserRepository>(),
+                sb.GetRequiredService<FeedThumbnailRetriever>());
         });
 
         var provider = serviceCollection.BuildServiceProvider();
@@ -57,7 +59,7 @@ public sealed class ItemRepoTests
 
         item.FeedUrl = "https://feeds.propublica.org/propublica/main";
 
-        itemRepo.AddItems(new[] { item });
+        await itemRepo.AddItemsAsync(new[] { item });
 
         item = itemRepo.GetItem(user, item.Href);
         item.FeedUrl = "https://feeds.propublica.org/propublica/main";

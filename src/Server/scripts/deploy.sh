@@ -42,6 +42,11 @@
 
 # Build and package
 RELEASE_DEBUG="release"
+
+# Get current directory of the script
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+pushd "$SCRIPT_DIR/.."
+
 rm -f archive.zip
 rm -rf bin/$RELEASE_DEBUG/net9.0/linux-x64/publish
 dotnet publish -c $RELEASE_DEBUG -r linux-x64 --output bin/$RELEASE_DEBUG/net9.0/linux-x64/publish
@@ -106,3 +111,5 @@ EOF
     sudo systemctl enable rssserver
     sudo systemctl start rssserver
 '
+
+popd

@@ -3,6 +3,8 @@ using Microsoft.Data.Sqlite;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using RssApp.Contracts;
+using RssReader.Server.Services;
+using System.Threading.Tasks;
 
 namespace RssApp.Data;
 
@@ -12,6 +14,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     private readonly ILogger<SQLiteItemRepository> logger;
     private readonly IFeedRepository feedStore;
     private readonly IUserRepository userStore;
+    private readonly FeedThumbnailRetriever feedThumbnailRetriever;
 
     private SemaphoreSlim semaphore = new SemaphoreSlim(2, 2);
 
@@ -19,12 +22,14 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         string connectionString,
         ILogger<SQLiteItemRepository> logger,
         IFeedRepository feedStore,
-        IUserRepository userStore)
+        IUserRepository userStore,
+        FeedThumbnailRetriever feedThumbnailRetriever)
     {
         this.connectionString = connectionString;
         this.logger = logger;
         this.feedStore = feedStore;
         this.userStore = userStore;
+        this.feedThumbnailRetriever = feedThumbnailRetriever ?? throw new ArgumentNullException(nameof(feedThumbnailRetriever));
         this.InitializeDatabase();
     }
 
@@ -412,14 +417,15 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         }
     }
 
-    public void AddItems(IEnumerable<NewsFeedItem> items)
+    public async Task AddItemsAsync(IEnumerable<NewsFeedItem> items)
     {
-        this.semaphore.Wait();
+        await this.semaphore.WaitAsync();
+
         try
         {
             using (var connection = new SqliteConnection(this.connectionString))
             {
-                connection.Open();
+                await connection.OpenAsync();
                 try
                 {
                     var feedTags = new Dictionary<string, IEnumerable<string>>(StringComparer.OrdinalIgnoreCase);
@@ -429,10 +435,10 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         try
                         {
                             var user = this.userStore.GetUserById(item.UserId);
+                            NewsFeed feed = this.feedStore.GetFeed(user, item.FeedUrl);
 
                             if (!feedTags.ContainsKey(item.FeedUrl))
                             {
-                                var feed = this.feedStore.GetFeed(user, item.FeedUrl);
                                 feedTags[item.FeedUrl] = feed.Tags ?? [];
                             }
 
@@ -442,7 +448,13 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                                 this.logger.LogWarning($"Item already exists in the database: {item.Href}");
                                 continue;
                             }
+
                             item.ThumbnailUrl = item.GetThumbnailUrl();
+
+                            if (string.IsNullOrWhiteSpace(item.ThumbnailUrl))
+                            {
+                                item.ThumbnailUrl = await this.feedThumbnailRetriever.RetrieveThumbnailUrlAsync(feed);
+                            }
 
                             var command = connection.CreateCommand();
                             command.CommandText = @"
@@ -467,7 +479,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                             command.Parameters.AddWithValue("@userId", item.UserId);
                             command.Parameters.AddWithValue("@thumbnailUrl", (object)item.ThumbnailUrl ?? DBNull.Value);
                             command.Parameters.AddWithValue("@tags", string.Join(",", feedTags[item.FeedUrl]));
-                            command.ExecuteNonQuery();
+                            await command.ExecuteNonQueryAsync();
 
                             command = connection.CreateCommand();
                             command.CommandText = @"
@@ -488,7 +500,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                             command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
                             command.Parameters.AddWithValue("@content", item.Content ?? "");
                             command.Parameters.AddWithValue("@userId", item.UserId);
-                            command.ExecuteNonQuery();
+                            await command.ExecuteNonQueryAsync();
                         }
                         catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.Message.Contains("UNIQUE"))
                         {

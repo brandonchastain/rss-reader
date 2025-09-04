@@ -65,7 +65,7 @@ public sealed class FeedRefresherTests
         {
             var feed = new NewsFeed(line, userId: 0);
             await feedRefresher.AddFeedAsync(feed);
-            mockItemRepo.Verify(m => m.AddItems(It.IsAny<IEnumerable<NewsFeedItem>>()), Times.AtLeast(1));
+            mockItemRepo.Verify(m => m.AddItemsAsync(It.IsAny<IEnumerable<NewsFeedItem>>()), Times.AtLeast(1));
             mockItemRepo.Invocations.Clear();
         }
     }

@@ -4,6 +4,7 @@ namespace RssApp.Config
 {
     public class RssAppConfig
     {
+        public string ServerHostName { get; set; } = "https://localhost:7034/";
         public string UserDb { get; set; }
         public string ItemDb { get; set; }
         public string FeedDb { get; set; }
@@ -29,6 +30,13 @@ namespace RssApp.Config
                 CacheReloadInterval = TimeSpan.FromMinutes(int.TryParse(Environment.GetEnvironmentVariable(cacheReloadIntervalMinsVar), out var interval) ? interval : 60),
                 CacheReloadStartupDelay = TimeSpan.FromMinutes(int.TryParse(Environment.GetEnvironmentVariable(cacheReloadStartupDelayMinsVar), out var delay) ? delay : 0)
             };
+        }
+
+        public static RssAppConfig LoadFromAppSettings(IConfiguration configuration)
+        {
+            var config = new RssAppConfig();
+            configuration.GetSection(nameof(RssAppConfig)).Bind(config);
+            return config;
         }
     }
 }

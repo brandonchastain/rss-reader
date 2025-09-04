@@ -1,4 +1,4 @@
-using RssWasmApp.Pages;
+using RssReader.Shared.Extensions;
 
 namespace RssApp.Contracts;
 
@@ -77,30 +77,34 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
             return this.ThumbnailUrl;
         }
 
-        var hostname = this.FeedUrl.GetRootDomain();
-        string favicon = $"https://icons.duckduckgo.com/ip2/{hostname}.ico";
-
         if (string.IsNullOrEmpty(this.Content))
         {
-            return favicon;
+            return null;
         }
 
         var doc = new HtmlAgilityPack.HtmlDocument();
         doc.LoadHtml(this.Content);
-
         var img = doc.DocumentNode.SelectSingleNode("//img");
+
         if (img == null)
         {
-            return favicon;
+            return null;
         }
 
         var src = img.GetAttributeValue("src", null);
+
         if (string.IsNullOrEmpty(src))
         {
-            return favicon;
+            return null;
         }
 
-        return src;
+        if (src.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            this.ThumbnailUrl = src;
+            return src;
+        }
+
+        return null;
     }
 
     public override int GetHashCode()
