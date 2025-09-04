@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="**\*.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="feeds\*.xml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="*.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

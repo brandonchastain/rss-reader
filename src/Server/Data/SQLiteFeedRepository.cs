@@ -170,7 +170,7 @@ public class SQLiteFeedRepository : IFeedRepository
             {
                 if (reader.Read())
                 {
-                    return reader.GetString(0);
+                    return reader.IsDBNull(0) ? null : reader.GetString(0);
                 }
             }
         }

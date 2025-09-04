@@ -1,0 +1,56 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": ".NET Core Launch (web)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build", 
+            "args": [],
+            "cwd": "${workspaceFolder}/src/Server",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            },
+            "program": "${workspaceFolder}/src/Server/bin/Debug/net9.0/Server.dll"
+        },
+        {
+            "name": "Launch and Debug Standalone Blazor WebAssembly App",
+            "type": "blazorwasm",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/src/WasmApp",
+            "url": "https://localhost:8443" // Tell launch where to find site
+        },
+        {
+            "name": "Watch",
+            "type": "coreclr",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/src/WasmApp",
+            "program": "dotnet",
+            "args": [
+                "watch",
+                "--project",
+                ".",
+                "--verbose" // Let's us confirm browser connects with hot reload capabilities
+            ],
+            "preLaunchTask": "build" // Ensure we don't watch an unbuilt site
+        },
+        {
+            "name": "Attach",
+            "type": "blazorwasm",
+            "request": "attach",
+            "cwd": "${workspaceFolder}/src/WasmApp",
+            "url": "https://localhost:8443",  // Tell launch where to find site
+            "timeout": 120000, // Allows time for the site to launch
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Run All with wasm Hot Reload",
+            "configurations": [ ".NET Core Launch (web)", "Watch", "Attach" ]
+        }
+    ]
+}
