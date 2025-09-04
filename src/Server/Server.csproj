@@ -28,6 +28,8 @@
     <Content Include="appsettings.Development.json">
       <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </Content>
+    <Content Remove="wwwroot\images\*"/>
+    <Content Include="wwwroot\images\placeholder.jpg"/>
   </ItemGroup>
 
 </Project>
