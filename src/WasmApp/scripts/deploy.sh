@@ -3,10 +3,6 @@ RELEASE_DEBUG="release"
 NET_VERSION="net9.0"
 PLATFORM="win-x64" #linux-x64
 
-# Get current directory of the script
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-pushd "$SCRIPT_DIR/.."
-
 rm -rf bin/
 rm -rf obj/
 rm -f archive.zip
@@ -24,5 +20,3 @@ DEPLOYMENT_TOKEN=$(dotnet user-secrets list | grep "DeploymentToken" | cut -d ' 
 
 # deploy the zip to the static web app rssServer inside the rsswasm resource group using AZ CLI
 swa deploy ./bin/$RELEASE_DEBUG/$NET_VERSION/$PLATFORM/publish/wwwroot --deployment-token $DEPLOYMENT_TOKEN --env production
-
-popd
