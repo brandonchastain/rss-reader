@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using RssApp.ComponentServices;
 using RssApp.Config;
 using RssApp.Data;
@@ -107,6 +109,16 @@ if (!builder.Environment.IsDevelopment())
     });
 }
 
+if (!config.IsTestUserEnabled)
+{
+    builder.Services.AddAuthorization(options =>
+    {
+        options.FallbackPolicy = new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .Build();
+    });
+}
+
 var app = builder.Build();
 
 // Instantiate repositories to ensure db tables are created in order.
@@ -117,6 +129,55 @@ var c = app.Services.GetRequiredService<IItemRepository>();
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseCors("AllowSpecificOrigins");
-// app.UseAuthorization();
+
+if (!config.IsTestUserEnabled)
+{
+    // Accept SWA-authenticated requests by parsing the X-MS-CLIENT-PRINCIPAL header
+    app.Use(async (context, next) =>
+    {
+        const string PrincipalHeader = "X-MS-CLIENT-PRINCIPAL";
+        if (context.Request.Headers.TryGetValue(PrincipalHeader, out var headerValues))
+        {
+            try
+            {
+                var data = headerValues.ToString();
+                if (!string.IsNullOrWhiteSpace(data))
+                {
+                    var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(data));
+                    var principalPayload = System.Text.Json.JsonSerializer.Deserialize<SwaPrincipal>(decoded);
+                    if (principalPayload?.UserRoles != null && principalPayload.UserRoles.Any(r => !string.Equals(r, "anonymous", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var claims = new List<System.Security.Claims.Claim>
+                        {
+                            new(System.Security.Claims.ClaimTypes.NameIdentifier, principalPayload.UserId ?? string.Empty),
+                            new(System.Security.Claims.ClaimTypes.Name, principalPayload.UserDetails ?? string.Empty)
+                        };
+                        claims.AddRange(principalPayload.UserRoles.Select(r => new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, r)));
+                        var identity = new System.Security.Claims.ClaimsIdentity(claims, authenticationType: "SWA");
+                        context.User = new System.Security.Claims.ClaimsPrincipal(identity);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore parsing errors and fall back to other auth schemes
+            }
+        }
+        await next();
+    });
+
+    app.UseAuthentication();
+    app.UseAuthorization();
+}
+
 app.MapControllers();
 app.Run();
+
+// DTO for parsing X-MS-CLIENT-PRINCIPAL
+file class SwaPrincipal
+{
+    public string IdentityProvider { get; set; }
+    public string UserId { get; set; }
+    public string UserDetails { get; set; }
+    public IEnumerable<string> UserRoles { get; set; }
+}

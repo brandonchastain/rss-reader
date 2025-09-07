@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using System.Net.Http.Json;
 using RssApp.Contracts;
 using RssApp.RssClient;
@@ -10,7 +11,7 @@ namespace WasmApp.Services
     public class FeedClient : IFeedClient
     {
         private readonly HttpClient _httpClient;
-        private readonly HttpClient _refreshHttpClient = new HttpClient();
+        private readonly HttpClient _refreshHttpClient;
         private readonly RssWasmConfig _config;
         private readonly IUserClient userClient;
         private readonly ILogger<FeedClient> _logger;
@@ -19,20 +20,19 @@ namespace WasmApp.Services
         public bool IsFilterSaved { get; set; }
         private bool _disposed;
 
-        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, IUserClient userClient)
+        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, IUserClient userClient, IHttpClientFactory httpClientFactory)
         {
-            _httpClient = new HttpClient();
-            _refreshHttpClient = new HttpClient();
+            _httpClient = httpClientFactory.CreateClient("api");
+            _refreshHttpClient = httpClientFactory.CreateClient("refresh");
             _config = config;
             this.userClient = userClient;
             _logger = logger;
-            _refreshHttpClient.Timeout = TimeSpan.FromSeconds(30);
         }
 
         public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
         {
             var user = await userClient.GetFeedUserAsync();
-            return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeed>>($"{_config.ApiBaseUrl}api/feed?username={user.Username}");
+            return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeed>>($"api/feed?username={user.Username}");
         }
 
         public async Task AddFeedAsync(NewsFeed feed)
@@ -40,28 +40,28 @@ namespace WasmApp.Services
             var user = await userClient.GetFeedUserAsync();
             feed.UserId = user.Id;
 
-            await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/feed", feed);
+            await _httpClient.PostAsJsonAsync($"api/feed", feed);
         }
 
         public async Task AddTagAsync(NewsFeed feed, string tag)
         {
             feed.Tags ??= new List<string>();
             feed.Tags.Add(tag);
-            await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/feed/tags", feed);
+            await _httpClient.PostAsJsonAsync($"api/feed/tags", feed);
         }
 
         public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20)
         {
             pageSize = Math.Min(pageSize, 100);
             var user = await userClient.GetFeedUserAsync();
-            var url = $"{_config.ApiBaseUrl}api/item/timeline?username={user.Username}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
+            var url = $"api/item/timeline?username={user.Username}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
         public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page)
         {
             var user = await userClient.GetFeedUserAsync();
-            var url = $"{_config.ApiBaseUrl}api/item/feed?username={user.Username}&href={Uri.EscapeDataString(feed.Href)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}";
+            var url = $"api/item/feed?username={user.Username}&href={Uri.EscapeDataString(feed.Href)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
@@ -69,30 +69,30 @@ namespace WasmApp.Services
         {
             pageSize = Math.Min(pageSize, 100);
             var user = await userClient.GetFeedUserAsync();
-            var url = $"{_config.ApiBaseUrl}api/item/search?username={user.Username}&query={Uri.EscapeDataString(query)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
+            var url = $"api/item/search?username={user.Username}&query={Uri.EscapeDataString(query)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }   
 
         public async Task MarkAsReadAsync(NewsFeedItem item, bool isRead)
         {
             var user = await userClient.GetFeedUserAsync();
-            await _httpClient.GetAsync($"{_config.ApiBaseUrl}api/item/markAsRead?username={user.Username}&itemId={item.Id}&isRead={isRead}");
+            await _httpClient.GetAsync($"api/item/markAsRead?username={user.Username}&itemId={item.Id}&isRead={isRead}");
         }
 
         public async Task<IEnumerable<string>> GetUserTagsAsync(RssUser _)
         {
             var user = await userClient.GetFeedUserAsync();
-            return await _httpClient.GetFromJsonAsync<List<string>>($"{_config.ApiBaseUrl}api/feed/tags?userId={user.Id}");
+            return await _httpClient.GetFromJsonAsync<List<string>>($"api/feed/tags?userId={user.Id}");
         }
 
         public async Task SavePostAsync(NewsFeedItem item)
         {
-            await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/item/save", item);
+            await _httpClient.PostAsJsonAsync($"api/item/save", item);
         }
 
         public async Task UnsavePostAsync(NewsFeedItem item)
         {
-            await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/item/unsave", item);
+            await _httpClient.PostAsJsonAsync($"api/item/unsave", item);
         }
 
         public async Task<string> GetItemContentAsync(NewsFeedItem item)
@@ -100,7 +100,7 @@ namespace WasmApp.Services
             var user = await userClient.GetFeedUserAsync();
             try
             {
-                var content = await _httpClient.GetFromJsonAsync<string>($"{_config.ApiBaseUrl}api/item/content?username={user.Username}&itemId={item.Id}");
+                var content = await _httpClient.GetFromJsonAsync<string>($"api/item/content?username={user.Username}&itemId={item.Id}");
                 var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content));
                 return decoded;
             }
@@ -115,14 +115,14 @@ namespace WasmApp.Services
         public async Task DeleteFeedAsync(string feedHref)
         {
             var user = await userClient.GetFeedUserAsync();
-            var url = $"{_config.ApiBaseUrl}api/feed/delete?href={Uri.EscapeDataString(feedHref)}&username={user.Username}";
+            var url = $"api/feed/delete?href={Uri.EscapeDataString(feedHref)}&username={user.Username}";
             await _httpClient.PostAsync(url, null);
         }
 
         public async Task RefreshFeedsAsync()
         {
             var user = await this.userClient.GetFeedUserAsync();
-            var url = $"{_config.ApiBaseUrl}api/feed/refresh?username={user.Username}";
+            var url = $"api/feed/refresh?username={user.Username}";
 
             try
             {
@@ -137,7 +137,7 @@ namespace WasmApp.Services
         public async Task ImportOpmlAsync(string opmlContent)
         {
             var user = await userClient.GetFeedUserAsync();
-            var url = $"{_config.ApiBaseUrl}api/feed/importOpml/";
+            var url = $"api/feed/importOpml/";
             var data = new OpmlImport()
             {
                 UserId = user.Id,
@@ -149,7 +149,7 @@ namespace WasmApp.Services
         public async Task<string> ExportOpmlAsync()
         {
             var user = await userClient.GetFeedUserAsync();
-            var url = $"{_config.ApiBaseUrl}api/feed/exportOpml?userId={user.Id}";
+            var url = $"api/feed/exportOpml?userId={user.Id}";
             try
             {
                 return await _httpClient.GetStringAsync(url);
@@ -165,9 +165,7 @@ namespace WasmApp.Services
         {
             if (!_disposed)
             {
-                _httpClient.Dispose();
-                _refreshHttpClient.Dispose();
-                userClient.Dispose();
+                // Clients from factory and DI-managed services should not be disposed here
                 _disposed = true;
             }
         }

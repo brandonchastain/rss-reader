@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using System.Net.Http.Json;
 using RssApp.Contracts;
 using RssApp.Config;
@@ -16,11 +17,10 @@ public class UserClient : IUserClient
     private readonly HttpClient _httpClient;
     private readonly RssWasmConfig _config;
 
-    public UserClient(RssWasmConfig config, ILogger<UserClient> logger)
+    public UserClient(RssWasmConfig config, ILogger<UserClient> logger, IHttpClientFactory httpClientFactory)
     {
-        _httpClient = new HttpClient();
+        _httpClient = httpClientFactory.CreateClient("api");
         _config = config;
-        logger.LogInformation(_config.ApiBaseUrl);
     }
 
     public async Task<string> GetUsernameAsync()
@@ -57,7 +57,7 @@ public class UserClient : IUserClient
 
     public async Task<(RssUser, bool)> RegisterUserAsync(string username)
     {
-        var response = await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/user/register", username);
+    var response = await _httpClient.PostAsJsonAsync($"api/user/register", username);
         var user = await response.Content.ReadFromJsonAsync<RssUser>();
 
         if (response.StatusCode == System.Net.HttpStatusCode.Created)
@@ -69,6 +69,6 @@ public class UserClient : IUserClient
 
     public void Dispose()
     {
-        _httpClient.Dispose();
+    // HttpClient from factory is managed by DI; no-op
     }
 }

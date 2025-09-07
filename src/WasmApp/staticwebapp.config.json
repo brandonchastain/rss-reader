@@ -1,6 +1,13 @@
 {
+  "routes": [
+    {
+      "route": "/api/*",
+      "allowedRoles": ["authenticated"],
+      "rewrite": "https://rssreader.brandonchastain.com/"
+    }
+  ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/.auth/*"]
+    "exclude": ["/.auth/*", "/api/*"]
   }
 }
