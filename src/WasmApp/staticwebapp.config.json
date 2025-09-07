@@ -3,7 +3,7 @@
     {
       "route": "/api/*",
       "allowedRoles": ["authenticated"],
-      "rewrite": "https://rssreader.brandonchastain.com/"
+      "rewrite": "https://rssreader.brandonchastain.com/api"
     }
   ],
   "navigationFallback": {
