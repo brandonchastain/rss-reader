@@ -83,7 +83,7 @@ namespace RssReader.Server.Services
             await base.StopAsync(cancellationToken);
         }
 
-        private async Task RestoreFromBackupAsync(CancellationToken cancellationToken)
+        public async Task RestoreFromBackupAsync(CancellationToken cancellationToken)
         {
             try
             {
