@@ -25,22 +25,39 @@
 
 
 <div id="post-table" class="table">
-    <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
-        @foreach (var post in Posts)
-        {
-            <PostDetail 
-                Post="@post"
-                FilterTag="@this.filterTag"
-                IsFilterUnread="@this.IsFilterUnread"/>
-        }
-
-        <div class="row">
-            <div id="observerTarget">
-                RssApp
+    @if (isLoading)
+    {
+        <div>
+            <div>
+                <span class="">Loading...</span>
             </div>
         </div>
-        
-    </InfiniteScroll>
+    }
+    else if (Posts == null || Posts.Count == 0)
+    {
+        <div class="no-posts-message">
+            <p>No posts found.</p>
+        </div>
+    }
+    else
+    {
+        <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
+            @foreach (var post in Posts)
+            {
+                <PostDetail 
+                    Post="@post"
+                    FilterTag="@this.filterTag"
+                    IsFilterUnread="@this.IsFilterUnread"/>
+            }
+
+            <div class="row">
+                <div id="observerTarget">
+                    RssApp
+                </div>
+            </div>
+            
+        </InfiniteScroll>
+    }
 </div>
 
 @code {
@@ -65,6 +82,7 @@
     private string filterTag => FeedClient.FilterTag;
 
     private const int MaxPostsToKeep = 100;  // Adjust this number based on your needs
+    private bool isLoading = true;
 
     public void Dispose()
     {
@@ -77,21 +95,35 @@
         if (firstRender)
         {
             this.userTags = await FeedClient.GetUserTagsAsync(CurrentUser);
+            StateHasChanged();
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        base.OnParametersSet();
+        // When Posts parameter changes, we're done loading
+        if (Posts != null && Posts.Any())
+        {
+            isLoading = false;
         }
     }
 
     private async Task ToggleUnreadFilterAsync()
     {
+        isLoading = true;
         await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
     private async Task ToggleSavedFilterAsync()
     {
+        isLoading = true;
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag));
     }
 
     private async Task FilterForTag(string tag)
     {
+        isLoading = true;
         if (this.filterTag == tag)
         {
             tag = null;
@@ -101,7 +133,9 @@
 
     private async Task Next()
     {
+        isLoading = true;
         await this.OnPageChanged.InvokeAsync(this.Page + 1);
+        isLoading = false;
         await InvokeAsync(this.StateHasChanged);
     }
 }
