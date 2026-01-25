@@ -143,22 +143,6 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           }
           env: [
             {
-              name: 'RSS_BC_USER_DB'
-              value: '/data/storage.db'
-            }
-            {
-              name: 'RSS_BC_FEED_DB'
-              value: '/data/storage.db'
-            }
-            {
-              name: 'RSS_BC_ITEM_DB'
-              value: '/data/storage.db'
-            }
-            {
-              name: 'RSS_BC_BACKUP_PATH'
-              value: '/data/backups/storage.db'
-            }
-            {
               name: 'ASPNETCORE_ENVIRONMENT'
               value: 'Production'
             }
