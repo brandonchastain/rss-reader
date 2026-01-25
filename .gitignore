@@ -9,3 +9,6 @@
 **/*.db-wal
 **/*.zip
 **/*/.env
+**/wwwroot/images/*.ico
+/.vs/*
+.env

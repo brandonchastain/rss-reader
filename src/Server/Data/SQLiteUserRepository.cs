@@ -23,6 +23,15 @@ public class SQLiteUserRepository : IUserRepository
         using (var connection = new SqliteConnection(this.connectionString))
         {
             connection.Open();
+            
+            // Enable WAL mode for better concurrency on network file systems
+            var pragmaCommand = connection.CreateCommand();
+            pragmaCommand.CommandText = @"
+                PRAGMA journal_mode = WAL;
+                PRAGMA busy_timeout = 5000;
+                PRAGMA synchronous = NORMAL;";
+            pragmaCommand.ExecuteNonQuery();
+            
             var command = connection.CreateCommand();
             command.CommandText = @"
                 CREATE TABLE IF NOT EXISTS Users (

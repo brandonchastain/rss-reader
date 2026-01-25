@@ -206,7 +206,7 @@ public class FeedRefresher : IFeedRefresher
     {
         var freshItems = new HashSet<NewsFeedItem>();
         string response = null;
-        string[] agents = ["rssreader.brandonchastain.com/1.1", "curl/7.79.1"];
+        string[] agents = ["rss.brandonchastain.com/1.1", "curl/7.79.1"];
 
         foreach (string agent in agents)
         {

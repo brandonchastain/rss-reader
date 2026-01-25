@@ -31,7 +31,9 @@ public class FeedThumbnailRetriever
 
     private async Task<string> GetOrDownloadFaviconAsync(NewsFeed feed)
     {
-        var imgSrc = Path.Combine("images", $"{feed.FeedId}.ico");
+        // Use domain as filename to ensure consistency across users and feed instances
+        var hostname = feed.Href.GetRootDomain();
+        var imgSrc = Path.Combine("images", $"{hostname}.ico");
         var filePath = Path.Combine("wwwroot", imgSrc);
 
         if (File.Exists(filePath))
@@ -40,7 +42,6 @@ public class FeedThumbnailRetriever
         }
 
         // Download the icon
-        var hostname = feed.Href.GetRootDomain();
         string favicon = $"https://icons.duckduckgo.com/ip2/{hostname}.ico";
 
         using (var httpClient = new HttpClient())
