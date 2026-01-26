@@ -15,9 +15,7 @@
 
 📱 Responsive design for mobile & desktop
 
-## Stack
-Primary language: C#
-
-Frontend: Blazor Webassembly, Javascript, HTML, CSS
-
-Backend: ASP.NET, SQLite
+# Docs
+* [ARCHITECTURE.md](ARCHITECTURE.md)
+* [LOCAL-TESTING.md](LOCAL-TESTING.md)
+* [DEPLOY.md](DEPLOY.md)

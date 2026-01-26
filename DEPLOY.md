@@ -1,12 +1,21 @@
+# Deploy RSS Reader web app frontend
+
+1. Install prerequisites:
+* dotnet
+* azure swa cli
+
+2. Run these commands to deploy the frontend:
+```
+dotnet publish -c release -r win-x64 WasmApp.csproj --output bin/release/net9.0/win-x64/publish --self-contained true
+
+swa deploy .\bin\release\net9.0\win-x64\publish\wwwroot\ --env production
+```
+
+3. When prompted, choose the WASM app to deploy to.
+
 # Deploy RSS Reader to Azure Container Apps
 
 This guide walks through deploying your RSS Reader API to Azure Container Apps with persistent storage.
-
-## Cost Estimate
-- **Container Apps (Consumption)**: ~$1-3/month with scale-to-zero
-- **Azure Files (1 GB)**: ~$0.15/month
-- **Log Analytics**: ~$0.50/month (30 day retention)
-- **Total**: ~$2-4/month (85%+ savings vs VM)
 
 ## Prerequisites
 1. Azure CLI installed: `az --version`

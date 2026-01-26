@@ -1,20 +1,32 @@
 # RSS Reader Web App (frontend)
+
 A static web app that runs on WASM, written in C# with Blazor.
 
-## Hosting information
-* Azure Static Web App with easy auth enabled
+## Stack
+
+C#, Blazor Webassembly, Javascript, HTML, CSS
+
+## Hosting infrastructure
+
+Azure Static Web App with easy auth enabled
+
 
 # RSS Reader Web API Server (backend)
-
-See [DEPLOY.md](src/Server/DEPLOY.md) for deployment instructions.
 
 An ASP.NET Core Web API, targeting latest .NET, that powers the RSS Reader frontend by processing RSS feeds, storing data on disk in a SQLite database,
 and making that data available through several HTTP endpoints.
 
-## Hosting information
-* ~Azure VM, Standard_B1s West US 2 region~
-* ~Disk (Premium SSD LRS 30 GiB)~
-* Azure Container App instance with ephemeral storage, periodically backed up to azure files
+## Stack
+
+C#, ASP.NET, SQLite
+
+## Hosting infrastructure
+
+~~Azure app service standard b1s and public ip~~
+
+~~Azure VM, Standard_B1s West US 2 region, public ip, and disk~~
+
+Azure Container App instance with ephemeral storage, periodically backed up to azure files
 
 ## Endpoints (C# controllers)
 * `/api/feed/*` - Retrieve, refresh, and import/export RSS feeds
