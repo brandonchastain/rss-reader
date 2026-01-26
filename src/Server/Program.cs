@@ -95,6 +95,11 @@ builder.Services
     UseDefaultCredentials = true
 });
 
+if (!builder.Environment.IsDevelopment())
+{
+    builder.WebHost.UseKestrel();
+}
+
 var app = builder.Build();
 
 // Restore database from backup BEFORE building the app

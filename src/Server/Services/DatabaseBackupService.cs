@@ -1,7 +1,10 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +24,7 @@ namespace RssReader.Server.Services
         private const string BackupDbPath = "/data/storage.db";
         private const string ActiveImagesPath = "wwwroot/images/";
         private const string BackupImagesPath = "/data/images/";
+        private string _lastBackupHash = string.Empty; // Track last written hash to avoid redundant writes
 
         public DatabaseBackupService(ILogger<DatabaseBackupService> logger)
         {
@@ -97,8 +101,8 @@ namespace RssReader.Server.Services
                 // Check if active database already exists (shouldn't happen on container start, but be safe)
                 if (File.Exists(ActiveDbPath))
                 {
-                    _logger.LogWarning("Active database already exists at {ActivePath}. Deleting it.", ActiveDbPath);
-                    File.Delete(ActiveDbPath);
+                    _logger.LogWarning("Active database already exists at {ActivePath}. Skipping restore", ActiveDbPath);
+                    return;
                 }
 
                 // Ensure /tmp directory exists
@@ -110,13 +114,15 @@ namespace RssReader.Server.Services
 
                 _logger.LogInformation("Restoring database from {BackupPath} to {ActivePath}", BackupDbPath, ActiveDbPath);
                 
-                // Copy backup to active location
+                // Simple file copy on startup is safe since nothing is using the database yet
                 await CopyFileAsync(BackupDbPath, ActiveDbPath, cancellationToken);
-                await CopyFilesAsync(BackupImagesPath, ActiveImagesPath, cancellationToken);
                 
-                // Also copy WAL and SHM files if they exist
-                await CopyFileIfExistsAsync($"{BackupDbPath}-wal", $"{ActiveDbPath}-wal", cancellationToken);
-                await CopyFileIfExistsAsync($"{BackupDbPath}-shm", $"{ActiveDbPath}-shm", cancellationToken);
+                // Compute hash of the backup so we can detect changes later
+                _lastBackupHash = await ComputeFileHashAsync(BackupDbPath, cancellationToken);
+                _logger.LogInformation("Computed baseline backup hash for change detection");
+                
+                // Restore image files
+                await CopyFilesAsync(BackupImagesPath, ActiveImagesPath, cancellationToken);
                 
                 var fileInfo = new FileInfo(ActiveDbPath);
                 _logger.LogInformation("Database restored successfully. Size: {Size:N0} bytes", fileInfo.Length);
@@ -148,21 +154,85 @@ namespace RssReader.Server.Services
 
                 _logger.LogInformation("Backing up database from {ActivePath} to {BackupPath}", ActiveDbPath, BackupDbPath);
                 
-                // Copy active database to backup location
-                await CopyFileAsync(ActiveDbPath, BackupDbPath, cancellationToken);
-                await CopyFilesAsync(ActiveImagesPath, BackupImagesPath, cancellationToken);
+                // Create backup in /tmp first (SQLite backup API doesn't work well with network filesystems)
+                var tempBackupPath = "/tmp/storage-backup.db";
                 
-                // Also backup WAL and SHM files if they exist
-                await CopyFileIfExistsAsync($"{ActiveDbPath}-wal", $"{BackupDbPath}-wal", cancellationToken);
-                await CopyFileIfExistsAsync($"{ActiveDbPath}-shm", $"{BackupDbPath}-shm", cancellationToken);
+                // Delete any existing temp backup file
+                if (File.Exists(tempBackupPath))
+                {
+                    File.Delete(tempBackupPath);
+                }
                 
-                var fileInfo = new FileInfo(ActiveDbPath);
-                _logger.LogInformation("Database backed up successfully. Size: {Size:N0} bytes", fileInfo.Length);
+                try
+                {
+                    // Use SQLite's native backup API to create consistent backup in /tmp
+                    await PerformSqliteBackupAsync(ActiveDbPath, tempBackupPath, cancellationToken);
+                    
+                    // Compute hash of the backup to detect changes
+                    var backupHash = await ComputeFileHashAsync(tempBackupPath, cancellationToken);
+                    
+                    // Only copy to Azure Files if content has changed
+                    if (backupHash != _lastBackupHash)
+                    {
+                        _logger.LogInformation("Database content changed. Uploading to Azure Files...");
+                        await CopyFileAsync(tempBackupPath, BackupDbPath, cancellationToken);
+                        _lastBackupHash = backupHash;
+                        
+                        var fileInfo = new FileInfo(BackupDbPath);
+                        _logger.LogInformation("Database backed up successfully. Size: {Size:N0} bytes", fileInfo.Length);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Database content unchanged. Skipping upload to Azure Files (saving transaction costs)");
+                    }
+                    
+                    // Backup image files
+                    await CopyFilesAsync(ActiveImagesPath, BackupImagesPath, cancellationToken);
+                }
+                finally
+                {
+                    // Always clean up temp backup file, even if an error occurred
+                    if (File.Exists(tempBackupPath))
+                    {
+                        File.Delete(tempBackupPath);
+                    }
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to backup database to storage");
             }
+        }
+
+        /// <summary>
+        /// Computes SHA256 hash of a file to detect content changes
+        /// </summary>
+        private async Task<string> ComputeFileHashAsync(string filePath, CancellationToken cancellationToken)
+        {
+            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
+            return Convert.ToHexString(hashBytes);
+        }
+
+        /// <summary>
+        /// Uses SQLite's native backup API to create a consistent backup while the database is in use.
+        /// This is much safer than copying files directly and prevents database corruption.
+        /// </summary>
+        private async Task PerformSqliteBackupAsync(string sourceDbPath, string destDbPath, CancellationToken cancellationToken)
+        {
+            await Task.Run(() =>
+            {
+                using var source = new SqliteConnection($"Data Source={sourceDbPath};Mode=ReadWriteCreate;Cache=Shared;Pooling=True");
+                using var destination = new SqliteConnection($"Data Source={destDbPath};Mode=ReadWriteCreate");
+                
+                source.Open();
+                destination.Open();
+                
+                // SQLite's backup API creates a consistent point-in-time snapshot
+                // even while other connections are reading/writing
+                source.BackupDatabase(destination);
+                
+            }, cancellationToken);
         }
 
         private async Task CopyFileAsync(string sourcePath, string destPath, CancellationToken cancellationToken)
@@ -173,14 +243,6 @@ namespace RssReader.Server.Services
             
             await sourceStream.CopyToAsync(destStream, 81920, cancellationToken); // 80KB buffer
             await destStream.FlushAsync(cancellationToken);
-        }
-
-        private async Task CopyFileIfExistsAsync(string sourcePath, string destPath, CancellationToken cancellationToken)
-        {
-            if (File.Exists(sourcePath))
-            {
-                await CopyFileAsync(sourcePath, destPath, cancellationToken);
-            }
         }
 
         private async Task CopyFilesAsync(string sourceDir, string destDir, CancellationToken cancellationToken)
@@ -202,18 +264,35 @@ namespace RssReader.Server.Services
                 }
 
                 // Get all files in source directory
-                var files = Directory.GetFiles(sourceDir);
+                var sourceFiles = Directory.GetFiles(sourceDir);
                 
-                if (files.Length == 0)
+                if (sourceFiles.Length == 0)
                 {
                     _logger.LogInformation("No files found in {SourceDir}", sourceDir);
                     return;
                 }
 
-                _logger.LogInformation("Copying {FileCount} files from {SourceDir} to {DestDir}", files.Length, sourceDir, destDir);
+                // Get existing files in destination to avoid re-copying static files
+                var existingDestFiles = new HashSet<string>(
+                    Directory.GetFiles(destDir).Select(Path.GetFileName),
+                    StringComparer.OrdinalIgnoreCase
+                );
 
-                // Copy each file
-                foreach (var sourceFile in files)
+                var filesToCopy = sourceFiles
+                    .Where(f => !existingDestFiles.Contains(Path.GetFileName(f)))
+                    .ToList();
+
+                if (filesToCopy.Count == 0)
+                {
+                    _logger.LogInformation("All {FileCount} files already backed up in {DestDir}. Skipping (saving transaction costs)", sourceFiles.Length, destDir);
+                    return;
+                }
+
+                _logger.LogInformation("Copying {NewCount} new files from {SourceDir} to {DestDir} ({SkippedCount} already backed up)", 
+                    filesToCopy.Count, sourceDir, destDir, sourceFiles.Length - filesToCopy.Count);
+
+                // Copy only new files
+                foreach (var sourceFile in filesToCopy)
                 {
                     var fileName = Path.GetFileName(sourceFile);
                     var destFile = Path.Combine(destDir, fileName);
@@ -221,7 +300,7 @@ namespace RssReader.Server.Services
                     await CopyFileAsync(sourceFile, destFile, cancellationToken);
                 }
 
-                _logger.LogInformation("Successfully copied {FileCount} files", files.Length);
+                _logger.LogInformation("Successfully copied {FileCount} new files", filesToCopy.Count);
             }
             catch (Exception ex)
             {
