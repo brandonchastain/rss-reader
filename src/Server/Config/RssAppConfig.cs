@@ -9,8 +9,6 @@ namespace RssApp.Config
         public string ItemDb { get; set; }
         public string FeedDb { get; set; }
         public bool IsTestUserEnabled { get; set; }
-        public TimeSpan CacheReloadInterval { get; set; }
-        public TimeSpan CacheReloadStartupDelay { get; set; }
 
         public static RssAppConfig LoadFromAppSettings(IConfiguration configuration)
         {
