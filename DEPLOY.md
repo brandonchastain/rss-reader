@@ -112,13 +112,6 @@ az acr build --registry rssreaderacr   --image rss-reader-api:latest   --file Se
 az containerapp update   --name rss-reader-api   --resource-group rss-container-rg   --image rssreaderacr.azurecr.io/rss-reader-api:latest
 ```
 
-## Cleanup Your Old VM
-
-Once everything is working:
-1. Export/backup any data from the VM
-2. Stop the VM in Azure Portal
-3. Delete the VM resource group after confirming everything works
-
 ## Troubleshooting
 
 ### Check container logs

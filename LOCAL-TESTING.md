@@ -123,12 +123,14 @@ docker logs -f rss-reader-test
 ### Database Paths
 The `appsettings.json` uses absolute paths that work in Docker:
 ```json
-"UserDb": "/data/storage.db",
-"ItemDb": "/data/storage.db",
-"FeedDb": "/data/storage.db"
+"UserDb": "/tmp/storage.db",
+"ItemDb": "/tmp/storage.db",
+"FeedDb": "/tmp/storage.db"
 ```
 
-These map to `c:\dev\rssreader\docker-data\storage.db` on your host machine via the volume mount.
+The active db from `/tmp/` will be copied to the container's `/data/` folder.
+
+That `/data/` folder maps to `c:\dev\rssreader\docker-data\storage.db` on your host machine via the volume mount.
 
 ### Volume Mount
 The `-v c:\dev\rssreader\docker-data:/data` flag mounts your local directory to `/data` inside the container. This means:
@@ -152,8 +154,8 @@ docker images | Select-String "rss-reader-api"
 
 ### Database errors
 ```powershell
-# Check if /data directory exists in container
-docker exec rss-reader-test ls -la /data
+# Check if /tmp/ directory contains the active db in container
+docker exec rss-reader-test ls -la /tmp/
 
 # Check permissions on host directory
 Get-Acl c:\dev\rssreader\docker-data
