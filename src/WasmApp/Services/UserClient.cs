@@ -14,11 +14,13 @@ public class UserClient : IUserClient
     ];
 
     private readonly HttpClient _httpClient;
+    private readonly HttpClient _apiClient;
     private readonly RssWasmConfig _config;
 
-    public UserClient(RssWasmConfig config, ILogger<UserClient> logger)
+    public UserClient(RssWasmConfig config, ILogger<UserClient> logger, IHttpClientFactory httpClientFactory)
     {
-        _httpClient = new HttpClient();
+        _httpClient = new HttpClient(); // For /.auth/me calls
+        _apiClient = httpClientFactory.CreateClient("ApiClient"); // For API calls with auth header
         _config = config;
         logger.LogInformation(_config.ApiBaseUrl);
     }
@@ -57,7 +59,7 @@ public class UserClient : IUserClient
 
     public async Task<(RssUser, bool)> RegisterUserAsync(string username)
     {
-        var response = await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/user/register", username);
+        var response = await _apiClient.PostAsJsonAsync($"api/user/register", username);
         var user = await response.Content.ReadFromJsonAsync<RssUser>();
 
         if (response.StatusCode == System.Net.HttpStatusCode.Created)
@@ -70,5 +72,6 @@ public class UserClient : IUserClient
     public void Dispose()
     {
         _httpClient.Dispose();
+        _apiClient.Dispose();
     }
 }

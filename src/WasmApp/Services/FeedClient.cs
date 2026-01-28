@@ -10,7 +10,7 @@ namespace WasmApp.Services
     public class FeedClient : IFeedClient
     {
         private readonly HttpClient _httpClient;
-        private readonly HttpClient _refreshHttpClient = new HttpClient();
+        private readonly HttpClient _refreshHttpClient;
         private readonly RssWasmConfig _config;
         private readonly IUserClient userClient;
         private readonly ILogger<FeedClient> _logger;
@@ -19,10 +19,10 @@ namespace WasmApp.Services
         public bool IsFilterSaved { get; set; }
         private bool _disposed;
 
-        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, IUserClient userClient)
+        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, IUserClient userClient, IHttpClientFactory httpClientFactory)
         {
-            _httpClient = new HttpClient();
-            _refreshHttpClient = new HttpClient();
+            _httpClient = httpClientFactory.CreateClient("ApiClient");
+            _refreshHttpClient = httpClientFactory.CreateClient("ApiClient");
             _config = config;
             this.userClient = userClient;
             _logger = logger;

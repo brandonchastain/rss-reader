@@ -24,5 +24,15 @@ builder.Services
 builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<AuthenticationStateProvider, MyAuthenticationStateProvider>();
 
+// Add the authentication header handler
+builder.Services.AddTransient<AuthenticationHeaderHandler>();
+
+// Configure HttpClient with authentication handler for API calls
+builder.Services.AddHttpClient("ApiClient", client =>
+{
+    client.BaseAddress = new Uri(config.ApiBaseUrl);
+})
+.AddHttpMessageHandler<AuthenticationHeaderHandler>();
+
 var app = builder.Build();
 await app.RunAsync();

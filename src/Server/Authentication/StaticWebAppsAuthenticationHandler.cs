@@ -29,9 +29,16 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
     {
         try
         {
+            Logger.LogInformation("AUTH HANDLER INVOKED - IsTestUserEnabled: {IsTestMode}", Options.IsTestUserEnabled);
+            
+            // Log all headers for debugging
+            var xmsHeaders = Request.Headers.Where(h => h.Key.StartsWith("X-MS-", StringComparison.OrdinalIgnoreCase)).ToList();
+            Logger.LogInformation("Found {Count} X-MS-* headers: {Headers}", xmsHeaders.Count, string.Join(", ", xmsHeaders.Select(h => h.Key)));
+
             // In test mode, create a fake authenticated user to bypass auth
             if (Options.IsTestUserEnabled)
             {
+                Logger.LogWarning("TEST MODE ENABLED - creating fake authenticated user");
                 var testIdentity = new ClaimsIdentity("TestAuth");
                 testIdentity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "test-user-id"));
                 testIdentity.AddClaim(new Claim(ClaimTypes.Name, "testuser"));
@@ -45,15 +52,21 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
             // Check for the X-MS-CLIENT-PRINCIPAL header
             if (!Request.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var headerValue))
             {
+                Logger.LogWarning("X-MS-CLIENT-PRINCIPAL HEADER NOT FOUND - Authentication will fail");
                 // No authentication header present
                 return Task.FromResult(AuthenticateResult.NoResult());
             }
 
+            Logger.LogInformation("X-MS-CLIENT-PRINCIPAL header FOUND - attempting to parse");
             var principal = ParseClientPrincipal(headerValue.ToString());
             if (principal == null)
             {
+                Logger.LogWarning("Failed to parse X-MS-CLIENT-PRINCIPAL header");
                 return Task.FromResult(AuthenticateResult.Fail("Invalid client principal"));
             }
+
+            Logger.LogInformation("Successfully parsed principal - User: {UserDetails}, Provider: {Provider}", 
+                principal.UserDetails, principal.IdentityProvider);
 
             var identity = new ClaimsIdentity(principal.IdentityProvider, ClaimTypes.Name, ClaimTypes.Role);
             identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, principal.UserId));
@@ -67,6 +80,7 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
             var claimsPrincipal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(claimsPrincipal, AuthenticationScheme);
 
+            Logger.LogInformation("AUTHENTICATION SUCCESS for user: {UserDetails}", principal.UserDetails);
             return Task.FromResult(AuthenticateResult.Success(ticket));
         }
         catch (Exception ex)
