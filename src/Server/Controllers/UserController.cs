@@ -1,11 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using RssApp.Data;
 using RssApp.Contracts;
 using System.Threading.Tasks;
+using System.Security.Claims;
 
 
 namespace Server.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class UserController : ControllerBase
@@ -51,6 +54,7 @@ namespace Server.Controllers
         }
 
         // POST: api/user/register
+        [AllowAnonymous]
         [HttpPost("register")]
         public async Task<IActionResult> RegisterAsync([FromBody] string username)
         {

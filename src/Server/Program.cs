@@ -5,6 +5,7 @@ using RssApp.Data;
 using RssApp.RssClient;
 using RssApp.Serialization;
 using RssReader.Server.Services;
+using Server.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +43,14 @@ builder.Services.AddLogging(loggingBuilder =>
 
 builder.Services.AddCors(configureCors);
 builder.Services.AddControllers();
+
+// Add authentication
+builder.Services.AddAuthentication(StaticWebAppsAuthenticationHandler.AuthenticationScheme)
+    .AddScheme<StaticWebAppsAuthenticationOptions, StaticWebAppsAuthenticationHandler>(
+        StaticWebAppsAuthenticationHandler.AuthenticationScheme,
+        options => { options.IsTestUserEnabled = config.IsTestUserEnabled; });
+
+builder.Services.AddAuthorization();
 
 // RSS services
 builder.Services
@@ -114,6 +123,7 @@ var c = app.Services.GetRequiredService<IItemRepository>();
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseCors("AllowSpecificOrigins");
-// app.UseAuthorization();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 app.Run();

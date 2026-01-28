@@ -1,12 +1,15 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using RssApp.Data;
 using RssApp.Contracts;
 using System.Text;
 using System.Threading.Tasks;
+using System.Security.Claims;
 
 
 namespace Server.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class ItemController : ControllerBase
@@ -33,12 +36,21 @@ namespace Server.Controllers
         [HttpGet("timeline")]
         public async Task<IActionResult> TimelineAsync(string username, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
         {
-            if (username == null)
+            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
+            var actualUsername = authenticatedUsername ?? username;
+            
+            if (actualUsername == null)
             {
                 return BadRequest("username is required.");
             }
+            
+            // Security check: if authenticated, ensure user can only access their own data
+            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid("You can only access your own timeline.");
+            }
 
-            var user = this.userRepository.GetUserByName(username);
+            var user = this.userRepository.GetUserByName(actualUsername);
 
             // TODO: authenticate the real user
             var feed = new NewsFeed("%", user.Id);
@@ -55,12 +67,20 @@ namespace Server.Controllers
         [HttpGet("feed")]
         public async Task<IActionResult> FeedAsync(string username, string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
         {
-            if (username == null)
+            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
+            var actualUsername = authenticatedUsername ?? username;
+            
+            if (actualUsername == null)
             {
                 return BadRequest("username is required.");
             }
+            
+            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid("You can only access your own feeds.");
+            }
 
-            var user = this.userRepository.GetUserByName(username);
+            var user = this.userRepository.GetUserByName(actualUsername);
             var feed = this.feedRepository.GetFeed(user, href);
 
             if (feed == null)
@@ -81,7 +101,10 @@ namespace Server.Controllers
         [HttpGet("search")]
         public async Task<IActionResult> SearchAsync(string username, string query, int page = 0, int pageSize = 20)
         {
-            if (username == null)
+            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
+            var actualUsername = authenticatedUsername ?? username;
+            
+            if (actualUsername == null)
             {
                 return BadRequest("username is required.");
             }
@@ -90,8 +113,13 @@ namespace Server.Controllers
             {
                 return BadRequest("query is required.");
             }
+            
+            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid("You can only search your own items.");
+            }
 
-            var user = this.userRepository.GetUserByName(username);
+            var user = this.userRepository.GetUserByName(actualUsername);
             var items = await this.itemRepository.SearchItemsAsync(query, user, page, pageSize);
 
             return Ok(items);
@@ -101,12 +129,20 @@ namespace Server.Controllers
         [HttpGet("content")]
         public IActionResult GetItemContent(string username, int itemId)
         {
-            if (username == null)
+            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
+            var actualUsername = authenticatedUsername ?? username;
+            
+            if (actualUsername == null)
             {
                 return BadRequest("username is required.");
             }
+            
+            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid("You can only access your own items.");
+            }
 
-            var user = this.userRepository.GetUserByName(username);
+            var user = this.userRepository.GetUserByName(actualUsername);
             var item = this.itemRepository.GetItem(user, itemId);
 
             if (item == null)
@@ -129,12 +165,20 @@ namespace Server.Controllers
         [HttpGet("markAsRead")]
         public IActionResult MarkAsRead(string username, int itemId, bool isRead)
         {
-            if (username == null)
+            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
+            var actualUsername = authenticatedUsername ?? username;
+            
+            if (actualUsername == null)
             {
                 return BadRequest("username is required.");
             }
+            
+            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid("You can only modify your own items.");
+            }
 
-            var user = this.userRepository.GetUserByName(username);
+            var user = this.userRepository.GetUserByName(actualUsername);
             var item = this.itemRepository.GetItem(user, itemId);
 
             if (item == null)

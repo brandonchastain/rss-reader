@@ -1,13 +1,16 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using RssApp.Data;
 using RssApp.Contracts;
 using RssApp.ComponentServices;
 using RssApp.Serialization;
 using System.Runtime.InteropServices;
+using System.Security.Claims;
 
 
 namespace Server.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class FeedController : ControllerBase
@@ -74,12 +77,20 @@ namespace Server.Controllers
         [Route("refresh")]
         public async Task<IActionResult> RefreshFeedsAsync(string username)
         {
-            if (username == null)
+            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
+            var actualUsername = authenticatedUsername ?? username;
+            
+            if (actualUsername == null)
             {
                 return BadRequest("username is required.");
             }
+            
+            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid("You can only refresh your own feeds.");
+            }
 
-            var user = this.userRepository.GetUserByName(username);
+            var user = this.userRepository.GetUserByName(actualUsername);
 
             if (user == null)
             {
@@ -171,12 +182,20 @@ namespace Server.Controllers
         [HttpGet]
         public IActionResult GetFeeds(string username)
         {
-            if (username == null)
+            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
+            var actualUsername = authenticatedUsername ?? username;
+            
+            if (actualUsername == null)
             {
-                return BadRequest("Username is required.");
+                return BadRequest("username is required.");
+            }
+            
+            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid("You can only access your own feeds.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
+            var user = this.userRepository.GetUserByName(actualUsername);
             if (user == null)
             {
                 return NotFound($"User '{username}' not found.");
@@ -229,12 +248,25 @@ namespace Server.Controllers
         public async Task<IActionResult> DeleteFeedAsync([FromQuery]string username, [FromQuery]string href)
         {
             await Task.Yield();
-            if (username == null || href == null)
+            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
+            var actualUsername = authenticatedUsername ?? username;
+            
+            if (actualUsername == null)
             {
-                return BadRequest("Username and feed URL are required.");
+                return BadRequest("username is required.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
+            if (href == null)
+            {
+                return BadRequest("feed URL is required.");
+            }
+            
+            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid("You can only delete your own feeds.");
+            }
+
+            var user = this.userRepository.GetUserByName(actualUsername);
             if (user == null)
             {
                 return NotFound($"User '{username}' not found.");

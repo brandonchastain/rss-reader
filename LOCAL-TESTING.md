@@ -1,3 +1,6 @@
+# Testing (non-containerized)
+Just hit F5 in Visual Studio, it should launch the frontend and backend along with a browser window.
+
 # Testing the local Web API containerized build (with docker)
 
 This guide shows how to build and test your RSS Reader API locally using Docker before deploying to Azure Container Apps.
