@@ -31,6 +31,15 @@ param maxReplicas int = 1
 @description('Azure Container Registry name')
 param acrName string = 'rssreaderacr'
 
+@description('Name of the Static Web App')
+param staticWebAppName string = 'rss-reader-swa'
+
+@description('Static Web App SKU')
+param staticWebAppSku string = 'Free'
+
+@description('Custom domain for the Static Web App')
+param customDomain string = 'rss.brandonchastain.com'
+
 // Log Analytics Workspace
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsName
@@ -183,6 +192,33 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   ]
 }
 
+// Static Web App
+resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = {
+  name: staticWebAppName
+  location: location
+  sku: {
+    name: staticWebAppSku
+    tier: staticWebAppSku
+  }
+  properties: {
+    repositoryUrl: ''
+    branch: ''
+    buildProperties: {
+      skipGithubActionWorkflowGeneration: true
+    }
+  }
+}
+
+// Custom Domain for Static Web App
+resource staticWebAppCustomDomain 'Microsoft.Web/staticSites/customDomains@2023-01-01' = {
+  name: customDomain
+  parent: staticWebApp
+  properties: {}
+}
+
 output containerAppFQDN string = containerApp.properties.configuration.ingress.fqdn
 output storageAccountName string = storageAccount.name
 output containerAppName string = containerApp.name
+output staticWebAppName string = staticWebApp.name
+output staticWebAppDefaultHostname string = staticWebApp.properties.defaultHostname
+output staticWebAppId string = staticWebApp.id

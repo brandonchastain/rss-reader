@@ -7,9 +7,10 @@
 2. Run these commands to deploy the frontend:
 
 ```bash
+cd c:\dev\rssreader\rss-reader\src
 dotnet publish -c release -r win-x64 WasmApp.csproj --output bin/release/net9.0/win-x64/publish --self-contained true
-
 swa deploy .\bin\release\net9.0\win-x64\publish\wwwroot\ --env production
+
 ```
 
 3. When prompted, choose the WASM app to deploy to.
