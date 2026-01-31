@@ -59,7 +59,7 @@ public class UserClient : IUserClient
 
     public async Task<(RssUser, bool)> RegisterUserAsync(string username)
     {
-        var response = await _apiClient.PostAsJsonAsync($"api/user/register", username);
+        var response = await _apiClient.PostAsync($"api/user/register", null);
         var user = await response.Content.ReadFromJsonAsync<RssUser>();
 
         if (response.StatusCode == System.Net.HttpStatusCode.Created)

@@ -42,6 +42,24 @@ namespace Server.Controllers
         public async Task<IActionResult> ImportOpmlAsync(OpmlImport import)
         {
             await Task.Yield();
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
+            
+            if (username == null)
+            {
+                return Unauthorized("User is not authenticated.");
+            }
+
+            var authenticatedUser = this.userRepository.GetUserByName(username);
+            if (authenticatedUser == null)
+            {
+                return NotFound($"Authenticated user not found.");
+            }
+
+            if (import.UserId != authenticatedUser.Id)
+            {
+                return Forbid("You can only import OPML for your own account.");
+            }
+
             var userId = import.UserId;
             var opmlContent = import.OpmlContent;
             var user = this.userRepository.GetUserById(userId);
@@ -60,6 +78,24 @@ namespace Server.Controllers
         public async Task<IActionResult> ExportOpmlAsync(int userId)
         {
             await Task.Yield();
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
+            
+            if (username == null)
+            {
+                return Unauthorized("User is not authenticated.");
+            }
+
+            var authenticatedUser = this.userRepository.GetUserByName(username);
+            if (authenticatedUser == null)
+            {
+                return NotFound($"Authenticated user not found.");
+            }
+
+            if (userId != authenticatedUser.Id)
+            {
+                return Forbid("You can only export OPML for your own account.");
+            }
+
             var user = this.userRepository.GetUserById(userId);
 
             if (user == null)
@@ -75,22 +111,16 @@ namespace Server.Controllers
 
         [HttpGet]
         [Route("refresh")]
-        public async Task<IActionResult> RefreshFeedsAsync(string username)
+        public async Task<IActionResult> RefreshFeedsAsync()
         {
-            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
-            var actualUsername = authenticatedUsername ?? username;
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
             
-            if (actualUsername == null)
+            if (username == null)
             {
-                return BadRequest("username is required.");
-            }
-            
-            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
-            {
-                return Forbid("You can only refresh your own feeds.");
+                return Unauthorized("User is not authenticated.");
             }
 
-            var user = this.userRepository.GetUserByName(actualUsername);
+            var user = this.userRepository.GetUserByName(username);
 
             if (user == null)
             {
@@ -119,6 +149,24 @@ namespace Server.Controllers
             if (feed == null || string.IsNullOrWhiteSpace(feed.Href) || feed.UserId <= 0)
             {
                 return BadRequest("Feed data is required.");
+            }
+
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
+            
+            if (username == null)
+            {
+                return Unauthorized("User is not authenticated.");
+            }
+
+            var authenticatedUser = this.userRepository.GetUserByName(username);
+            if (authenticatedUser == null)
+            {
+                return NotFound($"Authenticated user not found.");
+            }
+
+            if (feed.UserId != authenticatedUser.Id)
+            {
+                return Forbid("You can only add tags to your own feeds.");
             }
 
             var user = this.userRepository.GetUserById(feed.UserId);
@@ -164,6 +212,24 @@ namespace Server.Controllers
         public async Task<IActionResult> GetUserTagsAsync(int userId)
         {
             await Task.Yield();
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
+            
+            if (username == null)
+            {
+                return Unauthorized("User is not authenticated.");
+            }
+
+            var authenticatedUser = this.userRepository.GetUserByName(username);
+            if (authenticatedUser == null)
+            {
+                return NotFound($"Authenticated user not found.");
+            }
+
+            if (userId != authenticatedUser.Id)
+            {
+                return Forbid("You can only access your own tags.");
+            }
+
             var user = this.userRepository.GetUserById(userId);
             if (user == null)
             {
@@ -180,22 +246,16 @@ namespace Server.Controllers
 
         // GET: api/feed
         [HttpGet]
-        public IActionResult GetFeeds(string username)
+        public IActionResult GetFeeds()
         {
-            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
-            var actualUsername = authenticatedUsername ?? username;
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
             
-            if (actualUsername == null)
+            if (username == null)
             {
-                return BadRequest("username is required.");
-            }
-            
-            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
-            {
-                return Forbid("You can only access your own feeds.");
+                return Unauthorized("User is not authenticated.");
             }
 
-            var user = this.userRepository.GetUserByName(actualUsername);
+            var user = this.userRepository.GetUserByName(username);
             if (user == null)
             {
                 return NotFound($"User '{username}' not found.");
@@ -223,6 +283,24 @@ namespace Server.Controllers
                 return BadRequest("Feed URL and User ID are required.");
             }
 
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
+            
+            if (username == null)
+            {
+                return Unauthorized("User is not authenticated.");
+            }
+
+            var authenticatedUser = this.userRepository.GetUserByName(username);
+            if (authenticatedUser == null)
+            {
+                return NotFound($"Authenticated user not found.");
+            }
+
+            if (feed.UserId != authenticatedUser.Id)
+            {
+                return Forbid("You can only add feeds to your own account.");
+            }
+
             try
             {
 
@@ -245,28 +323,22 @@ namespace Server.Controllers
 
         [HttpPost]
         [Route("delete")]
-        public async Task<IActionResult> DeleteFeedAsync([FromQuery]string username, [FromQuery]string href)
+        public async Task<IActionResult> DeleteFeedAsync([FromQuery]string href)
         {
             await Task.Yield();
-            var authenticatedUsername = User.FindFirst(ClaimTypes.Name)?.Value;
-            var actualUsername = authenticatedUsername ?? username;
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
             
-            if (actualUsername == null)
+            if (username == null)
             {
-                return BadRequest("username is required.");
+                return Unauthorized("User is not authenticated.");
             }
 
             if (href == null)
             {
                 return BadRequest("feed URL is required.");
             }
-            
-            if (authenticatedUsername != null && !actualUsername.Equals(authenticatedUsername, StringComparison.OrdinalIgnoreCase))
-            {
-                return Forbid("You can only delete your own feeds.");
-            }
 
-            var user = this.userRepository.GetUserByName(actualUsername);
+            var user = this.userRepository.GetUserByName(username);
             if (user == null)
             {
                 return NotFound($"User '{username}' not found.");

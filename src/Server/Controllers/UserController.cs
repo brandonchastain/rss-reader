@@ -27,8 +27,15 @@ namespace Server.Controllers
 
         // GET: api/user
         [HttpGet]
-        public IActionResult GetUserByName(string username)
+        public IActionResult GetUserByName()
         {
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
+            
+            if (username == null)
+            {
+                return Unauthorized("User is not authenticated.");
+            }
+
             var user = this.userRepository.GetUserByName(username);
 
             if (user == null)
@@ -54,10 +61,16 @@ namespace Server.Controllers
         }
 
         // POST: api/user/register
-        [AllowAnonymous]
         [HttpPost("register")]
-        public async Task<IActionResult> RegisterAsync([FromBody] string username)
+        public async Task<IActionResult> RegisterAsync()
         {
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
+            
+            if (username == null)
+            {
+                return Unauthorized("User is not authenticated.");
+            }
+
             await locker.WaitAsync();
             try
             {
