@@ -153,4 +153,26 @@ public sealed class SerializerTests
                 $"Feed {originalFeed.Href} should have same tags after round-trip");
         }
     }
+
+    [TestMethod]
+    public void OpmlExport_Generated_Should_Be_Valid_XML()
+    {
+        // Arrange
+        var feeds = new List<NewsFeed>
+        {
+            new NewsFeed("https://example.com/feed1", 1)
+            {
+                Tags = new List<string> { "tech", "news", "programming" }
+            }
+        };
+
+        // Act
+        var opmlContent = OpmlSerializer.GenerateOpmlContent(feeds);
+
+        // Assert - Should be valid XML that can be parsed
+        var reimported = OpmlSerializer.ParseOpmlContent(opmlContent, 1).ToList();
+        Assert.AreEqual(1, reimported.Count);
+        Assert.AreEqual("https://example.com/feed1", reimported[0].Href);
+        Assert.AreEqual(3, reimported[0].Tags.Count);
+    }
 }
