@@ -3,7 +3,7 @@
   "configurations": {
     "rss-reader": {
       "appLocation": "src\\WasmApp",
-      "apiLocation": "api-node",
+      "apiLocation": "api",
       "apiLanguage": "node",
       "apiVersion": "20",
       "outputLocation": "bin\\release\\net9.0\\win-x64\\publish\\wwwroot",

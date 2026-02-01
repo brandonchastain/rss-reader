@@ -2,7 +2,7 @@
 
 ## Prerequisites
 1. Azure CLI installed: `az --version`
-2. Docker installed (for local testing)
+2. Docker installed
 3. Azure subscription
 
 ## Step 1: Setup Azure Resources
@@ -59,19 +59,6 @@ az deployment group create `
 
 ```
 
-## Step 4: Configure Container App to Pull from ACR
-
-```bash
-# Get ACR credentials
-$ACR_USERNAME = (az acr credential show --name rssreaderacr --query username -o tsv)
-$ACR_PASSWORD = (az acr credential show --name rssreaderacr --query passwords[0].value -o tsv)
-
-# Update Container App with registry credentials
-az containerapp registry set   --name rss-reader-api   --resource-group rss-container-rg   --server rssreaderacr.azurecr.io   --username $ACR_USERNAME   --password $ACR_PASSWORD
-
-```
-
-
 ## Future Updates
 
 When you update your code:
@@ -86,7 +73,7 @@ az containerapp update   --name rss-reader-api   --resource-group rss-container-
 
 ```
 
-## Monitoring & Logs
+### Monitoring & Logs
 
 ```bash
 # View container app logs
@@ -97,7 +84,7 @@ az containerapp replica list   --name rss-reader-api   --resource-group rss-cont
 
 ```
 
-## Troubleshooting
+### Troubleshooting
 
 ### Check container logs
 ```bash
@@ -115,13 +102,15 @@ az containerapp show --name rss-reader-api --resource-group rss-container-rg --q
 
 # Frontend deployment
 
-1. Install prerequisites:
+## Step 1: Install prerequisites
+
 * dotnet
 * Node.js and npm
 * azure swa cli
 
+## Step 2: Build & deploy the frontend
 
-2. Run these commands to build & deploy the frontend with the integrated Node.js API:
+Before running, double-check that swa-cli.config.json to points to your SWA.
 
 ```bash
 cd c:\dev\rssreader\rss-reader
