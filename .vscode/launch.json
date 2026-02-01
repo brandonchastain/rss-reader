@@ -8,7 +8,7 @@
             "name": ".NET Core Launch (web)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "build", 
+            "preLaunchTask": "build",
             "args": [],
             "cwd": "${workspaceFolder}/src/Server",
             "stopAtEntry": false,
@@ -22,7 +22,7 @@
             "type": "blazorwasm",
             "request": "launch",
             "cwd": "${workspaceFolder}/src/WasmApp",
-            "url": "https://localhost:8443" // Tell launch where to find site
+            "url": "https://localhost:8443"
         },
         {
             "name": "Watch",
@@ -34,17 +34,23 @@
                 "watch",
                 "--project",
                 ".",
-                "--verbose" // Let's us confirm browser connects with hot reload capabilities
+                "--verbose"
             ],
-            "preLaunchTask": "build" // Ensure we don't watch an unbuilt site
+            "preLaunchTask": "build"
         },
         {
             "name": "Attach",
             "type": "blazorwasm",
             "request": "attach",
             "cwd": "${workspaceFolder}/src/WasmApp",
-            "url": "https://localhost:8443",  // Tell launch where to find site
-            "timeout": 120000, // Allows time for the site to launch
+            "url": "https://localhost:8443",
+            "timeout": 120000
+        },
+        {
+            "name": "Attach to .NET Functions",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:azureFunctions.pickProcess}"
         }
     ],
     "compounds": [

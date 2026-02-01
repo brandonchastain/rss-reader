@@ -40,6 +40,10 @@ param staticWebAppSku string = 'Free'
 @description('Custom domain for the Static Web App')
 param customDomain string = 'rss.brandonchastain.com'
 
+@description('Gateway secret key for API authentication')
+@secure()
+param gatewaySecretKey string
+
 // Log Analytics Workspace
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsName
@@ -128,6 +132,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'acr-password'
           value: acr.listCredentials().passwords[0].value
         }
+        {
+          name: 'gateway-secret-key'
+          value: gatewaySecretKey
+        }
       ]
       ingress: {
         external: true
@@ -154,6 +162,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'ASPNETCORE_ENVIRONMENT'
               value: 'Production'
+            }
+            {
+              name: 'RSSREADER_API_KEY'
+              secretRef: 'gateway-secret-key'
             }
           ]
           volumeMounts: [
@@ -206,6 +218,16 @@ resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = {
     buildProperties: {
       skipGithubActionWorkflowGeneration: true
     }
+  }
+}
+
+// Configure Static Web App settings for the managed API
+resource staticWebAppSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
+  name: 'appsettings'
+  parent: staticWebApp
+  properties: {
+    RSSREADER_API_URL: 'https://${containerApp.properties.configuration.ingress.fqdn}'
+    RSSREADER_API_KEY: gatewaySecretKey
   }
 }
 

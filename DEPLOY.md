@@ -1,23 +1,4 @@
-# Deploy RSS Reader web app frontend
-
-1. Install prerequisites:
-* dotnet
-* azure swa cli
-
-2. Run these commands to deploy the frontend:
-
-```bash
-cd c:\dev\rssreader\rss-reader\src\WasmApp
-dotnet publish -c release -r win-x64 WasmApp.csproj --output bin/release/net9.0/win-x64/publish --self-contained true
-swa deploy .\bin\release\net9.0\win-x64\publish\wwwroot\ --env production
-
-```
-
-3. When prompted, choose the WASM app to deploy to.
-
-# Deploy RSS Reader to Azure Container Apps
-
-This guide walks through deploying your RSS Reader API to Azure Container Apps with persistent storage.
+# Infrastructure and backend deployment
 
 ## Prerequisites
 1. Azure CLI installed: `az --version`
@@ -62,10 +43,20 @@ az acr build --registry rssreaderacr   --image rss-reader-api:latest   --file Se
 # Navigate to infrastructure directory
 cd ..\infrastructure
 
-# NOTE: The container image used below match the containerImage parameter in main.bicepparam
-# Example: param containerImage = 'rssreaderacr.azurecr.io/rss-reader-api:latest'
-# Deploy the Bicep template
-az deployment group create --resource-group rss-container-rg --template-file main.bicep --parameters main.bicepparam --parameters containerImage='rssreaderacr.azurecr.io/rss-reader-api:latest'
+# Generate a random base64url-encoded secret key
+$bytes = New-Object byte[] 64
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$base64 = [Convert]::ToBase64String($bytes)
+$GATEWAY_SECRET_KEY = $base64.Replace('+', '-').Replace('/', '_').TrimEnd('=')
+
+# Deploy the Bicep template with the generated gateway secret key
+az deployment group create `
+  --resource-group rss-container-rg `
+  --template-file main.bicep `
+  --parameters main.bicepparam `
+  --parameters containerImage='rssreaderacr.azurecr.io/rss-reader-api:latest' `
+  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY
+
 ```
 
 ## Step 4: Configure Container App to Pull from ACR
@@ -77,38 +68,9 @@ $ACR_PASSWORD = (az acr credential show --name rssreaderacr --query passwords[0]
 
 # Update Container App with registry credentials
 az containerapp registry set   --name rss-reader-api   --resource-group rss-container-rg   --server rssreaderacr.azurecr.io   --username $ACR_USERNAME   --password $ACR_PASSWORD
+
 ```
 
-## Step 5: Get Your API URL
-
-```bash
-# Get the FQDN of your Container App
-az containerapp show   --name rss-reader-api   --resource-group rss-container-rg   --query properties.configuration.ingress.fqdn   -o tsv
-```
-
-This will output something like: `rss-reader-api.kindtree-12345678.westus2.azurecontainerapps.io`
-
-Your API will be available at: `https://rss-reader-api.kindtree-12345678.westus2.azurecontainerapps.io/api/feed`
-
-## Step 6: Update Your Frontend
-
-Update your WasmApp configuration to point to the new Container App URL instead of the VM.
-
-## Monitoring & Logs
-
-```bash
-# View container app logs
-az containerapp logs show   --name rss-reader-api   --resource-group rss-container-rg   --follow
-
-# Check current replica count (should be 0 when idle)
-az containerapp replica list   --name rss-reader-api   --resource-group rss-container-rg
-```
-
-## Scale to Zero Behavior
-
-- **When idle**: App scales to 0 replicas, you pay almost nothing
-- **On request**: Cold start takes ~3-5 seconds for first request
-- **After active**: Stays warm for ~15 minutes before scaling down
 
 ## Future Updates
 
@@ -121,6 +83,18 @@ az acr build --registry rssreaderacr   --image rss-reader-api:latest   --file Se
 
 # Container App automatically pulls latest image on next revision
 az containerapp update   --name rss-reader-api   --resource-group rss-container-rg   --image rssreaderacr.azurecr.io/rss-reader-api:latest
+
+```
+
+## Monitoring & Logs
+
+```bash
+# View container app logs
+az containerapp logs show   --name rss-reader-api   --resource-group rss-container-rg   --follow
+
+# Check current replica count (should be 0 when idle)
+az containerapp replica list   --name rss-reader-api   --resource-group rss-container-rg
+
 ```
 
 ## Troubleshooting
@@ -136,4 +110,22 @@ The SQLite database should persist at `/data/storage.db` inside the container, m
 ### Check replica status
 ```bash
 az containerapp show --name rss-reader-api --resource-group rss-container-rg --query properties.runningStatus
+```
+
+
+# Frontend deployment
+
+1. Install prerequisites:
+* dotnet
+* Node.js and npm
+* azure swa cli
+
+
+2. Run these commands to build & deploy the frontend with the integrated Node.js API:
+
+```bash
+cd c:\dev\rssreader\rss-reader
+swa build
+swa deploy --env production
+
 ```

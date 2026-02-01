@@ -1,0 +1,15 @@
+{
+  "name": "rss-reader-api-proxy",
+  "version": "1.0.0",
+  "description": "Azure Functions API proxy for RSS Reader",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "func start",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.0.0"
+  },
+  "devDependencies": {}
+}

@@ -16,6 +16,18 @@ builder.Configuration.AddJsonFile("appsettings.json", optional: false)
 
 // Configure RssWasmConfig as a singleton with values from configuration
 var config = RssWasmConfig.LoadFromAppSettings(builder.Configuration);
+
+// Use the host environment's base address if ApiBaseUrl is empty (for same-domain deployment)
+var apiBaseUrl = string.IsNullOrEmpty(config.ApiBaseUrl) ? builder.HostEnvironment.BaseAddress : config.ApiBaseUrl;
+var authApiBaseUrl = string.IsNullOrEmpty(config.AuthApiBaseUrl) ? builder.HostEnvironment.BaseAddress : config.AuthApiBaseUrl;
+
+// Update config with resolved URLs
+config = new RssWasmConfig 
+{ 
+    ApiBaseUrl = apiBaseUrl,
+    AuthApiBaseUrl = authApiBaseUrl
+};
+
 builder.Services
     .AddSingleton<RssWasmConfig>(_ => config)
     .AddTransient<IFeedClient, FeedClient>()

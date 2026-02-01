@@ -46,20 +46,6 @@ namespace Server.Controllers
             return Ok(user);
         }
 
-        // GET: api/user/{id}
-        [HttpGet("{id}")]
-        public IActionResult GetUserById(int id)
-        {
-            var user = this.userRepository.GetUserById(id);
-
-            if (user == null)
-            {
-                return NotFound();
-            }
-
-            return Ok(user);
-        }
-
         // POST: api/user/register
         [HttpPost("register")]
         public async Task<IActionResult> RegisterAsync()

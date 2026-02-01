@@ -21,19 +21,6 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
 });
 
-var configureCors = (CorsOptions options) => 
-{
-    options.AddPolicy(
-        name: "AllowSpecificOrigins",
-        policy =>
-        {
-            policy
-            .WithOrigins("*")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
-        });
-};
-
 builder.Services.AddLogging(loggingBuilder =>
 {
     loggingBuilder.ClearProviders();
@@ -41,7 +28,6 @@ builder.Services.AddLogging(loggingBuilder =>
     loggingBuilder.AddDebug();
 });
 
-builder.Services.AddCors(configureCors);
 builder.Services.AddControllers();
 
 // Add authentication
@@ -122,7 +108,6 @@ var c = app.Services.GetRequiredService<IItemRepository>();
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-app.UseCors("AllowSpecificOrigins");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

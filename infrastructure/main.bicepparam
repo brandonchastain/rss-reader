@@ -9,3 +9,4 @@ param cpuCore = '0.25'
 param memorySize = '0.5Gi'
 param minReplicas = 0  // Scale to zero when not in use
 param maxReplicas = 1
+param gatewaySecretKey = ''  // specify at deployment time

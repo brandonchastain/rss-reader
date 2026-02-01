@@ -29,12 +29,6 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
     {
         try
         {
-            Logger.LogInformation("AUTH HANDLER INVOKED - IsTestUserEnabled: {IsTestMode}", Options.IsTestUserEnabled);
-            
-            // Log all headers for debugging
-            var xmsHeaders = Request.Headers.Where(h => h.Key.StartsWith("X-MS-", StringComparison.OrdinalIgnoreCase)).ToList();
-            Logger.LogInformation("Found {Count} X-MS-* headers: {Headers}", xmsHeaders.Count, string.Join(", ", xmsHeaders.Select(h => h.Key)));
-
             // In test mode, create a fake authenticated user to bypass auth
             if (Options.IsTestUserEnabled)
             {
@@ -48,25 +42,42 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
                 var testTicket = new AuthenticationTicket(testPrincipal, AuthenticationScheme);
                 return Task.FromResult(AuthenticateResult.Success(testTicket));
             }
-
-            // Check for the X-MS-CLIENT-PRINCIPAL header
-            if (!Request.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var headerValue))
+            
+            if (!Request.Headers.TryGetValue("X-Gateway-Key", out var clientKey))
             {
-                Logger.LogWarning("X-MS-CLIENT-PRINCIPAL HEADER NOT FOUND - Authentication will fail");
+                Logger.LogWarning("X-Gateway-Key HEADER NOT FOUND - Authentication will fail");
                 // No authentication header present
                 return Task.FromResult(AuthenticateResult.NoResult());
             }
 
-            Logger.LogInformation("X-MS-CLIENT-PRINCIPAL header FOUND - attempting to parse");
+            string serverKey = Environment.GetEnvironmentVariable("RSSREADER_API_KEY") ?? string.Empty;
+
+            if (serverKey == string.Empty)
+            {
+                Logger.LogError("RSSREADER_API_KEY is not set - cannot validate gateway key");
+                return Task.FromResult(AuthenticateResult.Fail("Server misconfiguration"));
+            }
+
+            if (!string.Equals(clientKey, serverKey, StringComparison.Ordinal))
+            {
+                Logger.LogWarning("X-Gateway-Key does not match expected value - Authentication will fail");
+                return Task.FromResult(AuthenticateResult.Fail("Invalid gateway key"));
+            }
+
+            // Check for the X-User-Id header
+            if (!Request.Headers.TryGetValue("X-User-Id", out var headerValue))
+            {
+                Logger.LogWarning("X-User-Id HEADER NOT FOUND - Authentication will fail");
+                // No authentication header present
+                return Task.FromResult(AuthenticateResult.NoResult());
+            }
+            
             var principal = ParseClientPrincipal(headerValue.ToString());
             if (principal == null)
             {
-                Logger.LogWarning("Failed to parse X-MS-CLIENT-PRINCIPAL header");
+                Logger.LogWarning("Failed to parse X-User-Id header");
                 return Task.FromResult(AuthenticateResult.Fail("Invalid client principal"));
             }
-
-            Logger.LogInformation("Successfully parsed principal - User: {UserDetails}, Provider: {Provider}", 
-                principal.UserDetails, principal.IdentityProvider);
 
             var identity = new ClaimsIdentity(principal.IdentityProvider, ClaimTypes.Name, ClaimTypes.Role);
             identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, principal.UserId));
@@ -80,7 +91,6 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
             var claimsPrincipal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(claimsPrincipal, AuthenticationScheme);
 
-            Logger.LogInformation("AUTHENTICATION SUCCESS for user: {UserDetails}", principal.UserDetails);
             return Task.FromResult(AuthenticateResult.Success(ticket));
         }
         catch (Exception ex)
