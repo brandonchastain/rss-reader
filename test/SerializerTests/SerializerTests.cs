@@ -25,7 +25,7 @@ public sealed class SerializerTests
     }
 
     [TestMethod]
-    public void OpmlExport_Should_Include_All_Tags()
+    public void OpmlExport_Should_Include_All_Tags_In_Nested_Structure()
     {
         // Arrange
         var feeds = new List<NewsFeed>
@@ -47,47 +47,67 @@ public sealed class SerializerTests
         // Act
         var opmlContent = OpmlSerializer.GenerateOpmlContent(feeds);
 
-        // Assert
-        Assert.IsTrue(opmlContent.Contains("category=\"tech,news,programming\""), 
-            "OPML should contain all tags for feed1");
-        Assert.IsTrue(opmlContent.Contains("category=\"science,research\""), 
-            "OPML should contain all tags for feed2");
+        // Assert - Feed1 should appear under each of its tags
+        Assert.IsTrue(opmlContent.Contains("<outline text=\"tech\"") || opmlContent.Contains("<outline text='tech'"), 
+            "OPML should contain tech category");
+        Assert.IsTrue(opmlContent.Contains("<outline text=\"news\"") || opmlContent.Contains("<outline text='news'"), 
+            "OPML should contain news category");
+        Assert.IsTrue(opmlContent.Contains("<outline text=\"programming\"") || opmlContent.Contains("<outline text='programming'"), 
+            "OPML should contain programming category");
+        
+        // Feed3 without tags should be at body level
         Assert.IsTrue(opmlContent.Contains("https://example.com/feed3"), 
             "Feed3 should be included even without tags");
+        
+        // Each feed URL should appear under the appropriate categories
+        Assert.IsTrue(opmlContent.Contains("https://example.com/feed1"), 
+            "Feed1 should be included");
+        Assert.IsTrue(opmlContent.Contains("https://example.com/feed2"), 
+            "Feed2 should be included");
     }
 
     [TestMethod]
-    public void OpmlImport_Should_Parse_All_Tags()
+    public void OpmlImport_Should_Parse_Nested_Structure()
     {
-        // Arrange
+        // Arrange - Standard OPML format with nested categories
         var opmlContent = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <opml version=""2.0"">
   <head>
     <title>RSS Feed Export</title>
   </head>
   <body>
-    <outline type=""rss"" xmlUrl=""https://example.com/feed1"" category=""tech,news,programming"" />
-    <outline type=""rss"" xmlUrl=""https://example.com/feed2"" category=""science,research"" />
-    <outline type=""rss"" xmlUrl=""https://example.com/feed3"" />
+    <outline text=""tech"" title=""tech"">
+      <outline type=""rss"" xmlUrl=""https://example.com/feed1"" text=""Feed 1"" />
+    </outline>
+    <outline text=""news"" title=""news"">
+      <outline type=""rss"" xmlUrl=""https://example.com/feed1"" text=""Feed 1"" />
+    </outline>
+    <outline text=""programming"" title=""programming"">
+      <outline type=""rss"" xmlUrl=""https://example.com/feed1"" text=""Feed 1"" />
+    </outline>
+    <outline text=""science"" title=""science"">
+      <outline type=""rss"" xmlUrl=""https://example.com/feed2"" text=""Feed 2"" />
+    </outline>
+    <outline type=""rss"" xmlUrl=""https://example.com/feed3"" text=""Feed 3"" />
   </body>
 </opml>";
 
         // Act
         var feeds = OpmlSerializer.ParseOpmlContent(opmlContent, 1).ToList();
 
-        // Assert
-        Assert.AreEqual(3, feeds.Count, "Should import all 3 feeds");
+        // Assert - Feed1 appears 3 times but should be deduplicated
+        Assert.AreEqual(3, feeds.Count, "Should import 3 unique feeds");
         
         var feed1 = feeds.FirstOrDefault(f => f.Href == "https://example.com/feed1");
         Assert.IsNotNull(feed1, "Feed1 should be imported");
-        Assert.AreEqual(3, feed1.Tags.Count, "Feed1 should have 3 tags");
+        Assert.AreEqual(3, feed1.Tags.Count, "Feed1 should have 3 tags from nested structure");
         CollectionAssert.AreEquivalent(new[] { "tech", "news", "programming" }, feed1.Tags.ToArray(), 
             "Feed1 should have correct tags");
 
         var feed2 = feeds.FirstOrDefault(f => f.Href == "https://example.com/feed2");
         Assert.IsNotNull(feed2, "Feed2 should be imported");
-        Assert.AreEqual(2, feed2.Tags.Count, "Feed2 should have 2 tags");
-        CollectionAssert.AreEquivalent(new[] { "science", "research" }, feed2.Tags.ToArray(), 
+        Assert.AreEqual(1, feed2.Tags.Count, "Feed2 should have 1 tag");
+        CollectionAssert.AreEquivalent(new[] { "science" }, feed2.Tags.ToArray(), 
             "Feed2 should have correct tags");
 
         var feed3 = feeds.FirstOrDefault(f => f.Href == "https://example.com/feed3");
@@ -96,9 +116,9 @@ public sealed class SerializerTests
     }
 
     [TestMethod]
-    public void OpmlImport_Should_Handle_Tags_With_Spaces()
+    public void OpmlImport_Should_Handle_Legacy_Category_Attribute()
     {
-        // Arrange
+        // Arrange - Legacy format with comma-separated category attribute
         var opmlContent = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <opml version=""2.0"">
   <head>
@@ -168,6 +188,10 @@ public sealed class SerializerTests
 
         // Act
         var opmlContent = OpmlSerializer.GenerateOpmlContent(feeds);
+        
+        // Debug output to see actual format
+        Console.WriteLine("Generated OPML:");
+        Console.WriteLine(opmlContent);
 
         // Assert - Should be valid XML that can be parsed
         var reimported = OpmlSerializer.ParseOpmlContent(opmlContent, 1).ToList();

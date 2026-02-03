@@ -33,20 +33,59 @@ public static class OpmlSerializer
         XmlElement bodyElement = doc.CreateElement("body");
         opmlElement.AppendChild(bodyElement);
         
+        // Group feeds by tags to create nested structure (OPML standard approach)
+        // Also track feeds without tags
+        var tagToFeeds = new Dictionary<string, List<NewsFeed>>();
+        var feedsWithoutTags = new List<NewsFeed>();
+        
         foreach (var feed in feeds)
+        {
+            if (feed.Tags == null || !feed.Tags.Any())
+            {
+                feedsWithoutTags.Add(feed);
+            }
+            else
+            {
+                // Add feed to each tag it belongs to
+                foreach (var tag in feed.Tags)
+                {
+                    if (!tagToFeeds.ContainsKey(tag))
+                    {
+                        tagToFeeds[tag] = new List<NewsFeed>();
+                    }
+                    tagToFeeds[tag].Add(feed);
+                }
+            }
+        }
+        
+        // Create outline elements for each tag (category)
+        foreach (var kvp in tagToFeeds.OrderBy(x => x.Key))
+        {
+            XmlElement categoryOutline = doc.CreateElement("outline");
+            categoryOutline.SetAttribute("text", kvp.Key);
+            categoryOutline.SetAttribute("title", kvp.Key);
+            
+            // Add all feeds under this tag
+            foreach (var feed in kvp.Value)
+            {
+                XmlElement feedOutline = doc.CreateElement("outline");
+                feedOutline.SetAttribute("type", "rss");
+                feedOutline.SetAttribute("xmlUrl", feed.Href);
+                feedOutline.SetAttribute("text", feed.Href);
+                
+                categoryOutline.AppendChild(feedOutline);
+            }
+            
+            bodyElement.AppendChild(categoryOutline);
+        }
+        
+        // Add feeds without tags directly to body
+        foreach (var feed in feedsWithoutTags)
         {
             XmlElement outlineElement = doc.CreateElement("outline");
             outlineElement.SetAttribute("type", "rss");
             outlineElement.SetAttribute("xmlUrl", feed.Href);
-            
-            // Add title if available, otherwise use URL
             outlineElement.SetAttribute("text", feed.Href);
-            
-            // Add tags as category attribute if available
-            if (feed.Tags != null && feed.Tags.Any())
-            {
-                outlineElement.SetAttribute("category", string.Join(",", feed.Tags));
-            }
             
             bodyElement.AppendChild(outlineElement);
         }
@@ -60,7 +99,7 @@ public static class OpmlSerializer
 
     public static IEnumerable<NewsFeed> ParseOpmlContent(string opmlContent, int userId)
     {
-        var feeds = new List<NewsFeed>();
+        var feeds = new Dictionary<string, NewsFeed>(); // Use dictionary to deduplicate feeds by URL
         
         try
         {
@@ -88,35 +127,11 @@ public static class OpmlSerializer
             {
                 doc.Load(reader);
                 
-                // Find all outline elements with type="rss"
-                XmlNodeList outlineNodes = doc.SelectNodes("//outline[@type='rss']");
-                
-                if (outlineNodes != null)
+                // Find the body element
+                XmlNode bodyNode = doc.SelectSingleNode("//body");
+                if (bodyNode != null)
                 {
-                    foreach (XmlNode node in outlineNodes)
-                    {
-                        string xmlUrl = node.Attributes?["xmlUrl"]?.Value;
-                        
-                        if (!string.IsNullOrEmpty(xmlUrl))
-                        {
-                            var feed = new NewsFeed(xmlUrl, userId);
-                            
-                            // Get title if available
-                            //feed.Title = node.Attributes?["text"]?.Value ?? node.Attributes?["title"]?.Value;
-                            
-                            // Get categories/tags if available
-                            string categories = node.Attributes?["category"]?.Value;
-                            if (!string.IsNullOrEmpty(categories))
-                            {
-                                foreach (var tag in categories.Split(',', StringSplitOptions.RemoveEmptyEntries))
-                                {
-                                    feed.Tags.Add(tag.Trim());
-                                }
-                            }
-                            
-                            feeds.Add(feed);
-                        }
-                    }
+                    ParseOutlineElements(bodyNode, new List<string>(), feeds, userId);
                 }
             }
         }
@@ -126,6 +141,65 @@ public static class OpmlSerializer
             throw new FormatException("Error parsing OPML content", ex);
         }
         
-        return feeds;
+        return feeds.Values;
+    }
+
+    private static void ParseOutlineElements(XmlNode parentNode, List<string> parentTags, Dictionary<string, NewsFeed> feeds, int userId)
+    {
+        foreach (XmlNode node in parentNode.ChildNodes)
+        {
+            if (node.Name != "outline")
+            {
+                continue;
+            }
+
+            string type = node.Attributes?["type"]?.Value;
+            string xmlUrl = node.Attributes?["xmlUrl"]?.Value;
+            string text = node.Attributes?["text"]?.Value;
+
+            if (type == "rss" && !string.IsNullOrEmpty(xmlUrl))
+            {
+                // This is a feed outline
+                if (!feeds.ContainsKey(xmlUrl))
+                {
+                    feeds[xmlUrl] = new NewsFeed(xmlUrl, userId);
+                }
+
+                // Add all parent tags to this feed
+                foreach (var tag in parentTags)
+                {
+                    if (!feeds[xmlUrl].Tags.Contains(tag))
+                    {
+                        feeds[xmlUrl].Tags.Add(tag);
+                    }
+                }
+
+                // Also check for legacy comma-separated category attribute for backwards compatibility
+                string categories = node.Attributes?["category"]?.Value;
+                if (!string.IsNullOrEmpty(categories))
+                {
+                    foreach (var tag in categories.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var trimmedTag = tag.Trim();
+                        if (!feeds[xmlUrl].Tags.Contains(trimmedTag))
+                        {
+                            feeds[xmlUrl].Tags.Add(trimmedTag);
+                        }
+                    }
+                }
+            }
+            else if (node.HasChildNodes)
+            {
+                // This is a category/folder outline
+                var currentTags = new List<string>(parentTags);
+                if (!string.IsNullOrEmpty(text))
+                {
+                    currentTags.Add(text);
+                }
+
+                // Recursively parse child elements
+                ParseOutlineElements(node, currentTags, feeds, userId);
+            }
+        }
     }
 }
