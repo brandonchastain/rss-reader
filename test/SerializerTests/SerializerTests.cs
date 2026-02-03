@@ -188,10 +188,6 @@ public sealed class SerializerTests
 
         // Act
         var opmlContent = OpmlSerializer.GenerateOpmlContent(feeds);
-        
-        // Debug output to see actual format
-        Console.WriteLine("Generated OPML:");
-        Console.WriteLine(opmlContent);
 
         // Assert - Should be valid XML that can be parsed
         var reimported = OpmlSerializer.ParseOpmlContent(opmlContent, 1).ToList();
