@@ -64,17 +64,19 @@ public sealed class SerializerTests
     public void OpmlImport_Should_Parse_Category_Attribute()
     {
         // Arrange - OPML 2.0 spec format with comma-separated category attribute
-        var opmlContent = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<opml version=""2.0"">
-  <head>
-    <title>RSS Feed Export</title>
-  </head>
-  <body>
-    <outline type=""rss"" xmlUrl=""https://example.com/feed1"" text=""Feed 1"" category=""tech,news,programming"" />
-    <outline type=""rss"" xmlUrl=""https://example.com/feed2"" text=""Feed 2"" category=""science"" />
-    <outline type=""rss"" xmlUrl=""https://example.com/feed3"" text=""Feed 3"" />
-  </body>
-</opml>";
+        var opmlContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <opml version="2.0">
+              <head>
+                <title>RSS Feed Export</title>
+              </head>
+              <body>
+                <outline type="rss" xmlUrl="https://example.com/feed1" text="Feed 1" category="tech,news,programming" />
+                <outline type="rss" xmlUrl="https://example.com/feed2" text="Feed 2" category="science" />
+                <outline type="rss" xmlUrl="https://example.com/feed3" text="Feed 3" />
+              </body>
+            </opml>
+            """;
 
         // Act
         var feeds = OpmlSerializer.ParseOpmlContent(opmlContent, 1).ToList();
@@ -103,15 +105,17 @@ public sealed class SerializerTests
     public void OpmlImport_Should_Handle_Whitespace_In_Category_Attribute()
     {
         // Arrange - Category with spaces around commas
-        var opmlContent = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<opml version=""2.0"">
-  <head>
-    <title>RSS Feed Export</title>
-  </head>
-  <body>
-    <outline type=""rss"" xmlUrl=""https://example.com/feed1"" category=""tech, news , programming"" />
-  </body>
-</opml>";
+        var opmlContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <opml version="2.0">
+              <head>
+                <title>RSS Feed Export</title>
+              </head>
+              <body>
+                <outline type="rss" xmlUrl="https://example.com/feed1" category="tech, news , programming" />
+              </body>
+            </opml>
+            """;
 
         // Act
         var feeds = OpmlSerializer.ParseOpmlContent(opmlContent, 1).ToList();
