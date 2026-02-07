@@ -33,16 +33,16 @@ public static class OpmlSerializer
         XmlElement bodyElement = doc.CreateElement("body");
         opmlElement.AppendChild(bodyElement);
         
+        // Add each feed as an outline element
+        // Per OPML 2.0 spec: category attribute contains comma-separated tags
         foreach (var feed in feeds)
         {
             XmlElement outlineElement = doc.CreateElement("outline");
             outlineElement.SetAttribute("type", "rss");
             outlineElement.SetAttribute("xmlUrl", feed.Href);
-            
-            // Add title if available, otherwise use URL
             outlineElement.SetAttribute("text", feed.Href);
             
-            // Add tags as category attribute if available
+            // Add tags as comma-separated category attribute (OPML 2.0 spec compliant)
             if (feed.Tags != null && feed.Tags.Any())
             {
                 outlineElement.SetAttribute("category", string.Join(",", feed.Tags));
@@ -101,10 +101,7 @@ public static class OpmlSerializer
                         {
                             var feed = new NewsFeed(xmlUrl, userId);
                             
-                            // Get title if available
-                            //feed.Title = node.Attributes?["text"]?.Value ?? node.Attributes?["title"]?.Value;
-                            
-                            // Get categories/tags if available
+                            // Get categories/tags from comma-separated category attribute (OPML 2.0 spec)
                             string categories = node.Attributes?["category"]?.Value;
                             if (!string.IsNullOrEmpty(categories))
                             {
