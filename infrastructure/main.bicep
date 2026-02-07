@@ -28,8 +28,12 @@ param minReplicas int = 0
 @description('Maximum number of replicas')
 param maxReplicas int = 1
 
-@description('Azure Container Registry name')
-param acrName string = 'rssreaderacr'
+@description('GitHub Container Registry username')
+param ghcrUsername string
+
+@description('GitHub Container Registry password/PAT')
+@secure()
+param ghcrPassword string
 
 @description('Name of the Static Web App')
 param staticWebAppName string = 'rss-reader-swa'
@@ -78,12 +82,6 @@ resource fileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-0
   }
 }
 
-// Reference existing ACR
-resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = {
-  name: acrName
-  scope: resourceGroup()
-}
-
 // Container App Environment
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: environmentName
@@ -122,15 +120,15 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       registries: [
         {
-          server: acr.properties.loginServer
-          username: acr.listCredentials().username
-          passwordSecretRef: 'acr-password'
+          server: 'ghcr.io'
+          username: ghcrUsername
+          passwordSecretRef: 'ghcr-password'
         }
       ]
       secrets: [
         {
-          name: 'acr-password'
-          value: acr.listCredentials().passwords[0].value
+          name: 'ghcr-password'
+          value: ghcrPassword
         }
         {
           name: 'gateway-secret-key'

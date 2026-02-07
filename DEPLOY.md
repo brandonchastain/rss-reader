@@ -4,6 +4,7 @@
 1. Azure CLI installed: `az --version`
 2. Docker installed
 3. Azure subscription
+4. Github account (or other container registry)
 
 ## Step 1: Setup Azure Resources
 
@@ -16,25 +17,39 @@ az account set --subscription "YOUR_SUBSCRIPTION_ID"
 
 # Create resource group
 az group create --name rss-container-rg --location westus2
+```
 
-# Create Azure Container Registry (ACR) for your images
-az acr create --resource-group rss-container-rg   --name rssreaderacr   --sku Basic   --location westus2
+## Step 1b: Setup GitHub Container Registry
 
-# Enable admin access (for easier pushing)
-az acr update --name rssreaderacr --admin-enabled true
+1. Create a GitHub Personal Access Token (PAT) with `read:packages` and `write:packages` scopes:
+   - Go to GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)
+   - Generate a new token with `read:packages` and `write:packages` scopes
+   - Save the token securely - you'll need it for pushing images and for Azure deployment
+
+2. Login to GitHub Container Registry:
+```bash
+# Set your GitHub username and PAT
+$($env:GITHUB_USERNAME) = "YOUR_GITHUB_USERNAME"
+$($env:GITHUB_PAT) = "YOUR_GITHUB_PAT"
+
+# Login to GHCR
+echo $($env:GITHUB_PAT) | docker login ghcr.io -u $($env:GITHUB_USERNAME) --password-stdin
 ```
 
 ## Step 2: Build and Push Docker Image
+
+1. Launch Docker.
+2. Run these commands:
 
 ```bash
 # Navigate to the src directory (parent of Server and Shared)
 cd c:\dev\rssreader\rss-reader\src
 
-# Login to ACR
-az acr login --name rssreaderacr
+# Build the Docker image
+docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f Server/Dockerfile .
 
-# Build and push the image to ACR
-az acr build --registry rssreaderacr   --image rss-reader-api:latest   --file Server/Dockerfile   .
+# Push the image to GitHub Container Registry
+docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
 ```
 
 ## Step 3: Deploy Infrastructure
@@ -49,13 +64,15 @@ $bytes = New-Object byte[] 64
 $base64 = [Convert]::ToBase64String($bytes)
 $GATEWAY_SECRET_KEY = $base64.Replace('+', '-').Replace('/', '_').TrimEnd('=')
 
-# Deploy the Bicep template with the generated gateway secret key
+# Deploy the Bicep template with the gateway secret key and GHCR credentials
 az deployment group create `
   --resource-group rss-container-rg `
   --template-file main.bicep `
   --parameters main.bicepparam `
-  --parameters containerImage='rssreaderacr.azurecr.io/rss-reader-api:latest' `
-  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY
+  --parameters containerImage="ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest" `
+  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY `
+  --parameters ghcrUsername=$($env:GITHUB_USERNAME) `
+  --parameters ghcrPassword=$($env:GITHUB_PAT)
 
 ```
 
@@ -66,10 +83,21 @@ When you update your code:
 ```bash
 # Rebuild and push new image
 cd c:\dev\rssreader\rss-reader\src
-az acr build --registry rssreaderacr   --image rss-reader-api:latest   --file Server/Dockerfile   .
+docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f Server/Dockerfile .
+docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
 
-# Container App automatically pulls latest image on next revision
-az containerapp update   --name rss-reader-api   --resource-group rss-container-rg   --image rssreaderacr.azurecr.io/rss-reader-api:latest
+# (not needed after ARM deployment) Update Container App with the new image (include registry credentials)
+az containerapp registry set `
+  --name rss-reader-api `
+  --resource-group rss-container-rg `
+  --server ghcr.io `
+  --username $($env:GITHUB_USERNAME) `
+  --password $($env:GITHUB_PAT)
+
+az containerapp update `
+  --name rss-reader-api `
+  --resource-group rss-container-rg `
+  --image ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
 
 ```
 
