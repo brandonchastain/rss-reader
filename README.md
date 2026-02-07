@@ -11,12 +11,11 @@
 
 🔍 <b>Search</b> for posts
 
-📥 <b>Import and export</b> feeds with full multi-tag support to/from other reader apps (OPML 2.0)
+📥 <b>Import and export</b> feeds to/from other reader apps
 
 📱 Responsive design for mobile & desktop
 
 # Docs
 * [ARCHITECTURE.md](ARCHITECTURE.md)
-* [OPML-FORMAT.md](OPML-FORMAT.md) - Multi-tag import/export format specification
 * [LOCAL-TESTING.md](LOCAL-TESTING.md)
 * [DEPLOY.md](DEPLOY.md)
