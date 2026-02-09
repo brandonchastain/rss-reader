@@ -72,16 +72,28 @@ namespace RssReader.Server.Services
 
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
-            _logger.LogInformation("DatabaseBackupService stopping. Performing final backup...");
+            _logger.LogInformation("DatabaseBackupService stopping. Attempting best-effort final backup...");
             
             try
             {
-                // Final backup before shutdown
-                await BackupToStorageAsync(cancellationToken);
+                // Give other background services (BackgroundWorker, FeedRefresher) a moment to 
+                // finish their current database operations before we attempt backup
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                
+                // Use a short timeout for the final backup to avoid delaying container shutdown
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+                
+                await BackupToStorageAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("Final backup cancelled or timed out during shutdown. Last periodic backup is current (max 5 min old)");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error during final backup on shutdown");
+                // Don't treat shutdown backup failures as errors - periodic backups provide coverage
+                _logger.LogWarning(ex, "Final backup skipped due to shutdown timing. Last periodic backup is current (max 5 min old)");
             }
             
             await base.StopAsync(cancellationToken);

@@ -64,9 +64,9 @@ builder.Services
 })
 .AddSingleton<RssDeserializer>()
 .AddSingleton<BackgroundWorkQueue>()
-.AddHostedService<BackgroundWorker>()
 .AddSingleton<DatabaseBackupService>()
 .AddHostedService<DatabaseBackupService>(p => p.GetRequiredService<DatabaseBackupService>())
+.AddHostedService<BackgroundWorker>()
 .AddSingleton<IFeedRefresher>(sp =>
 {
     return new FeedRefresher(
