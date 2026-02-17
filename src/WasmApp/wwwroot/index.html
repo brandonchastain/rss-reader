@@ -16,6 +16,16 @@
 </head>
 
 <body>
+    <script>
+        if (location.pathname === '/' || location.pathname === '/index') {
+            fetch('/.auth/me')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.clientPrincipal) location.replace('/timeline');
+                })
+                .catch(() => {});
+        }
+    </script>
     <div id="app"></div>
     <script src="_content/Microsoft.AspNetCore.Components.WebAssembly.Authentication/AuthenticationService.js"></script>
     <script src="_framework/blazor.webassembly.js"></script>

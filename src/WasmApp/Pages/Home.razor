@@ -7,18 +7,6 @@
 
 <PageTitle>RssReader | A simple browser-based RSS reader</PageTitle>
 
-<AuthorizeView>
-    <Authorized>
-        @{
-            var currentPath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
-            if (string.IsNullOrEmpty(currentPath))
-            {
-                NavigationManager.NavigateTo("/timeline", true);
-            }
-        }
-    </Authorized>
-</AuthorizeView>
-
 <article class="container-fluid py-4">
     <div class="row">
         <div class="col-12 col-lg-10 mx-auto">
