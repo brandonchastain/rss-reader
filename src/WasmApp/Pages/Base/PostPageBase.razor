@@ -56,7 +56,10 @@
             }
             
             var newPageRes = await this.GetPostsAsync();
-            Items.AddRange(newPageRes);
+            // Deduplicate by Href before adding
+            var existingHrefs = new HashSet<string>(Items.Select(i => i.Href), StringComparer.OrdinalIgnoreCase);
+            var dedupedNewPosts = newPageRes.Where(i => !existingHrefs.Contains(i.Href)).ToList();
+            Items.AddRange(dedupedNewPosts);
             
             this.StateHasChanged();
         }
