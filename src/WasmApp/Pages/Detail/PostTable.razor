@@ -9,6 +9,7 @@
 
 @inject ILogger<Posts> logger
 @inject IJSRuntime jsRuntime
+@inject NavigationManager NavigationManager
 
 <SectionContent SectionName="toolbar">
     <Toolbar
@@ -27,10 +28,26 @@
 <div id="post-table" class="table">
     @if (isLoading)
     {
-        <div>
-            <div>
-                <span class="">Loading...</span>
-            </div>
+        <div class="d-flex flex-column justify-content-center align-items-center" style="min-height: 60vh;">
+            @if (_hasTimedOut)
+            {
+                <p class="text-muted mb-3">Loading is taking longer than expected.</p>
+                <button class="btn btn-primary" @onclick="Retry">Try Again</button>
+            }
+            else
+            {
+                <div class="spinner mb-3"></div>
+                <p class="text-muted">
+                @if (_showColdStartText)
+                {
+                    <span>Waiting for backend cold start. This might take a few seconds...</span>
+                }
+                else
+                {
+                    <span>&nbsp;</span>
+                }
+                </p>
+            }
         </div>
     }
     else if (Posts == null || Posts.Count == 0)
@@ -82,10 +99,20 @@
     private string filterTag => FeedClient.FilterTag;
 
     private const int MaxPostsToKeep = 100;  // Adjust this number based on your needs
+    private const int LoadingTimeoutMs = 30000;
+    private const int ColdStartTextDelayMs = 2000;
     private bool isLoading = true;
+    private bool _hasTimedOut = false;
+    private bool _showColdStartText = false;
+    private System.Timers.Timer _timeoutTimer;
+    private System.Timers.Timer _coldStartTextTimer;
 
     public void Dispose()
     {
+        _timeoutTimer?.Stop();
+        _timeoutTimer?.Dispose();
+        _coldStartTextTimer?.Stop();
+        _coldStartTextTimer?.Dispose();
         FeedClient.Dispose();
     }
     
@@ -94,9 +121,59 @@
         await base.OnAfterRenderAsync(firstRender);
         if (firstRender)
         {
+            StartTimeoutTimer();
+            StartColdStartTextTimer();
             this.userTags = await FeedClient.GetUserTagsAsync(CurrentUser);
             StateHasChanged();
         }
+    }
+    private void StartColdStartTextTimer()
+    {
+        _showColdStartText = false;
+        _coldStartTextTimer?.Stop();
+        _coldStartTextTimer?.Dispose();
+        _coldStartTextTimer = new System.Timers.Timer(ColdStartTextDelayMs);
+        _coldStartTextTimer.AutoReset = false;
+        _coldStartTextTimer.Elapsed += (s, e) =>
+        {
+            if (isLoading)
+            {
+                _showColdStartText = true;
+                InvokeAsync(StateHasChanged);
+            }
+        };
+        _coldStartTextTimer.Start();
+    }
+
+    private void StartTimeoutTimer()
+    {
+        _hasTimedOut = false;
+        _timeoutTimer?.Stop();
+        _timeoutTimer?.Dispose();
+        _timeoutTimer = new System.Timers.Timer(LoadingTimeoutMs);
+        _timeoutTimer.AutoReset = false;
+        _timeoutTimer.Elapsed += (s, e) =>
+        {
+            if (isLoading)
+            {
+                _hasTimedOut = true;
+                InvokeAsync(StateHasChanged);
+            }
+        };
+        _timeoutTimer.Start();
+    }
+
+    private void StopTimeoutTimer()
+    {
+        _timeoutTimer?.Stop();
+        _hasTimedOut = false;
+        _coldStartTextTimer?.Stop();
+        _showColdStartText = false;
+    }
+
+    private void Retry()
+    {
+        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
     }
 
     protected override void OnParametersSet()
@@ -106,6 +183,7 @@
         if (Posts != null && Posts.Any())
         {
             isLoading = false;
+            StopTimeoutTimer();
         }
     }
 
