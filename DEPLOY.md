@@ -1,4 +1,32 @@
-# Infrastructure and backend deployment
+# Cheat Sheet
+
+## Step 1: Build & deploy the backend
+
+Make sure to start Docker first.
+
+```bash
+cd c:\dev\rssreader\rss-reader\src
+docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f src/Server/Dockerfile
+docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
+
+az containerapp update `
+  --name rss-reader-api `
+  --resource-group rss-container-rg `
+  --image ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
+
+```
+
+
+## Step 2: Build & deploy the frontend
+
+```bash
+cd c:\dev\rssreader\rss-reader
+swa build
+swa deploy --env production
+
+```
+
+# Infrastructure buildout and backend deployment
 
 ## Prerequisites
 1. Azure CLI installed: `az --version`
@@ -52,7 +80,7 @@ docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f Server/
 docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
 ```
 
-## Step 3: Deploy Infrastructure
+## Step 3: Infrastructure buildout
 
 ```bash
 # Navigate to infrastructure directory
@@ -82,17 +110,9 @@ When you update your code:
 
 ```bash
 # Rebuild and push new image
-cd c:\dev\rssreader\rss-reader\src
-docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f Server/Dockerfile .
+cd c:\dev\rssreader\rss-reader\
+docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f src/Server/Dockerfile .
 docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
-
-# (not needed after ARM deployment) Update Container App with the new image (include registry credentials)
-az containerapp registry set `
-  --name rss-reader-api `
-  --resource-group rss-container-rg `
-  --server ghcr.io `
-  --username $($env:GITHUB_USERNAME) `
-  --password $($env:GITHUB_PAT)
 
 az containerapp update `
   --name rss-reader-api `

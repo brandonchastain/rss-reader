@@ -111,4 +111,5 @@ app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapGet("/api/healthz", () => Results.Ok("healthy")).AllowAnonymous();
 app.Run();

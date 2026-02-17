@@ -43,6 +43,11 @@ app.http('ApiProxy', {
         }
         
         try {
+            // Allow healthz through without auth (used for warmup)
+            if (path === 'healthz') {
+                return await forwardHealthCheck(context, request);
+            }
+
             // Extract user identity from Easy Auth (platform-injected header)
             const userPrincipal = extractUserFromEasyAuth(context, request);
             
@@ -138,6 +143,33 @@ function extractUserFromEasyAuth(context, request) {
     } catch (error) {
         context.error('Error parsing Easy Auth principal:', error);
         return null;
+    }
+}
+
+// ============================================================================
+// HEALTH CHECK - No auth required (used for cold-start warmup)
+// ============================================================================
+
+async function forwardHealthCheck(context, request) {
+    const backendUrl = process.env.RSSREADER_API_URL;
+    if (!backendUrl) {
+        return { status: 200, body: 'proxy-only-ok' };
+    }
+
+    try {
+        const targetUrl = `${backendUrl.replace(/\/$/, '')}/api/healthz`;
+        const response = await fetch(targetUrl);
+        return {
+            status: response.status,
+            headers: {
+                'Content-Type': 'text/plain',
+                ...getCorsHeaders(request)
+            },
+            body: await response.text()
+        };
+    } catch (error) {
+        context.log('Health check forwarding failed:', error.message);
+        return { status: 503, body: 'backend-unavailable' };
     }
 }
 

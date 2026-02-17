@@ -17,6 +17,9 @@
 
 <body>
     <script>
+        // Warm up the API function to reduce cold start latency
+        fetch('/api/healthz').catch(() => {});
+
         if (location.pathname === '/' || location.pathname === '/index') {
             fetch('/.auth/me')
                 .then(r => r.json())

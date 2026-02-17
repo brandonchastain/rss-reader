@@ -27,6 +27,11 @@
     <Content Update="wwwroot\appsettings.json">
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>
+    <Content Update="staticwebapp.config.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <TargetPath>wwwroot\staticwebapp.config.json</TargetPath>
+    </Content>
   </ItemGroup>
 
 </Project>
