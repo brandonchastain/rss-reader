@@ -12,7 +12,7 @@ For the sole purpose of enabling app functionality, RSS Reader stores the follow
 
 
 
-You are trusting __ME__ and the __RSS Reader code & infrastructure__ with the above data. If you prefer not to, you can use an anonymized Microsoft account or self-host this solution. See [LOCAL-TESTING.md](LOCAL-TESTING.md) for steps to build and run locally.
+You are trusting __ME__ and the __RSS Reader code & infrastructure__ with the above data. If you prefer not to, you can use an anonymized Microsoft account or self-host this solution. See docs at the [Github repo](https://github.com/brandonchastain/rss-reader/blob/main/README.md) for steps to build and run locally.
 
 ### We do not share or sell any personal data.
 
