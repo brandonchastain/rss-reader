@@ -1,0 +1,59 @@
+@page "/privacy"
+
+<h1>Privacy Policy</h1>
+
+<div class="privacy-policy">
+    <!-- The content below is copied from PRIVACY.md -->
+    <section>
+        <p>I respect your personal privacy as much as I do my own. For that reason, you should be aware of the following before using RSS Reader.</p>
+
+        <h3>What data gets sent to RSS Reader?</h3>
+        <p>For the sole purpose of enabling app functionality, RSS Reader stores the following data:</p>
+        <ul>
+            <li>Your Microsoft account email address</li>
+            <li>Feeds that you subscribe to on RSS Reader</li>
+            <li>Feed item metadata (text content, tags, unread posts, saved posts)</li>
+        </ul>
+        <p>You are trusting <strong>ME</strong> (Brandon) and the <strong>RSS Reader code &amp; infrastructure</strong> with the above data.</p>
+        
+        <p>If you prefer not to do that, you can use an anonymized Microsoft account or self-host this solution. See <a href="LOCAL-TESTING.md">LOCAL-TESTING.md</a> for steps to build and run locally.</p>
+
+        <h3>We do not share or sell any personal data.</h3>
+
+        <h3>How is that data used?</h3>
+        <ul>
+            <li>This data is used solely for authentication and app functionality.</li>
+            <li>No third-party analytics or ad services are provisioned in the infrastructure.</li>
+            <li>No data is shared with third parties except Microsoft/Azure as the cloud provider.</li>
+        </ul>
+
+        <h3>A personal Microsoft account is required.</h3>
+        <p>A personal Microsoft account is required to login to RSS Reader. The only account data we use is the email address. It serves as your username in RSS Reader.<br />
+        Microsoft securely handles the authentication when you login from your browser. Your password is never exposed to RSS Reader.</p>
+
+        <h3>We won't spam you.</h3>
+        <p>We don't send any emails at all.</p>
+        <hr />
+
+        <h2>Security</h2>
+        <ul>
+            <li>Data (user emails, feeds, posts) are stored on an encrypted Azure Storage Account with minimum TLS 1.2 enforced.</li>
+            <li>The backend API and database run in an Azure Container App, inside a managed environment, with logs sent to Azure Log Analytics (retained for 30 days).</li>
+            <li>All network traffic to the backend is protected by HTTPS only (no insecure connections allowed).</li>
+            <li>All requests to the backend server must come from an authenticated user, and require a secret API key that is distributed to the frontend. The API is not accessible without proper credentials.</li>
+            <li>The backend API prevents users from seeing any data that isn't their own.</li>
+        </ul>
+        <hr />
+
+        <h3>GDPR Notice</h3>
+        <p>If you are an EU resident, the following applies:</p>
+        <ul>
+            <li><strong>Legal Basis:</strong> Data is processed solely to provide app functionality and authentication, based on your consent when you use RSS Reader.</li>
+            <li><strong>Your Rights:</strong> You have the right to access, correct, delete, restrict, or object to the processing of your personal data. You may also request a copy of your data.</li>
+            <li><strong>Data Retention:</strong> Your data is retained only as long as your account exists. When the account deletion feature is available, you will be able to remove your data at any time.</li>
+            <li><strong>International Transfers:</strong> Data is stored in Microsoft Azure data centers in the United States. Azure applies security and privacy protections for international transfers.</li>
+            <li><strong>Contact:</strong> To exercise your rights or for privacy concerns, please open an issue in this repository.</li>
+        </ul>
+        <p>RSS Reader is primarily intended for US users, but basic GDPR protections are provided for EU residents.</p>
+    </section>
+</div>

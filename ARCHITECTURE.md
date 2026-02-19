@@ -1,37 +1,64 @@
-# RSS Reader Web App (frontend)
+# Diagram
+
+```
++-----------------------------------------------------+
+|                RSS Reader                           |
+|  +----------------------------------------------+   |
+|  |  Frontend Web App - /src/WasmApp/            |   |
+|  +----------------------------------------------+   |
+|                 |   HTTP                            |
+|                 |                                   |
+|                 | /api/feed/*                       |
+|                 | /api/item/*                       |
+|                 | /api/user/*                       |
+|                 v                                   |
+|  +------------------------------------------+       |
+|  | Azure Function API Proxy - /api/         |       |
+|  +------------------------------------------+       |
+|                 |   HTTP - forwarded                |
+|                 |                                   |
+|                 | /api/feed/*                       |
+|                 | /api/item/*                       |
+|                 | /api/user/*                       |
+|                 v                                   |
+|  +--------------------------------------------+     |
+|  |  RSS Reader Backend Web API - /src/Server/ |     |
+|  |                                            |     |
+|  |        |                                   |     |
+|  |        v                                   |     |
+|  |    +-----------+                           |     |
+|  |    |  SQLite   |                           |     |
+|  |    | Database  |                           |     |
+|  |    +-----------+                           |     |
+|  +--------------------------------------------+     |
++-----------------------------------------------------+
+```
+
+
+
+
+## Frontend Web App
 
 A static web app that runs on WASM, written in C# with Blazor.
 
-## Stack
+#### Stack
 
 C#, Blazor Webassembly, Javascript, HTML, CSS
 
-## Hosting infrastructure
 
-Azure Static Web App with easy auth enabled
+## Backend Web API
 
+An ASP.NET Core Web API that enables the frontend to update server state for users, feeds, and posts.
 
-# RSS Reader Web API Server (backend)
-
-An ASP.NET Core Web API, targeting latest .NET, that powers the RSS Reader frontend by processing RSS feeds, storing data on disk in a SQLite database,
-and making that data available through several HTTP endpoints.
-
-## Stack
+#### Stack
 
 C#, ASP.NET, SQLite
 
-## Hosting infrastructure
-
-~~Azure app service standard b1s and public ip~~
-
-~~Azure VM, Standard_B1s West US 2 region, public ip, and disk~~
-
-Azure Container App instance with ephemeral storage, periodically backed up to azure files
-
-## Endpoints (C# controllers)
+#### Endpoints (C# controllers)
 * `/api/feed/*` - Retrieve, refresh, and import/export RSS feeds
 * `/api/item/*` - Retrieve, search, and save RSS posts
 * `/api/user/*` - Retrieve user info and login/register
 
-## Database
-SQLite database to store RSS feeds, items and users locally (only usernames/some metadata, not passwords. auth is handled externally by Azure App Service easy auth).
+#### Database
+SQLite database to store RSS feeds, posts, and user profiles.
+
