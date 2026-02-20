@@ -2,7 +2,7 @@ namespace RssApp.ComponentServices;
 
 public class BackgroundWorker : BackgroundService
 {
-    private const int WorkerCount = 5;
+    private const int WorkerCount = 100;
     private readonly ILogger<BackgroundWorker> _logger;
     private readonly BackgroundWorkQueue _queue;
 

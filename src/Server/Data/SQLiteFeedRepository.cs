@@ -163,10 +163,6 @@ public class SQLiteFeedRepository : IFeedRepository
         }
     }
 
-    public void Update(NewsFeed feed)
-    {
-    }
-
     public string GetTagsByFeedId(int feedId)
     {
         using (var connection = new SqliteConnection(this.connectionString))
@@ -214,7 +210,7 @@ public class SQLiteFeedRepository : IFeedRepository
         }
     }
 
-    public void ImportFeeds(RssUser user, IEnumerable<NewsFeed> feeds)
+    public void AddFeeds(RssUser user, IEnumerable<NewsFeed> feeds)
     {
         if (user == null || feeds == null || !feeds.Any())
         {

@@ -5,21 +5,26 @@
 <div class="privacy-policy">
     <!-- The content below is copied from PRIVACY.md -->
     <section>
-        <p>I respect your personal privacy as much as I do my own. For that reason, you should be aware of the following before using RSS Reader.</p>
+        <p>
+            I respect your personal privacy as much as I do my own. For that reason, you should be aware of the following before using RSS Reader.
+        </p>
+        
+        <p>&nbsp;</p>
+        <h3>We will never share or sell any personal data.</h3>
 
-        <h3>What data gets sent to RSS Reader?</h3>
-        <p>For the sole purpose of enabling app functionality, RSS Reader stores the following data:</p>
+        <p>&nbsp;</p>
+        <h3>What data gets stored by RSS Reader?</h3>
         <ul>
             <li>Your Microsoft account email address</li>
             <li>Feeds that you subscribe to on RSS Reader</li>
             <li>Feed item metadata (text content, tags, unread posts, saved posts)</li>
         </ul>
-        <p>You are trusting <strong>ME</strong> (Brandon) and the <strong>RSS Reader code &amp; infrastructure</strong> with the above data.</p>
-        
-        <p>If you prefer not to do that, you can use an anonymized Microsoft account or self-host this solution. See <a href="LOCAL-TESTING.md">LOCAL-TESTING.md</a> for steps to build and run locally.</p>
 
-        <h3>We do not share or sell any personal data.</h3>
+        <p>
+            You are trusting <strong>me</strong> (Brandon) and the <strong>RSS Reader code &amp; infrastructure</strong> with the above data.
+        </p>
 
+        <p>&nbsp;</p>
         <h3>How is that data used?</h3>
         <ul>
             <li>This data is used solely for authentication and app functionality.</li>
@@ -27,20 +32,41 @@
             <li>No data is shared with third parties except Microsoft/Azure as the cloud provider.</li>
         </ul>
 
-        <h3>A personal Microsoft account is required.</h3>
-        <p>A personal Microsoft account is required to login to RSS Reader. The only account data we use is the email address. It serves as your username in RSS Reader.<br />
-        Microsoft securely handles the authentication when you login from your browser. Your password is never exposed to RSS Reader.</p>
+        <p>&nbsp;</p>
+        <h3>Personal Microsoft account required for this website (see alternative options below)</h3>
+        <p>
+            A personal Microsoft account is required to login to RSS Reader. The only account data we use is the email address. It serves as your username in RSS Reader.<br />
+            Microsoft securely handles the authentication when you login from your browser. Your credentials are never exposed to RSS Reader.
+        </p>
 
+        <p>&nbsp;</p>
         <h3>We won't spam you.</h3>
         <p>We don't send any emails at all.</p>
+
+        <p>&nbsp;</p>
+        <h3>Alternative Options (for the privacy-conscious)</h3>
+        <p>
+            If you'd like to use RSS Reader but prefer not to disclose any personal data, try one of these options:
+
+            <ul>
+                <li>
+                    Use an anonymous Microsoft account (for casual anonymity)
+                </li>
+                <li>
+                    Self-host the app (for absolute privacy) - <a href="https://github.com/brandonchastain/rss-reader/blob/main/README.md">Docs</a>
+                </li>
+            </ul>
+        </p>
+
         <hr />
 
         <h2>Security</h2>
         <ul>
-            <li>Data (user emails, feeds, posts) are stored on an encrypted Azure Storage Account with minimum TLS 1.2 enforced.</li>
-            <li>The backend API and database run in an Azure Container App, inside a managed environment, with logs sent to Azure Log Analytics (retained for 30 days).</li>
-            <li>All network traffic to the backend is protected by HTTPS only (no insecure connections allowed).</li>
-            <li>All requests to the backend server must come from an authenticated user, and require a secret API key that is distributed to the frontend. The API is not accessible without proper credentials.</li>
+            <li>Data like email addresses, feeds, and posts are stored on an encrypted Azure Storage Account</li>
+            <li>The backend server runs in an Azure Container App (Azure-managed PaaS)</li>
+            <li>Error logs are sent to Azure Log Analytics and retained for 30 days.</li>
+            <li>All network traffic to the backend is protected by HTTPS to mitigate eavesdropping and tampering.</li>
+            <li>The backend server has 2 layers of authentication. For a request to be accepted, it must be sent by an authenticated user (via Microsoft auth) and from an known frontend host (via secret key).</li>
             <li>The backend API prevents users from seeing any data that isn't their own.</li>
         </ul>
         <hr />

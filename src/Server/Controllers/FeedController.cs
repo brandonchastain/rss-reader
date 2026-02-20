@@ -69,7 +69,7 @@ namespace Server.Controllers
             }
 
             var feeds = OpmlSerializer.ParseOpmlContent(opmlContent, userId);
-            this.feedRepository.ImportFeeds(user, feeds);
+            this.feedRepository.AddFeeds(user, feeds);
             return Ok();
         }
 

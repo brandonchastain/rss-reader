@@ -6,7 +6,7 @@
       "apiLocation": "api",
       "apiLanguage": "node",
       "apiVersion": "20",
-      "outputLocation": "bin\\release\\net9.0\\publish\\wwwroot",
+      "outputLocation": "bin/release/net9.0/publish/wwwroot",
       "appBuildCommand": "dotnet publish -c release WasmApp.csproj --output bin/release/net9.0/publish",
       "apiBuildCommand": "npm install",
       "run": "dotnet watch run",

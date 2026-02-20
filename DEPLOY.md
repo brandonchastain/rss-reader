@@ -6,7 +6,7 @@ Make sure to start Docker first.
 
 ```bash
 cd c:\dev\rssreader\rss-reader\src
-docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f Server/Dockerfile
+docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f Server/Dockerfile .
 docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
 
 az containerapp update `

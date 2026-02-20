@@ -7,7 +7,7 @@ namespace RssApp.Config
         {
         }
 
-        public string ApiBaseUrl { get; set; } = "https://localhost:7034/";
+        public string ApiBaseUrl { get; set; } = "https://localhost:8080/";
         public string AuthApiBaseUrl { get; set; } = "https://localhost:7085/";
         public bool EnableTestAuth { get; set; } = false;
         public string TestAuthUsername { get; set; } = "testuser";

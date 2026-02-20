@@ -3,6 +3,7 @@ using RssApp.Serialization;
 using RssApp.Data;
 using RssApp.ComponentServices;
 using System.Threading.Tasks;
+using RssApp.Config;
 
 namespace RssApp.RssClient;
 
@@ -15,9 +16,8 @@ public class FeedRefresher : IFeedRefresher
     private readonly IFeedRepository persistedFeeds;
     private readonly IItemRepository newsFeedItemStore;
     private readonly IUserRepository userStore;
-    private readonly TimeSpan cacheReloadInterval;
-    private readonly TimeSpan cacheReloadStartupDelay;
     private readonly BackgroundWorkQueue backgroundWorkQueue;
+    private readonly RssAppConfig config;
     private readonly SemaphoreSlim semaphore = new(1, 1);
     private readonly Dictionary<RssUser, bool> hasNewItems = new();
     private DateTime? lastCacheReloadTime;
@@ -33,8 +33,7 @@ public class FeedRefresher : IFeedRefresher
         IItemRepository newsFeedItemStore,
         IUserRepository userStore,
         BackgroundWorkQueue backgroundWorkQueue,
-        TimeSpan cacheReloadInterval,
-        TimeSpan cacheReloadStartupDelay)
+        RssAppConfig config)
     {
         this.httpClientFactory = httpClientFactory;
         this.deserializer = deserializer;
@@ -42,9 +41,8 @@ public class FeedRefresher : IFeedRefresher
         this.persistedFeeds = persistedFeeds;
         this.newsFeedItemStore = newsFeedItemStore;
         this.userStore = userStore;
-        this.cacheReloadInterval = cacheReloadInterval;
-        this.cacheReloadStartupDelay = cacheReloadStartupDelay;
         this.backgroundWorkQueue = backgroundWorkQueue;
+        this.config = config;
     }
 
     public DateTime? LastCacheReloadTime => this.lastCacheReloadTime;
@@ -77,8 +75,8 @@ public class FeedRefresher : IFeedRefresher
 
     public async Task RefreshAsync(RssUser user)
     {
-        bool isJustStarted = this.startupTime + this.cacheReloadStartupDelay > DateTime.UtcNow;
-        bool isRecentRefresh = this.lastCacheReloadTime + this.cacheReloadInterval > DateTime.UtcNow;
+        bool isJustStarted = this.startupTime + this.config.CacheReloadStartupDelay > DateTime.UtcNow;
+        bool isRecentRefresh = this.lastCacheReloadTime + this.config.CacheReloadInterval > DateTime.UtcNow;
 
         if (isJustStarted || isRecentRefresh)
         {

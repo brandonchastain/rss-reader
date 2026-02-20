@@ -34,19 +34,7 @@ public sealed class FeedRefresherTests
         .AddSingleton<BackgroundWorkQueue>()
         .AddHostedService<BackgroundWorker>()
         .AddSingleton<RssDeserializer>()
-        .AddSingleton<IFeedRefresher>(sp =>
-        {
-            return new FeedRefresher(
-                sp.GetRequiredService<IHttpClientFactory>(),
-                sp.GetRequiredService<RssDeserializer>(),
-                sp.GetRequiredService<ILogger<FeedRefresher>>(),
-                mockFeedRepo.Object,
-                mockItemRepo.Object,
-                mockUserRepo.Object,
-                sp.GetRequiredService<BackgroundWorkQueue>(),
-                cacheReloadInterval: TimeSpan.FromMinutes(5),
-                cacheReloadStartupDelay: TimeSpan.FromSeconds(10));
-        })
+        .AddSingleton<IFeedRefresher, FeedRefresher>()
         .AddTransient<RedirectDowngradeHandler>()
         .AddHttpClient("RssClient")
         .AddHttpMessageHandler<RedirectDowngradeHandler>()

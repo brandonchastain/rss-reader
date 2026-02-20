@@ -4,18 +4,15 @@ namespace RssApp.Data;
 
 public interface IFeedRepository
 {
+    IEnumerable<NewsFeed> GetFeeds(RssUser user);
 
     NewsFeed GetFeed(RssUser user, string url);
-    IEnumerable<NewsFeed> GetFeeds(RssUser user);
+
+    void AddFeeds(RssUser user, IEnumerable<NewsFeed> feeds);
 
     void AddFeed(NewsFeed feed);
 
-    void Update(NewsFeed feed);
-
-    void DeleteFeed(RssUser user, string url);
-
     void AddTag(NewsFeed feed, string tag);
 
-    void ImportFeeds(RssUser user, IEnumerable<NewsFeed> feeds);
-
+    void DeleteFeed(RssUser user, string url);
 }
