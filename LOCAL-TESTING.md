@@ -126,9 +126,7 @@ docker logs -f rss-reader-test
 ### Database Paths
 The `appsettings.json` uses absolute paths that work in Docker:
 ```json
-"UserDb": "/tmp/storage.db",
-"ItemDb": "/tmp/storage.db",
-"FeedDb": "/tmp/storage.db"
+"DbLocation": "/tmp/storage.db",
 ```
 
 The active db from `/tmp/` will be copied to the container's `/data/` folder.
