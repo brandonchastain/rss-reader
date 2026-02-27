@@ -49,18 +49,29 @@ app.http('ApiProxy', {
             }
 
             // Extract user identity from Easy Auth (platform-injected header)
-            const userPrincipal = extractUserFromEasyAuth(context, request);
-            
+            // In local dev mode (IS_TEST_USER_ENABLED=true), inject a fake principal instead
+            let userPrincipal = extractUserFromEasyAuth(context, request);
+
             if (!userPrincipal) {
-                context.log('No Easy Auth principal found - user not authenticated');
-                return {
-                    status: 401,
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        ...getCorsHeaders(request)
-                    },
-                    body: JSON.stringify({ error: 'Authentication required' })
-                };
+                if (process.env.IS_TEST_USER_ENABLED === 'true') {
+                    context.log('IS_TEST_USER_ENABLED: injecting fake local dev principal');
+                    userPrincipal = Buffer.from(JSON.stringify({
+                        identityProvider: 'aad',
+                        userId: 'test-user-id',
+                        userDetails: 'testuser2',
+                        userRoles: ['authenticated']
+                    })).toString('base64');
+                } else {
+                    context.log('No Easy Auth principal found - user not authenticated');
+                    return {
+                        status: 401,
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            ...getCorsHeaders(request)
+                        },
+                        body: JSON.stringify({ error: 'Authentication required' })
+                    };
+                }
             }
 
             // Forward the request to ACA backend

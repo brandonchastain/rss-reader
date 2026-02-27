@@ -5,10 +5,6 @@
       "allowedRoles": ["anonymous"]
     },
     {
-      "route": "/api/*",
-      "allowedRoles": ["authenticated"]
-    },
-    {
       "route": "/_framework/*",
       "headers": {
         "cache-control": "public, max-age=31536000, immutable"
