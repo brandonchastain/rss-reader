@@ -21,12 +21,9 @@ var config = RssWasmConfig.LoadFromAppSettings(builder.Configuration);
 var apiBaseUrl = string.IsNullOrEmpty(config.ApiBaseUrl) ? builder.HostEnvironment.BaseAddress : config.ApiBaseUrl;
 var authApiBaseUrl = string.IsNullOrEmpty(config.AuthApiBaseUrl) ? builder.HostEnvironment.BaseAddress : config.AuthApiBaseUrl;
 
-// Update config with resolved URLs
-config = new RssWasmConfig 
-{ 
-    ApiBaseUrl = apiBaseUrl,
-    AuthApiBaseUrl = authApiBaseUrl
-};
+// Update config with resolved URLs while keeping the other settings intact
+config.ApiBaseUrl = apiBaseUrl;
+config.AuthApiBaseUrl = authApiBaseUrl;
 
 builder.Services
     .AddSingleton<RssWasmConfig>(_ => config)

@@ -10,7 +10,8 @@ using Server.Authentication;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: false)
-    .AddJsonFile("appsettings.Development.json", optional: true);    
+    .AddJsonFile("appsettings.Development.json", optional: true)
+    .AddEnvironmentVariables();
 var config = RssAppConfig.LoadFromAppSettings(builder.Configuration);
 string dbConnectionString = $"Data Source={config.DbLocation};Mode=ReadWriteCreate;Cache=Shared;Pooling=True";
 
@@ -26,6 +27,16 @@ builder.Services.AddLogging(loggingBuilder =>
     loggingBuilder.ClearProviders();
     loggingBuilder.AddConsole();
     loggingBuilder.AddDebug();
+});
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("LocalFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:8443", "https://localhost:8443")
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
 });
 
 // Add authn and authz
@@ -82,6 +93,7 @@ var c = app.Services.GetRequiredService<IItemRepository>();
 // Enable middleware 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+app.UseCors("LocalFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 

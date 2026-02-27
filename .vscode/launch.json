@@ -22,7 +22,7 @@
             "type": "blazorwasm",
             "request": "launch",
             "cwd": "${workspaceFolder}/src/WasmApp",
-            "url": "https://localhost:8443"
+            "url": "http://localhost:8443"
         },
         {
             "name": "Watch",
@@ -43,7 +43,7 @@
             "type": "blazorwasm",
             "request": "attach",
             "cwd": "${workspaceFolder}/src/WasmApp",
-            "url": "https://localhost:8443",
+            "url": "http://localhost:8443",
             "timeout": 120000
         },
         {

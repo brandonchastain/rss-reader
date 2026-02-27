@@ -26,6 +26,7 @@ docker run -d `
   --name rss-reader-test `
   -p 8080:8080 `
   -v c:\dev\rssreader\docker-data:/data `
+  -e RssAppConfig__IsTestUserEnabled=true `
   rss-reader-api:local
 
 # View logs
@@ -115,6 +116,7 @@ docker run -d `
   --name rss-reader-test `
   -p 8080:8080 `
   -v c:\dev\rssreader\docker-data:/data `
+  -e RssAppConfig__IsTestUserEnabled=true `
   rss-reader-api:local
 
 # Check logs
@@ -170,6 +172,7 @@ netstat -ano | Select-String ":8080"
 # Use a different port
 docker run -d --name rss-reader-test -p 9090:8080 `
   -v c:\dev\rssreader\docker-data:/data `
+  -e RssAppConfig__IsTestUserEnabled=true `
   rss-reader-api:local
 
 # Access at http://localhost:9090 instead
@@ -182,6 +185,7 @@ docker run --rm `
   --name rss-reader-test `
   -p 8080:8080 `
   -v c:\dev\rssreader\docker-data:/data `
+  -e RssAppConfig__IsTestUserEnabled=true `
   rss-reader-api:local
 ```
 
