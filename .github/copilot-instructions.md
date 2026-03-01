@@ -1,5 +1,9 @@
 # Copilot Instructions
 
+## General Rules
+
+- Never commit changes unless explicitly asked to do so.
+
 ## Architecture
 
 Three-tier application hosted on Azure:
@@ -41,6 +45,14 @@ swa deploy --env production
 **Local dev**: Hit F5 in Visual Studio — launches frontend and backend together.
 
 For containerized backend testing, see [LOCAL-TESTING.md](../LOCAL-TESTING.md).
+
+## ⛔ Local Dev Build Rule: Always Debug, Never Release
+
+**When running locally, ALWAYS use `dotnet build -c Debug`. NEVER run `dotnet publish -c release` or `dotnet build -c Release` for local testing.**
+
+The release build excludes `appsettings.Development.json` from the output (`CopyToPublishDirectory = Never`). This file contains `EnableTestAuth: true`, which is what allows the test user (`testuser2`) to bypass SWA Easy Auth locally. Without it, every API call returns 401 and the app appears broken even though the code is correct.
+
+The `swa start rss-reader-local` config uses `dotnet watch run` (Kestrel dev server on port 8443) as the app source — it serves files directly from the source `wwwroot/`, not from a publish output directory. The release publish output directory (`bin/release/net9.0/publish/wwwroot`) only exists as an empty placeholder for SWA CLI config validation.
 
 ## Authentication Flow
 
@@ -90,3 +102,31 @@ Security: The XML parser has DTD processing disabled and a 1MB content size limi
 
 ### Frontend HTTP Clients
 The Blazor app uses named `HttpClient` instances via `IHttpClientFactory`. The client named `"ApiClient"` is used by `FeedClient` and `UserClient` to call the backend through the SWA proxy.
+
+## Agents
+
+Specialized agents live in `.github/agents/`. Each has a `name`, `description`, `model`, and `tools` front-matter, followed by detailed system instructions. Prefer these agents over the base Copilot model for tasks in their domain.
+
+| Agent | File | When to use |
+|---|---|---|
+| `azure-deployer` | `agents/azure-deployer.agent.md` | Deploy the app, read Azure Container App / SWA logs, troubleshoot deployment or runtime errors, check replica/scaling status, diagnose Azure infrastructure issues. Uses Azure MCP tools for structured diagnostics; falls back to `az` CLI. |
+| `full-stack-developer` | `agents/full-stack-developer.agent.md` | Implement features or fix bugs spanning frontend and backend — Blazor WASM, ASP.NET Core API, SQLite, Azure Functions proxy. Always adds MSTest unit tests and validates frontend changes with Playwright. |
+| `ui-developer` | `agents/ui-developer.agent.md` | Improve look-and-feel, fix layout/spacing, make pages mobile-responsive, improve color schemes, enhance accessibility, or rework navigation. Always validates with Playwright at desktop (1280px) and mobile (375px). |
+
+## Skills
+
+Skills live in `.github/skills/<name>/SKILL.md`. They are step-by-step runbooks executed by invoking the `skill` tool with the skill name.
+
+| Skill | File | What it does |
+|---|---|---|
+| `deploy` | `skills/deploy/SKILL.md` | Full end-to-end production deployment: resolves prerequisites (Node 20, GITHUB_USERNAME, Docker, az CLI, SWA CLI) → builds & pushes the backend Docker image to GHCR → updates the Azure Container App → builds & deploys the SWA frontend → **validates the deployment** (Azure resource health via MCP + browser smoke test via Playwright). |
+| `run-locally` | `skills/run-locally/SKILL.md` | Start the full local dev stack: Docker backend container + SWA emulator frontend at `http://localhost:4280`. Auth is bypassed via `RssAppConfig__IsTestUserEnabled=true` (test user `testuser2`). |
+| `stop-local` | `skills/stop-local/SKILL.md` | Stop all locally running servers: SWA emulator (port 4280), Azure Functions host (port 7071), Blazor dev server, `dotnet watch` processes, and the backend Docker container. |
+| `playwright-browse` | `skills/playwright-browse/SKILL.md` | Start an interactive Playwright browser session. Navigates to a URL (default: `https://rss.brandonchastain.com`), bypasses the Blazor service worker cache, takes snapshots/screenshots, and interacts with the page. Handles the login prompt if the user is not authenticated. |
+
+### Deploy skill — validation step
+
+After deploying, the `deploy` skill runs a two-part validation:
+
+1. **Azure health check (MCP)** — calls `resourcehealth availability-status get` for `rss-reader-api` to confirm `Available` status, then checks revision traffic with `az containerapp revision list`.
+2. **Browser smoke test (Playwright)** — navigates to `https://rss.brandonchastain.com`, clears the Blazor service worker cache, confirms the homepage loads, detects login state (and prompts the user to log in if needed), then exercises `/feeds` and `/timeline` and takes a screenshot.

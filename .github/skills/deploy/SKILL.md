@@ -102,9 +102,58 @@ swa deploy --env production
 
 If `swa deploy` fails with an authentication error, the user may need to run `swa login` first.
 
+## Step 5: Validate deployment
+
+### 5a: Azure resource health checks (MCP)
+
+Check the Container App health status using the Azure MCP tool `resourcehealth availability-status get` with resource group `rss-container-rg` and resource name `rss-reader-api`. Report the availability state (should be `Available`).
+
+Also confirm the latest revision is active and receiving traffic:
+
+```powershell
+az containerapp revision list --name rss-reader-api --resource-group rss-container-rg --output table
+```
+
+The most recent revision should have `ACTIVE` state and a traffic weight of `100`.
+
+### 5b: Browser smoke test (Playwright)
+
+First check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snapshot`) are available.
+
+**If Playwright tools are NOT available:** skip this sub-step and note it in the summary.
+
+**If Playwright tools ARE available:**
+
+1. Navigate to production: `browser_navigate(url: "https://rss.brandonchastain.com")`
+
+2. Unregister the Blazor service worker cache and reload so the freshly deployed assets are served:
+   ```js
+   browser_evaluate(function: `async () => {
+     const regs = await navigator.serviceWorker.getRegistrations();
+     for (const reg of regs) await reg.unregister();
+     return regs.length + ' service worker(s) unregistered';
+   }`)
+   ```
+   Then `browser_navigate(url: "https://rss.brandonchastain.com")` again.
+
+3. Take a snapshot: `browser_snapshot()`. Confirm the homepage loads (look for the app title / login button).
+
+4. Check whether the user is already logged in by looking for auth-gated page content (e.g. the Feeds or Timeline nav links are visible and accessible). If the user appears to be logged out, ask them to log in:
+
+   > The app is showing the logged-out homepage. Please log in via the browser and let me know when you're done, then I'll continue the smoke test.
+
+5. Once logged in (or if already logged in), run these basic scenarios:
+   - Navigate to `/feeds` — confirm the feeds list page loads without errors.
+   - Navigate to `/timeline` — confirm the timeline page loads and shows content (or an empty state, not a crash).
+   - Take a screenshot: `browser_take_screenshot(type: "png")` for visual confirmation.
+
+6. Report what was observed: page titles, any visible errors or blank screens, HTTP failures in the console.
+
 ## Final summary
 
 Report to the user:
 - ✅ Backend image built and pushed: `ghcr.io/$GITHUB_USERNAME/rss-reader-api:latest`
 - ✅ Azure Container App updated: `rss-reader-api`
 - ✅ Frontend deployed to SWA production environment
+- ✅ Azure resource health: `Available` (or report the actual status)
+- ✅ Browser smoke test passed (or describe any issues found)

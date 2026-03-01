@@ -80,19 +80,21 @@ if (-not (Test-Path $path)) {
 
 This file is gitignored — it must be created locally on each new checkout.
 
-## Step 8: Build the Blazor WASM frontend (clean publish)
+## Step 8: Build the Blazor WASM frontend (**DEBUG build — MANDATORY**)
 
-Clean only the publish output directory (not `obj/` — that's needed by the Kestrel dev server), then publish:
+> ⛔ **NEVER use `dotnet publish -c release` for local development.** A release publish excludes `appsettings.Development.json` (`CopyToPublishDirectory = Never`), which is the file that enables `EnableTestAuth: true`. Without it, SWA Easy Auth is enforced and all API calls return 401. **Always use the Debug build.**
+
+Run a Debug build, then create the output directory placeholder required by `swa-cli.config.json`:
 
 ```powershell
-Remove-Item -Recurse -Force "C:\Users\brand\dev\rssreader\rss-reader\src\WasmApp\bin\release\net9.0\publish" -ErrorAction SilentlyContinue
 cd C:\Users\brand\dev\rssreader\rss-reader\src\WasmApp
-dotnet publish -c release WasmApp.csproj --output bin/release/net9.0/publish
+dotnet build -c Debug WasmApp.csproj
+New-Item -ItemType Directory -Path "bin/release/net9.0/publish/wwwroot" -Force | Out-Null
 ```
 
-This may take a minute or two. If it fails, report the error and stop.
+This may take a minute or two. If the build fails, report the error and stop.
 
-> **Why not delete `obj/`?** The `appDevserverUrl` in `swa-cli.config.json` causes SWA CLI to proxy frontend requests to the Kestrel dev server started by `dotnet watch run`. That dev server serves `WasmApp.styles.css` from the debug build artifacts in `obj/Debug/`. Deleting `obj/` forces a full debug rebuild on startup, and the dev server returns 0 bytes for `WasmApp.styles.css` until the rebuild completes.
+> **How the debug dev server works:** `swa start rss-reader-local` uses `dotnet watch run` (a Kestrel dev server on port 8443) as the app dev server. SWA proxies all frontend requests to it, serving files directly from source `wwwroot/` — including `appsettings.Development.json`. The `bin/release/net9.0/publish/wwwroot` directory is created as an empty placeholder so SWA CLI's config validation doesn't fail — it is **not** the served output.
 
 ## Step 9: Start the SWA frontend dev server
 

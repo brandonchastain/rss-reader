@@ -45,6 +45,26 @@ browser_navigate(url: "<target URL>")
 
 Wait for the page to finish loading before proceeding.
 
+### Bypassing the Blazor service worker cache
+
+Blazor WASM uses a service worker that aggressively caches all app assets. After a deployment, the browser may continue serving stale DLLs and CSS from the old cache, making it look like your changes haven't taken effect.
+
+**Always bypass the cache when validating after a code change or deployment** by unregistering the service worker and reloading:
+
+```js
+// Step 1: unregister all service workers
+browser_evaluate(function: `async () => {
+  const regs = await navigator.serviceWorker.getRegistrations();
+  for (const reg of regs) await reg.unregister();
+  return regs.length + ' service worker(s) unregistered';
+}`)
+
+// Step 2: reload the page
+browser_navigate(url: "<same URL>")
+```
+
+Wait for the app to fully reload after this before taking snapshots or screenshots.
+
 ## Step 4: Take a snapshot to see the page
 
 Use `browser_snapshot` to get the current accessibility tree / DOM content of the page. This tells you what's visible, what links exist, what buttons are present, and what text is on the page.
