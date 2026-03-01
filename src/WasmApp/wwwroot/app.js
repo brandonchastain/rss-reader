@@ -75,13 +75,33 @@ window.scrollToElement = function(element) {
     }
 };
 
+// Snap the element to the top of the viewport instantly (used before collapsing a post
+// so the collapse happens below the fold, keeping the infinite-scroll sentinel out of view).
+window.scrollToTopInstant = function(element) {
+    if (element) {
+        element.scrollIntoView({ behavior: 'instant', block: 'start' });
+    }
+};
+
 window.Observer = {
     observer: null,
     Initialize: function (component, observerTargetId) {
-        this.observer = new IntersectionObserver(e => {
-                // Check here
-                if (e[0].isIntersecting) {
-                    component.invokeMethodAsync('OnIntersection');
+        let _debounceTimer = null;
+        let _isVisible = false;
+        this.observer = new IntersectionObserver(entries => {
+                _isVisible = entries[0].isIntersecting;
+                if (_isVisible) {
+                    // Debounce: only fire if the sentinel is still visible after 250ms.
+                    // This prevents a collapsing post from briefly exposing the sentinel
+                    // and triggering a spurious page load.
+                    clearTimeout(_debounceTimer);
+                    _debounceTimer = setTimeout(() => {
+                        if (_isVisible) {
+                            component.invokeMethodAsync('OnIntersection');
+                        }
+                    }, 250);
+                } else {
+                    clearTimeout(_debounceTimer);
                 }
             },
             {

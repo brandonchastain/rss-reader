@@ -161,13 +161,16 @@
         }
 
         bool wasExpanded = post.IsBeingPreviewed;
+        if (wasExpanded)
+        {
+            // Scroll the post row to the top of the viewport BEFORE collapsing.
+            // This ensures the content collapses below the fold so the infinite-scroll
+            // sentinel never enters the viewport during the DOM shrink.
+            await jsRuntime.InvokeVoidAsync("scrollToTopInstant", _postRowRef);
+        }
+
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
         await InvokeAsync(StateHasChanged);
-
-        if (wasExpanded && !post.IsBeingPreviewed)
-        {
-            await jsRuntime.InvokeVoidAsync("scrollToElement", _postRowRef);
-        }
     }
 
     private async Task SavePost(NewsFeedItem post)
