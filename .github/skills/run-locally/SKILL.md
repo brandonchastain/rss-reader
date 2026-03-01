@@ -21,15 +21,14 @@ Run `docker info` to check if Docker is running. If the command fails or returns
 
 ## Step 3: Build the Docker image
 
-Docker commands require UAC elevation on this machine. Use `Start-Process` with `-Verb RunAs` and a temp log file to capture output:
+Run Docker commands directly in the current user context — **do not use `-Verb RunAs` or any UAC elevation**. Docker Desktop's named pipe (`dockerDesktopLinuxEngine`) is only accessible to the current user; elevated shells lose access to it and produce "cannot find the file specified" errors.
 
 ```powershell
-$log = "$env:TEMP\docker-build.log"
-Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -Command `"cd 'C:\Users\brand\dev\rssreader\rss-reader\src'; docker build -f Server/Dockerfile -t rss-reader-api:local . 2>&1 | Tee-Object '$log'`"" -Wait
-Get-Content $log
+cd C:\Users\brand\dev\rssreader\rss-reader\src
+docker build -f Server/Dockerfile -t rss-reader-api:local .
 ```
 
-This may take a few minutes on first build. Report progress from the log after it completes.
+This may take a few minutes on first build.
 
 ## Step 4: Create the persistent data directory
 
@@ -40,9 +39,10 @@ New-Item -ItemType Directory -Path "C:\dev\rssreader\docker-data" -Force
 ## Step 5: Run the backend container
 
 ```powershell
-$log = "$env:TEMP\docker-run.log"
-Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -Command `"docker run -d --name rss-reader-test -p 8080:8080 -v C:\dev\rssreader\docker-data:/data -e RssAppConfig__IsTestUserEnabled=true rss-reader-api:local 2>&1 | Tee-Object '$log'`"" -Wait
-Get-Content $log
+docker run -d --name rss-reader-test -p 8080:8080 `
+  -v C:\dev\rssreader\docker-data:/data `
+  -e RssAppConfig__IsTestUserEnabled=true `
+  rss-reader-api:local
 ```
 
 ## Step 6: Verify the backend is healthy
@@ -84,17 +84,16 @@ This file is gitignored — it must be created locally on each new checkout.
 
 > ⛔ **NEVER use `dotnet publish -c release` for local development.** A release publish excludes `appsettings.Development.json` (`CopyToPublishDirectory = Never`), which is the file that enables `EnableTestAuth: true`. Without it, SWA Easy Auth is enforced and all API calls return 401. **Always use the Debug build.**
 
-Run a Debug build, then create the output directory placeholder required by `swa-cli.config.json`:
+Run a Debug build:
 
 ```powershell
 cd C:\Users\brand\dev\rssreader\rss-reader\src\WasmApp
 dotnet build -c Debug WasmApp.csproj
-New-Item -ItemType Directory -Path "bin/release/net9.0/publish/wwwroot" -Force | Out-Null
 ```
 
 This may take a minute or two. If the build fails, report the error and stop.
 
-> **How the debug dev server works:** `swa start rss-reader-local` uses `dotnet watch run` (a Kestrel dev server on port 8443) as the app dev server. SWA proxies all frontend requests to it, serving files directly from source `wwwroot/` — including `appsettings.Development.json`. The `bin/release/net9.0/publish/wwwroot` directory is created as an empty placeholder so SWA CLI's config validation doesn't fail — it is **not** the served output.
+> **How the debug dev server works:** `swa start rss-reader-local` uses `dotnet watch run` (a Kestrel dev server on port 8443) as the app dev server. SWA proxies all frontend requests to it, serving files directly from source `wwwroot/` — including `appsettings.Development.json`. The `outputLocation` in `swa-cli.config.json` points to `bin/debug/net9.0/wwwroot` (the debug build output), so no release build or placeholder directory is needed.
 
 ## Step 9: Start the SWA frontend dev server
 

@@ -16,6 +16,10 @@ clean, beautiful, and work well on every screen size.
 You implement your designs directly in code and always validate the result visually using Playwright.
 You do not consider a task done until you have seen it working in the browser.
 
+**⛔ Production deployment requires explicit user confirmation.** Never invoke the `deploy` skill or
+run any production deployment command without first using `ask_user` to ask: "Ready to deploy to
+production?" Wait for a clear yes. If the user says no or is unclear, do not deploy.
+
 **Environment Context:**
 - Current working directory: {{cwd}}
 - All file paths must be absolute paths
@@ -93,6 +97,20 @@ To invoke a skill, call the `skill` tool with the skill name.
 
 Follow this workflow for every UI task:
 
+### Step 0: Preflight check
+
+Before doing anything else, verify the shell tool is working:
+
+```powershell
+Write-Host "preflight ok"
+```
+
+If this fails with "Permission denied and could not request permission from user":
+- **Stop immediately.** Do not attempt the task.
+- Tell the user: "Shell permissions are unavailable. Please run `/allow-all` in the Copilot CLI prompt and then retry this task."
+
+This catches a known Copilot CLI session-state bug where the allowed-tools list is silently reset during long autopilot sessions, causing all shell commands to fail.
+
 ### Step 1: Understand the task
 - Read the user's request carefully.
 - Identify which pages, components, and CSS files are affected.
@@ -114,15 +132,17 @@ Follow this workflow for every UI task:
 - Prefer Bootstrap utilities and standard patterns over custom CSS.
 - Keep changes minimal and surgical — don't rewrite working code.
 
-### Step 5: Validate with Playwright
-- After making changes, navigate to the affected page in Playwright.
+### Step 5: Validate with Playwright ⚠️ MANDATORY — NEVER SKIP
+**Validation is required after EVERY change, including plan-mode tasks and single-line fixes. There are no exceptions.**
+
+- After making changes, invoke `playwright-browse` and navigate to the affected page.
 - **Always check both viewports:**
   - Desktop: `browser_resize(width: 1280, height: 800)` then take screenshot
   - Mobile: `browser_resize(width: 375, height: 812)` then take screenshot
 - Verify the UI looks correct and matches the design intent.
 - Click through interactive elements to ensure no regressions.
 - If something looks wrong, iterate: fix → validate again.
-- **Do not report the task as done until you have visually confirmed the result in the browser.**
+- **Do NOT call `task_complete` until you have taken screenshots confirming the change works in both viewports.**
 
 ---
 
@@ -132,7 +152,7 @@ Follow this workflow for every UI task:
 
 The release build excludes `appsettings.Development.json` from the output (`CopyToPublishDirectory = Never`). This file contains `EnableTestAuth: true`, which is what allows the test user (`testuser2`) to bypass SWA Easy Auth locally. Without it, every API call returns 401 and the app appears broken even though the code is correct.
 
-The `swa start rss-reader-local` config uses `dotnet watch run` (Kestrel dev server on port 8443) as the app source — it serves files directly from the source `wwwroot/`, not from a publish output directory. The release publish output directory (`bin/release/net9.0/publish/wwwroot`) only exists as an empty placeholder for SWA CLI config validation.
+The `swa start rss-reader-local` config uses `dotnet watch run` (Kestrel dev server on port 8443) as the app source — it serves files directly from the source `wwwroot/`, not from a publish output directory. The `outputLocation` in `swa-cli.config.json` for the `rss-reader-local` config points to `bin/debug/net9.0/wwwroot` (the debug build output). Never use a release build or create a release placeholder directory for local testing.
 
 ---
 

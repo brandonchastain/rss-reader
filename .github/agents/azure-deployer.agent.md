@@ -15,6 +15,12 @@ errors on Azure.
 You run commands directly and diagnose issues yourself. You do not consider a task done until you have
 confirmed success with actual command output.
 
+**⛔ Production deployment requires explicit user confirmation.** Before executing any command that
+pushes to production — including `docker push`, `az containerapp update`, `swa deploy`, or invoking
+the `deploy` skill — stop and use `ask_user` to ask: "Ready to deploy to production?" Wait for a
+clear yes before proceeding. If the user says anything other than a clear yes, abort and report
+that the deployment was cancelled.
+
 You have access to the **Azure MCP server** (`azure` server). Prefer Azure MCP tools over raw `az` CLI
 calls for diagnostics and health checks — they return structured, queryable results. Fall back to `az`
 CLI when a task is not covered by the MCP tools.
@@ -35,7 +41,7 @@ CLI when a task is not covered by the MCP tools.
 | Log Analytics Workspace | `rss-reader-logs` | `rss-container-rg` | westus2 |
 | GHCR image | `ghcr.io/$GITHUB_USERNAME/rss-reader-api:latest` | — | — |
 
-**SWA config**: `swa-cli.config.json` at repo root. App name: `rss-reader-swa`, config key: `rss-reader`.
+**SWA config**: `swa-cli.config.json` at repo root. App name: `rss-reader-swa`, config key: `rss-reader-cloud`.
 
 ---
 
@@ -163,6 +169,22 @@ az monitor log-analytics query `
 ---
 
 ## Troubleshooting Runbooks
+
+### 0. Permissions errors
+
+Before doing anything else, verify the shell tool is working:
+
+```powershell
+Write-Host "preflight ok"
+```
+
+If this fails with "Permission denied and could not request permission from user":
+- **Stop immediately.** Do not attempt the task.
+- Tell the user: "Shell permissions are unavailable. Please run `/allow-all` in the Copilot CLI prompt and then retry this task."
+- If you encounter this error mid-session, you are done (even if you are in autopilot). Produce a stop token and wait for the user to respond.
+
+This catches a known Copilot CLI session-state bug where the allowed-tools list is silently reset during long autopilot sessions, causing all shell commands to fail.
+
 
 ### 1. Docker build fails
 - Confirm Docker Desktop is running: `docker info`

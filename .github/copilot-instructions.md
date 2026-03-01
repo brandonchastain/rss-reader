@@ -3,6 +3,7 @@
 ## General Rules
 
 - Never commit changes unless explicitly asked to do so.
+- **Never deploy to production without explicit user confirmation.** Before invoking the `deploy` skill or running any `swa deploy`, `docker push`, or `az containerapp` update command, always stop and ask the user: "Ready to deploy to production?" and wait for a clear yes.
 
 ## Architecture
 
@@ -52,7 +53,7 @@ For containerized backend testing, see [LOCAL-TESTING.md](../LOCAL-TESTING.md).
 
 The release build excludes `appsettings.Development.json` from the output (`CopyToPublishDirectory = Never`). This file contains `EnableTestAuth: true`, which is what allows the test user (`testuser2`) to bypass SWA Easy Auth locally. Without it, every API call returns 401 and the app appears broken even though the code is correct.
 
-The `swa start rss-reader-local` config uses `dotnet watch run` (Kestrel dev server on port 8443) as the app source — it serves files directly from the source `wwwroot/`, not from a publish output directory. The release publish output directory (`bin/release/net9.0/publish/wwwroot`) only exists as an empty placeholder for SWA CLI config validation.
+The `swa start rss-reader-local` config uses `dotnet watch run` (Kestrel dev server on port 8443) as the app source — it serves files directly from the source `wwwroot/`, not from a publish output directory. The `outputLocation` in `swa-cli.config.json` for the `rss-reader-local` config points to `bin/debug/net9.0/wwwroot` (the debug build output). Never use a release build or create a release placeholder directory for local testing.
 
 ## Authentication Flow
 

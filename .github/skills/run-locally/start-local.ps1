@@ -103,17 +103,23 @@ if (-not (Test-Path $localSettings)) {
   "IsEncrypted": false,
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "node"
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "RSSREADER_API_URL": "http://localhost:8080",
+    "RSSREADER_API_KEY": "local-dev-key",
+    "IS_TEST_USER_ENABLED": "true"
   }
 }
 '@ | Set-Content $localSettings
 }
 
 # ── Step 8: Build Blazor WASM frontend ───────────────────────────────────────
-Write-Host "`nBuilding Blazor WASM frontend..." -ForegroundColor Cyan
+# ⛔ NEVER use dotnet publish -c release here. The release build excludes
+# appsettings.Development.json, which contains EnableTestAuth: true.
+# Without it every API call returns 401. Always use the Debug build.
+Write-Host "`nBuilding Blazor WASM frontend (Debug)..." -ForegroundColor Cyan
 Push-Location (Join-Path $RepoRoot "src\WasmApp")
 try {
-    dotnet publish -c release WasmApp.csproj --output bin/release/net9.0/publish
+    dotnet build -c Debug WasmApp.csproj
     if ($LASTEXITCODE -ne 0) { Write-Error "Blazor frontend build failed."; exit 1 }
 } finally {
     Pop-Location
