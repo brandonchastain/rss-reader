@@ -5,6 +5,18 @@ description: Deploy the RSS Reader app to production. Use this when asked to dep
 
 Deploy the RSS Reader app to production by following these steps in order.
 
+## Step 0: Confirm with user before proceeding
+
+**⛔ STOP — do not proceed without explicit user confirmation.**
+
+Before doing anything else, use the `ask_user` tool to ask:
+
+> "Ready to deploy to production? This will push a new Docker image and update the live Azure Container App and SWA at https://rss.brandonchastain.com."
+
+Wait for the user to confirm. If they say anything other than a clear yes, abort the deployment and report that it was cancelled.
+
+Only continue to Step 1 after receiving explicit confirmation.
+
 ## Step 1: Check prerequisites
 
 ### Node version

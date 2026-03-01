@@ -1,7 +1,7 @@
 {
   "$schema": "https://aka.ms/azure/static-web-apps-cli/schema",
   "configurations": {
-    "rss-reader": {
+    "rss-reader-cloud": {
       "appLocation": "src\\WasmApp",
       "apiLocation": "api",
       "apiLanguage": "node",
@@ -10,7 +10,6 @@
       "appBuildCommand": "dotnet publish -c release WasmApp.csproj --output bin/release/net9.0/publish",
       "apiBuildCommand": "npm install",
       "run": "dotnet watch run",
-      "appDevserverUrl": "http://localhost:8443",
       "appName": "rss-reader-swa",
       "resourceGroup": "rss-container-rg"
     },
@@ -19,8 +18,8 @@
       "apiLocation": "api",
       "apiLanguage": "node",
       "apiVersion": "20",
-      "outputLocation": "bin/release/net9.0/publish/wwwroot",
-      "appBuildCommand": "dotnet publish -c release WasmApp.csproj --output bin/release/net9.0/publish",
+      "outputLocation": "bin/debug/net9.0/wwwroot",
+      "appBuildCommand": "dotnet build -c Debug WasmApp.csproj",
       "apiBuildCommand": "npm install",
       "run": "dotnet watch run",
       "appDevserverUrl": "http://localhost:8443",

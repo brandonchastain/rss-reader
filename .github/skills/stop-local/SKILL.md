@@ -7,10 +7,10 @@ Stop all local RSS Reader servers by following these steps in order.
 
 ## Step 1: Stop the backend Docker container
 
-Docker commands require UAC elevation on this machine. Use `Start-Process` with `-Verb RunAs` to trigger the UAC prompt:
+Run Docker commands directly in the current user context — **do not use `-Verb RunAs` or any UAC elevation**. Docker Desktop's named pipe (`dockerDesktopLinuxEngine`) is only accessible to the current user; elevated shells lose access to it and will get "cannot find the file specified" errors.
 
 ```powershell
-Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -Command `"docker rm -f rss-reader-test 2>&1`"" -Wait
+docker rm -f rss-reader-test 2>&1
 ```
 
 It is safe to ignore errors if the container is not running.
