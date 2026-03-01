@@ -7,38 +7,49 @@
 
 <PageTitle>RssReader | A simple browser-based RSS reader</PageTitle>
 
-<article class="container-fluid py-4">
-    <div class="row">
-        <div class="col-12 col-lg-10 mx-auto">
-            <div class="row">
-                <div class="col-12 col-md-6 mb-4 mb-md-0">
-                    <h3 class="mb-2" style="color: var(--accent);">// rssreader</h3>
-                    <p style="color: var(--text-muted);">a browser-based RSS reader</p>
-                </div>
-                <div class="col-12 col-md-6">
-                    <p style="color: var(--text-muted);">features:</p>
-                    <ul class="list-unstyled" style="color: var(--text);">
-                        <li class="mb-1"><span style="color: var(--accent);">&gt;</span> subscribe to RSS and Atom feeds</li>
-                        <li class="mb-1"><span style="color: var(--accent);">&gt;</span> infinite-scroll timeline</li>
-                        <li class="mb-1"><span style="color: var(--accent);">&gt;</span> tag-based feed categories and filters</li>
-                        <li class="mb-1"><span style="color: var(--accent);">&gt;</span> save posts for later</li>
-                        <li class="mb-1"><span style="color: var(--accent);">&gt;</span> full-text search</li>
-                        <li class="mb-1"><span style="color: var(--accent);">&gt;</span> import / export OPML</li>
-                        <li class="mb-1"><span style="color: var(--accent);">&gt;</span> responsive (mobile + desktop)</li>
-                    </ul>
-                </div>
-            </div>
-            <AuthorizeView>
-                <NotAuthorized>
-                    <div class="row mt-5">
-                        <div class="col-12 text-center">
-                            <a href="/.auth/login/aad" class="btn btn-primary btn-lg px-5 py-3" style="font-size: 1.2rem; letter-spacing: 0.05em;">
-                                [login / sign-up]
-                            </a>
-                        </div>
-                    </div>
-                </NotAuthorized>
-            </AuthorizeView>
+<article @ref="_terminalRef" tabindex="0" @onkeydown="HandleKeyDown" style="outline: none;">
+    <div class="shell-boot">
+        <div class="shell-line shell-cmd">$ rssreader --connect</div>
+        <div class="shell-banner">
+            <span><span class="comment-slash">// </span><span class="comment-text">rssreader [v1.1]</span></span>
+            <span><span class="comment-slash">// </span><span class="comment-text">read what matters to you.</span></span>
         </div>
+        <div class="shell-line"><span class="shell-prompt">&gt;</span> Initializing</div>
+        <div class="shell-line"><span class="shell-prompt">&gt;</span> Loading configuration...</div>
+        <div class="shell-line"><span class="shell-prompt">&gt;</span> Connected.</div>
+        <div class="shell-line" style="margin-top: 1rem;"><span class="shell-prompt">&gt;</span> subscribe to RSS and Atom feeds</div>
+        <div class="shell-line"><span class="shell-prompt">&gt;</span> infinite-scroll timeline</div>
+        <div class="shell-line"><span class="shell-prompt">&gt;</span> save posts for later</div>
+        <AuthorizeView>
+            <NotAuthorized>
+                @* Desktop: keyboard prompt *@
+                <div class="shell-line shell-cmd desktop-only" style="margin-top: 1.5rem;">$ press [ENTER] to continue<span class="shell-cursor">█</span></div>
+                @* Mobile: button *@
+                <div class="mobile-only" style="margin-top: 1.5rem;">
+                    <a href="/.auth/login/aad" class="btn btn-outline-success btn-sm" style="font-family: inherit; letter-spacing: 0.05em;">Login / Sign Up</a>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
     </div>
 </article>
+
+@code {
+    // Auto-focus for keyboard handling; FocusAsync runs after first render
+    private ElementReference _terminalRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await _terminalRef.FocusAsync();
+        }
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            NavigationManager.NavigateTo("/.auth/login/aad", forceLoad: true);
+        }
+    }
+}

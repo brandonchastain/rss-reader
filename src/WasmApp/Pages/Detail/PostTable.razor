@@ -26,27 +26,35 @@
 
 
 <div id="post-table" class="table">
-    @if (isLoading)
+    @if (isLoading && !_showTerminal)
     {
-        <div class="d-flex flex-column justify-content-center align-items-center" style="min-height: 60vh;">
+        <div class="loading-spinner-container">
+            <div class="spinner"></div>
+        </div>
+    }
+    else if (isLoading && _showTerminal)
+    {
+        <div class="shell-boot">
+            <div class="shell-line shell-cmd">$ rssreader --connect</div>
+            <div class="shell-banner">
+                <span><span class="comment-slash">// </span><span class="comment-text">rssreader [v1.1]</span></span>
+                <span><span class="comment-slash">// </span><span class="comment-text">read what matters to you.</span></span>
+            </div>
+            @foreach (var msg in _visibleMessages.Take(_visibleMessages.Count - (_hasTimedOut ? 0 : 1)))
+            {
+                <div class="shell-line"><span class="shell-prompt">&gt;</span> @msg</div>
+            }
+            @if (!_hasTimedOut && _visibleMessages.Count > 0)
+            {
+                <div class="shell-line shell-active">
+                    <span class="shell-prompt">&gt;</span> @_visibleMessages[^1]@(new string('.', _dotCount))
+                </div>
+                <div class="shell-line"><span class="shell-cursor">█</span></div>
+            }
             @if (_hasTimedOut)
             {
-                <p class="text-muted mb-3">Loading is taking longer than expected.</p>
-                <button class="btn btn-primary" @onclick="Retry">Try Again</button>
-            }
-            else
-            {
-                <div class="spinner mb-3"></div>
-                <p class="text-muted">
-                @if (_showColdStartText)
-                {
-                    <span>Waiting for backend cold start. This might take a few seconds...</span>
-                }
-                else
-                {
-                    <span style="background: transparent">&nbsp;</span>
-                }
-                </p>
+                <div class="shell-line shell-error"><span class="shell-prompt">&gt;</span> ERROR: Connection timed out</div>
+                <div class="shell-line shell-cmd">$ <button class="shell-retry-btn" @onclick="Retry">[Retry]</button></div>
             }
         </div>
     }
@@ -110,19 +118,40 @@
 
     private const int MaxPostsToKeep = 100;  // Adjust this number based on your needs
     private const int LoadingTimeoutMs = 30000;
-    private const int ColdStartTextDelayMs = 2000;
+    private const int SpinnerDelayMs = 2000;
+    private const int MessageIntervalMs = 1500;
+    private const int DotIntervalMs = 500;
+
+    private static readonly string[] _statusMessages =
+    {
+        "Initializing",
+        "Loading configuration",
+        "Connecting to feed service",
+        "Fetching subscriptions",
+        "Loading posts"
+    };
+
     private bool isLoading = true;
+    private bool _showTerminal = false;
     private bool _hasTimedOut = false;
-    private bool _showColdStartText = false;
+    private List<string> _visibleMessages = new();
+    private int _messageIndex = 0;
+    private int _dotCount = 0;
     private System.Timers.Timer _timeoutTimer;
-    private System.Timers.Timer _coldStartTextTimer;
+    private System.Timers.Timer _spinnerTimer;
+    private System.Timers.Timer _messageTimer;
+    private System.Timers.Timer _dotTimer;
 
     public void Dispose()
     {
         _timeoutTimer?.Stop();
         _timeoutTimer?.Dispose();
-        _coldStartTextTimer?.Stop();
-        _coldStartTextTimer?.Dispose();
+        _spinnerTimer?.Stop();
+        _spinnerTimer?.Dispose();
+        _messageTimer?.Stop();
+        _messageTimer?.Dispose();
+        _dotTimer?.Stop();
+        _dotTimer?.Dispose();
         FeedClient.Dispose();
     }
     
@@ -131,28 +160,72 @@
         await base.OnAfterRenderAsync(firstRender);
         if (firstRender)
         {
-            StartTimeoutTimer();
-            StartColdStartTextTimer();
+            StartSpinnerTimer();
             this.userTags = await FeedClient.GetUserTagsAsync(CurrentUser);
             StateHasChanged();
         }
     }
-    private void StartColdStartTextTimer()
+
+    private void StartSpinnerTimer()
     {
-        _showColdStartText = false;
-        _coldStartTextTimer?.Stop();
-        _coldStartTextTimer?.Dispose();
-        _coldStartTextTimer = new System.Timers.Timer(ColdStartTextDelayMs);
-        _coldStartTextTimer.AutoReset = false;
-        _coldStartTextTimer.Elapsed += (s, e) =>
+        _showTerminal = false;
+        _spinnerTimer?.Stop();
+        _spinnerTimer?.Dispose();
+        _spinnerTimer = new System.Timers.Timer(SpinnerDelayMs);
+        _spinnerTimer.AutoReset = false;
+        _spinnerTimer.Elapsed += (s, e) =>
         {
-            if (isLoading)
+            if (!isLoading) return;
+            _showTerminal = true;
+            StartTimeoutTimer();
+            StartMessageTimer();
+            StartDotTimer();
+            InvokeAsync(StateHasChanged);
+        };
+        _spinnerTimer.Start();
+    }
+
+    private void StartMessageTimer()
+    {
+        _visibleMessages.Clear();
+        _messageIndex = 0;
+        _visibleMessages.Add(_statusMessages[0]);
+
+        _messageTimer?.Stop();
+        _messageTimer?.Dispose();
+        _messageTimer = new System.Timers.Timer(MessageIntervalMs);
+        _messageTimer.AutoReset = true;
+        _messageTimer.Elapsed += (s, e) =>
+        {
+            if (!isLoading) return;
+            _messageIndex++;
+            if (_messageIndex < _statusMessages.Length)
             {
-                _showColdStartText = true;
+                _visibleMessages.Add(_statusMessages[_messageIndex]);
                 InvokeAsync(StateHasChanged);
             }
+            else
+            {
+                _messageTimer?.Stop();
+            }
         };
-        _coldStartTextTimer.Start();
+        _messageTimer.Start();
+    }
+
+    private void StartDotTimer()
+    {
+        _dotCount = 0;
+        _dotTimer?.Stop();
+        _dotTimer?.Dispose();
+        _dotTimer = new System.Timers.Timer(DotIntervalMs);
+        _dotTimer.AutoReset = true;
+        _dotTimer.Elapsed += (s, e) =>
+        {
+            if (!isLoading) return;
+            _dotCount = (_dotCount + 1) % 4;
+            InvokeAsync(StateHasChanged);
+        };
+        _dotTimer.Start();
     }
 
     private void StartTimeoutTimer()
@@ -175,10 +248,13 @@
 
     private void StopTimeoutTimer()
     {
+        _spinnerTimer?.Stop();
+        _showTerminal = false;
         _timeoutTimer?.Stop();
         _hasTimedOut = false;
-        _coldStartTextTimer?.Stop();
-        _showColdStartText = false;
+        _messageTimer?.Stop();
+        _dotTimer?.Stop();
+        _dotCount = 0;
     }
 
     private void Retry()
@@ -200,18 +276,21 @@
     private async Task ToggleUnreadFilterAsync()
     {
         isLoading = true;
+        StartSpinnerTimer();
         await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
     private async Task ToggleSavedFilterAsync()
     {
         isLoading = true;
+        StartSpinnerTimer();
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag));
     }
 
     private async Task FilterForTag(string tag)
     {
         isLoading = true;
+        StartSpinnerTimer();
         if (this.filterTag == tag)
         {
             tag = null;
@@ -227,9 +306,12 @@
         await InvokeAsync(this.StateHasChanged);
     }
 
+    private static readonly string[] _months = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    private static readonly string[] _days = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+
     private static string GetDayLabel(DateTime date)
     {
         if (date == DateTime.MinValue) return "Unknown date";
-        return date.ToString("dddd, MMM d yyyy");
+        return $"{_days[(int)date.DayOfWeek]}, {_months[date.Month - 1]} {date.Day} {date.Year}";
     }
 }

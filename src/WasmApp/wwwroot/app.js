@@ -68,7 +68,10 @@ window.downloadFile = function (filename, contentType, content) {
 
 window.scrollToElement = function(element) {
     if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const rect = element.getBoundingClientRect();
+        if (rect.top < 0) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
     }
 };
 
