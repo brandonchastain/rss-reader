@@ -6,10 +6,11 @@
 @attribute [Authorize]
 @inject ILogger<Posts> logger
 @inject IJSRuntime jsRuntime
+@inject NavigationManager NavigationManager
 
 
 <PageTitle>Posts</PageTitle>
-<SectionContent SectionName="page-title">Posts from @Href</SectionContent>
+<SectionContent SectionName="page-title">Posts from @Href?.GetRootDomain()</SectionContent>
 
 <CascadingValue Value="@Page" Name="Page">
 <CascadingValue Value="@Items" Name="Posts">
@@ -26,6 +27,11 @@
     {
         if (firstRender)
         {
+            if (string.IsNullOrEmpty(Href))
+            {
+                NavigationManager.NavigateTo("/feeds");
+                return;
+            }
             await this.jsRuntime.InvokeVoidAsync("rssApp.clearData");
         }
         await base.OnAfterRenderAsync(firstRender);

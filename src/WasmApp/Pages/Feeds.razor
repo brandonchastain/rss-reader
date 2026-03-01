@@ -20,14 +20,12 @@
 
 <form method="post" @onsubmit="SubmitAsync" @formname="newfeed">
     <AntiforgeryToken />
-    <div>
-        <InputText @bind-Value="NewFeedUrl" placeholder="Feed URL" width=250 />
-        <button type="submit">Add feed</button>
+    <div class="feeds-form-row">
+        <InputText @bind-Value="NewFeedUrl" placeholder="https://example.com/feed.rss" class="feeds-url-input" />
+        <button type="submit" class="btn btn-primary">Add feed</button>
         <button type="button" class="btn btn-secondary" @onclick="ExportOpml">Export OPML</button>
         <InputFile OnChange="ImportOpml" accept=".opml,.xml" id="opmlImportInput" hidden/>
         <label for="opmlImportInput" class="btn btn-secondary">Import OPML</label>
-    </div>
-    <div>
     </div>
 </form>
 
@@ -45,40 +43,29 @@ else
     <div id="post-table" class="">
         @foreach (NewsFeed feed in feeds.OrderBy(f => f.Href.GetRootDomain()))
         {
-            <div class="row" @onclick="() => ToggleFeed(feed.Href)">
-                <div class="col-auto">
-                    @feed.Href.GetRootDomain()
-                </div>
-                <div class="col-auto">
-                    @if (!newTagInputs.ContainsKey(feed.Href))
+            <div class="feeds-row" @onclick="() => ToggleFeed(feed.Href)">
+                <span class="feeds-row-hostname">@feed.Href.GetRootDomain()</span>
+                <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)" class="feeds-row-link" @onclick:stopPropagation="true">View feed</a>
+                @if (feed.Tags != null && feed.Tags.Any())
+                {
+                    @foreach (var tag in feed.Tags)
                     {
-                        newTagInputs[feed.Href] = string.Empty;
+                        <span class="post-tag">@tag</span>
                     }
-
-                    @if (feed.Tags != null && feed.Tags.Any())
-                    {
-                        <span>Tags: @(string.Join(", ", feed.Tags))</span>
-                    }
-                </div>
+                }
+                <input type="text"
+                    class="feeds-tag-input"
+                    value="@newTagInputs[feed.Href]"
+                    placeholder="Add tag (Space or Enter)"
+                    @oninput="e => HandleTagInput(feed, e.Value.ToString())"
+                    @onkeydown="e => HandleTagKeyDown(e, feed)"
+                    @onclick:stopPropagation="true"
+                    @onkeydown:stopPropagation="true" />
+                <button class="feeds-delete-btn" @onclick="() => DeleteAsync(feed.Href)" @onclick:stopPropagation="true">Delete</button>
             </div>
-            <div class="" hidden=@(openFeed != feed.Href)>
+            <div class="feeds-expanded" hidden=@(openFeed != feed.Href)>
                 <div class="col">
                     Feed URL: @feed.Href
-                </div>
-                <div class="col">
-                    <div>
-                        <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)">View feed posts</a>
-                    </div>
-                    <div>
-                        <button class="btn btn-link p-0" @onclick="() => DeleteAsync(feed.Href)">Delete</button>
-                    </div>
-                </div>
-                <div class="col">
-                    <input type="text" 
-                        value="@newTagInputs[feed.Href]" 
-                        @oninput="e => UpdateTagInput(feed, e.Value.ToString())" 
-                        placeholder="Tag" @onsubmit="() => AddTag(feed)"/>
-                    <button class="btn btn-link p-0" @onclick="() => AddTag(feed)">Add tag</button>
                 </div>
             </div>
         }
@@ -168,11 +155,29 @@ else
 
     private async Task<IEnumerable<NewsFeed>> GetFeedUrls()
     {
-        return await this.feedClient.GetFeedsAsync();
+        var result = await this.feedClient.GetFeedsAsync();
+        foreach (var feed in result)
+        {
+            if (!newTagInputs.ContainsKey(feed.Href))
+                newTagInputs[feed.Href] = string.Empty;
+        }
+        return result;
     }
 
-    private void UpdateTagInput(NewsFeed feed, string value)
+    private async Task HandleTagKeyDown(KeyboardEventArgs e, NewsFeed feed)
     {
+        if (e.Key == "Enter")
+            await AddTag(feed);
+    }
+
+    private async Task HandleTagInput(NewsFeed feed, string value)
+    {
+        if (value.EndsWith(" "))
+        {
+            newTagInputs[feed.Href] = value.TrimEnd();
+            await AddTag(feed);
+            return;
+        }
         newTagInputs[feed.Href] = value;
     }
 

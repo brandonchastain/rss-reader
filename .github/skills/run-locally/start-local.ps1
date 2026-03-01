@@ -109,7 +109,18 @@ if (-not (Test-Path $localSettings)) {
 '@ | Set-Content $localSettings
 }
 
-# ── Step 8: Start SWA dev server ─────────────────────────────────────────────
+# ── Step 8: Build Blazor WASM frontend ───────────────────────────────────────
+Write-Host "`nBuilding Blazor WASM frontend..." -ForegroundColor Cyan
+Push-Location (Join-Path $RepoRoot "src\WasmApp")
+try {
+    dotnet publish -c release WasmApp.csproj --output bin/release/net9.0/publish
+    if ($LASTEXITCODE -ne 0) { Write-Error "Blazor frontend build failed."; exit 1 }
+} finally {
+    Pop-Location
+}
+Write-Host "Frontend built successfully." -ForegroundColor Green
+
+# ── Step 9: Start SWA dev server ─────────────────────────────────────────────
 Write-Host "`nStarting SWA frontend dev server..." -ForegroundColor Cyan
 Write-Host "Frontend will be available at http://localhost:4280" -ForegroundColor Green
 Write-Host "(Press Ctrl+C to stop the SWA dev server)`n"

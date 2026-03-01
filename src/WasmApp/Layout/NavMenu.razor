@@ -6,17 +6,52 @@
 
 @rendermode InteractiveWebAssembly
 
-<div class="navbar-toggler">
-    <span  @onclick="ToggleNavMenu">
+@* Single nav row - elements show/hide per viewport via mobile-only/desktop-only *@
+<div class="nav-row">
+    @* Mobile only: hamburger + page title *@
+    <span class="page-title-wrap mobile-only" @onclick="ToggleNavMenu">
         <span class="navbar-toggler-icon"></span>
         <SectionOutlet SectionName="page-title" />
     </span>
-    <div style="display: inline; overflow-x: auto; white-space: nowrap;">
+
+    @* Desktop only: brand *@
+    <a class="desktop-nav-brand desktop-only" href="/">RssReader</a>
+
+    @* Desktop only: nav links *@
+    <div class="desktop-nav-links desktop-only">
+        <AuthorizeView>
+            <Authorized>
+                <NavLink class="desktop-nav-link" href="/timeline" Match="NavLinkMatch.Prefix">Timeline</NavLink>
+                <NavLink class="desktop-nav-link" href="/search" Match="NavLinkMatch.Prefix">Search</NavLink>
+                <NavLink class="desktop-nav-link" href="/feeds" Match="NavLinkMatch.Prefix">Feeds</NavLink>
+                <NavLink class="desktop-nav-link" href="/privacy" Match="NavLinkMatch.Prefix">Privacy</NavLink>
+            </Authorized>
+            <NotAuthorized>
+                <NavLink class="desktop-nav-link" href="/privacy" Match="NavLinkMatch.Prefix">Privacy</NavLink>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+
+    @* Always visible: toolbar (single SectionOutlet - works on both mobile and desktop) *@
+    <div class="toolbar-container">
         <SectionOutlet SectionName="toolbar" />
+    </div>
+
+    @* Desktop only: auth *@
+    <div class="desktop-nav-auth desktop-only">
+        <AuthorizeView>
+            <Authorized>
+                <a class="desktop-nav-link" href="/.auth/logout">Logout</a>
+            </Authorized>
+            <NotAuthorized>
+                <a class="desktop-nav-link" href="/.auth/login/aad">Login</a>
+            </NotAuthorized>
+        </AuthorizeView>
     </div>
 </div>
 
-<div class="@NavMenuCssClass nav-menu" @onclick="CollapseNavMenu">
+@* Mobile slide-in nav menu *@
+<div class="@NavMenuCssClass nav-menu mobile-only" @onclick="CollapseNavMenu">
     <nav class="flex-column">
         <div class="nav-item px-3">
             <span class="navbar-toggler-icon"></span>
@@ -29,11 +64,6 @@
                         Timeline
                     </NavLink>
                 </div>
-                @* <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="/focus">
-                        Focus
-                    </NavLink>
-                </div> *@
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="/search">
                         Search

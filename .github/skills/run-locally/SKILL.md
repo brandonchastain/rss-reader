@@ -5,7 +5,11 @@ description: Start the full RSS Reader stack locally. Use this when asked to run
 
 Start the full RSS Reader local development environment by following these steps in order.
 
-## Step 1: Ensure Docker Desktop is running
+## Step 1: Stop any existing local servers
+
+Before starting, invoke the **stop-local** skill to clean up any previously running instances. This prevents port conflicts and stale processes.
+
+## Step 2: Ensure Docker Desktop is running
 
 Run `docker info` to check if Docker is running. If the command fails or returns an error:
 
@@ -15,42 +19,30 @@ Run `docker info` to check if Docker is running. If the command fails or returns
    ```
 2. Wait for the Docker daemon to become ready by polling `docker info` every 5 seconds, up to 60 seconds total. Print a waiting message each poll. If Docker is not ready after 60 seconds, stop and report the error.
 
-## Step 2: Build the Docker image
+## Step 3: Build the Docker image
 
-Navigate to the `src\` directory (parent of `Server\` and `Shared\`) and build the image:
+Docker commands require UAC elevation on this machine. Use `Start-Process` with `-Verb RunAs` and a temp log file to capture output:
 
 ```powershell
-cd C:\Users\brand\dev\rssreader\rss-reader\src
-docker build -f Server/Dockerfile -t rss-reader-api:local .
+$log = "$env:TEMP\docker-build.log"
+Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -Command `"cd 'C:\Users\brand\dev\rssreader\rss-reader\src'; docker build -f Server/Dockerfile -t rss-reader-api:local . 2>&1 | Tee-Object '$log'`"" -Wait
+Get-Content $log
 ```
 
-This may take a few minutes on first build. Report progress as output streams.
+This may take a few minutes on first build. Report progress from the log after it completes.
 
-## Step 3: Create the persistent data directory
+## Step 4: Create the persistent data directory
 
 ```powershell
 New-Item -ItemType Directory -Path "C:\dev\rssreader\docker-data" -Force
 ```
 
-## Step 4: Clean up any existing container
-
-If a container named `rss-reader-test` already exists (running or stopped), remove it:
-
-```powershell
-docker rm -f rss-reader-test
-```
-
-It is safe to ignore errors here if no container exists.
-
 ## Step 5: Run the backend container
 
 ```powershell
-docker run -d `
-  --name rss-reader-test `
-  -p 8080:8080 `
-  -v C:\dev\rssreader\docker-data:/data `
-  -e RssAppConfig__IsTestUserEnabled=true `
-  rss-reader-api:local
+$log = "$env:TEMP\docker-run.log"
+Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -Command `"docker run -d --name rss-reader-test -p 8080:8080 -v C:\dev\rssreader\docker-data:/data -e RssAppConfig__IsTestUserEnabled=true rss-reader-api:local 2>&1 | Tee-Object '$log'`"" -Wait
+Get-Content $log
 ```
 
 ## Step 6: Verify the backend is healthy
@@ -88,14 +80,30 @@ if (-not (Test-Path $path)) {
 
 This file is gitignored — it must be created locally on each new checkout.
 
-## Step 8: Start the SWA frontend dev server
+## Step 8: Build the Blazor WASM frontend (clean publish)
 
-From the repository root (`C:\Users\brand\dev\rssreader\rss-reader`), start the SWA dev server in the background:
+Clean only the publish output directory (not `obj/` — that's needed by the Kestrel dev server), then publish:
+
+```powershell
+Remove-Item -Recurse -Force "C:\Users\brand\dev\rssreader\rss-reader\src\WasmApp\bin\release\net9.0\publish" -ErrorAction SilentlyContinue
+cd C:\Users\brand\dev\rssreader\rss-reader\src\WasmApp
+dotnet publish -c release WasmApp.csproj --output bin/release/net9.0/publish
+```
+
+This may take a minute or two. If it fails, report the error and stop.
+
+> **Why not delete `obj/`?** The `appDevserverUrl` in `swa-cli.config.json` causes SWA CLI to proxy frontend requests to the Kestrel dev server started by `dotnet watch run`. That dev server serves `WasmApp.styles.css` from the debug build artifacts in `obj/Debug/`. Deleting `obj/` forces a full debug rebuild on startup, and the dev server returns 0 bytes for `WasmApp.styles.css` until the rebuild completes.
+
+## Step 9: Start the SWA frontend dev server
+
+From the repository root (`C:\Users\brand\dev\rssreader\rss-reader`), start the SWA dev server **detached** so it persists after the agent session ends:
 
 ```powershell
 cd C:\Users\brand\dev\rssreader\rss-reader
 swa start rss-reader-local
 ```
+
+**Important:** Use `mode="async"` with `detach: true` when calling this via the powershell tool, so the process is fully detached and survives session shutdown.
 
 The SWA CLI reads `swa-cli.config.json` and:
 - Serves the Blazor WASM frontend
@@ -104,16 +112,25 @@ The SWA CLI reads `swa-cli.config.json` and:
 
 The frontend will be available at **http://localhost:4280**
 
+To verify port 4280 is listening after launch, check with:
+```powershell
+netstat -ano | Select-String ":4280"
+```
+Note: it binds to `127.0.0.1:4280`, not `0.0.0.0:4280`, so filter for `:4280` not `0.0.0.0:4280`.
+
 The SWA CLI proxies to the Blazor dev server at `http://localhost:8443` (set in `swa-cli.config.json`).
 
 ## Final summary
+
+
 
 Report to the user:
 - ✅ Backend API: http://localhost:8080
 - ✅ Frontend: http://localhost:4280
 - Test user is enabled (`RssAppConfig__IsTestUserEnabled=true`) — authentication is bypassed
 - To view backend logs: `docker logs -f rss-reader-test`
-- To stop: `docker rm -f rss-reader-test`
+- To stop: invoke the **stop-local** skill
+- **⚠️ Hard refresh required**: Blazor WASM uses a service worker that aggressively caches the app. Open http://localhost:4280 and press **Ctrl+Shift+R** (or Cmd+Shift+R on Mac) to bypass the cache, or open in a private/incognito window.
 
 ## Troubleshooting
 

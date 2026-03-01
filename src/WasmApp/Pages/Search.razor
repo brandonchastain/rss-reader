@@ -11,15 +11,11 @@
 <input @bind="searchTerm" @bind:event="oninput" placeholder="Search..." class="form-control mb-3" @onkeydown="(e) => OnKeyDown(e)" />
 <button class="btn btn-primary mb-3" @onclick="() => SearchPosts()">Search</button>
 
-@if (!initialized)
-{
-    <div class="alert alert-info">Enter a search term to find posts.</div>
-}
-else if (!Items.Any())
+@if (hasSearched && !Items.Any())
 {
     <div class="alert alert-warning">No results found. Try a different search.</div>
 }
-else
+else if (hasSearched)
 {
     <CascadingValue Value="@Page" Name="Page">
     <CascadingValue Value="@Items" Name="Posts">
@@ -30,6 +26,13 @@ else
 
 @code {
     private string searchTerm = string.Empty;
+    private bool hasSearched = false;
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Skip base initialization so the empty state doesn't auto-trigger
+        return Task.CompletedTask;
+    }
 
     protected override async Task<List<NewsFeedItem>> GetPostsAsync()
     {
@@ -45,7 +48,7 @@ else
     private async Task SearchPosts()
     {
         Items = await this.GetPostsAsync();
-        initialized = true;
+        hasSearched = true;
         await InvokeAsync(StateHasChanged);
     }
 

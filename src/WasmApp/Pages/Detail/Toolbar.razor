@@ -28,7 +28,7 @@
             {
                 @foreach (var tag in this.userTags)
                 {
-                    <button class="btn-link" style="@(this.FilterTag == tag ? "color: pink" : "")" @onclick="async () => {await FilterForTag.InvokeAsync(tag); await ToggleShowFilters();}">[@tag]</button>
+                    <button class="filter-tag-badge @(this.FilterTag == tag ? "active" : "")" @onclick="async () => {await FilterForTag.InvokeAsync(tag); await ToggleShowFilters();}">@tag</button>
                 }
             }
         </div>
