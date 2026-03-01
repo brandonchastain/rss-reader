@@ -44,7 +44,7 @@
                 }
                 else
                 {
-                    <span>&nbsp;</span>
+                    <span style="background: transparent">&nbsp;</span>
                 }
                 </p>
             }
@@ -59,12 +59,22 @@
     else
     {
         <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
-            @foreach (var post in Posts)
+            @{ bool isFirstGroup = true; }
+            @foreach (var dayGroup in Posts
+                .GroupBy(p => p.ParsedDate?.ToLocalTime().Date ?? DateTime.MinValue)
+                .OrderByDescending(g => g.Key))
             {
-                <PostDetail 
-                    Post="@post"
-                    FilterTag="@this.filterTag"
-                    IsFilterUnread="@this.IsFilterUnread"/>
+                <div class="day-separator @(isFirstGroup ? "day-separator-first" : "")">@GetDayLabel(dayGroup.Key)</div>
+                isFirstGroup = false;
+                <div class="day-group">
+                @foreach (var post in dayGroup)
+                {
+                    <PostDetail 
+                        Post="@post"
+                        FilterTag="@this.filterTag"
+                        IsFilterUnread="@this.IsFilterUnread"/>
+                }
+                </div>
             }
 
             <div class="row">
@@ -215,5 +225,11 @@
         await this.OnPageChanged.InvokeAsync(this.Page + 1);
         isLoading = false;
         await InvokeAsync(this.StateHasChanged);
+    }
+
+    private static string GetDayLabel(DateTime date)
+    {
+        if (date == DateTime.MinValue) return "Unknown date";
+        return date.ToString("dddd, MMM d yyyy");
     }
 }

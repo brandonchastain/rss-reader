@@ -1,5 +1,6 @@
 @using System.Threading.Tasks
 @inherits PageBase
+@implements IDisposable
 
 @rendermode InteractiveWebAssembly
 @attribute [StreamRendering]
@@ -10,7 +11,7 @@
 
 @if (Post != null)
 {
-<div class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="async () => await HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
+<div @ref="_postRowRef" class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="async () => await HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
     <div class="col thumbnail">
         @{
             var thumbnailUrl = Post.GetThumbnailUrl();
@@ -48,7 +49,14 @@
                 Published on @Post.ParsedDate?.ToString("f")
             </p>
             <p>
-                <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)">[speak this text]</button>
+                @if (_isSpeaking)
+                {
+                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => StopSpeaking()"><i class="fa-solid fa-stop"></i> [stop speaking]</button>
+                }
+                else
+                {
+                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)"><i class="fa-solid fa-volume-high"></i> [speak this text]</button>
+                }
             </p>
             @if (Post?.GetThumbnailUrl() != null && Post.Content?.TrimStart().IndexOf(Post.GetThumbnailUrl()) < 0)
             {
@@ -79,12 +87,47 @@
     [Parameter]
     public bool IsFilterUnread { get; set; }
 
+    private bool _isSpeaking = false;
+    private DotNetObjectReference<PostDetail> _dotNetRef;
+    private ElementReference _postRowRef;
+
+    protected override void OnInitialized()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+    }
+
+    [JSInvokable]
+    public void OnSpeechStopped()
+    {
+        _isSpeaking = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static string StripHtml(string html)
+    {
+        var text = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ");
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s{2,}", " ");
+        return System.Net.WebUtility.HtmlDecode(text).Trim();
+    }
+
     private async Task OnSpeakTextClicked(NewsFeedItem post)
     {
         if (post?.Content != null)
         {
-            await jsRuntime.InvokeVoidAsync("speakThisText", post.Content);
+            _isSpeaking = true;
+            await jsRuntime.InvokeVoidAsync("speakThisText", StripHtml(post.Content), _dotNetRef);
         }
+    }
+
+    private async Task StopSpeaking()
+    {
+        _isSpeaking = false;
+        await jsRuntime.InvokeVoidAsync("stopSpeaking");
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
     }
 
     private bool ShouldPostBeHidden(NewsFeedItem post)
@@ -98,16 +141,15 @@
     {
         if (isRead && !item.IsRead)
         {
-            await this.feedClient.MarkAsReadAsync(item, true);
             item.IsRead = true;
         }
         else if (!isRead && item.IsRead)
         {
-            await this.feedClient.MarkAsReadAsync(item, false);
             item.IsRead = false;
         }
 
         await InvokeAsync(StateHasChanged);
+        await this.feedClient.MarkAsReadAsync(item, item.IsRead);
     }
 
     private async Task PreviewPostAsync(NewsFeedItem post)
@@ -118,32 +160,40 @@
             this.StateHasChanged();
         }
 
+        bool wasExpanded = post.IsBeingPreviewed;
         post.IsBeingPreviewed = !post.IsBeingPreviewed;
         await InvokeAsync(StateHasChanged);
+
+        if (wasExpanded && !post.IsBeingPreviewed)
+        {
+            await jsRuntime.InvokeVoidAsync("scrollToElement", _postRowRef);
+        }
     }
 
     private async Task SavePost(NewsFeedItem post)
     {
         if (!post.IsSaved)
         {
-            await this.feedClient.SavePostAsync(post);
             post.IsSaved = true;
+            await InvokeAsync(StateHasChanged);
+            await this.feedClient.SavePostAsync(post);
         }
         else    
         {
-            await this.feedClient.UnsavePostAsync(post);
             post.IsSaved = false;
+            await InvokeAsync(StateHasChanged);
+            await this.feedClient.UnsavePostAsync(post);
         }
-
-        await InvokeAsync(StateHasChanged);
     }
 
     private async Task HandleClick(NewsFeedItem post, bool preview = true)
     {
         if (preview)
         {
-            await PreviewPostAsync(post);
-            await MarkAsReadAsync(post, true);
+            var tasks = new List<Task>();
+            tasks.Add(PreviewPostAsync(post));
+            tasks.Add(MarkAsReadAsync(post, true));
+            await Task.WhenAll(tasks);
         }
     }
 }

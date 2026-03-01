@@ -18,8 +18,8 @@
         }
     </button>
 
-    <button class="btn-link" style="@(this.IsFilterUnread ? "color: pink" : "")" @onclick="async () => {await ToggleUnreadFilterAsync.InvokeAsync(); }">[unread]</button>
-    <button class="btn-link" style="@(this.IsFilterSaved ? "color: pink" : "")" @onclick="async () => {await ToggleSavedFilterAsync.InvokeAsync(); }">[saved]</button>
+    <button class="btn-link @(this.IsFilterUnread ? "toolbar-active" : "")" @onclick="async () => {await ToggleUnreadFilterAsync.InvokeAsync(); }">[unread]</button>
+    <button class="btn-link @(this.IsFilterSaved ? "toolbar-active" : "")" @onclick="async () => {await ToggleSavedFilterAsync.InvokeAsync(); }">[saved]</button>
 
     <div class="dropdown-container">
         <button class="btn-link" @onclick="() => ToggleShowFilters()">[filters]</button>

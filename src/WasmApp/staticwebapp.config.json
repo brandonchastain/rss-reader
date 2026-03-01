@@ -5,6 +5,30 @@
       "allowedRoles": ["anonymous"]
     },
     {
+      "route": "/_framework/blazor.boot.json",
+      "headers": {
+        "cache-control": "no-cache"
+      }
+    },
+    {
+      "route": "/_framework/blazor.webassembly.js",
+      "headers": {
+        "cache-control": "no-cache"
+      }
+    },
+    {
+      "route": "/_framework/dotnet.js",
+      "headers": {
+        "cache-control": "no-cache"
+      }
+    },
+    {
+      "route": "/_framework/dotnet.native.wasm",
+      "headers": {
+        "cache-control": "no-cache"
+      }
+    },
+    {
       "route": "/_framework/*",
       "headers": {
         "cache-control": "public, max-age=31536000, immutable"

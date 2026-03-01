@@ -8,8 +8,10 @@
 <PageTitle>Search</PageTitle>
 <SectionContent SectionName="page-title">| Search</SectionContent>
 
-<input @bind="searchTerm" @bind:event="oninput" placeholder="Search..." class="form-control mb-3" @onkeydown="(e) => OnKeyDown(e)" />
-<button class="btn btn-primary mb-3" @onclick="() => SearchPosts()">Search</button>
+<div class="input-group mb-3">
+    <input @bind="searchTerm" @bind:event="oninput" placeholder="Search..." class="form-control" @onkeydown="(e) => OnKeyDown(e)" />
+    <button class="btn btn-primary" @onclick="() => SearchPosts()"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+</div>
 
 @if (hasSearched && !Items.Any())
 {

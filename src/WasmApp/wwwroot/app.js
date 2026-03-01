@@ -1,19 +1,50 @@
 const synth = window.speechSynthesis;
 var speaking = false;
+var activeSpeechCallback = null;
+var activeUtterance = null;
 
-synth.addEventListener("end", () => {
+function clearSpeech(utterance) {
+  if (utterance && utterance !== activeUtterance) return; // stale end event from a cancelled utterance
   speaking = false;
-});
+  activeUtterance = null;
+  if (activeSpeechCallback) {
+    activeSpeechCallback.invokeMethodAsync('OnSpeechStopped');
+    activeSpeechCallback = null;
+  }
+}
 
-window.speakThisText = function(text) {
+// dotNetRef: DotNetObjectReference — receives OnSpeechStopped callback when speech ends/is cancelled
+window.speakThisText = function(text, dotNetRef) {
   if (speaking) {
+    // Cancel current speech and notify the active component
+    const prev = activeSpeechCallback;
+    activeSpeechCallback = null;
+    activeUtterance = null;
+    speaking = false;
     synth.cancel();
-    return;
+    if (prev) prev.invokeMethodAsync('OnSpeechStopped');
+    // If same component clicked stop (no new text), just stop
+    if (!text) return;
   }
 
   const utterThis = new SpeechSynthesisUtterance(text);
+  utterThis.addEventListener("end", () => clearSpeech(utterThis));
+  utterThis.addEventListener("error", () => clearSpeech(utterThis));
   synth.speak(utterThis);
   speaking = true;
+  activeUtterance = utterThis;
+  activeSpeechCallback = dotNetRef;
+}
+
+window.stopSpeaking = function() {
+  if (speaking) {
+    const prev = activeSpeechCallback;
+    activeSpeechCallback = null;
+    activeUtterance = null;
+    speaking = false;
+    synth.cancel();
+    if (prev) prev.invokeMethodAsync('OnSpeechStopped');
+  }
 }
 
 // Function to download a file
@@ -33,6 +64,12 @@ window.downloadFile = function (filename, contentType, content) {
     // Clean up
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
+};
+
+window.scrollToElement = function(element) {
+    if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 };
 
 window.Observer = {

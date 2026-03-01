@@ -11,23 +11,41 @@
     box-shadow: none;
     padding: 0 0.2rem;
     outline: none;
+    color: var(--accent);
+    text-decoration: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+}
+
+.toolbar button:not(.filter-tag-badge):hover,
+.toolbar .btn-link:hover {
+    text-decoration: underline;
+    opacity: 0.85;
+}
+
+.toolbar .toolbar-active {
+    color: var(--warn);
 }
 
 .filter-dropdown {
     display: none;
     position: absolute;
     top: 100%;
-    left: 0;
+    right: 0;
     background-color: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: 4px;
     padding: 8px;
     z-index: 1000;
     min-width: 150px;
+    max-width: min(280px, calc(100vw - 1rem));
 }
 
 .filter-dropdown.show {
-    display: block;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
 }
 
 .filter-dropdown button:not(.filter-tag-badge) {
