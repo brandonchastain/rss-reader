@@ -187,6 +187,11 @@ a {
     margin-bottom: 0.75rem;
 }
 
+.day-group .row {
+    margin-left: 0;
+    margin-right: 0;
+}
+
 .day-group .row:first-child {
     border-top: none;
 }
@@ -195,6 +200,7 @@ a {
     background-color: var(--bg);
     color: var(--text-muted);
     border-left: 3px solid transparent;
+    opacity: 0.55;
 }
 
 #post-table .post-read .post-title a {
@@ -212,11 +218,11 @@ a {
 #post-table .post-unread {
     background-color: var(--bg);
     color: var(--text);
-    border-left: 3px solid var(--accent);
+    border-left: 4px solid var(--accent);
 }
 
 #post-table .post-unread .post-title a {
-    font-weight: 600;
+    font-weight: 700;
 }
 
 #post-table .post-read:hover, #post-table .post-unread:hover {
@@ -712,6 +718,13 @@ a.post-domain:hover {
     100% { transform: rotate(360deg); }
 }
 
+.loading-spinner-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 0;
+}
+
 /* Add swipe animation styles */
 .swipe-left {
     -webkit-animation: swipeLeft 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
@@ -800,7 +813,88 @@ a.post-domain:hover {
     height: 1em;
 }
 
-/* ── Responsive nav visibility ──────────────────────────────── */
+/* ── Shell boot / terminal UI ───────────────────────────────── */
+.shell-boot {
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 4rem 1.5rem 2rem;
+    font-size: 0.875rem;
+    line-height: 1.8;
+}
+
+.shell-boot,
+.shell-boot * {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.shell-banner {
+    margin-top: 0.5rem;
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.shell-banner > span {
+    display: block;
+}
+
+.shell-banner .comment-slash {
+    color: var(--accent);
+}
+
+.shell-banner .comment-text {
+    color: var(--text-muted);
+}
+
+.shell-line {
+    display: block;
+    color: var(--text) !important;
+    white-space: pre;
+}
+
+.shell-cmd {
+    color: var(--text-muted) !important;
+    margin-top: 1.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.shell-prompt {
+    color: var(--accent) !important;
+    user-select: none;
+    margin-right: 6px;
+}
+
+.shell-error,
+.shell-error .shell-prompt {
+    color: var(--warn) !important;
+}
+
+.shell-cursor {
+    color: var(--accent) !important;
+    animation: blink 1s step-end infinite;
+}
+
+.shell-retry-btn {
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--accent) !important;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.shell-retry-btn:hover {
+    text-decoration: underline;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+}
 .mobile-only {
     display: flex !important;
 }
