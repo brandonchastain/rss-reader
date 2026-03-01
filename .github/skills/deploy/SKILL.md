@@ -5,6 +5,16 @@ description: Deploy the RSS Reader app to production. Use this when asked to dep
 
 Deploy the RSS Reader app to production by following these steps in order.
 
+## ⛔ Security rules — NEVER violate these
+
+These rules apply to every step in this skill, without exception:
+
+1. **Never run `git credential fill`**, `git credential approve`, `cmdkey`, or any other command that reads credentials from the system credential store and prints them to stdout. These commands expose secrets in the conversation log.
+2. **Never print, log, echo, or `Write-Host` the value of any token, password, or secret.** If a command would output a secret (e.g. `gh auth token`), pipe it directly to the consuming command — do not capture it in a variable and do not display it.
+3. **Never pass secrets as inline command-line arguments** where they would appear in shell history or tool output. Use `--password-stdin` (stdin pipe) or environment variables already set by the user.
+4. **Never use `Invoke-RestMethod` or `curl` with a raw token value** extracted from the credential store. Use `gh` CLI or GitHub MCP tools (`github-mcp-server-*`) for all GitHub API operations — they handle auth internally without exposing tokens.
+5. If authentication is needed for any step and no safe method is available, **stop and ask the user** to run the auth command themselves, then continue.
+
 ## Step 0: Confirm with user before proceeding
 
 **⛔ STOP — do not proceed without explicit user confirmation.**
