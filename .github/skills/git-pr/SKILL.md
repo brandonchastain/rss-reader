@@ -11,10 +11,13 @@ These rules were learned the hard way. Violating them leaks tokens into session 
 | ❌ Never do this | ✅ Do this instead |
 |---|---|
 | `Invoke-RestMethod` / `curl` with `Authorization: Bearer <token>` | Use the `github` MCP server tool |
-| `git credential fill` piped into a variable (token appears in stdout) | Use `${env:GITHUB_TOKEN}` or `${input:github-token}` |
-| `cmdkey /list` to find tokens | Tokens come from env var / VS Code input only |
+| `git credential fill` (token appears in stdout — **this is how leaks happen**) | Do not extract tokens at all; MCP tools handle auth internally |
+| Capturing `git credential fill` output in any variable | Same — never run this command |
+| `cmdkey /list` to find tokens | Do not enumerate credentials |
 | `gh pr create` (gh CLI is not installed on this machine) | Use the `github` MCP server tool |
 | `git add .` without checking status first | Always `git status` first; stage individual files |
+
+**There is no acceptable fallback.** If the GitHub MCP `create_pull_request` tool is unavailable, the only options are (1) ask the user to restart the session so the MCP server reconnects, or (2) provide the user the branch URL and ask them to open the PR manually at github.com. **Never attempt to create the PR via the REST API.**
 
 ---
 
@@ -217,7 +220,11 @@ After the MCP tool responds:
 ## Troubleshooting
 
 ### `create_pull_request` tool not available
-The `github` MCP server is not connected. Ask the user to restart their Copilot CLI session (the MCP server starts fresh on session init). Do **not** fall back to the REST API.
+The `github` MCP server is not connected. Two options — pick one:
+1. Ask the user to restart their Copilot CLI session (the MCP server reconnects on session init), then retry Step 9.
+2. Provide the user with the push URL (e.g. `https://github.com/brandonchastain/rss-reader/pull/new/<branch>`) and ask them to open the PR manually via the GitHub web UI.
+
+**Do NOT fall back to `Invoke-RestMethod`, `curl`, or any HTTP client. Do NOT run `git credential fill` to obtain a token. There is no REST API fallback.**
 
 ### `git stash pop` conflicts
 Resolve conflicts manually, then `git add <file>` and `git stash drop` (do not `git stash pop` again).

@@ -5,6 +5,16 @@ description: Deploy the RSS Reader app to production. Use this when asked to dep
 
 Deploy the RSS Reader app to production by following these steps in order.
 
+## ⛔ Security rules — NEVER violate these
+
+These rules apply to every step in this skill, without exception:
+
+1. **Never run `git credential fill`**, `git credential approve`, `cmdkey`, or any other command that reads credentials from the system credential store and prints them to stdout. These commands expose secrets in the conversation log.
+2. **Never print, log, echo, or `Write-Host` the value of any token, password, or secret.** If a command would output a secret (e.g. `gh auth token`), pipe it directly to the consuming command — do not capture it in a variable and do not display it.
+3. **Never pass secrets as inline command-line arguments** where they would appear in shell history or tool output. Use `--password-stdin` (stdin pipe) or environment variables already set by the user.
+4. **Never use `Invoke-RestMethod` or `curl` with a raw token value** extracted from the credential store. Use `gh` CLI or GitHub MCP tools (`github-mcp-server-*`) for all GitHub API operations — they handle auth internally without exposing tokens.
+5. If authentication is needed for any step and no safe method is available, **stop and ask the user** to run the auth command themselves, then continue.
+
 ## Step 0: Confirm with user before proceeding
 
 **⛔ STOP — do not proceed without explicit user confirmation.**
@@ -28,24 +38,23 @@ fnm use 20
 ```
 
 ### GITHUB_USERNAME
-Resolve the GitHub username from git config:
+Resolve the GitHub username from the git remote URL (primary) or git config (fallback):
 
 ```powershell
-$env:GITHUB_USERNAME = git config github.user
-if (-not $env:GITHUB_USERNAME) {
-    $remoteUrl = git remote get-url origin 2>$null
-    if ($remoteUrl -match 'github\.com[:/]([^/]+)/') {
-        $env:GITHUB_USERNAME = $Matches[1]
-    }
+$remoteUrl = git remote get-url origin 2>$null
+if ($remoteUrl -match 'github\.com[:/]([^/]+)/') {
+    $ghUser = $Matches[1]
+} else {
+    $ghUser = git config github.user
 }
-if (-not $env:GITHUB_USERNAME) {
+if (-not $ghUser) {
     Write-Error "Could not determine GitHub username. Set it with: git config --global github.user 'your-github-username'"
     exit 1
 }
-Write-Host "Using GitHub username: $env:GITHUB_USERNAME"
+Write-Host "Using GitHub username: $ghUser"
 ```
 
-If no value can be resolved, stop and tell the user to set `git config --global github.user`.
+**Important:** Use the local `$ghUser` variable (not `$env:GITHUB_USERNAME`) within each command block, because env vars do not persist across separate tool calls. Every subsequent step that needs the username must resolve it in the same command invocation using the same pattern above.
 
 ### Docker
 Run `docker info` to check if Docker is running. If the command fails:
@@ -64,35 +73,43 @@ Run `swa --version` to confirm `swa` is installed. If it fails, stop and tell th
 
 ## Step 2: Build & push the backend Docker image
 
-Navigate to the `src\` directory and build the image tagged for GHCR:
+Navigate to the `src\` directory and build the image tagged for GHCR. Resolve `$ghUser` inline in the same command:
 
 ```powershell
+$remoteUrl = git remote get-url origin 2>$null
+if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
 cd C:\Users\brand\dev\rssreader\rss-reader\src
-docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f Server/Dockerfile .
+docker build -t "ghcr.io/$ghUser/rss-reader-api:latest" -f Server/Dockerfile .
 ```
 
 If the build fails, stop and report the error.
 
-Then push the image:
+Then push the image (resolve `$ghUser` inline again in the same command):
 
 ```powershell
-docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
+$remoteUrl = git remote get-url origin 2>$null
+if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
+docker push "ghcr.io/$ghUser/rss-reader-api:latest"
 ```
 
 If the push fails, it may mean the user is not logged in to GHCR. Remind them to run:
 ```powershell
-echo $env:GITHUB_PAT | docker login ghcr.io -u $env:GITHUB_USERNAME --password-stdin
+$remoteUrl = git remote get-url origin 2>$null
+if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
+echo $env:GITHUB_PAT | docker login ghcr.io -u $ghUser --password-stdin
 ```
 
 ## Step 3: Update the Azure Container App
 
-Update the running container app to use the new image:
+Update the running container app to use the new image (resolve `$ghUser` inline):
 
 ```powershell
+$remoteUrl = git remote get-url origin 2>$null
+if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
 az containerapp update `
   --name rss-reader-api `
   --resource-group rss-container-rg `
-  --image ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
+  --image "ghcr.io/$ghUser/rss-reader-api:latest"
 ```
 
 If this fails, check that the user is logged in to Azure (`az login`) and that the container app `rss-reader-api` exists in the `rss-container-rg` resource group.
@@ -164,7 +181,7 @@ First check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snap
 ## Final summary
 
 Report to the user:
-- ✅ Backend image built and pushed: `ghcr.io/$GITHUB_USERNAME/rss-reader-api:latest`
+- ✅ Backend image built and pushed: `ghcr.io/<username>/rss-reader-api:latest`
 - ✅ Azure Container App updated: `rss-reader-api`
 - ✅ Frontend deployed to SWA production environment
 - ✅ Azure resource health: `Available` (or report the actual status)
