@@ -1,8 +1,27 @@
 {
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "github-token",
+      "description": "GitHub Personal Access Token (classic) with repo + pull_request scopes",
+      "password": true
+    }
+  ],
   "servers": {
     "playwright": {
       "command": "npx",
       "args": ["@playwright/mcp@0.0.68", "--browser", "firefox"]
+    },
+    "github": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "GITHUB_TOKEN",
+        "ghcr.io/github/github-mcp-server"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "${input:github-token}"
+      }
     }
   }
 }
