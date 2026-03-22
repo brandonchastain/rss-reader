@@ -19,6 +19,7 @@ namespace Server.Controllers
         private readonly IFeedRepository feedRepository;
         private readonly IFeedRefresher feedRefresher;
         private readonly IItemRepository itemRepository;
+        private readonly IUserResolver userResolver;
         private readonly ILogger<UserController> logger;
 
         public FeedController(
@@ -26,12 +27,14 @@ namespace Server.Controllers
             IFeedRepository feedRepository,
             IFeedRefresher feedRefresher,
             IItemRepository itemRepository,
+            IUserResolver userResolver,
             ILogger<UserController> logger)
         {
             this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
             this.feedRefresher = feedRefresher ?? throw new ArgumentNullException(nameof(feedRefresher));
             this.itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
+            this.userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -40,14 +43,7 @@ namespace Server.Controllers
         public async Task<IActionResult> ImportOpmlAsync(OpmlImport import)
         {
             await Task.Yield();
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var authenticatedUser = this.userRepository.GetUserByName(username);
+            var authenticatedUser = this.userResolver.ResolveUser(User);
             if (authenticatedUser == null)
             {
                 return NotFound($"Authenticated user not found.");
@@ -76,14 +72,7 @@ namespace Server.Controllers
         public async Task<IActionResult> ExportOpmlAsync(int userId)
         {
             await Task.Yield();
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var authenticatedUser = this.userRepository.GetUserByName(username);
+            var authenticatedUser = this.userResolver.ResolveUser(User);
             if (authenticatedUser == null)
             {
                 return NotFound($"Authenticated user not found.");
@@ -111,38 +100,33 @@ namespace Server.Controllers
         [Route("refresh")]
         public async Task<IActionResult> RefreshFeedsAsync()
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var user = this.userRepository.GetUserByName(username);
+            var user = this.userResolver.ResolveUser(User);
 
             if (user == null)
             {
-                return NotFound($"User '{username}' not found.");
+                return NotFound($"Authenticated user not found.");
             }
 
             await this.feedRefresher.RefreshAsync(user);
 
-            try
+            return Accepted();
+        }
+
+        [HttpGet]
+        [Route("refresh/status")]
+        public async Task<IActionResult> RefreshStatusAsync()
+        {
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                while (!cts.IsCancellationRequested)
-                {
-                    await Task.Delay(500, cts.Token);
-                    bool hasNewItems = await this.feedRefresher.HasNewItemsAsync(user);
-                    if (hasNewItems)
-                    {
-                        return Ok();
-                    }
-                }
+                return NotFound($"Authenticated user not found.");
             }
-            catch (OperationCanceledException)
+
+            bool hasNewItems = await this.feedRefresher.HasNewItemsAsync(user);
+            if (hasNewItems)
             {
-                // Polling timed out — no new items found within 30 seconds
+                return Ok();
             }
 
             return NoContent();
@@ -157,14 +141,7 @@ namespace Server.Controllers
                 return BadRequest("Feed data is required.");
             }
 
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var authenticatedUser = this.userRepository.GetUserByName(username);
+            var authenticatedUser = this.userResolver.ResolveUser(User);
             if (authenticatedUser == null)
             {
                 return NotFound($"Authenticated user not found.");
@@ -218,14 +195,7 @@ namespace Server.Controllers
         public async Task<IActionResult> GetUserTagsAsync(int userId)
         {
             await Task.Yield();
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var authenticatedUser = this.userRepository.GetUserByName(username);
+            var authenticatedUser = this.userResolver.ResolveUser(User);
             if (authenticatedUser == null)
             {
                 return NotFound($"Authenticated user not found.");
@@ -254,17 +224,10 @@ namespace Server.Controllers
         [HttpGet]
         public IActionResult GetFeeds()
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var user = this.userRepository.GetUserByName(username);
+            var user = this.userResolver.ResolveUser(User);
             if (user == null)
             {
-                return NotFound($"User '{username}' not found.");
+                return NotFound($"Authenticated user not found.");
             }
 
             var feeds = this.feedRepository.GetFeeds(user);
@@ -289,14 +252,7 @@ namespace Server.Controllers
                 return BadRequest("Feed URL and User ID are required.");
             }
 
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var authenticatedUser = this.userRepository.GetUserByName(username);
+            var authenticatedUser = this.userResolver.ResolveUser(User);
             if (authenticatedUser == null)
             {
                 return NotFound($"Authenticated user not found.");
@@ -332,11 +288,11 @@ namespace Server.Controllers
         public async Task<IActionResult> DeleteFeedAsync([FromQuery]string href)
         {
             await Task.Yield();
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                return Unauthorized("User is not authenticated.");
+                return NotFound($"Authenticated user not found.");
             }
 
             if (href == null)
@@ -344,16 +300,10 @@ namespace Server.Controllers
                 return BadRequest("feed URL is required.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
-            if (user == null)
-            {
-                return NotFound($"User '{username}' not found.");
-            }
-
             var feed = this.feedRepository.GetFeed(user, href);
             if (feed == null)
             {
-                return NotFound($"Feed with URL '{href}' not found for user '{username}'.");
+                return NotFound($"Feed with URL '{href}' not found.");
             }
 
             this.feedRepository.DeleteFeed(user, feed.Href);

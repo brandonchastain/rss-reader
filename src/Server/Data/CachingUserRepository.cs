@@ -27,6 +27,7 @@ public sealed class CachingUserRepository : IUserRepository
 
     private static string UserNameKey(string username) => $"user:name:{username}";
     private static string UserIdKey(int userId) => $"user:id:{userId}";
+    private static string UserAadIdKey(string aadId) => $"user:aad:{aadId}";
     private const string AllUsersKey = "users:all";
 
     // --- Read methods (cache-aside) ---
@@ -61,6 +62,20 @@ public sealed class CachingUserRepository : IUserRepository
         return user!;
     }
 
+    public RssUser GetUserByAadId(string aadUserId)
+    {
+        var key = UserAadIdKey(aadUserId);
+        if (_cache.TryGetValue(key, out RssUser cached))
+            return cached!;
+
+        var user = _inner.GetUserByAadId(aadUserId);
+
+        if (user is not null)
+            SetWithEvictionToken(key, user);
+
+        return user!;
+    }
+
     public IEnumerable<RssUser> GetAllUsers()
     {
         if (_cache.TryGetValue(AllUsersKey, out List<RssUser> cached))
@@ -72,24 +87,12 @@ public sealed class CachingUserRepository : IUserRepository
         return result;
     }
 
-    // --- Write method (evict all, then seed the new user) ---
+    // --- Write methods (evict all, then seed the new user) ---
 
     public RssUser AddUser(string username, int? id = null)
     {
         var user = _inner.AddUser(username, id);
-
-        // Atomically swap in a fresh CTS so entries set after this point won't
-        // be evicted by the cancellation we're about to issue.
-        CancellationTokenSource oldCts;
-        lock (_lock)
-        {
-            oldCts = _evictionCts;
-            _evictionCts = new CancellationTokenSource();
-        }
-
-        // Cancelling the old token evicts every cache entry that was linked to it.
-        oldCts.Cancel();
-        oldCts.Dispose();
+        EvictAll();
 
         // Seed the cache with the newly created user to avoid an immediate DB
         // round-trip on the next lookup.
@@ -102,7 +105,29 @@ public sealed class CachingUserRepository : IUserRepository
         return user!;
     }
 
+    public void SetAadUserId(int userId, string aadUserId)
+    {
+        _inner.SetAadUserId(userId, aadUserId);
+        EvictAll();
+    }
+
     // --- Helpers ---
+
+    private void EvictAll()
+    {
+        // Atomically swap in a fresh CTS so entries set after this point won't
+        // be evicted by the cancellation we're about to issue.
+        CancellationTokenSource oldCts;
+        lock (_lock)
+        {
+            oldCts = _evictionCts;
+            _evictionCts = new CancellationTokenSource();
+        }
+
+        // Cancelling the old token evicts every cache entry that was linked to it.
+        oldCts.Cancel();
+        oldCts.Dispose();
+    }
 
     private void SetWithEvictionToken<T>(string key, T value)
     {

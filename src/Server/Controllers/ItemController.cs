@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using RssApp.Data;
 using RssApp.Contracts;
+using RssApp.ComponentServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Security.Claims;
@@ -17,18 +18,21 @@ namespace Server.Controllers
         private readonly IItemRepository itemRepository;
         private readonly IFeedRepository feedRepository;
         private readonly IUserRepository userRepository;
+        private readonly IUserResolver userResolver;
         private readonly ILogger<ItemController> logger;
 
         public ItemController(
             IItemRepository itemRepository,
             IFeedRepository feedRepository,
             IUserRepository userRepository,
+            IUserResolver userResolver,
             ILogger<ItemController> logger
         )
         {
             this.itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
             this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            this.userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -36,14 +40,12 @@ namespace Server.Controllers
         [HttpGet("timeline")]
         public async Task<IActionResult> TimelineAsync(bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
+            var user = this.userResolver.ResolveUser(User);
 
-            var user = this.userRepository.GetUserByName(username);
+            if (user == null)
+            {
+                return NotFound("Authenticated user not found.");
+            }
 
             // TODO: authenticate the real user
             var feed = new NewsFeed("%", user.Id);
@@ -60,14 +62,13 @@ namespace Server.Controllers
         [HttpGet("feed")]
         public async Task<IActionResult> FeedAsync(string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                return Unauthorized("User is not authenticated.");
+                return NotFound("Authenticated user not found.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
             var feed = this.feedRepository.GetFeed(user, href);
 
             if (feed == null)
@@ -88,11 +89,11 @@ namespace Server.Controllers
         [HttpGet("search")]
         public async Task<IActionResult> SearchAsync(string query, int page = 0, int pageSize = 20)
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                return Unauthorized("User is not authenticated.");
+                return NotFound("Authenticated user not found.");
             }
 
             if (query == null)
@@ -100,7 +101,6 @@ namespace Server.Controllers
                 return BadRequest("query is required.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
             var items = await this.itemRepository.SearchItemsAsync(query, user, page, pageSize);
 
             return Ok(items);
@@ -110,14 +110,13 @@ namespace Server.Controllers
         [HttpGet("content")]
         public IActionResult GetItemContent(int itemId)
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                return Unauthorized("User is not authenticated.");
+                return NotFound("Authenticated user not found.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
             var item = this.itemRepository.GetItem(user, itemId);
 
             if (item == null)
@@ -140,14 +139,13 @@ namespace Server.Controllers
         [HttpGet("markAsRead")]
         public IActionResult MarkAsRead(int itemId, bool isRead)
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                return Unauthorized("User is not authenticated.");
+                return NotFound("Authenticated user not found.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
             var item = this.itemRepository.GetItem(user, itemId);
 
             if (item == null)
@@ -167,14 +165,7 @@ namespace Server.Controllers
                 return BadRequest("Item is required.");
             }
 
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var authenticatedUser = this.userRepository.GetUserByName(username);
+            var authenticatedUser = this.userResolver.ResolveUser(User);
             if (authenticatedUser == null)
             {
                 return NotFound($"Authenticated user not found.");
@@ -203,14 +194,7 @@ namespace Server.Controllers
                 return BadRequest("Item is required.");
             }
 
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var authenticatedUser = this.userRepository.GetUserByName(username);
+            var authenticatedUser = this.userResolver.ResolveUser(User);
             if (authenticatedUser == null)
             {
                 return NotFound($"Authenticated user not found.");

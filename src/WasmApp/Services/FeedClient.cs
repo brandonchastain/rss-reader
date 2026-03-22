@@ -112,17 +112,39 @@ namespace WasmApp.Services
         public async Task<bool> RefreshFeedsAsync()
         {
             var url = $"{_config.ApiBaseUrl}api/feed/refresh";
+            var statusUrl = $"{_config.ApiBaseUrl}api/feed/refresh/status";
 
             try
             {
-                var response = await _httpClient.GetAsync(url);
-                return response.IsSuccessStatusCode;
+                // Fire the refresh — returns immediately (202 Accepted)
+                var triggerResponse = await _httpClient.GetAsync(url);
+                if (!triggerResponse.IsSuccessStatusCode)
+                {
+                    return false;
+                }
+
+                // Poll for completion
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                while (!cts.IsCancellationRequested)
+                {
+                    await Task.Delay(1000, cts.Token);
+                    var statusResponse = await _httpClient.GetAsync(statusUrl, cts.Token);
+                    if (statusResponse.IsSuccessStatusCode)
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Polling timed out
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Feed refresh failed or timed out.");
-                return false;
             }
+
+            return false;
         }
 
         public async Task ImportOpmlAsync(string opmlContent)

@@ -78,6 +78,7 @@ builder.Services
     .AddSingleton<DatabaseBackupService>()
     .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
     .AddHostedService<BackgroundWorker>()
+    .AddSingleton<IUserResolver, UserResolver>()
     .AddSingleton<IFeedRefresher, FeedRefresher>()
     .AddSingleton<FeedThumbnailRetriever>()
     .AddTransient<RedirectDowngradeHandler>()

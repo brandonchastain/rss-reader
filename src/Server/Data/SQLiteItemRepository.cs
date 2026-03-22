@@ -1,6 +1,5 @@
 using System.Data.Common;
 using Microsoft.Data.Sqlite;
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using RssApp.Contracts;
 using RssReader.Server.Services;
@@ -15,8 +14,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     private readonly IFeedRepository feedStore;
     private readonly IUserRepository userStore;
     private readonly FeedThumbnailRetriever feedThumbnailRetriever;
-
-    private SemaphoreSlim semaphore = new SemaphoreSlim(2, 2);
 
     public SQLiteItemRepository(
         string connectionString,
@@ -149,67 +146,59 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     public async Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize)
     {
         var set = new HashSet<NewsFeedItem>();
-        await this.semaphore.WaitAsync();
 
-        try
+        using (var connection = new SqliteConnection(this.connectionString))
         {
-            using (var connection = new SqliteConnection(this.connectionString))
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT
+                    i.Id,
+                    i.FeedUrl,
+                    i.Href,
+                    i.CommentsHref,
+                    i.Title,
+                    i.PublishDateOrder,
+                    i.PublishDate,
+                    i.Content,
+                    i.IsRead,
+                    i.UserId,
+                    i.ThumbnailUrl,
+                    i.IsSaved,
+                    i.Tags
+                FROM Items i
+                LEFT JOIN Feeds f
+                    ON i.FeedUrl = f.Url
+                WHERE (i.Id IN (
+                    SELECT rowid FROM Items_fts
+                    WHERE Items_fts MATCH @query)
+                    OR i.Title LIKE @plainQuery)
+                AND i.UserId = @userId
+                ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC
+                LIMIT @pageSize OFFSET @offset
+            """;
+            
+            command.Parameters.AddWithValue("@query", $"\"{query}\"");
+            command.Parameters.AddWithValue("@plainQuery", $"%{query}%");
+            command.Parameters.AddWithValue("@userId", user.Id);
+            command.Parameters.AddWithValue("@pageSize", pageSize);
+            command.Parameters.AddWithValue("@offset", page * pageSize);
+
+            using (var reader = await command.ExecuteReaderAsync())
             {
-                await connection.OpenAsync();
-                var command = connection.CreateCommand();
-                command.CommandText = """
-                    SELECT
-                        i.Id,
-                        i.FeedUrl,
-                        i.Href,
-                        i.CommentsHref,
-                        i.Title,
-                        i.PublishDateOrder,
-                        i.PublishDate,
-                        i.Content,
-                        i.IsRead,
-                        i.UserId,
-                        i.ThumbnailUrl,
-                        i.IsSaved,
-                        i.Tags
-                    FROM Items i
-                    LEFT JOIN Feeds f
-                        ON i.FeedUrl = f.Url
-                    WHERE (i.Id IN (
-                        SELECT rowid FROM Items_fts
-                        WHERE Items_fts MATCH @query)
-                        OR i.Title LIKE @plainQuery)
-                    AND i.UserId = @userId
-                    ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC
-                    LIMIT @pageSize OFFSET @offset
-                """;
-                
-                command.Parameters.AddWithValue("@query", $"\"{query}\"");
-                command.Parameters.AddWithValue("@plainQuery", $"%{query}%");
-                command.Parameters.AddWithValue("@userId", user.Id);
-                command.Parameters.AddWithValue("@pageSize", pageSize);
-                command.Parameters.AddWithValue("@offset", page * pageSize);
-
-                using (var reader = await command.ExecuteReaderAsync())
+                while (await reader.ReadAsync())
                 {
-                    while (await reader.ReadAsync())
+                    var item = this.ReadItemFromResults(reader);
+
+                    if (!set.Contains(item))
                     {
-                        var item = this.ReadItemFromResults(reader);
-
-                        if (!set.Contains(item))
-                        {
-                            set.Add(item);
-                        }
-
-                        set.TryGetValue(item, out var storedItem);
-                        storedItem.FeedTags = storedItem.FeedTags.Union(item.FeedTags).ToList();
+                        set.Add(item);
                     }
+
+                    set.TryGetValue(item, out var storedItem);
+                    storedItem.FeedTags = storedItem.FeedTags.Union(item.FeedTags).ToList();
                 }
             }
-        }
-        finally
-        {
-            this.semaphore.Release();
         }
 
         return set.ToList();
@@ -225,91 +214,79 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         long? lastId = null,
         string lastPublishDate = null)
     {
-        var sw = Stopwatch.StartNew();
-        await this.semaphore.WaitAsync();
-        var lockWait = sw.ElapsedMilliseconds;
+        var items = new List<NewsFeedItem>();
+        var user = this.userStore.GetUserById(feed.UserId);
 
-        try
+        using (var connection = new SqliteConnection(this.connectionString))
         {
-            var items = new List<NewsFeedItem>();
-            var user = this.userStore.GetUserById(feed.UserId);
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT
+                    i.Id,
+                    i.FeedUrl,
+                    i.Href,
+                    i.CommentsHref,
+                    i.Title,
+                    i.PublishDateOrder,
+                    i.PublishDate,
+                    i.Content,
+                    i.IsRead,
+                    i.UserId,
+                    i.ThumbnailUrl,
+                    i.IsSaved,
+                    i.Tags
+                FROM Items i
+            """;
 
-            using (var connection = new SqliteConnection(this.connectionString))
+            command.CommandText += " WHERE UserId=@userId";
+            command.Parameters.AddWithValue("@userId", user.Id);
+
+            if (feed.Href != "%")
             {
-                await connection.OpenAsync();
-                var command = connection.CreateCommand();
-                command.CommandText = """
-                    SELECT
-                        i.Id,
-                        i.FeedUrl,
-                        i.Href,
-                        i.CommentsHref,
-                        i.Title,
-                        i.PublishDateOrder,
-                        i.PublishDate,
-                        i.Content,
-                        i.IsRead,
-                        i.UserId,
-                        i.ThumbnailUrl,
-                        i.IsSaved,
-                        i.Tags
-                    FROM Items i
-                """;
-
-                command.CommandText += " WHERE UserId=@userId";
-                command.Parameters.AddWithValue("@userId", user.Id);
-
-                if (feed.Href != "%")
-                {
-                    command.CommandText += " AND i.FeedUrl LIKE @feedUrl";
-                    command.Parameters.AddWithValue("@feedUrl", feed.Href);
-                }
-
-                if (isFilterUnread)
-                {
-                    command.CommandText += " AND i.IsRead = 0";
-                }
-
-                if (isFilterSaved)
-                {
-                    command.CommandText += " AND i.IsSaved = 1";
-                }
-
-                if (!string.IsNullOrWhiteSpace(filterTag))
-                {
-                    command.CommandText += " AND i.Tags LIKE @tagName";
-                    command.Parameters.AddWithValue("@tagName", $"%{filterTag}%");
-                }
-    
-                command.CommandText += " ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC /* USING INDEX idx_items_timeline */";
-                pageSize ??= 20; // Default page size if not provided
-                page ??= 0;
-                command.CommandText += " LIMIT @pageSize OFFSET @offset";
-                command.Parameters.AddWithValue("@pageSize", pageSize);
-                command.Parameters.AddWithValue("@offset", page * pageSize);
-
-                using (var reader = await command.ExecuteReaderAsync())
-                {
-                    while (await reader.ReadAsync())
-                    {
-                        var item = this.ReadItemFromResults(reader);
-
-                        if (item.FeedTags == null || !item.FeedTags.Any())
-                        {
-                            item.FeedTags = feed.Tags;
-                        }
-                        items.Add(item);
-                    }
-                }
+                command.CommandText += " AND i.FeedUrl LIKE @feedUrl";
+                command.Parameters.AddWithValue("@feedUrl", feed.Href);
             }
 
-            return items;
+            if (isFilterUnread)
+            {
+                command.CommandText += " AND i.IsRead = 0";
+            }
+
+            if (isFilterSaved)
+            {
+                command.CommandText += " AND i.IsSaved = 1";
+            }
+
+            if (!string.IsNullOrWhiteSpace(filterTag))
+            {
+                command.CommandText += " AND i.Tags LIKE @tagName";
+                command.Parameters.AddWithValue("@tagName", $"%{filterTag}%");
+            }
+
+            command.CommandText += " ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC /* USING INDEX idx_items_timeline */";
+            pageSize ??= 20; // Default page size if not provided
+            page ??= 0;
+            command.CommandText += " LIMIT @pageSize OFFSET @offset";
+            command.Parameters.AddWithValue("@pageSize", pageSize);
+            command.Parameters.AddWithValue("@offset", page * pageSize);
+
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    var item = this.ReadItemFromResults(reader);
+
+                    if (item.FeedTags == null || !item.FeedTags.Any())
+                    {
+                        item.FeedTags = feed.Tags;
+                    }
+                    items.Add(item);
+                }
+            }
         }
-        finally
-        {
-            this.semaphore.Release();
-            // this.logger.LogInformation("GetItems took {ElapsedMilliseconds} ms, lock wait: {LockWait} ms", sw.ElapsedMilliseconds, lockWait);
-        }
+
+        return items;
     }
 
     private NewsFeedItem ReadItemFromResults(DbDataReader reader)
@@ -419,13 +396,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public async Task AddItemsAsync(IEnumerable<NewsFeedItem> items)
     {
-        await this.semaphore.WaitAsync();
-
         try
         {
             using (var connection = new SqliteConnection(this.connectionString))
             {
                 await connection.OpenAsync();
+                using var transaction = connection.BeginTransaction();
                 try
                 {
                     var feedTags = new Dictionary<string, IEnumerable<string>>(StringComparer.OrdinalIgnoreCase);
@@ -508,9 +484,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                             this.logger.LogWarning(ex, "Unique constraint violation while adding items to SQLite database. Skipping duplicate item.");
                         }
                     }
+
+                    transaction.Commit();
                 }
                 catch
                 {
+                    transaction.Rollback();
                     throw;
                 }
             }
@@ -518,10 +497,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         catch (Exception ex)
         {
             this.logger.LogError(ex, "Error adding items to SQLite database");
-        }
-        finally
-        {
-            this.semaphore.Release();
         }
     }
 
@@ -597,6 +572,5 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public void Dispose()
     {
-        this.semaphore.Dispose();
     }
 }

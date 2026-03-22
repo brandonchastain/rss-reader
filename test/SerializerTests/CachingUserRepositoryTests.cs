@@ -12,11 +12,14 @@ internal sealed class FakeUserRepository : IUserRepository
 {
     // Backing store — tests can pre-populate this to simulate existing data.
     public List<RssUser> Users { get; } = new();
+    public Dictionary<int, string> AadUserIds { get; } = new();
 
     // Call counters so tests can assert how many times each method was invoked.
     public int AddUserCallCount { get; private set; }
     public int GetUserByNameCallCount { get; private set; }
     public int GetUserByIdCallCount { get; private set; }
+    public int GetUserByAadIdCallCount { get; private set; }
+    public int SetAadUserIdCallCount { get; private set; }
     public int GetAllUsersCallCount { get; private set; }
 
     private int _nextId = 1;
@@ -40,6 +43,23 @@ internal sealed class FakeUserRepository : IUserRepository
     {
         GetUserByIdCallCount++;
         return Users.FirstOrDefault(u => u.Id == userId)!;
+    }
+
+    public RssUser GetUserByAadId(string aadUserId)
+    {
+        GetUserByAadIdCallCount++;
+        var userId = AadUserIds.FirstOrDefault(kvp => kvp.Value == aadUserId);
+        if (userId.Value != null)
+        {
+            return Users.FirstOrDefault(u => u.Id == userId.Key)!;
+        }
+        return null!;
+    }
+
+    public void SetAadUserId(int userId, string aadUserId)
+    {
+        SetAadUserIdCallCount++;
+        AadUserIds[userId] = aadUserId;
     }
 
     public IEnumerable<RssUser> GetAllUsers()
