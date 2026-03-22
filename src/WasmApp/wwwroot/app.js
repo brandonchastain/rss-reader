@@ -77,9 +77,13 @@ window.scrollToElement = function(element) {
 
 // Snap the element to the top of the viewport instantly (used before collapsing a post
 // so the collapse happens below the fold, keeping the infinite-scroll sentinel out of view).
+// Only scrolls when the header's top edge has scrolled above the viewport top (rect.top < 0).
 window.scrollToTopInstant = function(element) {
     if (element) {
-        element.scrollIntoView({ behavior: 'instant', block: 'start' });
+        const rect = element.getBoundingClientRect();
+        if (rect.top < 0) {
+            element.scrollIntoView({ behavior: 'instant', block: 'start' });
+        }
     }
 };
 

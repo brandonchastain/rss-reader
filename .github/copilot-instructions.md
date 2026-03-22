@@ -4,6 +4,7 @@
 
 - Never commit changes unless explicitly asked to do so.
 - **Never deploy to production without explicit user confirmation.** Before invoking the `deploy` skill or running any `swa deploy`, `docker push`, or `az containerapp` update command, always stop and ask the user: "Ready to deploy to production?" and wait for a clear yes.
+- **Always validate UI changes locally before marking a task complete.** After any change to Razor components, CSS, or JavaScript, start the local stack (use the `run-locally` skill) and use Playwright to verify the behavior in the browser. Do not consider a UI task done until it has been visually confirmed working locally.
 
 ## Architecture
 
