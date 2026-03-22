@@ -119,8 +119,26 @@ public sealed class CachingItemRepository : IItemRepository
     // -------------------------------------------------------------------------
 
     /// <inheritdoc/>
-    public Task AddItemsAsync(IEnumerable<NewsFeedItem> item)
-        => _inner.AddItemsAsync(item);
+    /// After delegating to the inner repository, pre-warm the content cache
+    /// so expanding freshly-refreshed posts hits cache instead of the database.
+    public async Task AddItemsAsync(IEnumerable<NewsFeedItem> items)
+    {
+        var itemList = items.ToList();
+        await _inner.AddItemsAsync(itemList);
+
+        // Pre-warm: cache each item's content so reads during refresh don't hit SQLite.
+        foreach (var item in itemList)
+        {
+            if (!string.IsNullOrEmpty(item.Content))
+            {
+                var key = ContentKey(item.UserId, item.Href);
+                _cache.Set(key, item.Content, new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = ContentExpiration
+                });
+            }
+        }
+    }
 
     /// <inheritdoc/>
     public void MarkAsRead(NewsFeedItem item, bool isRead, RssUser user)

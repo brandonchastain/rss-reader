@@ -14,7 +14,8 @@ builder.Configuration
     .AddJsonFile("appsettings.Development.json", optional: true)
     .AddEnvironmentVariables();
 var config = RssAppConfig.LoadFromAppSettings(builder.Configuration);
-string dbConnectionString = $"Data Source={config.DbLocation};Mode=ReadWriteCreate;Cache=Shared;Pooling=True";
+string dbWriteConnectionString = $"Data Source={config.DbLocation};Mode=ReadWriteCreate;Cache=Shared;Pooling=True";
+string dbReadConnectionString = $"Data Source={config.DbLocation};Mode=ReadOnly;Pooling=True";
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
@@ -57,7 +58,7 @@ builder.Services
 // Creation order matters — feed and user repos must exist before item repo.
 builder.Services
     .AddSingleton<RssAppConfig>(_ => config)
-    .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbConnectionString, sb))
+    .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbWriteConnectionString, dbReadConnectionString, sb))
     .AddSingleton<IFeedRepository>(sb =>
     {
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateFeedRepository();

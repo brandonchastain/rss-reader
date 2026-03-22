@@ -26,15 +26,22 @@ public sealed class ItemRepoTests
         var config = new RssAppConfig { DbLocation = "tests.db" };
 
         var userRepo = new SQLiteUserRepository(
-            $"Data Source=tests.db",
+            $"Data Source=tests.db;Pooling=True",
+            $"Data Source=tests.db;Mode=ReadOnly;Pooling=True",
             new NullLogger<SQLiteUserRepository>());
         userRepo.AddUser("testUser", 0);
         var feedRepo = new SQLiteFeedRepository(
-            $"Data Source=tests.db",
+            $"Data Source=tests.db;Pooling=True",
+            $"Data Source=tests.db;Mode=ReadOnly;Pooling=True",
             new NullLogger<SQLiteFeedRepository>());
         feedRepo.AddFeed(new NewsFeed(1, "https://feeds.propublica.org/propublica/main", 0));
 
         var user = new RssUser("testUser", 0);
+
+        var mockThumbnailRetriever = new Mock<FeedThumbnailRetriever>(config) { CallBase = false };
+        mockThumbnailRetriever
+            .Setup(x => x.RetrieveThumbnailUrlAsync(It.IsAny<NewsFeed>()))
+            .ReturnsAsync("images/placeholder.jpg");
 
         var serviceCollection = new ServiceCollection();
         serviceCollection
@@ -45,13 +52,14 @@ public sealed class ItemRepoTests
             loggingBuilder.AddDebug();
         })
         .AddSingleton(config)
-        .AddSingleton<FeedThumbnailRetriever>()
+        .AddSingleton(mockThumbnailRetriever.Object)
         .AddSingleton<IFeedRepository>(feedRepo)
         .AddSingleton<IUserRepository>(userRepo)
         .AddSingleton<IItemRepository>(sb =>
         {
             return new SQLiteItemRepository(
-                $"Data Source=tests.db",
+                $"Data Source=tests.db;Pooling=True",
+                $"Data Source=tests.db;Mode=ReadOnly;Pooling=True",
                 sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
                 sb.GetRequiredService<IFeedRepository>(),
                 sb.GetRequiredService<IUserRepository>(),

@@ -7,35 +7,41 @@ namespace RssApp.Data;
 
 public class RepositoryFactory
 {
-    private readonly string connectionString;
+    private readonly string writeConnectionString;
+    private readonly string readConnectionString;
     private readonly IServiceProvider serviceProvider;
 
     public RepositoryFactory(
-        string connectionString,
+        string writeConnectionString,
+        string readConnectionString,
         IServiceProvider serviceProvider)
     {
-        this.connectionString = connectionString;
+        this.writeConnectionString = writeConnectionString;
+        this.readConnectionString = readConnectionString;
         this.serviceProvider = serviceProvider;
     }
 
     public IUserRepository CreateUserRepository()
     {
         return new SQLiteUserRepository(
-            this.connectionString,
+            this.writeConnectionString,
+            this.readConnectionString,
             this.serviceProvider.GetRequiredService<ILogger<SQLiteUserRepository>>());
     }
 
     public IFeedRepository CreateFeedRepository()
     {
         return new SQLiteFeedRepository(
-            this.connectionString,
+            this.writeConnectionString,
+            this.readConnectionString,
             this.serviceProvider.GetRequiredService<ILogger<SQLiteFeedRepository>>());
     }
 
     public IItemRepository CreateItemRepository()
     {
         return new SQLiteItemRepository(
-            this.connectionString,
+            this.writeConnectionString,
+            this.readConnectionString,
             this.serviceProvider.GetRequiredService<ILogger<SQLiteItemRepository>>(),
             this.serviceProvider.GetRequiredService<IFeedRepository>(),
             this.serviceProvider.GetRequiredService<IUserRepository>(),
