@@ -2,6 +2,7 @@ namespace SerializerTests;
 using RssApp.Serialization;
 using RssApp.Contracts;
 using RssApp.RssClient;
+using RssApp.Config;
 using Microsoft.Extensions.DependencyInjection;
 using RssApp.ComponentServices;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,8 @@ public sealed class ItemRepoTests
             File.Delete("tests.db");
         }
 
+        var config = new RssAppConfig { DbLocation = "tests.db" };
+
         var userRepo = new SQLiteUserRepository(
             $"Data Source=tests.db",
             new NullLogger<SQLiteUserRepository>());
@@ -41,6 +44,8 @@ public sealed class ItemRepoTests
             loggingBuilder.AddConsole();
             loggingBuilder.AddDebug();
         })
+        .AddSingleton(config)
+        .AddSingleton<FeedThumbnailRetriever>()
         .AddSingleton<IFeedRepository>(feedRepo)
         .AddSingleton<IUserRepository>(userRepo)
         .AddSingleton<IItemRepository>(sb =>

@@ -1,10 +1,15 @@
 using System.Threading.Channels;
+using RssApp.Config;
 
 namespace RssApp.ComponentServices;
 public class BackgroundWorkQueue
 {
-    private readonly Channel<Func<CancellationToken, Task>> _queue =
-        Channel.CreateBounded<Func<CancellationToken, Task>>(1000); // Limit to 1000 concurrent work items (feeds being refreshed)
+    private readonly Channel<Func<CancellationToken, Task>> _queue;
+
+    public BackgroundWorkQueue(RssAppConfig config)
+    {
+        _queue = Channel.CreateBounded<Func<CancellationToken, Task>>(config.BackgroundQueueCapacity);
+    }
 
     public async Task QueueBackgroundWorkItemAsync(Func<CancellationToken, Task> workItem)
     {
