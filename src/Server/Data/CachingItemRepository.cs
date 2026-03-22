@@ -16,7 +16,7 @@ public sealed class CachingItemRepository : IItemRepository
     private readonly IMemoryCache _cache;
 
     private static readonly TimeSpan ContentExpiration = TimeSpan.FromHours(1);
-    private static readonly TimeSpan ItemExpiration    = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan ItemExpiration    = TimeSpan.FromMinutes(5);
 
     public CachingItemRepository(IItemRepository inner, IMemoryCache cache)
     {

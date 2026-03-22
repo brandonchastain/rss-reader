@@ -8,7 +8,7 @@ public class CachingFeedRepository : IFeedRepository
     private readonly IFeedRepository _inner;
     private readonly IMemoryCache _cache;
 
-    private static readonly TimeSpan SlidingExpiration = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan SlidingExpiration = TimeSpan.FromMinutes(5);
 
     public CachingFeedRepository(IFeedRepository inner, IMemoryCache cache)
     {
