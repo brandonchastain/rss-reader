@@ -2,6 +2,7 @@ using RssApp.Contracts;
 using RssApp.Serialization;
 using RssApp.Data;
 using RssApp.ComponentServices;
+using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using RssApp.Config;
 
@@ -18,12 +19,13 @@ public class FeedRefresher : IFeedRefresher
     private readonly IUserRepository userStore;
     private readonly BackgroundWorkQueue backgroundWorkQueue;
     private readonly RssAppConfig config;
-    private readonly SemaphoreSlim semaphore = new(1, 1);
-    private readonly Dictionary<RssUser, bool> hasNewItems = new();
-    private DateTime? lastCacheReloadTime;
+
+    // Lock-free state: Interlocked for counter, ConcurrentDictionary for flags.
+    private readonly ConcurrentDictionary<int, bool> _hasNewItems = new();
+    private long _lastCacheReloadTicks = 0;
     private DateTime startupTime = DateTime.UtcNow;
     private Exception lastRefreshException;
-    private int pendingRefreshes = 0;
+    private int _pendingRefreshes = 0;
 
     public FeedRefresher(
         IHttpClientFactory httpClientFactory,
@@ -45,27 +47,22 @@ public class FeedRefresher : IFeedRefresher
         this.config = config;
     }
 
-    public DateTime? LastCacheReloadTime => this.lastCacheReloadTime;
-
-    public async Task<bool> HasNewItemsAsync(RssUser user)
+    public DateTime? LastCacheReloadTime
     {
-        await this.semaphore.WaitAsync();
-        try
+        get
         {
-            this.hasNewItems.TryGetValue(user, out var hasNewItems);
-
-            if (hasNewItems)
-            {
-                // Reset the flag after checking
-                this.hasNewItems[user] = false;
-            }
-
-            return hasNewItems;
+            long ticks = Interlocked.Read(ref _lastCacheReloadTicks);
+            return ticks == 0 ? null : new DateTime(ticks, DateTimeKind.Utc);
         }
-        finally
-        {
-            this.semaphore.Release();
-        }
+    }
+
+    public bool IsRefreshing => Volatile.Read(ref _pendingRefreshes) > 0;
+
+    public Task<bool> HasNewItemsAsync(RssUser user)
+    {
+        // Atomically read and reset the flag. No lock needed.
+        var hasNew = _hasNewItems.TryRemove(user.Id, out var val) && val;
+        return Task.FromResult(hasNew);
     }
 
     public async Task AddFeedAsync(NewsFeed feed)
@@ -76,94 +73,63 @@ public class FeedRefresher : IFeedRefresher
     public async Task RefreshAsync(RssUser user)
     {
         bool isJustStarted = this.startupTime + this.config.CacheReloadStartupDelay > DateTime.UtcNow;
-        bool isRecentRefresh = this.lastCacheReloadTime + this.config.CacheReloadInterval > DateTime.UtcNow;
+        long lastTicks = Interlocked.Read(ref _lastCacheReloadTicks);
+        bool isRecentRefresh = lastTicks > 0
+            && new DateTime(lastTicks, DateTimeKind.Utc) + this.config.CacheReloadInterval > DateTime.UtcNow;
 
         if (isJustStarted || isRecentRefresh)
         {
-            // Set this so the client completes early instead of
-            // waiting for timeout.
-            await semaphore.WaitAsync();
-            try
-            {
-                hasNewItems[user] = true;
-            }
-            finally
-            {
-                semaphore.Release();
-            }
+            _hasNewItems[user.Id] = true;
             return;
         }
 
         try
         {
-            var totalFeeds = 0;
-            var feeds = this.persistedFeeds.GetFeeds(user);
-            totalFeeds += feeds.Count();
+            var feeds = this.persistedFeeds.GetFeeds(user).ToList();
 
-            if (totalFeeds == 0)
+            if (feeds.Count == 0)
             {
-                this.lastCacheReloadTime = DateTime.UtcNow;
+                Interlocked.Exchange(ref _lastCacheReloadTicks, DateTime.UtcNow.Ticks);
                 return;
             }
 
-            try
-            {
-                await this.semaphore.WaitAsync();
-                this.pendingRefreshes = totalFeeds;
+            Interlocked.Exchange(ref _pendingRefreshes, feeds.Count);
 
-                foreach (var feed in feeds)
+            foreach (var feed in feeds)
+            {
+                await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
                 {
-                    await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
+                    try
                     {
-                        try
+                        await ReloadCachedItemsAsync(feed);
+                    }
+                    catch (Exception ex)
+                    {
+                        this.logger.LogError(ex, "Error reloading feed: {feed}", feed.Href);
+                    }
+                    finally
+                    {
+                        if (Interlocked.Decrement(ref _pendingRefreshes) == 0)
                         {
-                            await ReloadCachedItemsAsync(feed);
+                            Interlocked.Exchange(ref _lastCacheReloadTicks, DateTime.UtcNow.Ticks);
+                            _hasNewItems[user.Id] = true;
                         }
-                        catch (Exception ex)
-                        {
-                            this.logger.LogError(ex, "Error reloading feed: {feed}", feed.Href);
-                        }
-                        finally
-                        {
-                            bool lockTaken = false;
-                            try
-                            {
-                                if (this.semaphore.CurrentCount != 0)
-                                {
-                                    await this.semaphore.WaitAsync();
-                                    lockTaken = true;
-                                }
-
-                                this.pendingRefreshes--;
-                                if (this.pendingRefreshes == 0)
-                                {
-                                    this.lastCacheReloadTime = DateTime.UtcNow;
-                                    this.hasNewItems[user] = true;
-                                }
-                            }
-                            finally
-                            {
-                                if (lockTaken)
-                                {
-                                    this.semaphore.Release();
-                                }
-                            }
-                        }
-                    });
-                }
-            }
-            finally
-            {
-                this.semaphore.Release();
+                    }
+                });
             }
         }
         catch (Exception ex)
         {
             this.logger.LogError(ex, "Error reloading cache");
-            Interlocked.Exchange(ref pendingRefreshes, 0);
+            Interlocked.Exchange(ref _pendingRefreshes, 0);
         }
     }
 
+    /// <summary>
+    /// Fetches fresh items from a feed and passes ALL of them to AddItemsAsync.
+    /// Deduplication is handled inside AddItemsAsync via pre-fetch + HashSet,
+    /// so no per-item GetItem() calls are needed here.
+    /// </summary>
     private async Task ReloadCachedItemsAsync(NewsFeed feed)
     {
         var url = feed.Href;
@@ -176,27 +142,16 @@ public class FeedRefresher : IFeedRefresher
         }
 
         var freshItems = await this.FetchItemsFromFeedAsync(user, url);
-        var newItems = new List<NewsFeedItem>();
 
         foreach (var item in freshItems)
         {
             item.FeedUrl = url;
             item.FeedTags = feed.Tags;
-
-            var existing = this.newsFeedItemStore.GetItem(user, item.Href);
-            if (existing != null)
-            {
-                // Item already exists in the store, skip it
-                this.logger.LogDebug("Skipping existing item: {itemId} from feed: {feedUrl}", item.Id, url);
-                continue;
-            }
-
-            newItems.Add(item);
         }
 
-        if (newItems.Any())
+        if (freshItems.Any())
         {
-            await this.newsFeedItemStore.AddItemsAsync(newItems);
+            await this.newsFeedItemStore.AddItemsAsync(freshItems);
         }
     }
 

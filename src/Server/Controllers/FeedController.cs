@@ -125,27 +125,34 @@ namespace Server.Controllers
                 return NotFound($"User '{username}' not found.");
             }
 
+            // Fire-and-forget: enqueue work and return immediately.
             await this.feedRefresher.RefreshAsync(user);
 
-            try
+            return Accepted();
+        }
+
+        [HttpGet]
+        [Route("refresh/status")]
+        public async Task<IActionResult> GetRefreshStatusAsync()
+        {
+            var username = User.FindFirst(ClaimTypes.Name)?.Value;
+
+            if (username == null)
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                while (!cts.IsCancellationRequested)
-                {
-                    await Task.Delay(500, cts.Token);
-                    bool hasNewItems = await this.feedRefresher.HasNewItemsAsync(user);
-                    if (hasNewItems)
-                    {
-                        return Ok();
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Polling timed out — no new items found within 30 seconds
+                return Unauthorized("User is not authenticated.");
             }
 
-            return NoContent();
+            var user = this.userRepository.GetUserByName(username);
+
+            if (user == null)
+            {
+                return NotFound($"User '{username}' not found.");
+            }
+
+            bool hasNewItems = await this.feedRefresher.HasNewItemsAsync(user);
+            bool isRefreshing = this.feedRefresher.IsRefreshing;
+
+            return Ok(new { hasNewItems, isRefreshing });
         }
 
         [HttpPost]

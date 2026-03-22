@@ -111,18 +111,45 @@ namespace WasmApp.Services
 
         public async Task<bool> RefreshFeedsAsync()
         {
-            var url = $"{_config.ApiBaseUrl}api/feed/refresh";
+            var refreshUrl = $"{_config.ApiBaseUrl}api/feed/refresh";
+            var statusUrl = $"{_config.ApiBaseUrl}api/feed/refresh/status";
 
             try
             {
-                var response = await _httpClient.GetAsync(url);
-                return response.IsSuccessStatusCode;
+                // Fire the refresh (returns 202 immediately).
+                var response = await _httpClient.GetAsync(refreshUrl);
+                if (!response.IsSuccessStatusCode) return false;
+
+                // Poll the status endpoint until complete or timeout.
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                while (!cts.IsCancellationRequested)
+                {
+                    await Task.Delay(2000, cts.Token);
+
+                    var statusResponse = await _httpClient.GetAsync(statusUrl, cts.Token);
+                    if (!statusResponse.IsSuccessStatusCode) continue;
+
+                    var json = await statusResponse.Content.ReadAsStringAsync(cts.Token);
+
+                    // Check if refresh finished with new items.
+                    if (json.Contains("\"hasNewItems\":true", StringComparison.OrdinalIgnoreCase))
+                        return true;
+
+                    // If not refreshing anymore and no new items, we're done.
+                    if (json.Contains("\"isRefreshing\":false", StringComparison.OrdinalIgnoreCase))
+                        return false;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Polling timed out — refresh may still be running in the background.
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Feed refresh failed or timed out.");
-                return false;
             }
+
+            return false;
         }
 
         public async Task ImportOpmlAsync(string opmlContent)
