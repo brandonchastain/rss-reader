@@ -10,7 +10,6 @@ namespace WasmApp.Services
     public class FeedClient : IFeedClient
     {
         private readonly HttpClient _httpClient;
-        private readonly HttpClient _refreshHttpClient;
         private readonly RssWasmConfig _config;
         private readonly IUserClient userClient;
         private readonly ILogger<FeedClient> _logger;
@@ -22,11 +21,9 @@ namespace WasmApp.Services
         public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, IUserClient userClient, IHttpClientFactory httpClientFactory)
         {
             _httpClient = httpClientFactory.CreateClient("ApiClient");
-            _refreshHttpClient = httpClientFactory.CreateClient("ApiClient");
             _config = config;
             this.userClient = userClient;
             _logger = logger;
-            _refreshHttpClient.Timeout = TimeSpan.FromSeconds(30);
         }
 
         public async Task<IEnumerable<NewsFeed>> GetFeedsAsync()
@@ -112,17 +109,19 @@ namespace WasmApp.Services
             await _httpClient.PostAsync(url, null);
         }
 
-        public async Task RefreshFeedsAsync()
+        public async Task<bool> RefreshFeedsAsync()
         {
             var url = $"{_config.ApiBaseUrl}api/feed/refresh";
 
             try
             {
-                await _refreshHttpClient.GetAsync(url);
+                var response = await _httpClient.GetAsync(url);
+                return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, $"Feed refresh timed out ({_refreshHttpClient.Timeout}). Ignoring error.");
+                _logger.LogWarning(ex, "Feed refresh failed or timed out.");
+                return false;
             }
         }
 
@@ -158,7 +157,6 @@ namespace WasmApp.Services
             if (!_disposed)
             {
                 _httpClient.Dispose();
-                _refreshHttpClient.Dispose();
                 userClient.Dispose();
                 _disposed = true;
             }

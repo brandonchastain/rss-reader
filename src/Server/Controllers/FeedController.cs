@@ -20,8 +20,6 @@ namespace Server.Controllers
         private readonly IFeedRefresher feedRefresher;
         private readonly IItemRepository itemRepository;
         private readonly ILogger<UserController> logger;
-        private readonly Dictionary<RssUser, bool> userRefreshInProgress = new();
-        private readonly SemaphoreSlim refreshSemaphore = new(1, 1);
 
         public FeedController(
             IUserRepository userRepository,
@@ -129,14 +127,22 @@ namespace Server.Controllers
 
             await this.feedRefresher.RefreshAsync(user);
 
-            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            while (!cts.IsCancellationRequested)
+            try
             {
-                bool hasNewItems = await this.feedRefresher.HasNewItemsAsync(user);
-                if (hasNewItems)
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                while (!cts.IsCancellationRequested)
                 {
-                    return Ok();
+                    await Task.Delay(500, cts.Token);
+                    bool hasNewItems = await this.feedRefresher.HasNewItemsAsync(user);
+                    if (hasNewItems)
+                    {
+                        return Ok();
+                    }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // Polling timed out — no new items found within 30 seconds
             }
 
             return NoContent();

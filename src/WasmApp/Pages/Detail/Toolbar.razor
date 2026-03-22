@@ -59,10 +59,7 @@
     public EventCallback<string> FilterForTag { get; set; }
 
     [Parameter]
-    public List<NewsFeedItem> Posts { get; set; }
-
-    [Parameter]
-    public int Page { get; set; }
+    public EventCallback OnRefreshComplete { get; set; }
 
     private bool tagsAreHidden = true;
     private bool isRefreshing = false;
@@ -77,24 +74,20 @@
 
     private async Task RefreshAsync()
     {
-        // Start UI animation
+        if (isRefreshing) return;
+
         isRefreshing = true;
         StateHasChanged();
 
-        // Do the refresh
-        await FeedClient.RefreshFeedsAsync();
+        bool hasNewItems = await FeedClient.RefreshFeedsAsync();
 
-        // Stop UI animation
         isRefreshing = false;
         StateHasChanged();
 
-        // Clear current list of posts
-        Posts.Clear();
-        Page = 0;
-
-        // Refresh list contents by toggling the unread filter twice. It's a hack but it works.
-        await ToggleUnreadFilterAsync.InvokeAsync();
-        await ToggleUnreadFilterAsync.InvokeAsync();
+        if (hasNewItems)
+        {
+            await OnRefreshComplete.InvokeAsync();
+        }
     }
 
     private async Task ToggleShowFilters()

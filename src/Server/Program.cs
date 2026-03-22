@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Memory;
 using RssApp.ComponentServices;
 using RssApp.Config;
 using RssApp.Data;
@@ -22,6 +23,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
 });
 
+builder.Services.AddMemoryCache();
 builder.Services.AddLogging(loggingBuilder =>
 {
     loggingBuilder.ClearProviders();
@@ -51,12 +53,26 @@ builder.Services
         });
 
 // Register services for DI
+// Repositories: SQLite implementations wrapped with caching decorators.
+// Creation order matters — feed and user repos must exist before item repo.
 builder.Services
     .AddSingleton<RssAppConfig>(_ => config)
     .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbConnectionString, sb))
-    .AddSingleton<IFeedRepository>(sb => sb.GetRequiredService<RepositoryFactory>().CreateFeedRepository())
-    .AddSingleton<IUserRepository>(sb => sb.GetRequiredService<RepositoryFactory>().CreateUserRepository())
-    .AddSingleton<IItemRepository>(sb => sb.GetRequiredService<RepositoryFactory>().CreateItemRepository())
+    .AddSingleton<IFeedRepository>(sb =>
+    {
+        var inner = sb.GetRequiredService<RepositoryFactory>().CreateFeedRepository();
+        return new CachingFeedRepository(inner, sb.GetRequiredService<IMemoryCache>());
+    })
+    .AddSingleton<IUserRepository>(sb =>
+    {
+        var inner = sb.GetRequiredService<RepositoryFactory>().CreateUserRepository();
+        return new CachingUserRepository(inner, sb.GetRequiredService<IMemoryCache>());
+    })
+    .AddSingleton<IItemRepository>(sb =>
+    {
+        var inner = sb.GetRequiredService<RepositoryFactory>().CreateItemRepository();
+        return new CachingItemRepository(inner, sb.GetRequiredService<IMemoryCache>());
+    })
     .AddSingleton<RssDeserializer>()
     .AddSingleton<BackgroundWorkQueue>()
     .AddSingleton<DatabaseBackupService>()

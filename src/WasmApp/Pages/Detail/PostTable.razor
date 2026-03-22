@@ -20,7 +20,7 @@
         ToggleUnreadFilterAsync="@ToggleUnreadFilterAsync"
         ToggleSavedFilterAsync="@ToggleSavedFilterAsync"
         FilterForTag="@FilterForTag"
-        Posts="@Posts"
+        OnRefreshComplete="@OnRefreshComplete"
     />
 </SectionContent>
 
@@ -296,6 +296,12 @@
             tag = null;
         }
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, tag));
+    }
+
+    private async Task OnRefreshComplete()
+    {
+        // Re-fetch page 0 with current filters without showing loading animation
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
     }
 
     private async Task Next()

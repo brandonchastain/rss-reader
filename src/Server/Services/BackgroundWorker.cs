@@ -1,31 +1,35 @@
 namespace RssApp.ComponentServices;
 
+using RssApp.Config;
+
 public class BackgroundWorker : BackgroundService
 {
-    private const int WorkerCount = 100;
     private readonly ILogger<BackgroundWorker> _logger;
     private readonly BackgroundWorkQueue _queue;
+    private readonly int _workerCount;
 
     public BackgroundWorker(
         ILogger<BackgroundWorker> logger,
-        BackgroundWorkQueue queue)
+        BackgroundWorkQueue queue,
+        RssAppConfig config)
     {
         _logger = logger;
         _queue = queue;
+        _workerCount = config.BackgroundWorkerCount;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _logger.LogInformation("Starting {WorkerCount} background workers", _workerCount);
+
         var tasks = new List<Task>();
 
-        for (int i = 0; i < WorkerCount; i++)
+        for (int i = 0; i < _workerCount; i++)
         {
             tasks.Add(DoWorkAsync(stoppingToken));
         }
 
-        var allDone = Task.WhenAll(tasks);
-        var maxWait = TimeSpan.FromMinutes(1);
-        await Task.WhenAny(allDone, Task.Delay(maxWait, stoppingToken));
+        await Task.WhenAll(tasks);
     }
 
     private async Task DoWorkAsync(CancellationToken stoppingToken)
