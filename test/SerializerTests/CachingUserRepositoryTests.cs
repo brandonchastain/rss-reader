@@ -22,6 +22,9 @@ internal sealed class FakeUserRepository : IUserRepository
     public int SetAadUserIdCallCount { get; private set; }
     public int GetAllUsersCallCount { get; private set; }
 
+    // When true, SetAadUserId throws to simulate a DB constraint violation.
+    public bool ThrowOnSetAadUserId { get; set; }
+
     private int _nextId = 1;
 
     public RssUser AddUser(string username, int? id = null)
@@ -59,6 +62,8 @@ internal sealed class FakeUserRepository : IUserRepository
     public void SetAadUserId(int userId, string aadUserId)
     {
         SetAadUserIdCallCount++;
+        if (ThrowOnSetAadUserId)
+            throw new InvalidOperationException("Simulated DB constraint violation");
         AadUserIds[userId] = aadUserId;
     }
 

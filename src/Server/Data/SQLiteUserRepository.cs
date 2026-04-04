@@ -188,6 +188,8 @@ public class SQLiteUserRepository : IUserRepository
     {
         var id = reader.IsDBNull(reader.GetOrdinal("Id")) ? 0 : reader.GetInt32(reader.GetOrdinal("Id"));
         var username = reader.IsDBNull(reader.GetOrdinal("Username")) ? "" : reader.GetString(reader.GetOrdinal("Username"));
-        return new RssUser(username, id);
+        var aadOrdinal = reader.GetOrdinal("AadUserId");
+        var aadUserId = reader.IsDBNull(aadOrdinal) ? null : reader.GetString(aadOrdinal);
+        return new RssUser(username, id) { AadUserId = aadUserId };
     }
 }

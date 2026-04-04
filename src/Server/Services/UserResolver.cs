@@ -56,11 +56,20 @@ public class UserResolver : IUserResolver
             var user = _userRepository.GetUserByName(email);
             if (user != null)
             {
-                // Lazy migration: set the AadUserId so future lookups use the GUID
+                // Lazy migration: set the AadUserId so future lookups use the GUID.
+                // Wrapped in try-catch so a DB error (e.g. unique constraint race)
+                // doesn't break the login — the user is still valid.
                 if (!string.IsNullOrEmpty(aadId))
                 {
-                    _userRepository.SetAadUserId(user.Id, aadId);
-                    _logger.LogInformation("Migrated user {UserId} to AAD GUID-based lookup", user.Id);
+                    try
+                    {
+                        _userRepository.SetAadUserId(user.Id, aadId);
+                        _logger.LogInformation("Migrated user {UserId} to AAD GUID-based lookup", user.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to lazy-migrate AadUserId for user {UserId}; will retry on next login", user.Id);
+                    }
                 }
                 return user;
             }
@@ -81,7 +90,14 @@ public class UserResolver : IUserResolver
 
         // New user: use AAD GUID as username (email is never stored)
         var newUser = _userRepository.AddUser(aadId);
-        _userRepository.SetAadUserId(newUser.Id, aadId);
+        try
+        {
+            _userRepository.SetAadUserId(newUser.Id, aadId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to set AadUserId on newly created user {UserId}; will retry on next login", newUser.Id);
+        }
         _logger.LogInformation("Created anonymous user {UserId} with AAD GUID", newUser.Id);
         return newUser;
     }

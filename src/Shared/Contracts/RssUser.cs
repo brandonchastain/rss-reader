@@ -1,3 +1,4 @@
+#nullable enable
 namespace RssApp.Contracts;
 
 
@@ -12,4 +13,5 @@ public class RssUser
 
     public int Id { get; set; }
 
+    public string? AadUserId { get; set; }
 }

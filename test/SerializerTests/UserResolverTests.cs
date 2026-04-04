@@ -137,4 +137,62 @@ public sealed class UserResolverTests
         // No migration since no AAD ID
         Assert.AreEqual(0, fake.SetAadUserIdCallCount);
     }
+
+    // ---------- Error handling ----------
+
+    [TestMethod]
+    public void ResolveUser_ReturnsUser_WhenSetAadUserIdThrows()
+    {
+        var fake = new FakeUserRepository();
+        fake.Users.Add(new RssUser("alice@example.com", 1));
+        fake.ThrowOnSetAadUserId = true;
+        var resolver = new UserResolver(fake, NullLogger<UserResolver>.Instance);
+
+        // Should NOT throw — the user is still returned despite the migration failure
+        var user = resolver.ResolveUser(CreatePrincipal(aadId: "aad-new", email: "alice@example.com"));
+
+        Assert.IsNotNull(user);
+        Assert.AreEqual(1, user.Id);
+        Assert.AreEqual(1, fake.SetAadUserIdCallCount, "SetAadUserId should have been attempted.");
+        Assert.IsFalse(fake.AadUserIds.ContainsKey(1), "AadUserId should NOT have been set (it threw).");
+    }
+
+    [TestMethod]
+    public void ResolveOrCreateUser_ReturnsUser_WhenSetAadUserIdThrows()
+    {
+        var fake = new FakeUserRepository();
+        fake.ThrowOnSetAadUserId = true;
+        var resolver = new UserResolver(fake, NullLogger<UserResolver>.Instance);
+
+        // Should NOT throw — the new user is still returned
+        var user = resolver.ResolveOrCreateUser(CreatePrincipal(aadId: "aad-brand-new", email: "new@user.com"));
+
+        Assert.IsNotNull(user);
+        Assert.AreEqual("aad-brand-new", user.Username);
+        Assert.AreEqual(1, fake.AddUserCallCount, "User should have been created.");
+        Assert.AreEqual(1, fake.SetAadUserIdCallCount, "SetAadUserId should have been attempted.");
+        Assert.IsFalse(fake.AadUserIds.ContainsKey(user.Id), "AadUserId should NOT have been set (it threw).");
+    }
+
+    [TestMethod]
+    public void ResolveUser_ConcurrentMigration_SecondCallUsesAadId()
+    {
+        var fake = new FakeUserRepository();
+        fake.Users.Add(new RssUser("alice@example.com", 1));
+        var resolver = new UserResolver(fake, NullLogger<UserResolver>.Instance);
+
+        // First call: finds by email, lazy-migrates AadUserId
+        var user1 = resolver.ResolveUser(CreatePrincipal(aadId: "aad-123", email: "alice@example.com"));
+        Assert.IsNotNull(user1);
+        Assert.AreEqual(1, fake.SetAadUserIdCallCount);
+        Assert.AreEqual("aad-123", fake.AadUserIds[1]);
+
+        // Second call: should find by AAD ID directly, no email fallback needed
+        var user2 = resolver.ResolveUser(CreatePrincipal(aadId: "aad-123", email: "alice@example.com"));
+        Assert.IsNotNull(user2);
+        Assert.AreEqual(1, user2.Id);
+        Assert.AreEqual(1, fake.SetAadUserIdCallCount, "Should NOT call SetAadUserId again — already migrated.");
+        Assert.AreEqual(2, fake.GetUserByAadIdCallCount, "AAD lookup should be attempted on both calls.");
+        Assert.AreEqual(1, fake.GetUserByNameCallCount, "Second call should NOT fall back to email lookup.");
+    }
 }
