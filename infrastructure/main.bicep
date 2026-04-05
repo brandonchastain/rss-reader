@@ -74,11 +74,25 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   }
 }
 
-// File Share for SQLite database
+// File Share for SQLite database (legacy, kept for DatabaseBackupService safety net)
 resource fileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
   name: '${storageAccount.name}/default/rss-data'
   properties: {
     shareQuota: 1  // 1 GB should be plenty for SQLite
+  }
+}
+
+// Blob container for Litestream continuous WAL replication
+resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01' = {
+  name: 'default'
+  parent: storageAccount
+}
+
+resource litestreamContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  name: 'litestream'
+  parent: blobServices
+  properties: {
+    publicAccess: 'None'
   }
 }
 
@@ -115,6 +129,9 @@ resource storage 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: containerAppName
   location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     environmentId: environment.id
     configuration: {
@@ -165,6 +182,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'RSSREADER_API_KEY'
               secretRef: 'gateway-secret-key'
             }
+            {
+              name: 'LITESTREAM_AZURE_ACCOUNT_NAME'
+              value: storageAccount.name
+            }
           ]
           volumeMounts: [
             {
@@ -200,6 +221,17 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   dependsOn: [
     storage
   ]
+}
+
+// Grant the Container App's managed identity Storage Blob Data Contributor on the storage account
+resource blobDataContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, containerApp.id, 'Storage Blob Data Contributor')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: containerApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
 }
 
 // Static Web App

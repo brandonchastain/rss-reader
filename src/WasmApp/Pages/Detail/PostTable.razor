@@ -279,15 +279,14 @@
     protected override void OnParametersSet()
     {
         base.OnParametersSet();
-        // When Posts parameter changes, we're done loading
-        if (Posts != null)
+        // Only stop loading when posts actually arrive.
+        // Filter toggles set isLoading=false explicitly after their await completes,
+        // so we don't prematurely clear it on intermediate renders with an empty list.
+        if (Posts != null && Posts.Count > 0)
         {
             isLoading = false;
             StopTimeoutTimer();
-            if (Posts.Count > 0)
-            {
-                _isInitialLoad = false;
-            }
+            _isInitialLoad = false;
         }
     }
 
@@ -296,6 +295,8 @@
         isLoading = true;
         StartSpinnerTimer();
         await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+        isLoading = false;
+        StopTimeoutTimer();
     }
 
     private async Task ToggleSavedFilterAsync()
@@ -303,6 +304,8 @@
         isLoading = true;
         StartSpinnerTimer();
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag));
+        isLoading = false;
+        StopTimeoutTimer();
     }
 
     private async Task FilterForTag(string tag)
@@ -314,6 +317,8 @@
             tag = null;
         }
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, tag));
+        isLoading = false;
+        StopTimeoutTimer();
     }
 
     private async Task OnRefreshComplete()

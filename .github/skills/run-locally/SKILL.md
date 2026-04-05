@@ -24,8 +24,8 @@ Run `docker info` to check if Docker is running. If the command fails or returns
 Run Docker commands directly in the current user context — **do not use `-Verb RunAs` or any UAC elevation**. Docker Desktop's named pipe (`dockerDesktopLinuxEngine`) is only accessible to the current user; elevated shells lose access to it and produce "cannot find the file specified" errors.
 
 ```powershell
-cd C:\Users\brand\dev\rssreader\rss-reader\src
-docker build -f Server/Dockerfile -t rss-reader-api:local .
+cd C:\Users\brand\dev\rssreader\rss-reader
+docker build -f src/Server/Dockerfile -t rss-reader-api:local .
 ```
 
 This may take a few minutes on first build.

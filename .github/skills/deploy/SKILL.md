@@ -73,13 +73,13 @@ Run `swa --version` to confirm `swa` is installed. If it fails, stop and tell th
 
 ## Step 2: Build & push the backend Docker image
 
-Navigate to the `src\` directory and build the image tagged for GHCR. Resolve `$ghUser` inline in the same command:
+Navigate to the repo root and build the image tagged for GHCR. Resolve `$ghUser` inline in the same command:
 
 ```powershell
 $remoteUrl = git remote get-url origin 2>$null
 if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
-cd C:\Users\brand\dev\rssreader\rss-reader\src
-docker build -t "ghcr.io/$ghUser/rss-reader-api:latest" -f Server/Dockerfile .
+cd C:\Users\brand\dev\rssreader\rss-reader
+docker build -t "ghcr.io/$ghUser/rss-reader-api:latest" -f src/Server/Dockerfile .
 ```
 
 If the build fails, stop and report the error.

@@ -62,3 +62,10 @@ C#, ASP.NET, SQLite
 #### Database
 SQLite database to store RSS feeds, posts, and user profiles.
 
+##### Backup & Replication
+The database uses a dual backup strategy:
+
+1. **Litestream** (primary) — Continuously replicates SQLite WAL changes to Azure Blob Storage. On container startup, `docker-entrypoint.sh` runs `litestream restore` to recover the latest state, then starts the app under `litestream replicate` supervision. If Litestream fails (auth error, misconfiguration), the entrypoint falls back to running the app directly. Config: `infrastructure/litestream.yml`.
+
+2. **DatabaseBackupService** (safety net) — Legacy backup that periodically copies the SQLite database to Azure Files every 5 minutes. Runs in parallel with Litestream during the migration period. If Litestream has already restored the database on boot, `DatabaseBackupService` skips its own DB restore (active DB already exists) but still restores cached images from Azure Files.
+
