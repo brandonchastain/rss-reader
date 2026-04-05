@@ -11,11 +11,12 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public SQLiteFeedRepository(
         string connectionString,
-        ILogger<SQLiteFeedRepository> logger)
+        ILogger<SQLiteFeedRepository> logger,
+        bool isReadOnly = false)
     {
         this.connectionString = connectionString;
         this.logger = logger;
-        this.InitializeDatabase();
+        if (!isReadOnly) this.InitializeDatabase();
     }
 
     private void InitializeDatabase()

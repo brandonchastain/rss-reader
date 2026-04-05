@@ -20,14 +20,15 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         ILogger<SQLiteItemRepository> logger,
         IFeedRepository feedStore,
         IUserRepository userStore,
-        FeedThumbnailRetriever feedThumbnailRetriever)
+        FeedThumbnailRetriever feedThumbnailRetriever,
+        bool isReadOnly = false)
     {
         this.connectionString = connectionString;
         this.logger = logger;
         this.feedStore = feedStore;
         this.userStore = userStore;
         this.feedThumbnailRetriever = feedThumbnailRetriever ?? throw new ArgumentNullException(nameof(feedThumbnailRetriever));
-        this.InitializeDatabase();
+        if (!isReadOnly) this.InitializeDatabase();
     }
 
     private void InitializeDatabase()

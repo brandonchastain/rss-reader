@@ -11,11 +11,12 @@ public class SQLiteUserRepository : IUserRepository
 
     public SQLiteUserRepository(
         string connectionString,
-        ILogger<SQLiteUserRepository> logger)
+        ILogger<SQLiteUserRepository> logger,
+        bool isReadOnly = false)
     {
         this.connectionString = connectionString;
         this.logger = logger;
-        this.InitializeDatabase();
+        if (!isReadOnly) this.InitializeDatabase();
     }
 
     private void InitializeDatabase()

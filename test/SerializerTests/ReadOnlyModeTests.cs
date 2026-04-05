@@ -242,6 +242,68 @@ public sealed class ReadOnlyModeTests
     }
 
     // ========================================================================
+    // Repository read-only mode tests (skip schema init)
+    // ========================================================================
+
+    [TestMethod]
+    public void FeedRepo_SkipsSchemaInit_WhenReadOnly()
+    {
+        var dbPath = $"readonly_test_{Guid.NewGuid():N}.db";
+        try
+        {
+            // Create DB with schema using writer mode
+            var writerConnStr = $"Data Source={dbPath};Mode=ReadWriteCreate";
+            var repo = new SQLiteFeedRepository(
+                writerConnStr,
+                NullLogger<SQLiteFeedRepository>.Instance,
+                isReadOnly: false);
+
+            // Now open in read-only mode — should NOT throw even without schema init
+            var readerConnStr = $"Data Source={dbPath};Mode=ReadOnly";
+            var readOnlyRepo = new SQLiteFeedRepository(
+                readerConnStr,
+                NullLogger<SQLiteFeedRepository>.Instance,
+                isReadOnly: true);
+
+            // Verify we can query (tables exist from writer init)
+            var feeds = readOnlyRepo.GetFeeds(new RssUser("testuser", 1));
+            Assert.IsNotNull(feeds);
+        }
+        finally
+        {
+            CleanupDb(dbPath);
+        }
+    }
+
+    [TestMethod]
+    public void UserRepo_SkipsSchemaInit_WhenReadOnly()
+    {
+        var dbPath = $"readonly_test_{Guid.NewGuid():N}.db";
+        try
+        {
+            var writerConnStr = $"Data Source={dbPath};Mode=ReadWriteCreate";
+            var repo = new SQLiteUserRepository(
+                writerConnStr,
+                NullLogger<SQLiteUserRepository>.Instance,
+                isReadOnly: false);
+
+            var readerConnStr = $"Data Source={dbPath};Mode=ReadOnly";
+            var readOnlyRepo = new SQLiteUserRepository(
+                readerConnStr,
+                NullLogger<SQLiteUserRepository>.Instance,
+                isReadOnly: true);
+
+            // Should be able to query without error
+            var user = readOnlyRepo.GetUserByName("nonexistent");
+            Assert.IsNull(user);
+        }
+        finally
+        {
+            CleanupDb(dbPath);
+        }
+    }
+
+    // ========================================================================
     // Helpers
     // ========================================================================
 
