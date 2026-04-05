@@ -122,6 +122,7 @@ namespace Server.Controllers
 
         // GET: api/item/content
         [HttpGet("content")]
+        [ResponseCache(Duration = 3600, Location = ResponseCacheLocation.Client)]
         public IActionResult GetItemContent(int itemId)
         {
             var user = this.userResolver.ResolveUser(User);

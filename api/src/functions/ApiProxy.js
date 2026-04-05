@@ -292,28 +292,55 @@ async function forwardRequestToBackend(context, request, path, userPrincipal) {
         context.log(`Reader returned ${response.status}, falling back to writer`);
         const writerTargetUrl = `${writerUrl.replace(/\/$/, '')}/api/${cleanPath}${url.search || ''}`;
         const fallbackResponse = await fetch(writerTargetUrl, options);
-        const fallbackText = await fallbackResponse.text();
+        const fallbackBuffer = await fallbackResponse.arrayBuffer();
+        const fallbackHeaders = buildResponseHeaders(fallbackResponse, 'writer-fallback', request);
         return {
             status: fallbackResponse.status,
-            headers: { 
-                'Content-Type': fallbackResponse.headers.get('content-type') || 'application/json',
-                'X-Served-By': 'writer-fallback',
-                ...getCorsHeaders(request)
-            },
-            body: fallbackText
+            headers: fallbackHeaders,
+            body: Buffer.from(fallbackBuffer)
         };
     }
 
-    const responseText = await response.text();
-
+    const responseBuffer = await response.arrayBuffer();
     const servedBy = (backendUrl === readerUrl) ? 'reader' : 'writer';
     return {
         status: response.status,
-        headers: { 
-            'Content-Type': response.headers.get('content-type') || 'application/json',
-            'X-Served-By': servedBy,
-            ...getCorsHeaders(request)
-        },
-        body: responseText
+        headers: buildResponseHeaders(response, servedBy, request),
+        body: Buffer.from(responseBuffer)
     };
+}
+
+/**
+ * Build response headers by forwarding caching headers from backend
+ * and merging Vary values with CORS Vary.
+ */
+function buildResponseHeaders(backendResponse, servedBy, originalRequest) {
+    const headers = { 
+        'Content-Type': backendResponse.headers.get('content-type') || 'application/json',
+        'X-Served-By': servedBy,
+        ...getCorsHeaders(originalRequest)
+    };
+
+    // Forward caching headers from backend
+    for (const header of ['cache-control', 'etag']) {
+        const value = backendResponse.headers.get(header);
+        if (value) headers[header] = value;
+    }
+
+    // Merge Vary headers: CORS sets 'Origin', backend may add others (e.g. 'Accept-Encoding')
+    const backendVary = backendResponse.headers.get('vary');
+    if (backendVary) {
+        const corsVary = headers['Vary'] || '';
+        const existingValues = new Set(corsVary.split(',').map(v => v.trim().toLowerCase()).filter(Boolean));
+        const backendValues = backendVary.split(',').map(v => v.trim()).filter(Boolean);
+        const merged = [...new Set([...corsVary.split(',').map(v => v.trim()).filter(Boolean)])];
+        for (const val of backendValues) {
+            if (!existingValues.has(val.toLowerCase())) {
+                merged.push(val);
+            }
+        }
+        headers['Vary'] = merged.join(', ');
+    }
+
+    return headers;
 }
