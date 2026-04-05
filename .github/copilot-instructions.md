@@ -85,7 +85,7 @@ Feed refresh runs via a `BackgroundWorkQueue` + `BackgroundWorker` hosted servic
 App config is loaded into `RssAppConfig` from `appsettings.json` under the `RssAppConfig` section. The backend reads `DbLocation` for the SQLite path (`/tmp/storage.db` in Docker, copied to `/data/` for persistence). Frontend config is in `RssWasmConfig`.
 
 ### DatabaseBackupService
-The SQLite database lives at `/tmp/storage.db` (ephemeral container storage) and is periodically backed up to `/data/storage.db` (Azure Files volume mount) every 5 minutes. On container startup, `Program.cs` explicitly calls `RestoreFromBackupAsync` before any repository is instantiated — this ordering is intentional.
+Complementary backup service that runs alongside Litestream. The SQLite database lives at `/tmp/storage.db` (ephemeral container storage). Litestream handles primary replication to Azure Blob Storage; `DatabaseBackupService` provides a secondary backup to Azure Files (`/data/storage.db`) every 5 minutes and syncs cached images between `wwwroot/images/` and `/data/images/`. On container startup, `Program.cs` explicitly calls `RestoreFromBackupAsync` before any repository is instantiated — this ordering is intentional. If Litestream already restored the database, `DatabaseBackupService` skips DB restore but still restores cached images from Azure Files.
 
 The backup cycle uses **SQLite's native backup API** (`SqliteConnection.BackupDatabase`) to create a consistent point-in-time snapshot at `/tmp/storage-backup.db`, then computes a SHA256 hash to skip the Azure Files write if nothing changed (reducing transaction costs). Images in `wwwroot/images/` are also synced to `/data/images/` on the same cycle, but only new files are copied (no overwrites).
 

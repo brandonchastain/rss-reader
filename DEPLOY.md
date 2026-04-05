@@ -143,13 +143,13 @@ az containerapp logs show --name rss-reader-api --resource-group rss-container-r
 The SQLite database should persist at `/data/storage.db` inside the container, mounted from Azure Files.
 
 ### Litestream Migration Notes
-The Docker image now includes [Litestream](https://litestream.io/) for continuous SQLite replication to Azure Blob Storage. The entrypoint includes a graceful fallback — if Litestream fails to start (auth error, misconfiguration), the app runs directly with `DatabaseBackupService` providing backup coverage. On first deployment:
+The Docker image includes [Litestream](https://litestream.io/) for continuous SQLite replication to Azure Blob Storage. `DatabaseBackupService` runs alongside Litestream, providing a secondary backup to Azure Files and syncing cached images. The entrypoint includes a graceful fallback — if Litestream fails to start (auth error, misconfiguration), the app runs directly with `DatabaseBackupService` providing backup coverage. On first deployment:
 
 1. **Litestream restore is a no-op** — the blob container is empty, so the entrypoint script's `litestream restore -if-replica-exists` succeeds silently.
 2. **DatabaseBackupService restores from Azure Files** — the existing backup at `/data/storage.db` is copied to `/tmp/storage.db` as before.
 3. **Litestream starts replicating** — WAL changes are continuously streamed to the `litestream` blob container.
 
-On subsequent boots, Litestream restores from blob (more up-to-date than Azure Files), and `DatabaseBackupService` skips its own DB restore because the active DB already exists, but still restores cached images from Azure Files.
+On subsequent boots, Litestream restores from blob (more up-to-date than Azure Files). `DatabaseBackupService` skips its own DB restore (active DB already exists) but still restores cached images from Azure Files. Both services then run in parallel — Litestream for continuous WAL replication, `DatabaseBackupService` for periodic Azure Files backup and image sync.
 
 **Required environment variables** (set via Bicep):
 - `LITESTREAM_AZURE_ACCOUNT_NAME` — storage account name

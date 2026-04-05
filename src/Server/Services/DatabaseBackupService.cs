@@ -21,10 +21,10 @@ namespace RssReader.Server.Services
         string BackupImagesPath = "/data/images/");
 
     /// <summary>
-    /// Background service that handles backing up and restoring the SQLite database
-    /// to/from Azure Files mounted storage. 
-    /// - On startup: Restores database from backup if it exists
-    /// - Periodically: Backs up active database to mounted storage
+    /// Complementary backup service that runs alongside Litestream.
+    /// - On startup: Restores database from Azure Files backup if Litestream hasn't already restored it; always restores cached images.
+    /// - Periodically: Backs up active database to Azure Files and syncs cached images to/from mounted storage.
+    /// Litestream handles primary WAL replication to Azure Blob Storage; this service provides a secondary backup layer and image persistence.
     /// </summary>
     public class DatabaseBackupService : BackgroundService
     {

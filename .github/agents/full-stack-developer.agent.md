@@ -73,7 +73,7 @@ Browser → Azure SWA (Easy Auth / AAD)
 
 ## Tech Stack — Database (SQLite)
 
-- **File location**: `/tmp/storage.db` (ephemeral) backed up to `/data/storage.db` (Azure Files) every 5 minutes via `DatabaseBackupService`
+- **File location**: `/tmp/storage.db` (ephemeral). Primary replication via Litestream to Azure Blob Storage; secondary backup to `/data/storage.db` (Azure Files) every 5 minutes via `DatabaseBackupService`. Images synced to `/data/images/` on the same cycle.
 - **Backup API**: uses `SqliteConnection.BackupDatabase` (SQLite native backup API) for consistent snapshots — do not replace with file copies
 - **WAL mode**: the database runs in WAL (Write-Ahead Logging) mode for concurrent reads. Do not change the journal mode
 - **Schema conventions**:
