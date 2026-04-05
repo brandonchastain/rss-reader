@@ -54,9 +54,9 @@ namespace Server.Controllers
                 return NotFound("Authenticated user not found.");
             }
 
-            // When no explicit tag filter, exclude feeds with hidden tags
+            // When no explicit tag filter and not filtering saved items, exclude feeds with hidden tags
             IEnumerable<string> excludeFeedUrls = null;
-            if (string.IsNullOrWhiteSpace(filterTag))
+            if (string.IsNullOrWhiteSpace(filterTag) && !isFilterSaved)
             {
                 excludeFeedUrls = this.feedRepository.GetHiddenFeedUrls(user);
             }
