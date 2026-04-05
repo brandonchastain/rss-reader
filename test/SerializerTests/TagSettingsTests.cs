@@ -235,6 +235,47 @@ public sealed class TagSettingsTests
     }
 
     [TestMethod]
+    public async Task Timeline_FilterSaved_ShowsHiddenTagFeeds()
+    {
+        feedRepo.AddFeed(new NewsFeed("https://example.com/visible", testUser.Id));
+        feedRepo.AddFeed(new NewsFeed("https://example.com/hidden", testUser.Id));
+        var feeds = feedRepo.GetFeeds(testUser).ToList();
+
+        var visibleFeed = feeds.First(f => f.Href == "https://example.com/visible");
+        var hiddenFeed = feeds.First(f => f.Href == "https://example.com/hidden");
+
+        feedRepo.AddTag(visibleFeed, "visible-tag");
+        feedRepo.AddTag(hiddenFeed, "hidden-tag");
+
+        // Add items to both feeds
+        var visibleItem = new NewsFeedItem("1", 0, "Visible Post", "https://example.com/visible/post1",
+            null, null, "content", null) { FeedUrl = "https://example.com/visible" };
+        var hiddenItem = new NewsFeedItem("2", 0, "Saved Hidden Post", "https://example.com/hidden/post1",
+            null, null, "content", null) { FeedUrl = "https://example.com/hidden" };
+        await itemRepo.AddItemsAsync(new[] { visibleItem, hiddenItem });
+
+        // Save the hidden-feed item
+        itemRepo.SavePost(hiddenItem, testUser);
+
+        // Hide the tag
+        feedRepo.SetTagHidden(testUser, "hidden-tag", true);
+        var excludedUrls = feedRepo.GetHiddenFeedUrls(testUser);
+
+        // Query saved items WITHOUT exclude (simulates isFilterSaved=true in controller)
+        var timelineFeed = new NewsFeed("%", testUser.Id);
+        var savedItems = await itemRepo.GetItemsAsync(timelineFeed, false, true, null);
+
+        Assert.IsTrue(savedItems.Any(i => i.Title == "Saved Hidden Post"),
+            "Saved posts from hidden-tagged feeds should appear when filtering saved items");
+
+        // Verify that WITHOUT the saved filter, exclusion still works
+        var normalItems = await itemRepo.GetItemsAsync(timelineFeed, false, false, null,
+            excludeFeedUrls: excludedUrls);
+        Assert.IsFalse(normalItems.Any(i => i.Title == "Saved Hidden Post"),
+            "Hidden-tagged feed posts should still be excluded from normal timeline");
+    }
+
+    [TestMethod]
     public void EmptyTagSettings_AllVisible_BackwardCompatible()
     {
         // No UserTagSettings rows = all tags visible
