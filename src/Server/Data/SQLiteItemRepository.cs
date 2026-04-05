@@ -135,11 +135,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 END;";
             command.ExecuteNonQuery();
 
-            // Index for timeline ORDER BY — eliminates full-table scan + sort
+            // Index for timeline ORDER BY + cursor pagination — eliminates full-table scan + sort
             command = connection.CreateCommand();
             command.CommandText = @"
+                DROP INDEX IF EXISTS idx_items_timeline;
                 CREATE INDEX IF NOT EXISTS idx_items_timeline
-                ON Items(UserId, PublishDateOrder DESC, PublishDate DESC);";
+                ON Items(UserId, PublishDateOrder DESC, Id DESC);";
             command.ExecuteNonQuery();
         }
     }
@@ -215,7 +216,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         int? page = null,
         int? pageSize = null,
         long? lastId = null,
-        string lastPublishDate = null,
+        long? lastPublishDateOrder = null,
         IEnumerable<string> excludeFeedUrls = null)
     {
         var items = new List<NewsFeedItem>();
@@ -283,12 +284,26 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 command.CommandText += $" AND i.FeedUrl NOT IN ({string.Join(",", excludeParams)})";
             }
 
-            command.CommandText += " ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC";
-            pageSize ??= 20; // Default page size if not provided
-            page ??= 0;
-            command.CommandText += " LIMIT @pageSize OFFSET @offset";
+            // Cursor-based pagination: use (PublishDateOrder, Id) as seek position
+            bool useCursor = lastPublishDateOrder.HasValue && lastId.HasValue;
+            if (useCursor)
+            {
+                command.CommandText += " AND (i.PublishDateOrder < @lastOrder OR (i.PublishDateOrder = @lastOrder AND i.Id < @lastId))";
+                command.Parameters.AddWithValue("@lastOrder", lastPublishDateOrder.Value);
+                command.Parameters.AddWithValue("@lastId", lastId.Value);
+            }
+
+            command.CommandText += " ORDER BY i.PublishDateOrder DESC, i.Id DESC";
+            pageSize ??= 20;
+            command.CommandText += " LIMIT @pageSize";
             command.Parameters.AddWithValue("@pageSize", pageSize);
-            command.Parameters.AddWithValue("@offset", page * pageSize);
+
+            if (!useCursor)
+            {
+                page ??= 0;
+                command.CommandText += " OFFSET @offset";
+                command.Parameters.AddWithValue("@offset", page * pageSize);
+            }
 
             using (var reader = await command.ExecuteReaderAsync())
             {

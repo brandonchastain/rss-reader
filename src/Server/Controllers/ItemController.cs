@@ -45,13 +45,22 @@ namespace Server.Controllers
 
         // GET: api/item/timeline
         [HttpGet("timeline")]
-        public async Task<IActionResult> TimelineAsync(bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
+        public async Task<IActionResult> TimelineAsync(bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
             var user = this.userResolver.ResolveUser(User);
 
             if (user == null)
             {
                 return NotFound("Authenticated user not found.");
+            }
+
+            // Enforce both-or-neither cursor params
+            long? lastId = null;
+            long? lastPublishDateOrder = null;
+            if (cursorPublishDateOrder.HasValue && cursorId.HasValue)
+            {
+                lastId = cursorId;
+                lastPublishDateOrder = cursorPublishDateOrder;
             }
 
             // When no explicit tag filter and not filtering saved items, exclude feeds with hidden tags
@@ -61,20 +70,18 @@ namespace Server.Controllers
                 excludeFeedUrls = this.feedRepository.GetHiddenFeedUrls(user);
             }
 
-            // TODO: authenticate the real user
             var feed = new NewsFeed("%", user.Id);
-            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, excludeFeedUrls: excludeFeedUrls);
+            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId: lastId, lastPublishDateOrder: lastPublishDateOrder, excludeFeedUrls: excludeFeedUrls);
             var result = items
                 .DistinctBy(i => i.Href)
-                .OrderByDescending(i => i.PublishDateOrder)
                 .Where(i => string.IsNullOrWhiteSpace(filterTag) || (i.FeedTags?.Contains(filterTag) ?? false))
-                .ToHashSet();
+                .ToList();
 
             return Ok(result);
         }
 
         [HttpGet("feed")]
-        public async Task<IActionResult> FeedAsync(string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
+        public async Task<IActionResult> FeedAsync(string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
             var user = this.userResolver.ResolveUser(User);
 
@@ -90,12 +97,20 @@ namespace Server.Controllers
                 return NotFound($"Feed was not found.");
             }
 
-            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize);
+            // Enforce both-or-neither cursor params
+            long? lastId = null;
+            long? lastPublishDateOrder = null;
+            if (cursorPublishDateOrder.HasValue && cursorId.HasValue)
+            {
+                lastId = cursorId;
+                lastPublishDateOrder = cursorPublishDateOrder;
+            }
+
+            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId: lastId, lastPublishDateOrder: lastPublishDateOrder);
             var result = items
                 .DistinctBy(i => i.Href)
-                .OrderByDescending(i => i.PublishDateOrder)
                 .Where(i => string.IsNullOrWhiteSpace(filterTag) || (i.FeedTags?.Contains(filterTag) ?? false))
-                .ToHashSet();
+                .ToList();
 
             return Ok(result);
         }

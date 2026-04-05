@@ -46,16 +46,24 @@ namespace WasmApp.Services
             await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/feed/tags", feed);
         }
 
-        public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20)
+        public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
             pageSize = Math.Min(pageSize, 100);
             var url = $"{_config.ApiBaseUrl}api/item/timeline?isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
+            if (cursorPublishDateOrder.HasValue && cursorId.HasValue)
+            {
+                url += $"&cursorPublishDateOrder={cursorPublishDateOrder.Value}&cursorId={cursorId.Value}";
+            }
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
-        public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page)
+        public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
             var url = $"{_config.ApiBaseUrl}api/item/feed?href={Uri.EscapeDataString(feed.Href)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}";
+            if (cursorPublishDateOrder.HasValue && cursorId.HasValue)
+            {
+                url += $"&cursorPublishDateOrder={cursorPublishDateOrder.Value}&cursorId={cursorId.Value}";
+            }
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
