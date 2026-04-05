@@ -1,20 +1,15 @@
 #!/bin/sh
 
-# Restore database from Litestream if a replica exists in Blob Storage.
-# On first boot (migration), this is a no-op  DatabaseBackupService will
-# restore from Azure Files instead. On subsequent boots, Litestream has the
-# latest data and restores it here.
-litestream restore -if-replica-exists -config /etc/litestream.yml /tmp/storage.db || \
-    echo "WARNING: Litestream restore failed. DatabaseBackupService will restore from Azure Files." >&2
-
 APP_ROLE="${APP_ROLE:-writer}"
 
 if [ "$APP_ROLE" = "reader" ]; then
     # Reader mode: continuously restore WAL changes from blob storage.
-    # litestream restore -f (follow mode) does the initial restore, then polls
-    # for new LTX files every 1s to keep the DB ~1-2s behind the writer.
+    # litestream restore -f (follow mode) handles both the initial restore
+    # AND continuous polling for new LTX files (~1s lag behind writer).
+    # We skip the one-shot restore — follow mode manages the DB lifecycle
+    # including the -txid sidecar for crash recovery.
     echo "Starting in READER mode (read-only replica with follow-mode restore)." >&2
-    litestream restore -f -config /etc/litestream.yml -o /tmp/storage.db &
+    litestream restore -f -config /etc/litestream.yml /tmp/storage.db &
     LITESTREAM_PID=$!
 
     # Wait for the initial restore to produce the DB file
@@ -35,7 +30,11 @@ if [ "$APP_ROLE" = "reader" ]; then
     exec dotnet Server.dll
 fi
 
-# Writer mode: start the app under Litestream's process supervision.
+# Writer mode: restore from Litestream if a replica exists, then start
+# under Litestream's process supervision for continuous WAL replication.
+litestream restore -if-replica-exists -config /etc/litestream.yml /tmp/storage.db || \
+    echo "WARNING: Litestream restore failed. DatabaseBackupService will restore from Azure Files." >&2
+
 # Litestream continuously replicates WAL changes to Blob Storage.
 # If Litestream fails (auth error, misconfiguration), fall back to running
 # the app directly so DatabaseBackupService can still provide backup coverage.
