@@ -19,15 +19,6 @@
     <script>
         // Warm up the API function to reduce cold start latency
         fetch('/api/healthz').catch(() => {});
-
-        if (location.pathname === '/' || location.pathname === '/index') {
-            fetch('/.auth/me')
-                .then(r => r.json())
-                .then(data => {
-                    if (data.clientPrincipal) location.replace('/timeline');
-                })
-                .catch(() => {});
-        }
     </script>
     <div id="app"></div>
     <script src="_content/Microsoft.AspNetCore.Components.WebAssembly.Authentication/AuthenticationService.js"></script>

@@ -134,6 +134,7 @@
     private bool isLoading = true;
     private bool _showTerminal = false;
     private bool _hasTimedOut = false;
+    private bool _isInitialLoad = true;
     private List<string> _visibleMessages = new();
     private int _messageIndex = 0;
     private int _dotCount = 0;
@@ -171,6 +172,10 @@
         _showTerminal = false;
         _spinnerTimer?.Stop();
         _spinnerTimer?.Dispose();
+
+        // Only escalate to terminal animation on the very first load
+        if (!_isInitialLoad) return;
+
         _spinnerTimer = new System.Timers.Timer(SpinnerDelayMs);
         _spinnerTimer.AutoReset = false;
         _spinnerTimer.Elapsed += (s, e) =>
@@ -266,9 +271,10 @@
     {
         base.OnParametersSet();
         // When Posts parameter changes, we're done loading
-        if (Posts != null && Posts.Any())
+        if (Posts != null)
         {
             isLoading = false;
+            _isInitialLoad = false;
             StopTimeoutTimer();
         }
     }

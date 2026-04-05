@@ -10,7 +10,7 @@ namespace RssApp.Config
         public TimeSpan CacheReloadInterval { get; set; } = TimeSpan.FromMinutes(5);
         public TimeSpan CacheReloadStartupDelay { get; set; } = TimeSpan.FromSeconds(0);
         public int BackgroundWorkerCount { get; set; } = 3;
-        public int BackgroundQueueCapacity { get; set; } = 100;
+        public int BackgroundQueueCapacity { get; set; } = 1000;
 
         public static RssAppConfig LoadFromAppSettings(IConfiguration configuration)
         {

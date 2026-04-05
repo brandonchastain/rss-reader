@@ -48,6 +48,8 @@ public sealed class ItemRepoTests
         .AddSingleton<FeedThumbnailRetriever>()
         .AddSingleton<IFeedRepository>(feedRepo)
         .AddSingleton<IUserRepository>(userRepo)
+        .AddSingleton(new RssApp.Config.RssAppConfig())
+        .AddSingleton<RssReader.Server.Services.FeedThumbnailRetriever>()
         .AddSingleton<IItemRepository>(sb =>
         {
             return new SQLiteItemRepository(

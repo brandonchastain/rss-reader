@@ -63,9 +63,9 @@ public class BackgroundWorkerTests
     }
 
     [TestMethod]
-    public void RssAppConfig_DefaultQueueCapacityIsHundred()
+    public void RssAppConfig_DefaultQueueCapacityIsThousand()
     {
         var config = new RssAppConfig();
-        Assert.AreEqual(100, config.BackgroundQueueCapacity);
+        Assert.AreEqual(1000, config.BackgroundQueueCapacity);
     }
 }

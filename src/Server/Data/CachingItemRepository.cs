@@ -151,6 +151,15 @@ public sealed class CachingItemRepository : IItemRepository
         _inner.UpdateTags(item, tags);
     }
 
+    /// <inheritdoc/>
+    public async Task DeleteAllItemsAsync(RssUser user)
+    {
+        await _inner.DeleteAllItemsAsync(user);
+        // Bulk eviction — compact the entire cache since we can't enumerate keys.
+        if (_cache is MemoryCache mc)
+            mc.Compact(1.0);
+    }
+
     // -------------------------------------------------------------------------
     // IDisposable
     // -------------------------------------------------------------------------

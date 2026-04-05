@@ -1,9 +1,11 @@
 ﻿@page "/"
 @page "/index"
 @using WasmApp.Services
+@using Microsoft.AspNetCore.Components.Authorization
 @inject NavigationManager NavigationManager
 @inject ILogger<Index> logger
 @inject IUserClient userClient
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>RssReader | A simple browser-based RSS reader</PageTitle>
 
@@ -41,6 +43,14 @@
     {
         if (firstRender)
         {
+            // Redirect authenticated users to timeline without a full page reload
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            if (authState.User?.Identity?.IsAuthenticated == true)
+            {
+                NavigationManager.NavigateTo("/timeline", replace: true);
+                return;
+            }
+
             await _terminalRef.FocusAsync();
         }
     }
