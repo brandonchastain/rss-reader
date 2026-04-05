@@ -129,7 +129,7 @@ namespace WasmApp.Services
                 {
                     await Task.Delay(1000, cts.Token);
                     var statusResponse = await _httpClient.GetAsync(statusUrl, cts.Token);
-                    if (statusResponse.IsSuccessStatusCode)
+                    if (statusResponse.StatusCode == System.Net.HttpStatusCode.OK)
                     {
                         return true;
                     }

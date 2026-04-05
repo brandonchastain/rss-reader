@@ -31,7 +31,7 @@
             {
                 <span class="post-tag">@tag</span>
             }
-            <a tooltip="@Post.ParsedDate?.ToString("f")" href="@Post.Href" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => { await MarkAsReadAsync(Post, true); navigationManager.NavigateTo(Post.Href); }">@Post.Title</a><br/>
+            <a tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => { await MarkAsReadAsync(Post, true); navigationManager.NavigateTo(Post.Href); }">@Post.Title</a><br/>
             <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await MarkAsReadAsync(Post, !Post.IsRead)">[mark @(!Post.IsRead ? "read" : "unread")]</button><button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)">[@(!Post.IsSaved ? "save" : "unsave")]</button>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
@@ -46,7 +46,7 @@
     {
         <div class="">
             <p>
-                Published on @Post.ParsedDate?.ToString("f")
+                Published on @FormatDate(Post.ParsedDate)
             </p>
             <p>
                 @if (_isSpeaking)
@@ -195,6 +195,16 @@
             await InvokeAsync(StateHasChanged);
             await this.feedClient.UnsavePostAsync(post);
         }
+    }
+
+    private static readonly string[] _months = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    private static readonly string[] _days = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+
+    private static string FormatDate(DateTime? date)
+    {
+        if (date == null) return "";
+        var d = date.Value;
+        return $"{_days[(int)d.DayOfWeek]}, {_months[d.Month - 1]} {d.Day} {d.Year} {d:h:mm tt}";
     }
 
     private async Task HandleClick(NewsFeedItem post, bool preview = true)
