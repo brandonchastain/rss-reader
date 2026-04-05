@@ -9,6 +9,7 @@ namespace RssApp.Config
         public bool IsTestUserEnabled { get; set; }
         public TimeSpan CacheReloadInterval { get; set; } = TimeSpan.FromMinutes(5);
         public TimeSpan CacheReloadStartupDelay { get; set; } = TimeSpan.FromSeconds(0);
+        public bool IsReadOnly { get; set; }
         public int BackgroundWorkerCount { get; set; } = 3;
         public int BackgroundQueueCapacity { get; set; } = 1000;
 

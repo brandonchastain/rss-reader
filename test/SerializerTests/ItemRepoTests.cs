@@ -23,6 +23,8 @@ public sealed class ItemRepoTests
             File.Delete("tests.db");
         }
 
+        Directory.CreateDirectory(Path.Combine("wwwroot", "images"));
+
         var config = new RssAppConfig { DbLocation = "tests.db" };
 
         var userRepo = new SQLiteUserRepository(

@@ -180,7 +180,7 @@ namespace Server.Controllers
 
             if (item.UserId != authenticatedUser.Id)
             {
-                return Forbid("You can only save items to your own account.");
+                return StatusCode(403, "You can only save items to your own account.");
             }
 
             var user = this.userRepository.GetUserById(item.UserId);
@@ -209,7 +209,7 @@ namespace Server.Controllers
 
             if (item.UserId != authenticatedUser.Id)
             {
-                return Forbid("You can only unsave items from your own account.");
+                return StatusCode(403, "You can only unsave items from your own account.");
             }
 
             var user = this.userRepository.GetUserById(item.UserId);

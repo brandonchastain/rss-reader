@@ -23,6 +23,18 @@ const FORBIDDEN_FORWARD_HEADERS = new Set([
     'transfer-encoding'
 ]);
 
+// Read-only endpoints routed to reader replicas when available.
+// All other endpoints go to the writer.
+const READ_ENDPOINTS = new Set([
+    'feed',              // GET /api/feed — list feeds
+    'feed/tags',         // GET /api/feed/tags — list tags
+    'feed/exportOpml',   // GET /api/feed/exportOpml — export OPML
+    'item/timeline',     // GET /api/item/timeline — paginated timeline
+    'item/feed',         // GET /api/item/feed — items for specific feed
+    'item/search',       // GET /api/item/search — FTS5 search
+    'item/content',      // GET /api/item/content — full HTML content
+]);
+
 // ============================================================================
 // MAIN HANDLER
 // ============================================================================
@@ -163,20 +175,34 @@ function extractUserFromEasyAuth(context, request) {
 
 async function forwardHealthCheck(context, request) {
     const backendUrl = process.env.RSSREADER_API_URL;
+    const readerUrl = process.env.RSSREADER_READER_API_URL;
     if (!backendUrl) {
         return { status: 200, body: 'proxy-only-ok' };
     }
 
     try {
-        const targetUrl = `${backendUrl.replace(/\/$/, '')}/api/healthz`;
-        const response = await fetch(targetUrl);
+        const writerTarget = `${backendUrl.replace(/\/$/, '')}/api/healthz`;
+        const writerResp = await fetch(writerTarget);
+        const writerBody = await writerResp.text();
+
+        let readerBody = 'not configured';
+        if (readerUrl) {
+            try {
+                const readerTarget = `${readerUrl.replace(/\/$/, '')}/api/healthz`;
+                const readerResp = await fetch(readerTarget);
+                readerBody = await readerResp.text();
+            } catch (e) {
+                readerBody = `error: ${e.message}`;
+            }
+        }
+
         return {
-            status: response.status,
+            status: writerResp.status,
             headers: {
-                'Content-Type': 'text/plain',
+                'Content-Type': 'application/json',
                 ...getCorsHeaders(request)
             },
-            body: await response.text()
+            body: JSON.stringify({ writer: JSON.parse(writerBody), reader: readerUrl ? JSON.parse(readerBody) : readerBody, readEndpoints: [...READ_ENDPOINTS] })
         };
     } catch (error) {
         context.log('Health check forwarding failed:', error.message);
@@ -189,13 +215,23 @@ async function forwardHealthCheck(context, request) {
 // ============================================================================
 
 async function forwardRequestToBackend(context, request, path, userPrincipal) {
-    const backendUrl = process.env.RSSREADER_API_URL;
+    const writerUrl = process.env.RSSREADER_API_URL;
+    const readerUrl = process.env.RSSREADER_READER_API_URL;
     const gatewayKey = process.env.RSSREADER_API_KEY;
     
-    if (!backendUrl) throw new Error('RSSREADER_API_URL not configured');
+    if (!writerUrl) throw new Error('RSSREADER_API_URL not configured');
     if (!gatewayKey) throw new Error('RSSREADER_API_KEY not configured');
 
     const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    
+    // Route GET requests for read-only endpoints to the reader replica if available
+    const isReadEndpoint = request.method === 'GET' && READ_ENDPOINTS.has(cleanPath.split('?')[0]);
+    const backendUrl = (isReadEndpoint && readerUrl) ? readerUrl : writerUrl;
+    
+    if (isReadEndpoint && readerUrl) {
+        context.log(`Routing READ to reader: ${cleanPath}`);
+    }
+
     let targetUrl = `${backendUrl.replace(/\/$/, '')}/api/${cleanPath}`;
     
     const url = new URL(request.url);
@@ -237,13 +273,45 @@ async function forwardRequestToBackend(context, request, path, userPrincipal) {
 
     context.log(`Forwarding ${request.method} to ${targetUrl}`);
 
-    const response = await fetch(targetUrl, options);
+    let response;
+    try {
+        response = await fetch(targetUrl, options);
+    } catch (fetchError) {
+        // Network error (reader unreachable) — fall back to writer
+        if (backendUrl !== writerUrl) {
+            context.log(`Reader fetch failed (${fetchError.message}), falling back to writer`);
+            const writerTargetUrl = `${writerUrl.replace(/\/$/, '')}/api/${cleanPath}${url.search || ''}`;
+            response = await fetch(writerTargetUrl, options);
+        } else {
+            throw fetchError;
+        }
+    }
+
+    // Fallback: if reader returned 5xx, retry against writer
+    if (response.status >= 500 && backendUrl !== writerUrl) {
+        context.log(`Reader returned ${response.status}, falling back to writer`);
+        const writerTargetUrl = `${writerUrl.replace(/\/$/, '')}/api/${cleanPath}${url.search || ''}`;
+        const fallbackResponse = await fetch(writerTargetUrl, options);
+        const fallbackText = await fallbackResponse.text();
+        return {
+            status: fallbackResponse.status,
+            headers: { 
+                'Content-Type': fallbackResponse.headers.get('content-type') || 'application/json',
+                'X-Served-By': 'writer-fallback',
+                ...getCorsHeaders(request)
+            },
+            body: fallbackText
+        };
+    }
+
     const responseText = await response.text();
 
+    const servedBy = (backendUrl === readerUrl) ? 'reader' : 'writer';
     return {
         status: response.status,
         headers: { 
             'Content-Type': response.headers.get('content-type') || 'application/json',
+            'X-Served-By': servedBy,
             ...getCorsHeaders(request)
         },
         body: responseText
