@@ -19,24 +19,6 @@
     <script>
         // Warm up the API function to reduce cold start latency
         fetch('/api/healthz').catch(() => {});
-
-        // Auto-redirect returning users to login when SWA session expired.
-        // Runs before Blazor loads to avoid a flash of the unauthenticated page.
-        // Uses sessionStorage guard so we only try once per tab (prevents login loops
-        // if the user cancels AAD login or AAD session has also expired).
-        (function() {
-            if (localStorage.getItem('rssApp.returningUser') === 'true' &&
-                !sessionStorage.getItem('rssApp.loginAttempted')) {
-                fetch('/.auth/me').then(function(r) { return r.json(); }).then(function(data) {
-                    if (!data.clientPrincipal) {
-                        sessionStorage.setItem('rssApp.loginAttempted', '1');
-                        var returnUrl = window.location.pathname || '/timeline';
-                        if (returnUrl === '/' || returnUrl === '/index') returnUrl = '/timeline';
-                        window.location.replace('/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(returnUrl));
-                    }
-                }).catch(function() {});
-            }
-        })();
     </script>
     <div id="app"></div>
     <script src="_content/Microsoft.AspNetCore.Components.WebAssembly.Authentication/AuthenticationService.js"></script>

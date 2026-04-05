@@ -1,9 +1,6 @@
 ﻿
 @inherits LayoutComponentBase
-@using Microsoft.AspNetCore.Components.Authorization
 @inject NavigationManager NavigationManager
-@inject IJSRuntime JSRuntime
-
 <div class="page">
     <div class="top-row-container">
         <div class="top-row">
@@ -16,12 +13,6 @@
         </article>
     </main>
 </div>
-
-<AuthorizeView>
-    <Authorized>
-        <SetReturningUserFlag />
-    </Authorized>
-</AuthorizeView>
 
 @code {
     private string currentUrl;
