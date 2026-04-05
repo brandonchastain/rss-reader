@@ -21,16 +21,20 @@
         fetch('/api/healthz').catch(() => {});
 
         // Auto-redirect returning users to login when SWA session expired.
-        // Runs before Blazor loads to avoid a flash of the unauthenticated homepage.
+        // Runs before Blazor loads to avoid a flash of the unauthenticated page.
         // Uses sessionStorage guard so we only try once per tab (prevents login loops
         // if the user cancels AAD login or AAD session has also expired).
         (function() {
-            var path = window.location.pathname;
-            if ((path === '/' || path === '/index') &&
-                localStorage.getItem('rssApp.returningUser') === 'true' &&
+            if (localStorage.getItem('rssApp.returningUser') === 'true' &&
                 !sessionStorage.getItem('rssApp.loginAttempted')) {
-                sessionStorage.setItem('rssApp.loginAttempted', '1');
-                window.location.replace('/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent('/timeline'));
+                fetch('/.auth/me').then(function(r) { return r.json(); }).then(function(data) {
+                    if (!data.clientPrincipal) {
+                        sessionStorage.setItem('rssApp.loginAttempted', '1');
+                        var returnUrl = window.location.pathname || '/timeline';
+                        if (returnUrl === '/' || returnUrl === '/index') returnUrl = '/timeline';
+                        window.location.replace('/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(returnUrl));
+                    }
+                }).catch(function() {});
             }
         })();
     </script>
