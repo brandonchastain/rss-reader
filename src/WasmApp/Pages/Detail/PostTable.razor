@@ -60,9 +60,18 @@
     }
     else if (Posts == null || Posts.Count == 0)
     {
-        <div class="no-posts-message">
-            <p>No posts found.</p>
-        </div>
+        @if (_isInitialLoad)
+        {
+            <div class="loading-spinner-container">
+                <div class="spinner"></div>
+            </div>
+        }
+        else
+        {
+            <div class="no-posts-message">
+                <p>No posts found.</p>
+            </div>
+        }
     }
     else
     {
@@ -274,8 +283,11 @@
         if (Posts != null)
         {
             isLoading = false;
-            _isInitialLoad = false;
             StopTimeoutTimer();
+            if (Posts.Count > 0)
+            {
+                _isInitialLoad = false;
+            }
         }
     }
 
