@@ -106,11 +106,15 @@ Update the running container app to use the new image (resolve `$ghUser` inline)
 ```powershell
 $remoteUrl = git remote get-url origin 2>$null
 if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
+$suffix = "deploy$(Get-Date -Format 'yyyyMMddHHmm')"
 az containerapp update `
   --name rss-reader-api `
   --resource-group rss-container-rg `
-  --image "ghcr.io/$ghUser/rss-reader-api:latest"
+  --image "ghcr.io/$ghUser/rss-reader-api:latest" `
+  --revision-suffix $suffix
 ```
+
+**Important:** Always use `--revision-suffix` with a unique value. Without it, Azure may reuse the cached `:latest` image and the container won't pick up your code changes.
 
 If this fails, check that the user is logged in to Azure (`az login`) and that the container app `rss-reader-api` exists in the `rss-container-rg` resource group.
 
@@ -190,6 +194,7 @@ Then check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snaps
 5. Once logged in (or if already logged in), run these basic scenarios:
    - Navigate to `/feeds` — confirm the feeds list page loads without errors.
    - Navigate to `/timeline` — confirm the timeline page loads and shows content (or an empty state, not a crash).
+   - **Content display check**: Click a post thumbnail to expand it. Verify that article content text is visible in the expanded area (not just "Published on" date and action buttons). Empty content is a deployment bug — the backend LEFT JOIN may not have been deployed.
    - Take a screenshot: `browser_take_screenshot(type: "png")` for visual confirmation.
 
 6. Report what was observed: page titles, any visible errors or blank screens, HTTP failures in the console.

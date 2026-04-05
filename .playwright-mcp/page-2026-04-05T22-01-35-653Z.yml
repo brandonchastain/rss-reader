@@ -1,0 +1,33 @@
+- generic [ref=e5]:
+  - img "Organization background image" [ref=e6]
+  - generic [ref=e7]:
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - img "Microsoft" [ref=e16]
+        - main [ref=e17]:
+          - generic [ref=e20]:
+            - heading "Sign in" [level=1] [ref=e24]
+            - generic [ref=e25]:
+              - alert
+              - generic [ref=e27]:
+                - textbox "Enter your email, phone, or Skype." [active] [ref=e28]:
+                  - /placeholder: Email, phone, or Skype
+                - textbox [ref=e29]
+            - generic [ref=e33]:
+              - generic [ref=e34]:
+                - text: No account?
+                - link "Create a Microsoft account" [ref=e35] [cursor=pointer]:
+                  - /url: https://login.live.com/oauth20_authorize.srf?client_id=d414ee2d-73e5-4e5b-bb16-03ef55fea597&scope=openid+profile+email&redirect_uri=https%3a%2f%2fidentity.1.azurestaticapps.net%2f.auth%2flogin%2faad%2fcallback&response_type=code+id_token&state=redir%3d%252F.auth%252Flogin%252Fdone&response_mode=form_post&nonce=f2271a221ea6473bafb5dab2eb316bf9_20260405220634&uaid=5e0407650c2442c7bb9d28f65852b5c1&msproxy=1&issuer=mso&tenant=common&ui_locales=en-US&signup=1&lw=1&fl=easi2&epctrc=Wl2arPQVP0pawRCau93t59lvG0Daopp1UNJf3bKovpo%3d0%3a1%3aCANARY%3azfDyl2HjRsu1TOHODE1EkxlIJHoDCwZz9x%2blLnADUI8%3d&epct=PAQABDgEAAACvnsHKEvvRQb3Bz3Qc7wnaRXZvU3RzQXJ0aWZhY3RzCAAAAAAAF-7rfI0-0Bb6f98p_x2ZXFSnp_A7xtvvNkZmS-j2gsi-9MOhYJxcD01IAMcqHx_ylvG_WNBiNysXVo0HtYrB2jlV6fsz6lD49g45TDANC8YtRaMFsf-MoykseLEdLaOV_3lx0drs9TqLpD3QjZG2-aD02zuQTLI6QvJcA4Y4iDdIon4fKlyTwZnPMO9wbNg19puDueYBP7jUbBtjEvdT3iAA&jshs=0
+                  - text: Create one!
+              - link "Can’t access your account?" [ref=e37] [cursor=pointer]:
+                - /url: "#"
+            - button "Next" [ref=e40] [cursor=pointer]
+      - button "Sign-in options undefined" [ref=e46] [cursor=pointer]:
+        - generic [ref=e50]: Sign-in options
+    - contentinfo [ref=e51]:
+      - generic [ref=e52]:
+        - link "Terms of use" [ref=e53] [cursor=pointer]:
+          - /url: https://www.microsoft.com/en-US/servicesagreement/
+        - link "Privacy & cookies" [ref=e54] [cursor=pointer]:
+          - /url: https://privacy.microsoft.com/en-US/privacystatement
+        - button "Click here for troubleshooting information" [ref=e55] [cursor=pointer]: ...

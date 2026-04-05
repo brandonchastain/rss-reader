@@ -135,11 +135,11 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 END;";
             command.ExecuteNonQuery();
 
-            // Index to speed up JOIN from Items → ItemContent
+            // Index for timeline ORDER BY — eliminates full-table scan + sort
             command = connection.CreateCommand();
             command.CommandText = @"
-                CREATE INDEX IF NOT EXISTS idx_itemcontent_user_feed_href
-                ON ItemContent(UserId, FeedUrl, Href);";
+                CREATE INDEX IF NOT EXISTS idx_items_timeline
+                ON Items(UserId, PublishDateOrder DESC, PublishDate DESC);";
             command.ExecuteNonQuery();
         }
     }
@@ -283,7 +283,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 command.CommandText += $" AND i.FeedUrl NOT IN ({string.Join(",", excludeParams)})";
             }
 
-            command.CommandText += " ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC /* USING INDEX idx_items_timeline */";
+            command.CommandText += " ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC";
             pageSize ??= 20; // Default page size if not provided
             page ??= 0;
             command.CommandText += " LIMIT @pageSize OFFSET @offset";

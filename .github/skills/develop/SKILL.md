@@ -62,6 +62,7 @@ Follow these phases **in order**. Each phase must complete before moving to the 
    - Navigate to `/` first (direct route navigation may cause content encoding errors with SWA CLI).
    - Wait for Blazor to load and redirect to `/timeline`.
    - Verify the changed behavior works as expected.
+   - **Content display check**: Click a post thumbnail to expand it. Verify article content is visible (not just "Published on" date and buttons). If expanded content area is empty, there is a bug.
    - Take a screenshot for confirmation.
 4. Stop the local stack using the `stop-local` skill.
 
@@ -115,7 +116,8 @@ Use the `deploy` skill to deploy. The deploy skill handles:
 After deployment, use the `playwright-browse` skill to verify on `https://rss.brandonchastain.com`:
 1. Clear Blazor service worker cache.
 2. Verify the changed behavior works in production.
-3. Take a screenshot for confirmation.
+3. **Content display check**: Expand a post and verify article content is visible in the expanded area.
+4. Take a screenshot for confirmation.
 
 ---
 
