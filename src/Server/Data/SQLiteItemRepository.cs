@@ -401,96 +401,84 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             using (var connection = new SqliteConnection(this.connectionString))
             {
                 await connection.OpenAsync();
-                using var transaction = connection.BeginTransaction();
-                try
-                {
-                    var feedTags = new Dictionary<string, IEnumerable<string>>(StringComparer.OrdinalIgnoreCase);
+                var feedTags = new Dictionary<string, IEnumerable<string>>(StringComparer.OrdinalIgnoreCase);
 
-                    foreach (var item in items)
+                foreach (var item in items)
+                {
+                    try
                     {
-                        try
+                        var user = this.userStore.GetUserById(item.UserId);
+                        NewsFeed feed = this.feedStore.GetFeed(user, item.FeedUrl);
+
+                        if (!feedTags.ContainsKey(item.FeedUrl))
                         {
-                            var user = this.userStore.GetUserById(item.UserId);
-                            NewsFeed feed = this.feedStore.GetFeed(user, item.FeedUrl);
-
-                            if (!feedTags.ContainsKey(item.FeedUrl))
-                            {
-                                feedTags[item.FeedUrl] = feed.Tags ?? [];
-                            }
-
-                            var alreadyStored = this.GetItem(user, item.Href);
-                            if (alreadyStored != null)
-                            {
-                                this.logger.LogWarning($"Item already exists in the database: {item.Href}");
-                                continue;
-                            }
-
-                            item.ThumbnailUrl = item.GetThumbnailUrl();
-
-                            if (string.IsNullOrWhiteSpace(item.ThumbnailUrl))
-                            {
-                                item.ThumbnailUrl = await this.feedThumbnailRetriever.RetrieveThumbnailUrlAsync(feed);
-                            }
-
-                            var command = connection.CreateCommand();
-                            command.CommandText = @"
-                                INSERT INTO Items (
-                                    FeedUrl,
-                                    Href,
-                                    CommentsHref,
-                                    Title,
-                                    PublishDateOrder,
-                                    PublishDate,
-                                    UserId,
-                                    ThumbnailUrl,
-                                    Tags
-                                ) 
-                                VALUES (@feedUrl, @href, @commentsHref, @title, @publishDateOrder, @publishDate, @userId, @thumbnailUrl, @tags)";
-                            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
-                            command.Parameters.AddWithValue("@href", item.Href ?? "");
-                            command.Parameters.AddWithValue("@commentsHref", (object)item.CommentsHref ?? DBNull.Value);
-                            command.Parameters.AddWithValue("@title", item.Title ?? "");
-                            command.Parameters.AddWithValue("@publishDateOrder", item.PublishDateOrder);
-                            command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
-                            command.Parameters.AddWithValue("@userId", item.UserId);
-                            command.Parameters.AddWithValue("@thumbnailUrl", (object)item.ThumbnailUrl ?? DBNull.Value);
-                            command.Parameters.AddWithValue("@tags", string.Join(",", feedTags[item.FeedUrl]));
-                            await command.ExecuteNonQueryAsync();
-
-                            command = connection.CreateCommand();
-                            command.CommandText = @"
-                                INSERT INTO ItemContent (
-                                    FeedUrl,
-                                    Href,
-                                    Title,
-                                    PublishDateOrder,
-                                    PublishDate,
-                                    Content,
-                                    UserId
-                                ) 
-                                VALUES (@feedUrl, @href, @title, @publishDateOrder, @publishDate, @content, @userId)";
-                            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
-                            command.Parameters.AddWithValue("@href", item.Href ?? "");
-                            command.Parameters.AddWithValue("@title", item.Title ?? "");
-                            command.Parameters.AddWithValue("@publishDateOrder", item.PublishDateOrder);
-                            command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
-                            command.Parameters.AddWithValue("@content", item.Content ?? "");
-                            command.Parameters.AddWithValue("@userId", item.UserId);
-                            await command.ExecuteNonQueryAsync();
+                            feedTags[item.FeedUrl] = feed.Tags ?? [];
                         }
-                        catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.Message.Contains("UNIQUE"))
+
+                        var alreadyStored = this.GetItem(user, item.Href);
+                        if (alreadyStored != null)
                         {
-                            // A duplicate entry was found, just skip it.
-                            this.logger.LogWarning(ex, "Unique constraint violation while adding items to SQLite database. Skipping duplicate item.");
+                            this.logger.LogWarning($"Item already exists in the database: {item.Href}");
+                            continue;
                         }
+
+                        item.ThumbnailUrl = item.GetThumbnailUrl();
+
+                        if (string.IsNullOrWhiteSpace(item.ThumbnailUrl))
+                        {
+                            item.ThumbnailUrl = await this.feedThumbnailRetriever.RetrieveThumbnailUrlAsync(feed);
+                        }
+
+                        var command = connection.CreateCommand();
+                        command.CommandText = @"
+                            INSERT INTO Items (
+                                FeedUrl,
+                                Href,
+                                CommentsHref,
+                                Title,
+                                PublishDateOrder,
+                                PublishDate,
+                                UserId,
+                                ThumbnailUrl,
+                                Tags
+                            ) 
+                            VALUES (@feedUrl, @href, @commentsHref, @title, @publishDateOrder, @publishDate, @userId, @thumbnailUrl, @tags)";
+                        command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
+                        command.Parameters.AddWithValue("@href", item.Href ?? "");
+                        command.Parameters.AddWithValue("@commentsHref", (object)item.CommentsHref ?? DBNull.Value);
+                        command.Parameters.AddWithValue("@title", item.Title ?? "");
+                        command.Parameters.AddWithValue("@publishDateOrder", item.PublishDateOrder);
+                        command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
+                        command.Parameters.AddWithValue("@userId", item.UserId);
+                        command.Parameters.AddWithValue("@thumbnailUrl", (object)item.ThumbnailUrl ?? DBNull.Value);
+                        command.Parameters.AddWithValue("@tags", string.Join(",", feedTags[item.FeedUrl]));
+                        await command.ExecuteNonQueryAsync();
+
+                        command = connection.CreateCommand();
+                        command.CommandText = @"
+                            INSERT INTO ItemContent (
+                                FeedUrl,
+                                Href,
+                                Title,
+                                PublishDateOrder,
+                                PublishDate,
+                                Content,
+                                UserId
+                            ) 
+                            VALUES (@feedUrl, @href, @title, @publishDateOrder, @publishDate, @content, @userId)";
+                        command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
+                        command.Parameters.AddWithValue("@href", item.Href ?? "");
+                        command.Parameters.AddWithValue("@title", item.Title ?? "");
+                        command.Parameters.AddWithValue("@publishDateOrder", item.PublishDateOrder);
+                        command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
+                        command.Parameters.AddWithValue("@content", item.Content ?? "");
+                        command.Parameters.AddWithValue("@userId", item.UserId);
+                        await command.ExecuteNonQueryAsync();
                     }
-
-                    transaction.Commit();
-                }
-                catch
-                {
-                    transaction.Rollback();
-                    throw;
+                    catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.Message.Contains("UNIQUE"))
+                    {
+                        this.logger.LogWarning(ex, "Unique constraint violation while adding items to SQLite database. Skipping duplicate item.");
+                    }
                 }
             }
         }
@@ -568,6 +556,24 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command.Parameters.AddWithValue("@href", item.Href);
             command.ExecuteNonQuery();
         }
+    }
+
+    public async Task DeleteAllItemsAsync(RssUser user)
+    {
+        using var connection = new SqliteConnection(this.connectionString);
+        await connection.OpenAsync();
+
+        var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM ItemContent WHERE UserId = @userId";
+        command.Parameters.AddWithValue("@userId", user.Id);
+        await command.ExecuteNonQueryAsync();
+
+        command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM Items WHERE UserId = @userId";
+        command.Parameters.AddWithValue("@userId", user.Id);
+        var deleted = await command.ExecuteNonQueryAsync();
+
+        this.logger.LogInformation("Deleted {Count} items for user {UserId}", deleted, user.Id);
     }
 
     public void Dispose()

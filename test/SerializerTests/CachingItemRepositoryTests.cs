@@ -63,6 +63,7 @@ internal sealed class FakeItemRepository : IItemRepository
     public void SavePost(NewsFeedItem item, RssUser user)                => SavePostCallCount++;
     public void UnsavePost(NewsFeedItem item, RssUser user)              => UnsavePostCallCount++;
     public void UpdateTags(NewsFeedItem item, string tags)               => UpdateTagsCallCount++;
+    public Task DeleteAllItemsAsync(RssUser user)                        => Task.CompletedTask;
     public void Dispose()                                                => DisposeCallCount++;
 }
 

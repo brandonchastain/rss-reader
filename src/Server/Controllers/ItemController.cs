@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using RssApp.Data;
 using RssApp.Contracts;
 using RssApp.ComponentServices;
+using RssApp.Config;
 using System.Text;
 using System.Threading.Tasks;
 using System.Security.Claims;
@@ -19,6 +20,8 @@ namespace Server.Controllers
         private readonly IFeedRepository feedRepository;
         private readonly IUserRepository userRepository;
         private readonly IUserResolver userResolver;
+        private readonly IFeedRefresher feedRefresher;
+        private readonly RssAppConfig config;
         private readonly ILogger<ItemController> logger;
 
         public ItemController(
@@ -26,6 +29,8 @@ namespace Server.Controllers
             IFeedRepository feedRepository,
             IUserRepository userRepository,
             IUserResolver userResolver,
+            IFeedRefresher feedRefresher,
+            RssAppConfig config,
             ILogger<ItemController> logger
         )
         {
@@ -33,6 +38,8 @@ namespace Server.Controllers
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
             this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
             this.userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
+            this.feedRefresher = feedRefresher ?? throw new ArgumentNullException(nameof(feedRefresher));
+            this.config = config ?? throw new ArgumentNullException(nameof(config));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -212,6 +219,25 @@ namespace Server.Controllers
             }
 
             this.itemRepository.UnsavePost(item, user);
+            return Ok();
+        }
+
+        [HttpDelete("all")]
+        public async Task<IActionResult> DeleteAllItemsAsync()
+        {
+            if (!this.config.IsTestUserEnabled)
+            {
+                return StatusCode(403, "This endpoint is only available in test mode.");
+            }
+
+            var user = this.userResolver.ResolveUser(User);
+            if (user == null)
+            {
+                return NotFound("Authenticated user not found.");
+            }
+
+            await this.itemRepository.DeleteAllItemsAsync(user);
+            this.feedRefresher.ResetRefreshCooldown();
             return Ok();
         }
     }

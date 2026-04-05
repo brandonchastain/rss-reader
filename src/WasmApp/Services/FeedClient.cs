@@ -174,6 +174,21 @@ namespace WasmApp.Services
             }
         }
 
+        public async Task<bool> ClearAllItemsAsync()
+        {
+            var url = $"{_config.ApiBaseUrl}api/item/all";
+            try
+            {
+                var response = await _httpClient.DeleteAsync(url);
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to clear all items.");
+                return false;
+            }
+        }
+
         public void Dispose()
         {
             if (!_disposed)

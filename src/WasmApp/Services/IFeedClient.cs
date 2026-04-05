@@ -23,6 +23,7 @@ public interface IFeedClient : IDisposable
     Task SavePostAsync(NewsFeedItem item);
     Task UnsavePostAsync(NewsFeedItem item);
     Task DeleteFeedAsync(string feedHref);
+    Task<bool> ClearAllItemsAsync();
     Task ImportOpmlAsync(string opmlContent);
     Task<string> ExportOpmlAsync();
 }

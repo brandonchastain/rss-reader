@@ -47,6 +47,11 @@ public class FeedRefresher : IFeedRefresher
 
     public DateTime? LastCacheReloadTime => this.lastCacheReloadTime;
 
+    public void ResetRefreshCooldown()
+    {
+        this.lastCacheReloadTime = null;
+    }
+
     public Task<bool> HasNewItemsAsync(RssUser user)
     {
         var key = user.Id;

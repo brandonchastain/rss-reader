@@ -14,4 +14,5 @@ public interface IItemRepository : IDisposable
     void UnsavePost(NewsFeedItem item, RssUser user);
     void UpdateTags(NewsFeedItem item, string tags);
     string GetItemContent(NewsFeedItem item);
+    Task DeleteAllItemsAsync(RssUser user);
 }

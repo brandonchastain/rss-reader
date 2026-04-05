@@ -149,7 +149,15 @@
         }
 
         await InvokeAsync(StateHasChanged);
-        await this.feedClient.MarkAsReadAsync(item, item.IsRead);
+        try
+        {
+            await this.feedClient.MarkAsReadAsync(item, item.IsRead);
+        }
+        catch (Exception)
+        {
+            // Best-effort — don't crash the UI if the backend is busy (e.g. during refresh).
+            // The read state is already updated locally; it will sync on next page load.
+        }
     }
 
     private async Task PreviewPostAsync(NewsFeedItem post)
@@ -193,10 +201,11 @@
     {
         if (preview)
         {
-            var tasks = new List<Task>();
-            tasks.Add(PreviewPostAsync(post));
-            tasks.Add(MarkAsReadAsync(post, true));
-            await Task.WhenAll(tasks);
+            // Update read state immediately in the UI, then fire the API call
+            // without blocking content loading. During feed refresh, MarkAsRead
+            // competes for the SQLite write lock and can hang for seconds.
+            _ = MarkAsReadAsync(post, true);
+            await PreviewPostAsync(post);
         }
     }
 }

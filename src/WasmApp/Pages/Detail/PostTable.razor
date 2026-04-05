@@ -271,7 +271,7 @@
     {
         base.OnParametersSet();
         // When Posts parameter changes, we're done loading
-        if (Posts != null && Posts.Any())
+        if (Posts != null)
         {
             isLoading = false;
             _isInitialLoad = false;
