@@ -71,9 +71,9 @@ if ($LASTEXITCODE -ne 0) {
 # ── Step 2: Build & push backend Docker image ─────────────────────────────────
 
 Write-Host "`nBuilding backend Docker image: $Image" -ForegroundColor Cyan
-Push-Location $SrcDir
+Push-Location $RepoRoot
 try {
-    docker build -t $Image -f Server/Dockerfile .
+    docker build -t $Image -f src/Server/Dockerfile .
     if ($LASTEXITCODE -ne 0) { Write-Error "docker build failed."; exit 1 }
 } finally {
     Pop-Location

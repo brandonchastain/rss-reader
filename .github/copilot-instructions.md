@@ -36,8 +36,8 @@ dotnet test rss-reader.sln
 # Run a single test class
 dotnet test test/SerializerTests --filter "ClassName=SerializerTests.SerializerTests"
 
-# Build Docker image for the backend (run from src/)
-docker build -f Server/Dockerfile -t rss-reader-api:local .
+# Build Docker image for the backend (run from repo root)
+docker build -f src/Server/Dockerfile -t rss-reader-api:local .
 
 # Build and deploy the frontend (run from rss-reader/)
 swa build

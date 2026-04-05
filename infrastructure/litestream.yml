@@ -1,0 +1,12 @@
+# Litestream configuration for Azure Blob Storage replication
+# Environment variables used:
+#   LITESTREAM_AZURE_ACCOUNT_NAME - Azure Storage account name
+#   LITESTREAM_AZURE_ACCOUNT_KEY  - Azure Storage account key
+
+dbs:
+  - path: /tmp/storage.db
+    replicas:
+      - type: abs
+        account-name: ${LITESTREAM_AZURE_ACCOUNT_NAME}
+        bucket: litestream
+        path: storage.db
