@@ -6,6 +6,7 @@
 @inject ILogger<Index> logger
 @inject IUserClient userClient
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JSRuntime
 
 <PageTitle>RssReader | A simple browser-based RSS reader</PageTitle>
 
@@ -47,6 +48,7 @@
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();
             if (authState.User?.Identity?.IsAuthenticated == true)
             {
+                await JSRuntime.InvokeVoidAsync("rssApp.setReturningUser");
                 NavigationManager.NavigateTo("/timeline", replace: true);
                 return;
             }
