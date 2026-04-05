@@ -175,20 +175,34 @@ function extractUserFromEasyAuth(context, request) {
 
 async function forwardHealthCheck(context, request) {
     const backendUrl = process.env.RSSREADER_API_URL;
+    const readerUrl = process.env.RSSREADER_READER_API_URL;
     if (!backendUrl) {
         return { status: 200, body: 'proxy-only-ok' };
     }
 
     try {
-        const targetUrl = `${backendUrl.replace(/\/$/, '')}/api/healthz`;
-        const response = await fetch(targetUrl);
+        const writerTarget = `${backendUrl.replace(/\/$/, '')}/api/healthz`;
+        const writerResp = await fetch(writerTarget);
+        const writerBody = await writerResp.text();
+
+        let readerBody = 'not configured';
+        if (readerUrl) {
+            try {
+                const readerTarget = `${readerUrl.replace(/\/$/, '')}/api/healthz`;
+                const readerResp = await fetch(readerTarget);
+                readerBody = await readerResp.text();
+            } catch (e) {
+                readerBody = `error: ${e.message}`;
+            }
+        }
+
         return {
-            status: response.status,
+            status: writerResp.status,
             headers: {
-                'Content-Type': 'text/plain',
+                'Content-Type': 'application/json',
                 ...getCorsHeaders(request)
             },
-            body: await response.text()
+            body: JSON.stringify({ writer: JSON.parse(writerBody), reader: readerUrl ? JSON.parse(readerBody) : readerBody, readEndpoints: [...READ_ENDPOINTS] })
         };
     } catch (error) {
         context.log('Health check forwarding failed:', error.message);
@@ -283,6 +297,7 @@ async function forwardRequestToBackend(context, request, path, userPrincipal) {
             status: fallbackResponse.status,
             headers: { 
                 'Content-Type': fallbackResponse.headers.get('content-type') || 'application/json',
+                'X-Served-By': 'writer-fallback',
                 ...getCorsHeaders(request)
             },
             body: fallbackText
@@ -291,10 +306,12 @@ async function forwardRequestToBackend(context, request, path, userPrincipal) {
 
     const responseText = await response.text();
 
+    const servedBy = (backendUrl === readerUrl) ? 'reader' : 'writer';
     return {
         status: response.status,
         headers: { 
             'Content-Type': response.headers.get('content-type') || 'application/json',
+            'X-Served-By': servedBy,
             ...getCorsHeaders(request)
         },
         body: responseText

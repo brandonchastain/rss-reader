@@ -51,7 +51,7 @@ namespace Server.Controllers
 
             if (import.UserId != authenticatedUser.Id)
             {
-                return Forbid("You can only import OPML for your own account.");
+                return StatusCode(403, "You can only import OPML for your own account.");
             }
 
             var userId = import.UserId;
@@ -80,7 +80,7 @@ namespace Server.Controllers
 
             if (userId != authenticatedUser.Id)
             {
-                return Forbid("You can only export OPML for your own account.");
+                return StatusCode(403, "You can only export OPML for your own account.");
             }
 
             var user = this.userRepository.GetUserById(userId);
@@ -149,7 +149,7 @@ namespace Server.Controllers
 
             if (feed.UserId != authenticatedUser.Id)
             {
-                return Forbid("You can only add tags to your own feeds.");
+                return StatusCode(403, "You can only add tags to your own feeds.");
             }
 
             var user = this.userRepository.GetUserById(feed.UserId);
@@ -203,7 +203,7 @@ namespace Server.Controllers
 
             if (userId != authenticatedUser.Id)
             {
-                return Forbid("You can only access your own tags.");
+                return StatusCode(403, "You can only access your own tags.");
             }
 
             var user = this.userRepository.GetUserById(userId);
@@ -260,7 +260,7 @@ namespace Server.Controllers
 
             if (feed.UserId != authenticatedUser.Id)
             {
-                return Forbid("You can only add feeds to your own account.");
+                return StatusCode(403, "You can only add feeds to your own account.");
             }
 
             try
