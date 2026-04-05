@@ -22,7 +22,7 @@ public class SQLiteFeedRepository : IFeedRepository
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             
             // Enable WAL mode for better concurrency on network file systems
             var pragmaCommand = connection.CreateCommand();
@@ -53,7 +53,7 @@ public class SQLiteFeedRepository : IFeedRepository
 
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT f.Id, f.Url, f.UserId, f.IsPaywalled, f.Tags FROM Feeds f
@@ -83,7 +83,7 @@ public class SQLiteFeedRepository : IFeedRepository
 
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT f.Id, f.Url, f.UserId, f.IsPaywalled, f.Tags FROM Feeds f
@@ -115,7 +115,7 @@ public class SQLiteFeedRepository : IFeedRepository
         {
             using (var connection = new SqliteConnection(this.connectionString))
             {
-                connection.Open();
+                connection.OpenWithPragmas();
                 var command = connection.CreateCommand();
                 command.CommandText = "INSERT INTO Feeds (Url, UserId) VALUES (@url, @userId)";
                 command.Parameters.AddWithValue("@url", feed.Href);
@@ -126,7 +126,7 @@ public class SQLiteFeedRepository : IFeedRepository
 
             using (var connection = new SqliteConnection(this.connectionString))
             {
-                connection.Open();
+                connection.OpenWithPragmas();
                 var command = connection.CreateCommand();
                 command.CommandText = "SELECT Id FROM Feeds WHERE Url = @url AND UserId = @userId";
                 command.Parameters.AddWithValue("@url", feed.Href);
@@ -146,7 +146,7 @@ public class SQLiteFeedRepository : IFeedRepository
             // Feed already exists, just update the ID
             using (var connection = new SqliteConnection(this.connectionString))
             {
-                connection.Open();
+                connection.OpenWithPragmas();
                 var command = connection.CreateCommand();
                 command.CommandText = "SELECT Id FROM Feeds WHERE Url = @url AND UserId = @userId";
                 command.Parameters.AddWithValue("@url", feed.Href);
@@ -167,7 +167,7 @@ public class SQLiteFeedRepository : IFeedRepository
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "SELECT Tags FROM Feeds WHERE Id = @feedId";
             command.Parameters.AddWithValue("@feedId", feedId);
@@ -200,7 +200,7 @@ public class SQLiteFeedRepository : IFeedRepository
 
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "UPDATE Feeds SET Tags = @tags WHERE Id = @feedId AND UserId = @userId";
             command.Parameters.AddWithValue("@feedId", feed.FeedId);
@@ -265,7 +265,7 @@ public class SQLiteFeedRepository : IFeedRepository
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = """
                 DELETE FROM Feeds

@@ -22,7 +22,7 @@ public class SQLiteUserRepository : IUserRepository
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             
             // Enable WAL mode for better concurrency on network file systems
             var pragmaCommand = connection.CreateCommand();
@@ -66,7 +66,7 @@ public class SQLiteUserRepository : IUserRepository
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "SELECT * FROM Users WHERE Username = @username";
             command.Parameters.AddWithValue("@username", username);
@@ -87,7 +87,7 @@ public class SQLiteUserRepository : IUserRepository
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "SELECT * FROM Users WHERE Id = @userId";
             command.Parameters.AddWithValue("@userId", userId);
@@ -109,7 +109,7 @@ public class SQLiteUserRepository : IUserRepository
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "SELECT * FROM Users WHERE AadUserId = @aadUserId";
             command.Parameters.AddWithValue("@aadUserId", aadUserId);
@@ -130,7 +130,7 @@ public class SQLiteUserRepository : IUserRepository
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "UPDATE Users SET AadUserId = @aadUserId WHERE Id = @userId";
             command.Parameters.AddWithValue("@aadUserId", aadUserId);
@@ -143,7 +143,7 @@ public class SQLiteUserRepository : IUserRepository
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "INSERT INTO Users (Username";
             if (id.HasValue)
@@ -169,7 +169,7 @@ public class SQLiteUserRepository : IUserRepository
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "SELECT * FROM Users";
 

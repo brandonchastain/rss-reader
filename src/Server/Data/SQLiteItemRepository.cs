@@ -34,7 +34,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             // Set WAL journal mode for better concurrency
             var pragmaCommand = connection.CreateCommand();
 
@@ -324,7 +324,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT * FROM Items
@@ -351,7 +351,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT * FROM Items
@@ -378,7 +378,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = @"
                 SELECT Content 
@@ -492,7 +492,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = @"
                 UPDATE Items
@@ -510,7 +510,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = @"
                 UPDATE Items
@@ -528,7 +528,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = @"
                 UPDATE Items
@@ -545,7 +545,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         using (var connection = new SqliteConnection(this.connectionString))
         {
-            connection.Open();
+            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = @"
                 UPDATE Items

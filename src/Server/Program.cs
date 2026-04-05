@@ -2,6 +2,7 @@ using Microsoft.Extensions.Caching.Memory;
 using RssApp.ComponentServices;
 using RssApp.Config;
 using RssApp.Data;
+using RssApp.Filters;
 using RssApp.RssClient;
 using RssApp.Serialization;
 using RssReader.Server.Services;
@@ -15,7 +16,7 @@ builder.Configuration
     .AddEnvironmentVariables();
 var config = RssAppConfig.LoadFromAppSettings(builder.Configuration);
 // Readers still need ReadWriteCreate for repo startup schema init (CREATE TABLE, etc.)
-// "Read-only" is enforced at the app level (no write services), not the SQLite level.
+// After init, DatabaseMode.EnableQueryOnly() activates PRAGMA query_only on all connections.
 string dbConnectionString = $"Data Source={config.DbLocation};Mode=ReadWriteCreate;Cache=Shared;Pooling=True";
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
@@ -102,7 +103,13 @@ else
     builder.Services.AddSingleton<IFeedRefresher, NoOpFeedRefresher>();
 }
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    if (config.IsReadOnly)
+    {
+        options.Filters.Add<ReadOnlyActionFilter>();
+    }
+});
 
 if (!builder.Environment.IsDevelopment())
 {
@@ -122,6 +129,14 @@ if (!config.IsReadOnly)
 var a = app.Services.GetRequiredService<IFeedRepository>();
 var b = app.Services.GetRequiredService<IUserRepository>();
 var c = app.Services.GetRequiredService<IItemRepository>();
+
+// After schema init, enable PRAGMA query_only on all subsequent connections.
+// This is the DB-level backstop — even if a write request bypasses the HTTP
+// filter (e.g. GET markAsRead), SQLite will reject the mutation.
+if (config.IsReadOnly)
+{
+    DatabaseMode.EnableQueryOnly();
+}
 
 // Enable middleware 
 app.UseHttpsRedirection();
