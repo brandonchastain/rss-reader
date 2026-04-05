@@ -125,6 +125,7 @@ Skills live in `.github/skills/<name>/SKILL.md`. They are step-by-step runbooks 
 | `run-locally` | `skills/run-locally/SKILL.md` | Start the full local dev stack: Docker backend container + SWA emulator frontend at `http://localhost:4280`. Auth is bypassed via `RssAppConfig__IsTestUserEnabled=true` (test user `testuser2`). |
 | `stop-local` | `skills/stop-local/SKILL.md` | Stop all locally running servers: SWA emulator (port 4280), Azure Functions host (port 7071), Blazor dev server, `dotnet watch` processes, and the backend Docker container. |
 | `playwright-browse` | `skills/playwright-browse/SKILL.md` | Start an interactive Playwright browser session. Navigates to a URL (default: `https://rss.brandonchastain.com`), bypasses the Blazor service worker cache, takes snapshots/screenshots, and interacts with the page. Handles the login prompt if the user is not authenticated. |
+| `develop` | `skills/develop/SKILL.md` | **Default workflow for all code changes.** End-to-end TDD: Plan → Red (failing tests) → Green (implement) → Build & Test → Local Smoke Test (Playwright) → PR → Merge → Deploy → Production Smoke Test. Always use this skill when asked to implement a feature or fix a bug. |
 
 ### Deploy skill — validation step
 
