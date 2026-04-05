@@ -77,6 +77,19 @@ namespace WasmApp.Services
             return await _httpClient.GetFromJsonAsync<List<string>>($"{_config.ApiBaseUrl}api/feed/tags?userId={user.Id}");
         }
 
+        public async Task<IEnumerable<TagSetting>> GetTagSettingsAsync()
+        {
+            return await _httpClient.GetFromJsonAsync<List<TagSetting>>($"{_config.ApiBaseUrl}api/feed/tagSettings");
+        }
+
+        public async Task<IEnumerable<TagSetting>> SetTagHiddenAsync(string tag, bool isHidden)
+        {
+            var setting = new TagSetting { Tag = tag, IsHidden = isHidden };
+            var response = await _httpClient.PutAsJsonAsync($"{_config.ApiBaseUrl}api/feed/tagSettings", setting);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<List<TagSetting>>();
+        }
+
         public async Task SavePostAsync(NewsFeedItem item)
         {
             await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/item/save", item);

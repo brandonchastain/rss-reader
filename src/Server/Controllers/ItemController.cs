@@ -54,9 +54,16 @@ namespace Server.Controllers
                 return NotFound("Authenticated user not found.");
             }
 
+            // When no explicit tag filter, exclude feeds with hidden tags
+            IEnumerable<string> excludeFeedUrls = null;
+            if (string.IsNullOrWhiteSpace(filterTag))
+            {
+                excludeFeedUrls = this.feedRepository.GetHiddenFeedUrls(user);
+            }
+
             // TODO: authenticate the real user
             var feed = new NewsFeed("%", user.Id);
-            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize);
+            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, excludeFeedUrls: excludeFeedUrls);
             var result = items
                 .DistinctBy(i => i.Href)
                 .OrderByDescending(i => i.PublishDateOrder)

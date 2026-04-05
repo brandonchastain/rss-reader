@@ -220,6 +220,40 @@ namespace Server.Controllers
             return Ok(tags);
         }
 
+        [HttpGet]
+        [Route("tagSettings")]
+        public IActionResult GetTagSettings()
+        {
+            var user = this.userResolver.ResolveUser(User);
+            if (user == null)
+            {
+                return NotFound("Authenticated user not found.");
+            }
+
+            var settings = this.feedRepository.GetTagSettings(user);
+            return Ok(settings);
+        }
+
+        [HttpPut]
+        [Route("tagSettings")]
+        public IActionResult SetTagHidden([FromBody] TagSetting setting)
+        {
+            if (setting == null || string.IsNullOrWhiteSpace(setting.Tag))
+            {
+                return BadRequest("Tag setting is required.");
+            }
+
+            var user = this.userResolver.ResolveUser(User);
+            if (user == null)
+            {
+                return NotFound("Authenticated user not found.");
+            }
+
+            this.feedRepository.SetTagHidden(user, setting.Tag, setting.IsHidden);
+            var settings = this.feedRepository.GetTagSettings(user);
+            return Ok(settings);
+        }
+
         // GET: api/feed
         [HttpGet]
         public IActionResult GetFeeds()

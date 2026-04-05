@@ -213,7 +213,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         int? page = null,
         int? pageSize = null,
         long? lastId = null,
-        string lastPublishDate = null)
+        string lastPublishDate = null,
+        IEnumerable<string> excludeFeedUrls = null)
     {
         var items = new List<NewsFeedItem>();
         var user = this.userStore.GetUserById(feed.UserId);
@@ -263,6 +264,19 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             {
                 command.CommandText += " AND i.Tags LIKE @tagName";
                 command.Parameters.AddWithValue("@tagName", $"%{filterTag}%");
+            }
+
+            var excludeUrls = excludeFeedUrls?.ToList();
+            if (excludeUrls != null && excludeUrls.Count > 0)
+            {
+                var excludeParams = new List<string>();
+                for (int idx = 0; idx < excludeUrls.Count; idx++)
+                {
+                    var paramName = $"@excludeUrl{idx}";
+                    excludeParams.Add(paramName);
+                    command.Parameters.AddWithValue(paramName, excludeUrls[idx]);
+                }
+                command.CommandText += $" AND i.FeedUrl NOT IN ({string.Join(",", excludeParams)})";
             }
 
             command.CommandText += " ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC /* USING INDEX idx_items_timeline */";

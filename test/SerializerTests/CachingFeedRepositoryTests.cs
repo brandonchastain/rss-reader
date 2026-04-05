@@ -61,6 +61,10 @@ internal sealed class FakeFeedRepository : IFeedRepository
         var existing = Feeds.FirstOrDefault(f => f.FeedId == feed.FeedId);
         existing?.Tags?.Add(tag);
     }
+
+    public IEnumerable<TagSetting> GetTagSettings(RssUser user) => Enumerable.Empty<TagSetting>();
+    public void SetTagHidden(RssUser user, string tag, bool isHidden) { }
+    public IEnumerable<string> GetHiddenFeedUrls(RssUser user) => Enumerable.Empty<string>();
 }
 
 // ---------------------------------------------------------------------------

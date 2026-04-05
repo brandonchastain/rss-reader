@@ -45,6 +45,17 @@ public class SQLiteFeedRepository : IFeedRepository
                     FOREIGN KEY (UserId) REFERENCES Users(Id)
                 )";
             command.ExecuteNonQuery();
+
+            var tagSettingsCommand = connection.CreateCommand();
+            tagSettingsCommand.CommandText = @"
+                CREATE TABLE IF NOT EXISTS UserTagSettings (
+                    UserId INTEGER NOT NULL,
+                    Tag TEXT NOT NULL,
+                    IsHidden BOOLEAN NOT NULL DEFAULT 0,
+                    PRIMARY KEY (UserId, Tag),
+                    FOREIGN KEY (UserId) REFERENCES Users(Id)
+                )";
+            tagSettingsCommand.ExecuteNonQuery();
         }
     }
 
@@ -276,5 +287,84 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@userId", user.Id);
             command.ExecuteNonQuery();
         }
+    }
+
+    public IEnumerable<TagSetting> GetTagSettings(RssUser user)
+    {
+        var allTags = GetFeeds(user)
+            .SelectMany(f => f.Tags ?? Enumerable.Empty<string>())
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var hiddenTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        using (var connection = new SqliteConnection(this.connectionString))
+        {
+            connection.OpenWithPragmas();
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT Tag FROM UserTagSettings WHERE UserId = @userId AND IsHidden = 1";
+            command.Parameters.AddWithValue("@userId", user.Id);
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    hiddenTags.Add(reader.GetString(0));
+                }
+            }
+        }
+
+        return allTags.Select(t => new TagSetting
+        {
+            Tag = t,
+            IsHidden = hiddenTags.Contains(t)
+        }).OrderBy(t => t.Tag).ToList();
+    }
+
+    public void SetTagHidden(RssUser user, string tag, bool isHidden)
+    {
+        using (var connection = new SqliteConnection(this.connectionString))
+        {
+            connection.OpenWithPragmas();
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                INSERT INTO UserTagSettings (UserId, Tag, IsHidden)
+                VALUES (@userId, @tag, @isHidden)
+                ON CONFLICT(UserId, Tag) DO UPDATE SET IsHidden = excluded.IsHidden";
+            command.Parameters.AddWithValue("@userId", user.Id);
+            command.Parameters.AddWithValue("@tag", tag);
+            command.Parameters.AddWithValue("@isHidden", isHidden);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    public IEnumerable<string> GetHiddenFeedUrls(RssUser user)
+    {
+        var hiddenTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        using (var connection = new SqliteConnection(this.connectionString))
+        {
+            connection.OpenWithPragmas();
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT Tag FROM UserTagSettings WHERE UserId = @userId AND IsHidden = 1";
+            command.Parameters.AddWithValue("@userId", user.Id);
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    hiddenTags.Add(reader.GetString(0));
+                }
+            }
+        }
+
+        if (!hiddenTags.Any())
+        {
+            return Enumerable.Empty<string>();
+        }
+
+        return GetFeeds(user)
+            .Where(f => f.Tags != null && f.Tags.Any(t => hiddenTags.Contains(t)))
+            .Select(f => f.Href)
+            .ToList();
     }
 }

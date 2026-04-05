@@ -107,8 +107,9 @@ public sealed class CachingItemRepository : IItemRepository
         int? page = null,
         int? pageSize = null,
         long? lastId = null,
-        string lastPublishDate = null)
-        => _inner.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId, lastPublishDate);
+        string lastPublishDate = null,
+        IEnumerable<string> excludeFeedUrls = null)
+        => _inner.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId, lastPublishDate, excludeFeedUrls);
 
     /// <inheritdoc/>
     public Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize)

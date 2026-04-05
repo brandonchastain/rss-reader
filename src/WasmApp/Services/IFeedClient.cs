@@ -19,6 +19,8 @@ public interface IFeedClient : IDisposable
     Task<string> GetItemContentAsync(NewsFeedItem item);
     Task AddTagAsync(NewsFeed feed, string tag);
     Task<IEnumerable<string>> GetUserTagsAsync(RssUser user);
+    Task<IEnumerable<TagSetting>> GetTagSettingsAsync();
+    Task<IEnumerable<TagSetting>> SetTagHiddenAsync(string tag, bool isHidden);
     Task MarkAsReadAsync(NewsFeedItem item, bool isRead);
     Task SavePostAsync(NewsFeedItem item);
     Task UnsavePostAsync(NewsFeedItem item);

@@ -15,4 +15,10 @@ public interface IFeedRepository
     void AddTag(NewsFeed feed, string tag);
 
     void DeleteFeed(RssUser user, string url);
+
+    IEnumerable<TagSetting> GetTagSettings(RssUser user);
+
+    void SetTagHidden(RssUser user, string tag, bool isHidden);
+
+    IEnumerable<string> GetHiddenFeedUrls(RssUser user);
 }
