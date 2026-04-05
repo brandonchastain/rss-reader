@@ -49,6 +49,7 @@ else if (hasSearched)
 
     private async Task SearchPosts()
     {
+        ResetPagination();
         Items = await this.GetPostsAsync();
         hasSearched = true;
         await InvokeAsync(StateHasChanged);

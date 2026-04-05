@@ -8,6 +8,8 @@
     private bool _isRefreshing;
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
     public int Page { get; set; } = 0;
+    public long? CursorPublishDateOrder { get; set; }
+    public long? CursorId { get; set; }
     protected bool initialized = false;
 
     public void Dispose()
@@ -19,6 +21,24 @@
     {
         // overridden
         throw new NotImplementedException();
+    }
+
+    protected void ResetPagination()
+    {
+        Items.Clear();
+        Page = 0;
+        CursorPublishDateOrder = null;
+        CursorId = null;
+    }
+
+    protected void UpdateCursorFromItems(IEnumerable<NewsFeedItem> items)
+    {
+        var lastItem = items.LastOrDefault();
+        if (lastItem != null && long.TryParse(lastItem.Id, out var parsedId))
+        {
+            CursorPublishDateOrder = lastItem.PublishDateOrder;
+            CursorId = parsedId;
+        }
     }
 
     protected async Task UpdatePage(int page)
@@ -51,8 +71,7 @@
             
             if (UpdateFilters(filters))
             {
-                Items.Clear();
-                Page = 0;
+                ResetPagination();
             }
             
             var newPageRes = await this.GetPostsAsync();
@@ -60,6 +79,12 @@
             var existingHrefs = new HashSet<string>(Items.Select(i => i.Href), StringComparer.OrdinalIgnoreCase);
             var dedupedNewPosts = newPageRes.Where(i => !existingHrefs.Contains(i.Href)).ToList();
             Items.AddRange(dedupedNewPosts);
+
+            // Update cursor from the new page results (not deduplicated — use original to get true last item)
+            if (newPageRes.Any())
+            {
+                UpdateCursorFromItems(newPageRes);
+            }
             
             this.StateHasChanged();
         }

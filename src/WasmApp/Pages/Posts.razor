@@ -40,7 +40,7 @@
     protected override async Task<List<NewsFeedItem>> GetPostsAsync()
     {
         var decodedUrl = System.Net.WebUtility.UrlDecode(Href);
-        var posts = await this.feedClient.GetFeedItemsAsync(new NewsFeed(decodedUrl, -1), Page);
+        var posts = await this.feedClient.GetFeedItemsAsync(new NewsFeed(decodedUrl, -1), Page, cursorPublishDateOrder: CursorPublishDateOrder, cursorId: CursorId);
         return posts?.ToList() ?? new List<NewsFeedItem>();
     }
 }

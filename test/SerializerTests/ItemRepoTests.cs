@@ -171,8 +171,81 @@ public sealed class ItemRepoTests
         Assert.IsTrue(reader.Read(), "idx_items_timeline should exist on Items table");
         var sql = reader.GetString(1);
         Assert.IsTrue(sql.Contains("PublishDateOrder"), "Timeline index should cover PublishDateOrder");
-        Assert.IsTrue(sql.Contains("PublishDate"), "Timeline index should cover PublishDate");
         Assert.IsTrue(sql.Contains("UserId"), "Timeline index should cover UserId");
+        Assert.IsTrue(sql.Contains("Id"), "Timeline index should cover Id for cursor pagination tie-breaking");
+    }
+
+    [TestMethod]
+    public async Task GetItemsAsync_Cursor_Should_Return_Next_Page()
+    {
+        var (itemRepo, user, feed) = SetupTestRepo("cursor_pagination_test.db");
+
+        // Insert 5 items with distinct timestamps
+        for (int i = 0; i < 5; i++)
+        {
+            var item = new NewsFeedItem("0", 0, $"Article {i}", $"https://example.com/article-{i}", null, "2025-01-01", $"<p>Content {i}</p>", null)
+            {
+                FeedUrl = feed.Href,
+                PublishDateOrder = 1000 + i
+            };
+            await itemRepo.AddItemsAsync(new[] { item });
+        }
+
+        var timelineFeed = new NewsFeed("%", user.Id);
+
+        // Get first page of 2
+        var page1 = (await itemRepo.GetItemsAsync(timelineFeed, false, false, null, 0, 2)).ToList();
+        Assert.AreEqual(2, page1.Count, "First page should have 2 items");
+        Assert.AreEqual(1004, page1[0].PublishDateOrder, "First item should be newest (1004)");
+        Assert.AreEqual(1003, page1[1].PublishDateOrder, "Second item should be 1003");
+
+        // Get second page using cursor from last item of page 1
+        var lastItem = page1.Last();
+        var cursorOrder = lastItem.PublishDateOrder;
+        var cursorId = long.Parse(lastItem.Id);
+
+        var page2 = (await itemRepo.GetItemsAsync(timelineFeed, false, false, null, 0, 2,
+            lastId: cursorId, lastPublishDateOrder: cursorOrder)).ToList();
+        Assert.AreEqual(2, page2.Count, "Second cursor page should have 2 items");
+        Assert.AreEqual(1002, page2[0].PublishDateOrder, "Cursor page first item should be 1002");
+        Assert.AreEqual(1001, page2[1].PublishDateOrder, "Cursor page second item should be 1001");
+
+        // No overlap between pages
+        var page1Ids = page1.Select(i => i.Id).ToHashSet();
+        Assert.IsFalse(page2.Any(i => page1Ids.Contains(i.Id)), "Cursor pages should not overlap");
+    }
+
+    [TestMethod]
+    public async Task GetItemsAsync_Cursor_Should_Handle_Tied_PublishDateOrder()
+    {
+        var (itemRepo, user, feed) = SetupTestRepo("cursor_tie_test.db");
+
+        // Insert 4 items with SAME timestamp (ties)
+        for (int i = 0; i < 4; i++)
+        {
+            var item = new NewsFeedItem("0", 0, $"Tied Article {i}", $"https://example.com/tied-{i}", null, "2025-01-01", $"<p>Tied {i}</p>", null)
+            {
+                FeedUrl = feed.Href,
+                PublishDateOrder = 5000 // all same timestamp
+            };
+            await itemRepo.AddItemsAsync(new[] { item });
+        }
+
+        var timelineFeed = new NewsFeed("%", user.Id);
+
+        // Get first page of 2
+        var page1 = (await itemRepo.GetItemsAsync(timelineFeed, false, false, null, 0, 2)).ToList();
+        Assert.AreEqual(2, page1.Count, "First page should have 2 items");
+
+        // Use cursor — should get next 2 items despite same PublishDateOrder
+        var lastItem = page1.Last();
+        var page2 = (await itemRepo.GetItemsAsync(timelineFeed, false, false, null, 0, 2,
+            lastId: long.Parse(lastItem.Id), lastPublishDateOrder: lastItem.PublishDateOrder)).ToList();
+        Assert.AreEqual(2, page2.Count, "Second cursor page should have 2 items even with tied timestamps");
+
+        // No overlap
+        var page1Ids = page1.Select(i => i.Id).ToHashSet();
+        Assert.IsFalse(page2.Any(i => page1Ids.Contains(i.Id)), "Cursor pages with ties should not overlap");
     }
 
     [TestMethod]
