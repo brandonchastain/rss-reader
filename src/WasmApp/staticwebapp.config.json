@@ -6,23 +6,28 @@
     },
     {
       "route": "/timeline*",
-      "allowedRoles": ["authenticated"]
+      "allowedRoles": ["authenticated"],
+      "rewrite": "/index.html"
     },
     {
       "route": "/feeds*",
-      "allowedRoles": ["authenticated"]
+      "allowedRoles": ["authenticated"],
+      "rewrite": "/index.html"
     },
     {
       "route": "/tags*",
-      "allowedRoles": ["authenticated"]
+      "allowedRoles": ["authenticated"],
+      "rewrite": "/index.html"
     },
     {
       "route": "/search*",
-      "allowedRoles": ["authenticated"]
+      "allowedRoles": ["authenticated"],
+      "rewrite": "/index.html"
     },
     {
       "route": "/posts*",
-      "allowedRoles": ["authenticated"]
+      "allowedRoles": ["authenticated"],
+      "rewrite": "/index.html"
     },
     {
       "route": "/_framework/blazor.boot.json",
@@ -53,12 +58,12 @@
       "headers": {
         "cache-control": "public, max-age=31536000, immutable"
       }
+    },
+    {
+      "route": "/*",
+      "rewrite": "/index.html"
     }
   ],
-  "navigationFallback": {
-    "rewrite": "/index.html",
-    "exclude": ["/.auth/*"]
-  },
   "responseOverrides": {
     "401": {
       "redirect": "/.auth/login/aad",
