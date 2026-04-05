@@ -5,6 +5,30 @@ description: Start a Playwright browser session to interactively browse a URL. U
 
 Start an interactive Playwright browsing session by following these steps.
 
+## Step 0: Recover from stale Firefox profile lock (if needed)
+
+The Playwright MCP server uses a persistent Firefox profile at `%LOCALAPPDATA%\ms-playwright\mcp-firefox`. If a previous session didn't shut down cleanly, stale Firefox processes may hold `parent.lock`, causing new launches to silently exit with code 0.
+
+**Run this recovery procedure BEFORE every Playwright session:**
+
+```powershell
+# Kill any stale Firefox processes that may be holding the profile lock
+$staleFirefox = Get-Process -Name firefox -ErrorAction SilentlyContinue
+if ($staleFirefox) {
+    foreach ($proc in $staleFirefox) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2
+}
+# Remove the stale profile directory so Firefox starts fresh
+$profileDir = "$env:LOCALAPPDATA\ms-playwright\mcp-firefox"
+if (Test-Path $profileDir) {
+    Remove-Item -Recurse -Force $profileDir -ErrorAction SilentlyContinue
+}
+```
+
+After running this, proceed to Step 1. If `browser_navigate` still fails with a launch error after this cleanup, run `browser_install` and try again.
+
 ## Step 1: Verify the Playwright MCP tools are available
 
 Check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snapshot`, `browser_click`) are listed in your available tools.
