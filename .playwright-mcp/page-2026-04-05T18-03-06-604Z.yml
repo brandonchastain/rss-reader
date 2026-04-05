@@ -1,0 +1,331 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - link "RssReader" [ref=e7] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e8]:
+      - link "Timeline" [ref=e9] [cursor=pointer]:
+        - /url: /timeline
+      - link "Search" [ref=e10] [cursor=pointer]:
+        - /url: /search
+      - link "Feeds" [ref=e11] [cursor=pointer]:
+        - /url: /feeds
+      - link "Tags" [ref=e12] [cursor=pointer]:
+        - /url: /tags
+      - link "Privacy" [ref=e13] [cursor=pointer]:
+        - /url: /privacy
+    - generic [ref=e15]:
+      - button "" [ref=e16] [cursor=pointer]:
+        - generic [ref=e17]: 
+      - button "" [ref=e18] [cursor=pointer]:
+        - generic [ref=e19]: 
+      - button "[unread]" [ref=e20] [cursor=pointer]
+      - button "[saved]" [ref=e21] [cursor=pointer]
+      - button "[filters]" [ref=e23] [cursor=pointer]
+    - link "Logout" [ref=e25] [cursor=pointer]:
+      - /url: /.auth/logout
+  - main [ref=e26]:
+    - article [ref=e27]:
+      - generic [ref=e28]:
+        - generic [ref=e29]: Friday, Apr 3 2026
+        - generic [ref=e30]:
+          - generic [ref=e31]:
+            - img "Thumbnail" [ref=e33]
+            - paragraph [ref=e35]:
+              - generic [ref=e36]: test
+              - generic [ref=e37]: weather
+              - link "FINALLY, Some Warm Weather" [ref=e38] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/04/finally-some-warm-weather.html
+              - button "[mark unread]" [ref=e39] [cursor=pointer]
+              - button "[save]" [ref=e40] [cursor=pointer]
+              - link "blogspot.com" [ref=e41] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Fcliffmass.blogspot.com%2Ffeeds%2Fposts%2Fdefault%3Falt%3Drss
+          - text: 
+          - generic [ref=e42]:
+            - img "Thumbnail" [ref=e44]
+            - paragraph [ref=e46]:
+              - generic [ref=e47]: test
+              - generic [ref=e48]: newtag
+              - generic [ref=e49]: entertag
+              - generic [ref=e50]: ok
+              - link "OpenClaw gives users yet another reason to be freaked out about security" [ref=e51] [cursor=pointer]:
+                - /url: https://arstechnica.com/security/2026/04/heres-why-its-prudent-for-openclaw-users-to-assume-compromise/
+              - button "[mark read]" [ref=e52] [cursor=pointer]
+              - button "[save]" [ref=e53] [cursor=pointer]
+              - button "[comments]" [ref=e54] [cursor=pointer]
+              - link "arstechnica.com" [ref=e55] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Ffeeds.arstechnica.com%2Farstechnica%2Ftechnology-lab
+          - text: 
+        - generic [ref=e56]: Thursday, Apr 2 2026
+        - generic [ref=e57]:
+          - generic [ref=e58]:
+            - img "Thumbnail" [ref=e60]
+            - paragraph [ref=e62]:
+              - generic [ref=e63]: test
+              - generic [ref=e64]: newtag
+              - generic [ref=e65]: entertag
+              - generic [ref=e66]: ok
+              - link "New Rowhammer attacks give complete control of machines running Nvidia GPUs" [ref=e67] [cursor=pointer]:
+                - /url: https://arstechnica.com/security/2026/04/new-rowhammer-attacks-give-complete-control-of-machines-running-nvidia-gpus/
+              - button "[mark read]" [ref=e68] [cursor=pointer]
+              - button "[save]" [ref=e69] [cursor=pointer]
+              - button "[comments]" [ref=e70] [cursor=pointer]
+              - link "arstechnica.com" [ref=e71] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Ffeeds.arstechnica.com%2Farstechnica%2Ftechnology-lab
+          - text: 
+        - generic [ref=e72]: Wednesday, Apr 1 2026
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - img "Thumbnail" [ref=e76]
+            - paragraph [ref=e78]:
+              - generic [ref=e79]: test
+              - generic [ref=e80]: weather
+              - link "Seattle Times Provides Deceptive and False Information on Washington State Drought" [ref=e81] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/04/seattle-times-proves-deceptive-and.html
+              - button "[mark read]" [ref=e82] [cursor=pointer]
+              - button "[save]" [ref=e83] [cursor=pointer]
+              - link "blogspot.com" [ref=e84] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Fcliffmass.blogspot.com%2Ffeeds%2Fposts%2Fdefault%3Falt%3Drss
+          - text: 
+        - generic [ref=e85]: Tuesday, Mar 31 2026
+        - generic [ref=e86]:
+          - generic [ref=e87]:
+            - img "Thumbnail" [ref=e89]
+            - paragraph [ref=e91]:
+              - generic [ref=e92]: test
+              - generic [ref=e93]: newtag
+              - generic [ref=e94]: entertag
+              - generic [ref=e95]: ok
+              - link "Quantum computers need vastly fewer resources than thought to break vital encryption" [ref=e96] [cursor=pointer]:
+                - /url: https://arstechnica.com/security/2026/03/new-quantum-computing-advances-heighten-threat-to-elliptic-curve-cryptosystems/
+              - button "[mark read]" [ref=e97] [cursor=pointer]
+              - button "[save]" [ref=e98] [cursor=pointer]
+              - button "[comments]" [ref=e99] [cursor=pointer]
+              - link "arstechnica.com" [ref=e100] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Ffeeds.arstechnica.com%2Farstechnica%2Ftechnology-lab
+          - text: 
+        - generic [ref=e101]: Monday, Mar 30 2026
+        - generic [ref=e102]:
+          - generic [ref=e103]:
+            - img "Thumbnail" [ref=e105]
+            - paragraph [ref=e107]:
+              - generic [ref=e108]: test
+              - generic [ref=e109]: weather
+              - link "A Very Wet March" [ref=e110] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/03/a-very-wet-march.html
+              - button "[mark read]" [ref=e111] [cursor=pointer]
+              - button "[save]" [ref=e112] [cursor=pointer]
+              - link "blogspot.com" [ref=e113] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Fcliffmass.blogspot.com%2Ffeeds%2Fposts%2Fdefault%3Falt%3Drss
+          - text: 
+        - generic [ref=e114]: Saturday, Mar 28 2026
+        - generic [ref=e115]:
+          - generic [ref=e116]:
+            - img "Thumbnail" [ref=e118]
+            - paragraph [ref=e120]:
+              - generic [ref=e121]: test
+              - generic [ref=e122]: weather
+              - link "Does Low Snowpack Increase the Chances of Washington State Wildfires?" [ref=e123] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/03/does-low-snowpack-increase-chances-of.html
+              - button "[mark read]" [ref=e124] [cursor=pointer]
+              - button "[save]" [ref=e125] [cursor=pointer]
+              - link "blogspot.com" [ref=e126] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Fcliffmass.blogspot.com%2Ffeeds%2Fposts%2Fdefault%3Falt%3Drss
+          - text: 
+        - generic [ref=e127]: Wednesday, Mar 25 2026
+        - generic [ref=e128]:
+          - generic [ref=e129]:
+            - img "Thumbnail" [ref=e131]
+            - paragraph [ref=e133]:
+              - generic [ref=e134]: test
+              - generic [ref=e135]: weather
+              - link "Our Reservoirs are Now Full, Months Ahead of Time" [ref=e136] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/03/are-reservoirs-are-now-full-months.html
+              - button "[mark read]" [ref=e137] [cursor=pointer]
+              - button "[save]" [ref=e138] [cursor=pointer]
+              - link "blogspot.com" [ref=e139] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Fcliffmass.blogspot.com%2Ffeeds%2Fposts%2Fdefault%3Falt%3Drss
+          - text: 
+          - generic [ref=e140]:
+            - img "Thumbnail" [ref=e142]
+            - paragraph [ref=e144]:
+              - generic [ref=e145]: test
+              - generic [ref=e146]: newtag
+              - generic [ref=e147]: entertag
+              - generic [ref=e148]: ok
+              - link "Google bumps up Q Day deadline to 2029, far sooner than previously thought" [ref=e149] [cursor=pointer]:
+                - /url: https://arstechnica.com/security/2026/03/google-bumps-up-q-day-estimate-to-2029-far-sooner-than-previously-thought/
+              - button "[mark read]" [ref=e150] [cursor=pointer]
+              - button "[save]" [ref=e151] [cursor=pointer]
+              - button "[comments]" [ref=e152] [cursor=pointer]
+              - link "arstechnica.com" [ref=e153] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Ffeeds.arstechnica.com%2Farstechnica%2Ftechnology-lab
+          - text: 
+        - generic [ref=e154]: Tuesday, Mar 24 2026
+        - generic [ref=e155]:
+          - generic [ref=e156]:
+            - img "Thumbnail" [ref=e158]
+            - paragraph [ref=e160]:
+              - generic [ref=e161]: test
+              - generic [ref=e162]: newtag
+              - generic [ref=e163]: entertag
+              - generic [ref=e164]: ok
+              - link "Self-propagating malware poisons open source software and wipes Iran-based machines" [ref=e165] [cursor=pointer]:
+                - /url: https://arstechnica.com/security/2026/03/self-propagating-malware-poisons-open-source-software-and-wipes-iran-based-machines/
+              - button "[mark read]" [ref=e166] [cursor=pointer]
+              - button "[save]" [ref=e167] [cursor=pointer]
+              - button "[comments]" [ref=e168] [cursor=pointer]
+              - link "arstechnica.com" [ref=e169] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Ffeeds.arstechnica.com%2Farstechnica%2Ftechnology-lab
+          - text: 
+        - generic [ref=e170]: Sunday, Mar 22 2026
+        - generic [ref=e171]:
+          - generic [ref=e172]:
+            - img "Thumbnail" [ref=e174]
+            - paragraph [ref=e176]:
+              - generic [ref=e177]: test
+              - generic [ref=e178]: weather
+              - link "How Unusual Has This Winter Been?" [ref=e179] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/03/how-unusual-has-been-this-winter.html
+              - button "[mark read]" [ref=e180] [cursor=pointer]
+              - button "[save]" [ref=e181] [cursor=pointer]
+              - link "blogspot.com" [ref=e182] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Fcliffmass.blogspot.com%2Ffeeds%2Fposts%2Fdefault%3Falt%3Drss
+          - text: 
+        - generic [ref=e183]: Friday, Mar 20 2026
+        - generic [ref=e184]:
+          - generic [ref=e185]:
+            - img "Thumbnail" [ref=e187]
+            - paragraph [ref=e189]:
+              - generic [ref=e190]: test
+              - generic [ref=e191]: weather
+              - link "The Revenge of Kona Hits BOTH Hawaii and Washington State" [ref=e192] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/03/the-revenge-of-kona-hits-both-hawaii.html
+              - button "[mark read]" [ref=e193] [cursor=pointer]
+              - button "[save]" [ref=e194] [cursor=pointer]
+              - link "blogspot.com" [ref=e195] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Fcliffmass.blogspot.com%2Ffeeds%2Fposts%2Fdefault%3Falt%3Drss
+          - text: 
+          - generic [ref=e196]:
+            - img "Thumbnail" [ref=e198]
+            - paragraph [ref=e200]:
+              - generic [ref=e201]: test
+              - generic [ref=e202]: newtag
+              - generic [ref=e203]: entertag
+              - generic [ref=e204]: ok
+              - link "Widely used Trivy scanner compromised in ongoing supply-chain attack" [ref=e205] [cursor=pointer]:
+                - /url: https://arstechnica.com/security/2026/03/widely-used-trivy-scanner-compromised-in-ongoing-supply-chain-attack/
+              - button "[mark read]" [ref=e206] [cursor=pointer]
+              - button "[save]" [ref=e207] [cursor=pointer]
+              - button "[comments]" [ref=e208] [cursor=pointer]
+              - link "arstechnica.com" [ref=e209] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Ffeeds.arstechnica.com%2Farstechnica%2Ftechnology-lab
+          - text: 
+        - generic [ref=e210]: Thursday, Mar 19 2026
+        - generic [ref=e211]:
+          - generic [ref=e212]:
+            - img "Thumbnail" [ref=e214]
+            - paragraph [ref=e216]:
+              - generic [ref=e217]: test
+              - generic [ref=e218]: newtag
+              - generic [ref=e219]: entertag
+              - generic [ref=e220]: ok
+              - link "Cloud service providers ask EU regulator to reinstate VMware partner program" [ref=e221] [cursor=pointer]:
+                - /url: https://arstechnica.com/information-technology/2026/03/cloud-service-providers-ask-eu-regulator-to-reinstate-vmware-partner-program/
+              - button "[mark read]" [ref=e222] [cursor=pointer]
+              - button "[save]" [ref=e223] [cursor=pointer]
+              - button "[comments]" [ref=e224] [cursor=pointer]
+              - link "arstechnica.com" [ref=e225] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Ffeeds.arstechnica.com%2Farstechnica%2Ftechnology-lab
+          - text: 
+        - generic [ref=e226]: Wednesday, Mar 18 2026
+        - generic [ref=e227]:
+          - generic [ref=e228]:
+            - img "Thumbnail" [ref=e230]
+            - paragraph [ref=e232]:
+              - generic [ref=e233]: test
+              - generic [ref=e234]: weather
+              - link "How Far into the Future Do Weather Prediction Models Have Skill?" [ref=e235] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/03/how-far-into-future-do-weather.html
+              - button "[mark read]" [ref=e236] [cursor=pointer]
+              - button "[save]" [ref=e237] [cursor=pointer]
+              - link "blogspot.com" [ref=e238] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Fcliffmass.blogspot.com%2Ffeeds%2Fposts%2Fdefault%3Falt%3Drss
+          - text: 
+          - generic [ref=e239]:
+            - img "Thumbnail" [ref=e241]
+            - paragraph [ref=e243]:
+              - generic [ref=e244]: test
+              - generic [ref=e245]: newtag
+              - generic [ref=e246]: entertag
+              - generic [ref=e247]: ok
+              - link "Federal cyber experts called Microsoft's cloud a \"pile of shit,\" approved it anyway" [ref=e248] [cursor=pointer]:
+                - /url: https://arstechnica.com/information-technology/2026/03/federal-cyber-experts-called-microsofts-cloud-a-pile-of-shit-approved-it-anyway/
+              - button "[mark read]" [ref=e249] [cursor=pointer]
+              - button "[save]" [ref=e250] [cursor=pointer]
+              - button "[comments]" [ref=e251] [cursor=pointer]
+              - link "arstechnica.com" [ref=e252] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Ffeeds.arstechnica.com%2Farstechnica%2Ftechnology-lab
+          - text: 
+        - generic [ref=e253]: Tuesday, Mar 17 2026
+        - generic [ref=e254]:
+          - generic [ref=e255]:
+            - img "Thumbnail" [ref=e257]
+            - paragraph [ref=e259]:
+              - generic [ref=e260]: test
+              - generic [ref=e261]: newtag
+              - generic [ref=e262]: entertag
+              - generic [ref=e263]: ok
+              - link "Researchers disclose vulnerabilities in IP KVMs from four manufacturers" [ref=e264] [cursor=pointer]:
+                - /url: https://arstechnica.com/security/2026/03/researchers-disclose-vulnerabilities-in-ip-kvms-from-4-manufacturers/
+              - button "[mark read]" [ref=e265] [cursor=pointer]
+              - button "[save]" [ref=e266] [cursor=pointer]
+              - button "[comments]" [ref=e267] [cursor=pointer]
+              - link "arstechnica.com" [ref=e268] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Ffeeds.arstechnica.com%2Farstechnica%2Ftechnology-lab
+          - text: 
+        - generic [ref=e269]: Monday, Mar 16 2026
+        - generic [ref=e270]:
+          - generic [ref=e271]:
+            - img "Thumbnail" [ref=e273]
+            - paragraph [ref=e275]:
+              - generic [ref=e276]: test
+              - generic [ref=e277]: weather
+              - link "The Northwest's Kona Connection" [ref=e278] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/03/the-northwests-kona-connection.html
+              - button "[mark read]" [ref=e279] [cursor=pointer]
+              - button "[save]" [ref=e280] [cursor=pointer]
+              - link "blogspot.com" [ref=e281] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Fcliffmass.blogspot.com%2Ffeeds%2Fposts%2Fdefault%3Falt%3Drss
+          - text: 
+        - generic [ref=e282]: Saturday, Mar 14 2026
+        - generic [ref=e283]:
+          - generic [ref=e284]:
+            - img "Thumbnail" [ref=e286]
+            - paragraph [ref=e288]:
+              - generic [ref=e289]: test
+              - generic [ref=e290]: weather
+              - link "Snowy Washington State" [ref=e291] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/03/snowy-washington-state.html
+              - button "[mark read]" [ref=e292] [cursor=pointer]
+              - button "[save]" [ref=e293] [cursor=pointer]
+              - link "blogspot.com" [ref=e294] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Fcliffmass.blogspot.com%2Ffeeds%2Fposts%2Fdefault%3Falt%3Drss
+          - text: 
+        - generic [ref=e295]: Friday, Mar 13 2026
+        - generic [ref=e296]:
+          - generic [ref=e297]:
+            - img "Thumbnail" [ref=e299]
+            - paragraph [ref=e301]:
+              - generic [ref=e302]: test
+              - generic [ref=e303]: newtag
+              - generic [ref=e304]: entertag
+              - generic [ref=e305]: ok
+              - link "Supply-chain attack using invisible code hits GitHub and other repositories" [ref=e306] [cursor=pointer]:
+                - /url: https://arstechnica.com/security/2026/03/supply-chain-attack-using-invisible-code-hits-github-and-other-repositories/
+              - button "[mark read]" [ref=e307] [cursor=pointer]
+              - button "[save]" [ref=e308] [cursor=pointer]
+              - button "[comments]" [ref=e309] [cursor=pointer]
+              - link "arstechnica.com" [ref=e310] [cursor=pointer]:
+                - /url: /posts?href=https%3A%2F%2Ffeeds.arstechnica.com%2Farstechnica%2Ftechnology-lab
+          - text: 
+        - generic [ref=e312]: RssApp

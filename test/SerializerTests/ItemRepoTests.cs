@@ -155,6 +155,42 @@ public sealed class ItemRepoTests
         return (itemRepo, user, feed);
     }
 
+    [TestMethod]
+    public void Database_Should_Have_Timeline_Index()
+    {
+        var dbName = "index_test.db";
+        if (File.Exists(dbName)) File.Delete(dbName);
+        var (_, _, _) = SetupTestRepo(dbName);
+
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbName}");
+        connection.Open();
+        var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='Items' AND name='idx_items_timeline'";
+        using var reader = cmd.ExecuteReader();
+
+        Assert.IsTrue(reader.Read(), "idx_items_timeline should exist on Items table");
+        var sql = reader.GetString(1);
+        Assert.IsTrue(sql.Contains("PublishDateOrder"), "Timeline index should cover PublishDateOrder");
+        Assert.IsTrue(sql.Contains("PublishDate"), "Timeline index should cover PublishDate");
+        Assert.IsTrue(sql.Contains("UserId"), "Timeline index should cover UserId");
+    }
+
+    [TestMethod]
+    public void Database_Should_Not_Have_Redundant_ItemContent_Index()
+    {
+        var dbName = "redundant_idx_test.db";
+        if (File.Exists(dbName)) File.Delete(dbName);
+        var (_, _, _) = SetupTestRepo(dbName);
+
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbName}");
+        connection.Open();
+        var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='ItemContent' AND name='idx_itemcontent_user_feed_href'";
+        using var reader = cmd.ExecuteReader();
+
+        Assert.IsFalse(reader.Read(), "idx_itemcontent_user_feed_href should not exist (redundant with UNIQUE constraint)");
+    }
+
     private string GetContent()
     {
         return """

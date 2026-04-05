@@ -1,0 +1,442 @@
+- generic [active] [ref=e1]:
+  - iframe [ref=e5]:
+    - table [ref=f6e8]:
+      - rowgroup [ref=f6e9]:
+        - row "Go to Blogger.com Search More Create Blog Sign In" [ref=f6e10]:
+          - cell "Go to Blogger.com" [ref=f6e11]:
+            - link "Go to Blogger.com" [ref=f6e12] [cursor=pointer]:
+              - /url: https://www.blogger.com/
+          - cell "Search" [ref=f6e13]:
+            - table [ref=f6e16]:
+              - rowgroup [ref=f6e17]:
+                - row "Search" [ref=f6e18]:
+                  - cell [ref=f6e19]:
+                    - textbox [ref=f6e20]
+                  - cell "Search" [ref=f6e21]:
+                    - button "Search" [ref=f6e22] [cursor=pointer]
+          - cell "More" [ref=f6e23]:
+            - combobox "More options" [ref=f6e24]:
+              - option "More" [selected]
+              - option "Share by email"
+              - option "Share with Facebook"
+              - option "Share with Twitter"
+              - option "Report Abuse"
+          - cell "Create Blog Sign In" [ref=f6e25]:
+            - link "Create Blog" [ref=f6e26] [cursor=pointer]:
+              - /url: ./onboarding
+            - link "Sign In" [ref=f6e27] [cursor=pointer]:
+              - /url: https://www.blogger.com/
+  - generic [ref=e19]:
+    - banner [ref=e20]:
+      - generic [ref=e26]:
+        - heading "Cliff Mass Weather Blog" [level=1] [ref=e28]:
+          - link "Cliff Mass Weather Blog" [ref=e29] [cursor=pointer]:
+            - /url: https://cliffmass.blogspot.com/
+        - paragraph [ref=e31]: This blog discusses current weather, weather prediction, climate issues, and current events
+    - generic [ref=e35]:
+      - generic:
+        - generic [ref=e45]:
+          - generic [ref=e46]:
+            - generic [ref=e48]:
+              - heading "April 03, 2026" [level=2] [ref=e49]
+              - generic [ref=e51]:
+                - generic [ref=e52]:
+                  - heading "FINALLY, Some Warm Weather" [level=3] [ref=e53]
+                  - generic [ref=e54]:
+                    - paragraph [ref=e55]: After a cool, wet March, we are finally getting some warm spring days.
+                    - paragraph [ref=e56]: Warm and dry enough so that you will be comfortable without a jacket. Highs reaching the upper 60s and some sun.
+                    - paragraph [ref=e57]: Perfect weather for that bike ride, hike, gardening, or simply a pleasant talk.
+                    - paragraph [ref=e58]: The National Weather Service National Blend of Models (their most skillful product) is going for 62F on Saturday, 65F on Sunday, and nearly 70F on Sunday in Seattle, before cooling down on Tuesday.
+                    - link [ref=e60] [cursor=pointer]:
+                      - /url: https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEj7bbjFKvPmx2bLOEb8a62J90Qx01f6pccXOwr6rKM8bgPOf1Y_xDvJTB3JdKmbQQnES1Ykm0Pgti7J0UUzTrp6aG8iQ7pkZ-mX2v7fPIO0OkV41PKGFQvZVM5X8GV_qM09QIgWf1xrHgkUDhqmOxa7-pTpj0cYrAngoWGCztqUgBW-Ysz75kLnMQ1V2zY/s1458/Screenshot%202026-04-03%20at%208.39.06%E2%80%AFPM.png
+                      - img [ref=e62]
+                    - generic [ref=e63]: Eastern Washington will be considerably warmer, reaching nearly 80F in the Tri-Cities on Monday.
+                    - link [ref=e65] [cursor=pointer]:
+                      - /url: https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiy9mARsKNhgnI5BfeAFoj3naK56ZELHerRW49uWnbTIxCe2q-GP-y2tO5-D4s9hmi_zZ1XOV_4_SK5YrNrza3X9y20MtnC-qvkTz6OBAb52-lRnOnaNZJWz88O7cTmgLtYUlS_LSjwm01n0VriS1r8x5kTxSAfVru1AULZlzhQrlbdf3ewtKPBfu1kVxg/s1458/Screenshot%202026-04-03%20at%208.40.10%E2%80%AFPM.png
+                      - img [ref=e67]
+                    - generic [ref=e69]: To provide more detail, here are forecast temperatures for 5 PM Sunday afternoon from the UW high-resolution model.
+                    - generic [ref=e71]: Upper 60s and 70s from southern Puget Sound to Portland, and also warm in the lower Columbia Valley
+                    - link [ref=e74] [cursor=pointer]:
+                      - /url: https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgJrYnP7hzb5RDARfw1zmcU_gG6Sdv13uoq7OHlUPZIxFKeJZSr5brCn20kexJ56qoZJtWYY5Wk5qhKbAsuDbMPIi9_LP8qZPvbR_H9hYA86cHelOtHpfnXA1i4FC4sysZN6imt1t4JjP83M0BG2sWQZkaTjzWP3RH55Uhjml77UflPlr8jiYXVs7up8YA/s1460/Screenshot%202026-04-03%20at%208.43.11%E2%80%AFPM.png
+                      - img [ref=e76]
+                    - text: By Monday afternoon at the same time, western Washington and Oregon have cooled a bit, while the Columbia Valley has warmed.
+                    - generic [ref=e78]:
+                      - link [ref=e80] [cursor=pointer]:
+                        - /url: https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiYT0wL1eh0D1_gpVPAMIverHRhbeN2BbEElBe2OBSZd2C_du5BEokxvEaWsXQ4IdGqwoNgXWJu8vYdMNYpqOy0Ytf2wuBlRmF9nwGqOlnRicvIdLnPVhyphenhyphenQfO_oicaeN3aVdDPj_a5V4dlO_fneMY4BOWphzp539Mk3HtjSFDKbWTWpWf_gDBErOwAjoG0/s1460/Screenshot%202026-04-03%20at%208.43.47%E2%80%AFPM.png
+                        - img [ref=e82]
+                      - generic [ref=e83]: All this warming is associated with a transient upper-level ridge of high pressure that will build over the area this week (see below, for 500 hPa...about 18,000 ft, red indicates high pressure).
+                      - generic [ref=e84]:
+                        - link [ref=e86] [cursor=pointer]:
+                          - /url: https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgW2bprk6ChvbbOg-p0lSwn0KrUprSXIHucX-ZlGong-ZchTlJxH9nS6dZStzCJghPo3PVKoUd6GZ6KpdaREmdB0BY4qGmtKJnv4p3zrnovyqQnnNWFmMxSCqsgQltPt71T42D_lqotYiyldv318WiDJxWe0Xnq5wiOKBGq3r3HefEMmv17UAQ0_7pOU2Q/s1946/Screenshot%202026-04-03%20at%209.22.41%E2%80%AFPM.png
+                          - img [ref=e88]
+                        - generic [ref=e90]: By Tuesday morning, the high pressure retreats westward and a trough of lower pressure (blue colors) passes to our north, bringing the cool down.
+                        - link [ref=e93] [cursor=pointer]:
+                          - /url: https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEi0WL5rxrAEqBvkRaFoIC97V-GCDMuclLFc5zoPsmtnBIU21dxeIPBkIIm7fSM3rd1aDGuuEntAeKaDZ6VmvY2xAmLP3Pcn1l2KCfSB0Jx0CbCFBAIGp11rvAuYA_QMSIUM17od0FExpS2QVBAW4fE5Aur6MGfWyufVRAEJFhwc1T4L9F0iagIlZi7-7KI/s1946/Screenshot%202026-04-03%20at%209.23.20%E2%80%AFPM.png
+                          - img [ref=e94]
+                        - text: Enjoy.
+                      - paragraph [ref=e96]
+                  - generic [ref=e98]:
+                    - generic [ref=e99]:
+                      - text: Posted by
+                      - link "Cliff Mass Weather Blog" [ref=e101] [cursor=pointer]:
+                        - /url: https://www.blogger.com/profile/13948649423540350788
+                    - generic [ref=e102]:
+                      - text: at
+                      - link "April 03, 2026" [ref=e103] [cursor=pointer]:
+                        - /url: https://cliffmass.blogspot.com/2026/04/finally-some-warm-weather.html
+                    - link "Email Post" [ref=e106] [cursor=pointer]:
+                      - /url: https://www.blogger.com/email-post/7478606652950905956/5654552472236833183
+                    - generic [ref=e107]:
+                      - link "Email This" [ref=e108] [cursor=pointer]:
+                        - /url: https://www.blogger.com/share-post.g?blogID=7478606652950905956&postID=5654552472236833183&target=email
+                        - generic [ref=e109]: Email This
+                      - link "BlogThis!" [ref=e110] [cursor=pointer]:
+                        - /url: https://www.blogger.com/share-post.g?blogID=7478606652950905956&postID=5654552472236833183&target=blog
+                        - generic [ref=e111]: BlogThis!
+                      - link "Share to X" [ref=e112] [cursor=pointer]:
+                        - /url: https://www.blogger.com/share-post.g?blogID=7478606652950905956&postID=5654552472236833183&target=twitter
+                        - generic [ref=e113]: Share to X
+                      - link "Share to Facebook" [ref=e114] [cursor=pointer]:
+                        - /url: https://www.blogger.com/share-post.g?blogID=7478606652950905956&postID=5654552472236833183&target=facebook
+                        - generic [ref=e115]: Share to Facebook
+                      - link "Share to Pinterest" [ref=e116] [cursor=pointer]:
+                        - /url: https://www.blogger.com/share-post.g?blogID=7478606652950905956&postID=5654552472236833183&target=pinterest
+                        - generic [ref=e117]: Share to Pinterest
+                - generic [ref=e118]:
+                  - heading "3 comments:" [level=4] [ref=e119]
+                  - generic [ref=e122]:
+                    - list [ref=e123]:
+                      - listitem [ref=e124]:
+                        - generic [ref=e126]:
+                          - generic [ref=e127]:
+                            - link "KMD" [ref=e129] [cursor=pointer]:
+                              - /url: https://www.blogger.com/profile/10284707270549024767
+                            - link "April 4, 2026 at 12:29 PM" [ref=e131] [cursor=pointer]:
+                              - /url: https://cliffmass.blogspot.com/2026/04/finally-some-warm-weather.html?showComment=1775330979927#c1835418267039743932
+                          - paragraph [ref=e132]: I'm really looking forward to the days where I can do late morning bike rides in full-on warm weather attire. We still have a little ways to go, but I'll take these baby steps nonetheless.
+                          - link "Reply" [ref=e134] [cursor=pointer]:
+                            - /url: javascript:;
+                      - listitem [ref=e135]:
+                        - generic [ref=e137]:
+                          - generic [ref=e138]:
+                            - link "Friend" [ref=e140] [cursor=pointer]:
+                              - /url: https://www.blogger.com/profile/16113544345441368032
+                            - link "April 4, 2026 at 1:34 PM" [ref=e142] [cursor=pointer]:
+                              - /url: https://cliffmass.blogspot.com/2026/04/finally-some-warm-weather.html?showComment=1775334857288#c6835974089998268143
+                          - paragraph [ref=e143]: Saturday was the first time the temperature has reached the 60 degree mark at my location in Bellingham since late January - warm enough to open the windows.
+                          - link "Reply" [ref=e145] [cursor=pointer]:
+                            - /url: javascript:;
+                      - listitem [ref=e146]:
+                        - generic [ref=e148]:
+                          - generic [ref=e149]:
+                            - link "clive boulton" [ref=e151] [cursor=pointer]:
+                              - /url: https://www.blogger.com/profile/13368132383395164003
+                            - link "April 4, 2026 at 3:45 PM" [ref=e153] [cursor=pointer]:
+                              - /url: https://cliffmass.blogspot.com/2026/04/finally-some-warm-weather.html?showComment=1775342756329#c7947510416098220884
+                          - paragraph [ref=e154]: Good weather to visit the Skagit Valley Tulip Festival. Bring Wellington boots or similar; the fields are muddy.
+                          - link "Reply" [ref=e156] [cursor=pointer]:
+                            - /url: javascript:;
+                    - iframe [ref=e158]:
+                      - generic [ref=f3e7]:
+                        - paragraph [ref=f3e8]: To leave a comment, click the button below to sign in with Google.
+                        - button "Sign in with Google" [ref=f3e9] [cursor=pointer]:
+                          - generic [ref=f3e12]: Sign in with Google
+                  - paragraph
+                  - generic [ref=e159]:
+                    - paragraph [ref=e160]: Please make sure your comments are civil. Name calling and personal attacks are not appropriate.
+                    - link:
+                      - /url: https://www.blogger.com/comment/frame/7478606652950905956?po=5654552472236833183&hl=en&saa=85391&origin=https%3A%2F%2Fcliffmass.blogspot.com&blogspotRpcToken=2196588
+                  - paragraph
+            - generic [ref=e161]:
+              - link "Newer Post" [ref=e163] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/04/major-global-cooling-of-past-two-years.html
+              - link "Older Post" [ref=e165] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/04/seattle-times-proves-deceptive-and.html
+              - link "Home" [ref=e166] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/
+            - generic [ref=e168]:
+              - text: "Subscribe to:"
+              - link "Post Comments (Atom)" [ref=e169] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/feeds/5654552472236833183/comments/default
+          - generic [ref=e171]:
+            - heading "Major Global Cooling of the Past Two Years and the Big U.S. Heatwave Last Month. Climate Change?" [level=3] [ref=e172]:
+              - link "Major Global Cooling of the Past Two Years and the Big U.S. Heatwave Last Month. Climate Change?" [ref=e173] [cursor=pointer]:
+                - /url: https://cliffmass.blogspot.com/2026/04/major-global-cooling-of-past-two-years.html
+            - paragraph [ref=e174]: One of the most effective and accurate ways to monitor the slow warming of our planet from increasing greenhouse gases is to use satellites ...
+            - img [ref=e175]
+          - list [ref=e178]:
+            - listitem [ref=e179]:
+              - generic [ref=e180]:
+                - link [ref=e182] [cursor=pointer]:
+                  - /url: https://cliffmass.blogspot.com/2025/08/rapid-cooling-heavy-rain-and-near.html
+                - link "Rapid Cooling, Heavy Rain, And Near Record River Levels" [ref=e184] [cursor=pointer]:
+                  - /url: https://cliffmass.blogspot.com/2025/08/rapid-cooling-heavy-rain-and-near.html
+                - generic [ref=e185]: Today may be the last day you will need air conditioning this summer in western Washington. And fears of wildfires west of the Cascade cres...
+            - listitem [ref=e186]:
+              - generic [ref=e187]:
+                - link [ref=e189] [cursor=pointer]:
+                  - /url: https://cliffmass.blogspot.com/2026/03/an-unusually-strong-cold-cold-front-is.html
+                - link "An Unusually Strong Cold Cold Front Is Moving Through The Northwest" [ref=e191] [cursor=pointer]:
+                  - /url: https://cliffmass.blogspot.com/2026/03/an-unusually-strong-cold-cold-front-is.html
+                - generic [ref=e192]: Over the eastern U.S., the passage of a strong cold front, with a rapid decline of surface temperature, is a frequent winter treat. In contr...
+        - complementary [ref=e195]:
+          - generic [ref=e196]:
+            - generic [ref=e198]:
+              - link [ref=e199] [cursor=pointer]:
+                - /url: http://www.atmos.washington.edu/~cliff/cliffmassresearch.html
+              - text: Click on picture for more information
+            - generic:
+              - generic:
+                - insertion
+            - generic [ref=e201]:
+              - link [ref=e202] [cursor=pointer]:
+                - /url: https://www.joinplaytennis.com/seattle
+              - text: Find tennis partners and meet new friends in Seattle
+            - iframe [ref=e206]:
+              - link "Become a member" [ref=f5e5] [cursor=pointer]:
+                - /url: https://www.patreon.com/bePatron?u=41505294&redirect_uri=https%3A%2F%2Fcliffmass.blogspot.com%2F2026%2F04%2Ffinally-some-warm-weather.html&utm_medium=widget
+                - generic [ref=f5e6]:
+                  - img [ref=f5e8]
+                  - generic [ref=f5e10]: Become a member
+            - link [ref=e209] [cursor=pointer]:
+              - /url: https://www.patreon.com/bePatron?u=41505294&redirect_uri=https%3A%2F%2Fcliffmass.blogspot.com%2F&utm_medium=widget
+            - link [ref=e212] [cursor=pointer]:
+              - /url: https://www.amazon.com/Weather-Pacific-Northwest-Cliff-Mass/dp/0295748443/ref=sr_1_1?dchild=1&keywords=cliff+mass+weather&qid=1628036398&sr=8-1
+            - generic:
+              - generic:
+                - insertion
+            - insertion [ref=e215]
+            - link "Tweets by CliffMass" [ref=e218] [cursor=pointer]:
+              - /url: https://twitter.com/cliffmass?ref_src=twsrc%5Etfw
+            - generic [ref=e219]:
+              - heading "Blog Archive" [level=2] [ref=e220]
+              - generic [ref=e223]:
+                - list [ref=e224]:
+                  - listitem [ref=e225]:
+                    - link "▼" [ref=e226] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2026" [ref=e227] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2026/
+                    - text: (45)
+                    - list [ref=e228]:
+                      - listitem [ref=e229]:
+                        - link "▼" [ref=e230] [cursor=pointer]:
+                          - /url: javascript:void(0)
+                        - link "April" [ref=e231] [cursor=pointer]:
+                          - /url: https://cliffmass.blogspot.com/2026/04/
+                        - text: (3)
+                        - list [ref=e232]:
+                          - listitem [ref=e233]:
+                            - link "Major Global Cooling of the Past Two Years and the..." [ref=e234] [cursor=pointer]:
+                              - /url: https://cliffmass.blogspot.com/2026/04/major-global-cooling-of-past-two-years.html
+                          - listitem [ref=e235]:
+                            - link "FINALLY, Some Warm Weather" [ref=e236] [cursor=pointer]:
+                              - /url: https://cliffmass.blogspot.com/2026/04/finally-some-warm-weather.html
+                          - listitem [ref=e237]:
+                            - link "Seattle Times Provides Deceptive and False Informa..." [ref=e238] [cursor=pointer]:
+                              - /url: https://cliffmass.blogspot.com/2026/04/seattle-times-proves-deceptive-and.html
+                    - list [ref=e239]:
+                      - listitem [ref=e240]:
+                        - link "►" [ref=e241] [cursor=pointer]:
+                          - /url: javascript:void(0)
+                        - link "March" [ref=e242] [cursor=pointer]:
+                          - /url: https://cliffmass.blogspot.com/2026/03/
+                        - text: (14)
+                    - list [ref=e243]:
+                      - listitem [ref=e244]:
+                        - link "►" [ref=e245] [cursor=pointer]:
+                          - /url: javascript:void(0)
+                        - link "February" [ref=e246] [cursor=pointer]:
+                          - /url: https://cliffmass.blogspot.com/2026/02/
+                        - text: (14)
+                    - list [ref=e247]:
+                      - listitem [ref=e248]:
+                        - link "►" [ref=e249] [cursor=pointer]:
+                          - /url: javascript:void(0)
+                        - link "January" [ref=e250] [cursor=pointer]:
+                          - /url: https://cliffmass.blogspot.com/2026/01/
+                        - text: (14)
+                - list [ref=e251]:
+                  - listitem [ref=e252]:
+                    - link "►" [ref=e253] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2025" [ref=e254] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2025/
+                    - text: (188)
+                - list [ref=e255]:
+                  - listitem [ref=e256]:
+                    - link "►" [ref=e257] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2024" [ref=e258] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2024/
+                    - text: (193)
+                - list [ref=e259]:
+                  - listitem [ref=e260]:
+                    - link "►" [ref=e261] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2023" [ref=e262] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2023/
+                    - text: (190)
+                - list [ref=e263]:
+                  - listitem [ref=e264]:
+                    - link "►" [ref=e265] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2022" [ref=e266] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2022/
+                    - text: (222)
+                - list [ref=e267]:
+                  - listitem [ref=e268]:
+                    - link "►" [ref=e269] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2021" [ref=e270] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2021/
+                    - text: (227)
+                - list [ref=e271]:
+                  - listitem [ref=e272]:
+                    - link "►" [ref=e273] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2020" [ref=e274] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2020/
+                    - text: (225)
+                - list [ref=e275]:
+                  - listitem [ref=e276]:
+                    - link "►" [ref=e277] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2019" [ref=e278] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2019/
+                    - text: (199)
+                - list [ref=e279]:
+                  - listitem [ref=e280]:
+                    - link "►" [ref=e281] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2018" [ref=e282] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2018/
+                    - text: (193)
+                - list [ref=e283]:
+                  - listitem [ref=e284]:
+                    - link "►" [ref=e285] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2017" [ref=e286] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2017/
+                    - text: (205)
+                - list [ref=e287]:
+                  - listitem [ref=e288]:
+                    - link "►" [ref=e289] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2016" [ref=e290] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2016/
+                    - text: (203)
+                - list [ref=e291]:
+                  - listitem [ref=e292]:
+                    - link "►" [ref=e293] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2015" [ref=e294] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2015/
+                    - text: (209)
+                - list [ref=e295]:
+                  - listitem [ref=e296]:
+                    - link "►" [ref=e297] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2014" [ref=e298] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2014/
+                    - text: (193)
+                - list [ref=e299]:
+                  - listitem [ref=e300]:
+                    - link "►" [ref=e301] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2013" [ref=e302] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2013/
+                    - text: (203)
+                - list [ref=e303]:
+                  - listitem [ref=e304]:
+                    - link "►" [ref=e305] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2012" [ref=e306] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2012/
+                    - text: (218)
+                - list [ref=e307]:
+                  - listitem [ref=e308]:
+                    - link "►" [ref=e309] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2011" [ref=e310] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2011/
+                    - text: (211)
+                - list [ref=e311]:
+                  - listitem [ref=e312]:
+                    - link "►" [ref=e313] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2010" [ref=e314] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2010/
+                    - text: (212)
+                - list [ref=e315]:
+                  - listitem [ref=e316]:
+                    - link "►" [ref=e317] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2009" [ref=e318] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2009/
+                    - text: (270)
+                - list [ref=e319]:
+                  - listitem [ref=e320]:
+                    - link "►" [ref=e321] [cursor=pointer]:
+                      - /url: javascript:void(0)
+                    - link "2008" [ref=e322] [cursor=pointer]:
+                      - /url: https://cliffmass.blogspot.com/2008/
+                    - text: (99)
+            - generic [ref=e323]:
+              - heading "Search This Blog" [level=2] [ref=e324]
+              - table [ref=e328]:
+                - rowgroup [ref=e329]:
+                  - row "Search" [ref=e330]:
+                    - cell [ref=e331]:
+                      - textbox "search" [ref=e332]
+                    - cell "Search" [ref=e333]:
+                      - button "Search" [ref=e334]
+            - link "Want to advertise on this blog? Message me on Facebook (facebook.com/realcliffmass)" [ref=e338] [cursor=pointer]:
+              - /url: https://www.facebook.com/realcliffmass/
+              - generic [ref=e340]:
+                - heading "Want to advertise on this blog?" [level=6] [ref=e342]: Want to advertise on this blog?
+                - heading "Message me on Facebook (facebook.com/realcliffmass)" [level=3] [ref=e343]
+            - heading "StatCounter" [level=2] [ref=e345]
+            - generic [ref=e346]:
+              - heading "Total Pageviews" [level=2] [ref=e347]
+              - generic [ref=e350]: 105,782,867
+            - generic [ref=e351]:
+              - heading "Find hitting partners and open courts" [level=2] [ref=e352]
+              - list [ref=e354]:
+                - listitem [ref=e355]:
+                  - link "Play Tennis Seattle" [ref=e356] [cursor=pointer]:
+                    - /url: https://joinplaytennis.com/seattle
+                - listitem [ref=e357]:
+                  - link "PlayTennisLA" [ref=e358] [cursor=pointer]:
+                    - /url: https://playtennisla.com
+                - listitem [ref=e359]:
+                  - link "Twinkle Tales - Bedtime Stories" [ref=e360] [cursor=pointer]:
+                    - /url: https://twinkletalesapp.com
+            - generic [ref=e362]:
+              - heading "Subscribe To My Blog" [level=2] [ref=e363]
+              - generic [ref=e364]:
+                - generic [ref=e368] [cursor=pointer]:
+                  - img [ref=e369]
+                  - generic [ref=e370]: Posts
+                - generic [ref=e375] [cursor=pointer]:
+                  - img [ref=e376]
+                  - generic [ref=e377]: Comments
+        - generic:
+          - generic:
+            - complementary
+    - contentinfo [ref=e379]:
+      - generic [ref=e382]:
+        - generic:
+          - generic:
+            - generic:
+              - insertion
+        - table:
+          - rowgroup:
+            - row:
+              - cell
+              - cell
+        - generic [ref=e385]:
+          - text: Powered by
+          - link "Blogger" [ref=e386] [cursor=pointer]:
+            - /url: https://www.blogger.com
+          - text: .
