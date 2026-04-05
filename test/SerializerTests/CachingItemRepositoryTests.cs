@@ -47,7 +47,8 @@ internal sealed class FakeItemRepository : IItemRepository
 
     public Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
         NewsFeed feed, bool isFilterUnread, bool isFilterSaved,
-        string filterTag, int? page, int? pageSize, long? lastId, string lastPublishDate)
+        string filterTag, int? page, int? pageSize, long? lastId, string lastPublishDate,
+        IEnumerable<string> excludeFeedUrls = null)
     {
         GetItemsAsyncCallCount++;
         return Task.FromResult<IEnumerable<NewsFeedItem>>(Array.Empty<NewsFeedItem>());

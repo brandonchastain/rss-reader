@@ -1,0 +1,80 @@
+@page "/tags"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Sections
+@using RssApp.RssClient
+@using RssApp.Contracts
+@using WasmApp.Pages.Base
+
+@inherits PageBase
+@attribute [StreamRendering]
+@attribute [Authorize]
+@rendermode InteractiveWebAssembly
+
+<PageTitle>Tags</PageTitle>
+<SectionContent SectionName="page-title">Tags</SectionContent>
+
+<div class="tags-page-header">
+    <h5>Manage Tags</h5>
+    <p class="tags-page-description">Hidden tags are excluded from your default timeline. You can still view them by filtering for that tag.</p>
+</div>
+
+@if (tagSettings == null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (!tagSettings.Any())
+{
+    <p class="text-muted">No tags yet. Add tags to your feeds on the <a href="/feeds">Feeds</a> page.</p>
+}
+else
+{
+    <div id="post-table">
+        @foreach (var setting in tagSettings)
+        {
+            <div class="tags-row">
+                <span class="post-tag @(setting.IsHidden ? "tag-hidden" : "")">@setting.Tag</span>
+                <span class="tags-status @(setting.IsHidden ? "tags-status-hidden" : "tags-status-visible")">
+                    @(setting.IsHidden ? "Hidden from timeline" : "Visible")
+                </span>
+                <button class="tags-toggle-btn @(setting.IsHidden ? "tags-toggle-show" : "tags-toggle-hide")"
+                        @onclick="() => ToggleTag(setting)">
+                    @(setting.IsHidden ? "Show" : "Hide")
+                </button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<TagSetting> tagSettings;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (firstRender)
+        {
+            tagSettings = (await feedClient.GetTagSettingsAsync())?.ToList();
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleTag(TagSetting setting)
+    {
+        var newHidden = !setting.IsHidden;
+        // Optimistic UI update
+        setting.IsHidden = newHidden;
+        StateHasChanged();
+
+        try
+        {
+            tagSettings = (await feedClient.SetTagHiddenAsync(setting.Tag, newHidden))?.ToList();
+        }
+        catch
+        {
+            // Revert on error
+            setting.IsHidden = !newHidden;
+        }
+
+        StateHasChanged();
+    }
+}

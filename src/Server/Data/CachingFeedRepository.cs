@@ -87,4 +87,18 @@ public class CachingFeedRepository : IFeedRepository
         _cache.Remove(FeedKey(feed.UserId, feed.Href));
         _inner.AddTag(feed, tag);
     }
+
+    // --- Tag settings (pass-through, no caching) ---
+
+    public IEnumerable<TagSetting> GetTagSettings(RssUser user)
+        => _inner.GetTagSettings(user);
+
+    public void SetTagHidden(RssUser user, string tag, bool isHidden)
+    {
+        _cache.Remove(FeedsKey(user.Id));
+        _inner.SetTagHidden(user, tag, isHidden);
+    }
+
+    public IEnumerable<string> GetHiddenFeedUrls(RssUser user)
+        => _inner.GetHiddenFeedUrls(user);
 }
