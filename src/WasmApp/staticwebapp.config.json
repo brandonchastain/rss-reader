@@ -6,27 +6,22 @@
     },
     {
       "route": "/timeline*",
-      "allowedRoles": ["authenticated"],
       "rewrite": "/index.html"
     },
     {
       "route": "/feeds*",
-      "allowedRoles": ["authenticated"],
       "rewrite": "/index.html"
     },
     {
       "route": "/tags*",
-      "allowedRoles": ["authenticated"],
       "rewrite": "/index.html"
     },
     {
       "route": "/search*",
-      "allowedRoles": ["authenticated"],
       "rewrite": "/index.html"
     },
     {
       "route": "/posts*",
-      "allowedRoles": ["authenticated"],
       "rewrite": "/index.html"
     },
     {
@@ -64,13 +59,7 @@
     "rewrite": "/index.html",
     "exclude": ["/.auth/*", "/timeline*", "/feeds*", "/tags*", "/search*", "/posts*"]
   },
-  "responseOverrides": {
-    "401": {
-      "redirect": "/.auth/login/aad",
-      "statusCode": 302
-    }
-  },
-  "globalHeaders": {
+  "globalHeaders":{
     "cache-control": "no-cache"
   },
   "mimeTypes": {

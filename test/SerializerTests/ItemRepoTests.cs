@@ -78,6 +78,83 @@ public sealed class ItemRepoTests
         Assert.IsTrue(item.IsRead);
     }
 
+    [TestMethod]
+    public async Task GetItemsAsync_Should_Return_Items_With_Content()
+    {
+        var (itemRepo, user, feed) = SetupTestRepo("content_timeline_test.db");
+        var expectedContent = "<p>Hello, this is test content for inline loading.</p>";
+
+        var item = new NewsFeedItem("0", 0, "Test Article", "https://example.com/article-1", null, "2025-01-01", expectedContent, null)
+        {
+            FeedUrl = feed.Href
+        };
+
+        await itemRepo.AddItemsAsync(new[] { item });
+
+        var timelineFeed = new NewsFeed("%", user.Id);
+        var items = await itemRepo.GetItemsAsync(timelineFeed, false, false, null, 0, 20);
+
+        var result = items.First();
+        Assert.IsNotNull(result.Content, "Content should be populated inline from GetItemsAsync (not null).");
+        Assert.AreEqual(expectedContent, result.Content, "Content should match what was inserted.");
+    }
+
+    [TestMethod]
+    public async Task SearchItemsAsync_Should_Return_Items_With_Content()
+    {
+        var (itemRepo, user, feed) = SetupTestRepo("content_search_test.db");
+        var expectedContent = "<p>Searchable content about wildlife conservation.</p>";
+
+        var item = new NewsFeedItem("0", 0, "Wildlife Conservation Article", "https://example.com/wildlife-1", null, "2025-01-01", expectedContent, null)
+        {
+            FeedUrl = feed.Href
+        };
+
+        await itemRepo.AddItemsAsync(new[] { item });
+
+        var items = await itemRepo.SearchItemsAsync("Wildlife", user, 0, 20);
+
+        Assert.IsTrue(items.Any(), "Search should return at least one result.");
+        var result = items.First();
+        Assert.IsNotNull(result.Content, "Content should be populated inline from SearchItemsAsync (not null).");
+        Assert.AreEqual(expectedContent, result.Content, "Content should match what was inserted.");
+    }
+
+    private (IItemRepository repo, RssUser user, NewsFeed feed) SetupTestRepo(string dbName)
+    {
+        if (File.Exists(dbName)) File.Delete(dbName);
+        Directory.CreateDirectory(Path.Combine("wwwroot", "images"));
+
+        var connStr = $"Data Source={dbName}";
+        var userRepo = new SQLiteUserRepository(connStr, new NullLogger<SQLiteUserRepository>());
+        userRepo.AddUser("testUser", 0);
+        var feedRepo = new SQLiteFeedRepository(connStr, new NullLogger<SQLiteFeedRepository>());
+        var feed = new NewsFeed(1, "https://feeds.example.org/test", 0);
+        feedRepo.AddFeed(feed);
+
+        var user = new RssUser("testUser", 0);
+
+        var serviceCollection = new ServiceCollection();
+        serviceCollection
+            .AddLogging(b => { b.ClearProviders(); b.AddConsole(); b.AddDebug(); })
+            .AddSingleton(new RssAppConfig { DbLocation = dbName })
+            .AddSingleton<FeedThumbnailRetriever>()
+            .AddSingleton<IFeedRepository>(feedRepo)
+            .AddSingleton<IUserRepository>(userRepo)
+            .AddSingleton<IItemRepository>(sb =>
+                new SQLiteItemRepository(
+                    connStr,
+                    sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
+                    sb.GetRequiredService<IFeedRepository>(),
+                    sb.GetRequiredService<IUserRepository>(),
+                    sb.GetRequiredService<FeedThumbnailRetriever>()));
+
+        var provider = serviceCollection.BuildServiceProvider();
+        var itemRepo = provider.GetRequiredService<IItemRepository>();
+
+        return (itemRepo, user, feed);
+    }
+
     private string GetContent()
     {
         return """

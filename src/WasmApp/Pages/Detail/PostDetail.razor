@@ -63,7 +63,7 @@
                 <p><img src="@Post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" /></p>
             }
             <p>
-                @((MarkupString)HtmlSanitizer.Sanitize(Post.Content))
+                @((MarkupString)HtmlSanitizer.Sanitize(Post.Content ?? ""))
             </p>
             <p>
                 <button class="btn-link" @onclick="async () => await HandleClick(Post)">Collapse</button>
@@ -162,12 +162,6 @@
 
     private async Task PreviewPostAsync(NewsFeedItem post)
     {
-        if (post.Content == null)
-        {
-            post.Content = await this.feedClient.GetItemContentAsync(post);
-            this.StateHasChanged();
-        }
-
         bool wasExpanded = post.IsBeingPreviewed;
         if (wasExpanded)
         {

@@ -135,12 +135,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 END;";
             command.ExecuteNonQuery();
 
-            // Rebuild the FTS table (run if db gets out of sync with fts5)
-            // logger.LogWarning("Rebuilding FTS table...");
-            // command = connection.CreateCommand();
-            // command.CommandText = @"INSERT INTO Items_fts(Items_fts) VALUES('rebuild');";
-            // command.ExecuteNonQuery();
-            // logger.LogWarning("Done rebuilding FTS table...");
+            // Index to speed up JOIN from Items → ItemContent
+            command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE INDEX IF NOT EXISTS idx_itemcontent_user_feed_href
+                ON ItemContent(UserId, FeedUrl, Href);";
+            command.ExecuteNonQuery();
         }
     }
 
@@ -161,13 +161,15 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     i.Title,
                     i.PublishDateOrder,
                     i.PublishDate,
-                    i.Content,
+                    ic.Content,
                     i.IsRead,
                     i.UserId,
                     i.ThumbnailUrl,
                     i.IsSaved,
                     i.Tags
                 FROM Items i
+                LEFT JOIN ItemContent ic
+                    ON i.FeedUrl = ic.FeedUrl AND i.Href = ic.Href AND i.UserId = ic.UserId
                 LEFT JOIN Feeds f
                     ON i.FeedUrl = f.Url
                 WHERE (i.Id IN (
@@ -232,16 +234,18 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     i.Title,
                     i.PublishDateOrder,
                     i.PublishDate,
-                    i.Content,
+                    ic.Content,
                     i.IsRead,
                     i.UserId,
                     i.ThumbnailUrl,
                     i.IsSaved,
                     i.Tags
                 FROM Items i
+                LEFT JOIN ItemContent ic
+                    ON i.FeedUrl = ic.FeedUrl AND i.Href = ic.Href AND i.UserId = ic.UserId
             """;
 
-            command.CommandText += " WHERE UserId=@userId";
+            command.CommandText += " WHERE i.UserId=@userId";
             command.Parameters.AddWithValue("@userId", user.Id);
 
             if (feed.Href != "%")
