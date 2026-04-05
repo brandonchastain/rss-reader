@@ -120,17 +120,7 @@ window.Observer = {
     }
 };
 
-// Returning-user flag for auto-redirect on session expiry
 window.rssApp = {
-    setReturningUser: function() {
-        localStorage.setItem('rssApp.returningUser', 'true');
-    },
-    isReturningUser: function() {
-        return localStorage.getItem('rssApp.returningUser') === 'true';
-    },
-    clearReturningUser: function() {
-        localStorage.removeItem('rssApp.returningUser');
-    },
     // Functions to save, get, and clear the last post ID in localStorage
     setLastPostId: function(postId, isFilterUnread, isFilterSaved, filterTags, setDateTime) {
         localStorage.setItem('rssApp.lastPostId', postId);
