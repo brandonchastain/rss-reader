@@ -147,7 +147,23 @@ The most recent revision should have `ACTIVE` state and a traffic weight of `100
 
 ### 5b: Browser smoke test (Playwright)
 
-First check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snapshot`) are available.
+First, run the Firefox profile recovery procedure to clear any stale locks:
+
+```powershell
+$staleFirefox = Get-Process -Name firefox -ErrorAction SilentlyContinue
+if ($staleFirefox) {
+    foreach ($proc in $staleFirefox) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2
+}
+$profileDir = "$env:LOCALAPPDATA\ms-playwright\mcp-firefox"
+if (Test-Path $profileDir) {
+    Remove-Item -Recurse -Force $profileDir -ErrorAction SilentlyContinue
+}
+```
+
+Then check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snapshot`) are available.
 
 **If Playwright tools are NOT available:** skip this sub-step and note it in the summary.
 

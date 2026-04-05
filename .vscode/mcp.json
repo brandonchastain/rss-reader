@@ -10,7 +10,7 @@
   "servers": {
     "playwright": {
       "command": "npx",
-      "args": ["@playwright/mcp@0.0.68", "--browser", "firefox"]
+      "args": ["@playwright/mcp@0.0.70", "--browser", "firefox"]
     },
     "github": {
       "command": "docker",
