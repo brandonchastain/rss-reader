@@ -160,6 +160,39 @@ On subsequent boots, Litestream restores from blob (more up-to-date than Azure F
 az containerapp show --name rss-reader-api --resource-group rss-container-rg --query properties.runningStatus
 ```
 
+### Read Replicas (optional)
+
+The app supports optional read replicas that scale 0→N to handle read-heavy traffic. Readers restore from the Litestream blob on startup and serve read-only API requests.
+
+**Enable read replicas:**
+```bash
+az deployment group create \
+  --resource-group rss-container-rg \
+  --template-file main.bicep \
+  --parameters main.bicepparam \
+  --parameters enableReadReplica=true \
+  --parameters maxReadReplicas=3 \
+  --parameters containerImage="ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest" \
+  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY \
+  --parameters ghcrUsername=$($env:GITHUB_USERNAME) \
+  --parameters ghcrPassword=$($env:GITHUB_PAT)
+```
+
+**How it works:**
+- The proxy (`ApiProxy.js`) routes GET requests for timeline, feeds, search, and content to the reader
+- All writes (mark-as-read, save, add feed, refresh) always go to the writer
+- If the reader is down, the proxy automatically falls back to the writer
+- Readers are eventually consistent (data is as fresh as their last startup)
+- ACA scales readers to zero when idle, each new reader gets a fresh Litestream restore
+
+**Verify reader is running:**
+```bash
+az containerapp show --name rss-reader-api-reader --resource-group rss-container-rg --query properties.runningStatus
+az containerapp logs show --name rss-reader-api-reader --resource-group rss-container-rg --type console --tail 20
+```
+
+Healthy reader logs show: `Starting in READER mode (read-only replica).`
+
 
 # Frontend deployment
 

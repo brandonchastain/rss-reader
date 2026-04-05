@@ -14,6 +14,8 @@ builder.Configuration
     .AddJsonFile("appsettings.Development.json", optional: true)
     .AddEnvironmentVariables();
 var config = RssAppConfig.LoadFromAppSettings(builder.Configuration);
+// Readers still need ReadWriteCreate for repo startup schema init (CREATE TABLE, etc.)
+// "Read-only" is enforced at the app level (no write services), not the SQLite level.
 string dbConnectionString = $"Data Source={config.DbLocation};Mode=ReadWriteCreate;Cache=Shared;Pooling=True";
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
@@ -73,21 +75,32 @@ builder.Services
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateItemRepository();
         return new CachingItemRepository(inner, sb.GetRequiredService<IMemoryCache>());
     })
-    .AddSingleton<RssDeserializer>()
-    .AddSingleton<BackgroundWorkQueue>()
-    .AddSingleton<DatabaseBackupService>()
-    .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
-    .AddHostedService<BackgroundWorker>()
     .AddSingleton<IUserResolver, UserResolver>()
-    .AddSingleton<IFeedRefresher, FeedRefresher>()
-    .AddSingleton<FeedThumbnailRetriever>()
-    .AddTransient<RedirectDowngradeHandler>()
-    .AddHttpClient("RssClient")
-    .AddHttpMessageHandler<RedirectDowngradeHandler>()
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        AllowAutoRedirect = false
-    });
+    .AddSingleton<FeedThumbnailRetriever>();
+
+if (!config.IsReadOnly)
+{
+    // Write-mode services: background feed refresh, database backup, RSS fetching
+    builder.Services
+        .AddSingleton<RssDeserializer>()
+        .AddSingleton<BackgroundWorkQueue>()
+        .AddSingleton<DatabaseBackupService>()
+        .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
+        .AddHostedService<BackgroundWorker>()
+        .AddSingleton<IFeedRefresher, FeedRefresher>()
+        .AddTransient<RedirectDowngradeHandler>()
+        .AddHttpClient("RssClient")
+        .AddHttpMessageHandler<RedirectDowngradeHandler>()
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            AllowAutoRedirect = false
+        });
+}
+else
+{
+    // Read-only mode: register no-op IFeedRefresher so controllers can still resolve it
+    builder.Services.AddSingleton<IFeedRefresher, NoOpFeedRefresher>();
+}
 
 builder.Services.AddControllers();
 
@@ -98,9 +111,12 @@ if (!builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-// Restore database from backup
-var backup = app.Services.GetRequiredService<DatabaseBackupService>();
-await backup.RestoreFromBackupAsync(CancellationToken.None);
+// Restore database from backup (writer mode only — readers use Litestream restore)
+if (!config.IsReadOnly)
+{
+    var backup = app.Services.GetRequiredService<DatabaseBackupService>();
+    await backup.RestoreFromBackupAsync(CancellationToken.None);
+}
 
 // Instantiate repos to ensure database tables are created in order.
 var a = app.Services.GetRequiredService<IFeedRepository>();
@@ -116,7 +132,7 @@ app.UseAuthorization();
 
 // Setup endpoints
 app.MapControllers();
-app.MapGet("/api/healthz", () => Results.Ok("healthy")).AllowAnonymous();
+app.MapGet("/api/healthz", () => Results.Ok(new { status = "healthy", role = config.IsReadOnly ? "reader" : "writer" })).AllowAnonymous();
 
 if (config.IsTestUserEnabled)
 {

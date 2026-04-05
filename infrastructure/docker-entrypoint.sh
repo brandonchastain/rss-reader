@@ -7,7 +7,17 @@
 litestream restore -if-replica-exists -config /etc/litestream.yml /tmp/storage.db || \
     echo "WARNING: Litestream restore failed. DatabaseBackupService will restore from Azure Files." >&2
 
-# Start the app under Litestream's process supervision.
+APP_ROLE="${APP_ROLE:-writer}"
+
+if [ "$APP_ROLE" = "reader" ]; then
+    # Reader mode: serve read-only traffic. The DB was restored above.
+    # No Litestream replication needed — readers are ephemeral and get a
+    # fresh snapshot each time ACA scales them up.
+    echo "Starting in READER mode (read-only replica)." >&2
+    exec dotnet Server.dll
+fi
+
+# Writer mode: start the app under Litestream's process supervision.
 # Litestream continuously replicates WAL changes to Blob Storage.
 # If Litestream fails (auth error, misconfiguration), fall back to running
 # the app directly so DatabaseBackupService can still provide backup coverage.

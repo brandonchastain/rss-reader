@@ -234,6 +234,121 @@ resource blobDataContributorRole 'Microsoft.Authorization/roleAssignments@2022-0
   }
 }
 
+// ============================================================================
+// READ REPLICA — scales 0→N, read-only, same Docker image
+// ============================================================================
+
+@description('Enable read replica Container App')
+param enableReadReplica bool = false
+
+@description('Maximum number of read replicas')
+param maxReadReplicas int = 3
+
+// Reader Container App — internal ingress, no Azure Files mount
+resource readerApp 'Microsoft.App/containerApps@2024-03-01' = if (enableReadReplica) {
+  name: '${containerAppName}-reader'
+  location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    environmentId: environment.id
+    configuration: {
+      registries: [
+        {
+          server: 'ghcr.io'
+          username: ghcrUsername
+          passwordSecretRef: 'ghcr-password'
+        }
+      ]
+      secrets: [
+        {
+          name: 'ghcr-password'
+          value: ghcrPassword
+        }
+        {
+          name: 'gateway-secret-key'
+          value: gatewaySecretKey
+        }
+      ]
+      ingress: {
+        external: true
+        targetPort: 8080
+        allowInsecure: false
+        traffic: [
+          {
+            latestRevision: true
+            weight: 100
+          }
+        ]
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'rss-reader-api-reader'
+          image: containerImage
+          resources: {
+            cpu: json(cpuCore)
+            memory: memorySize
+          }
+          env: [
+            {
+              name: 'ASPNETCORE_ENVIRONMENT'
+              value: 'Production'
+            }
+            {
+              name: 'RSSREADER_API_KEY'
+              secretRef: 'gateway-secret-key'
+            }
+            {
+              name: 'LITESTREAM_AZURE_ACCOUNT_NAME'
+              value: storageAccount.name
+            }
+            {
+              name: 'APP_ROLE'
+              value: 'reader'
+            }
+            {
+              name: 'RssAppConfig__IsReadOnly'
+              value: 'true'
+            }
+            {
+              name: 'RssAppConfig__DbLocation'
+              value: '/tmp/storage.db'
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 0
+        maxReplicas: maxReadReplicas
+        rules: [
+          {
+            name: 'http-rule'
+            http: {
+              metadata: {
+                concurrentRequests: '10'
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+
+// Grant the reader's managed identity Storage Blob Data Reader for Litestream restore
+resource readerBlobDataReaderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableReadReplica) {
+  name: guid(storageAccount.id, '${containerAppName}-reader', 'Storage Blob Data Reader')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
+    principalId: readerApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // Static Web App
 resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = {
   name: staticWebAppName
@@ -258,6 +373,7 @@ resource staticWebAppSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
   properties: {
     RSSREADER_API_URL: 'https://${containerApp.properties.configuration.ingress.fqdn}'
     RSSREADER_API_KEY: gatewaySecretKey
+    RSSREADER_READER_API_URL: enableReadReplica ? 'https://${readerApp.properties.configuration.ingress.fqdn}' : ''
   }
 }
 
@@ -274,3 +390,4 @@ output containerAppName string = containerApp.name
 output staticWebAppName string = staticWebApp.name
 output staticWebAppDefaultHostname string = staticWebApp.properties.defaultHostname
 output staticWebAppId string = staticWebApp.id
+output readerAppFQDN string = enableReadReplica ? readerApp.properties.configuration.ingress.fqdn : ''
