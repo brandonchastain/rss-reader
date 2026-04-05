@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Memory;
 using RssApp.ComponentServices;
 using RssApp.Config;
@@ -29,6 +30,12 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 });
 
 builder.Services.AddMemoryCache();
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
 builder.Services.AddLogging(loggingBuilder =>
 {
     loggingBuilder.ClearProviders();
@@ -144,6 +151,7 @@ if (config.IsReadOnly)
 
 // Enable middleware 
 app.UseHttpsRedirection();
+app.UseResponseCompression();
 app.UseStaticFiles();
 app.UseCors("LocalFrontend");
 app.UseAuthentication();
