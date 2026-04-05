@@ -58,12 +58,12 @@
       "headers": {
         "cache-control": "public, max-age=31536000, immutable"
       }
-    },
-    {
-      "route": "/*",
-      "rewrite": "/index.html"
     }
   ],
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/.auth/*", "/timeline*", "/feeds*", "/tags*", "/search*", "/posts*"]
+  },
   "responseOverrides": {
     "401": {
       "redirect": "/.auth/login/aad",
