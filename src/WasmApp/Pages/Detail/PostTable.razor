@@ -86,7 +86,7 @@
                 <div class="day-group">
                 @foreach (var post in dayGroup)
                 {
-                    <PostDetail 
+                    <PostDetail @key="post.Id"
                         Post="@post"
                         FilterTag="@this.filterTag"
                         IsFilterUnread="@this.IsFilterUnread"/>

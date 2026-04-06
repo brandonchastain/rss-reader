@@ -6,6 +6,7 @@
 
 @code {
     private bool _isRefreshing;
+    private const int MaxPostsToKeep = 100;
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
     public int Page { get; set; } = 0;
     public long? CursorPublishDateOrder { get; set; }
@@ -79,6 +80,12 @@
             var existingHrefs = new HashSet<string>(Items.Select(i => i.Href), StringComparer.OrdinalIgnoreCase);
             var dedupedNewPosts = newPageRes.Where(i => !existingHrefs.Contains(i.Href)).ToList();
             Items.AddRange(dedupedNewPosts);
+
+            // Trim oldest items to cap render cost
+            if (Items.Count > MaxPostsToKeep)
+            {
+                Items.RemoveRange(0, Items.Count - MaxPostsToKeep);
+            }
 
             // Update cursor from the new page results (not deduplicated — use original to get true last item)
             if (newPageRes.Any())
