@@ -7,6 +7,7 @@
 
 @code {
     private bool _isRefreshing;
+    private bool _pendingForceReset;
     private string _scrollAnchorPostId;
     private bool _needsScrollRestore;
     private int _restorePageSize;
@@ -63,24 +64,31 @@
         }
 
         Page = page;
-        await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag));
+        await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag, false));
     }
 
-    protected async Task RefreshItems((bool isFilterUnread, bool isFilterSaved, string filterTag) filters)
+    protected async Task RefreshItems((bool isFilterUnread, bool isFilterSaved, string filterTag, bool forceReset) filters)
     {
         if (_isRefreshing)
         {
+            if (filters.forceReset) _pendingForceReset = true;
             return;
         }
 
         try
         {
             _isRefreshing = true;
-            
-            if (UpdateFilters(filters))
+
+            bool forceReset = filters.forceReset || _pendingForceReset;
+            _pendingForceReset = false;
+
+            bool filtersChanged = UpdateFilters(
+                (filters.isFilterUnread, filters.isFilterSaved, filters.filterTag));
+
+            if (forceReset || filtersChanged)
             {
                 ResetPagination();
-                UpdateUrlFromFilters();
+                if (filtersChanged) UpdateUrlFromFilters();
             }
 
             int pageSize = _restorePageSize > 0 ? _restorePageSize : 20;
@@ -103,6 +111,12 @@
         finally
         {
             _isRefreshing = false;
+        }
+
+        // If a forceReset arrived while we were fetching, run again now
+        if (_pendingForceReset)
+        {
+            await RefreshItems((feedClient.IsFilterUnread, feedClient.IsFilterSaved, feedClient.FilterTag, true));
         }
     }
 
@@ -214,7 +228,7 @@
 
             if (this.Items == null || !this.Items.Any())
             {
-                await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag));
+                await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag, false));
             }
         }
         else if (_needsScrollRestore && !string.IsNullOrEmpty(_scrollAnchorPostId))

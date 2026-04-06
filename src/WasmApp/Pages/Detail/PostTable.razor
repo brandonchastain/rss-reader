@@ -115,7 +115,7 @@
     public EventCallback<int> OnPageChanged { get; set; }
 
     [Parameter]
-    public EventCallback<(bool, bool, string)> OnRefreshTriggered { get; set; }
+    public EventCallback<(bool, bool, string, bool)> OnRefreshTriggered { get; set; }
 
     [Parameter]
     public IFeedClient FeedClient { get; set; }
@@ -293,7 +293,7 @@
     {
         isLoading = true;
         StartSpinnerTimer();
-        await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+        await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag, false));
         isLoading = false;
         StopTimeoutTimer();
     }
@@ -302,7 +302,7 @@
     {
         isLoading = true;
         StartSpinnerTimer();
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag));
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag, false));
         isLoading = false;
         StopTimeoutTimer();
     }
@@ -315,15 +315,15 @@
         {
             tag = null;
         }
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, tag));
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, tag, false));
         isLoading = false;
         StopTimeoutTimer();
     }
 
     private async Task OnRefreshComplete()
     {
-        // Re-fetch page 0 with current filters without showing loading animation
-        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag));
+        // Re-fetch from the top with current filters — forceReset resets cursor so new posts appear
+        await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag, true));
     }
 
     private async Task Next()

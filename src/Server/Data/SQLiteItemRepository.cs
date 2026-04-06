@@ -186,7 +186,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             // Index for timeline ORDER BY + cursor pagination — eliminates full-table scan + sort
             command = connection.CreateCommand();
             command.CommandText = @"
-                DROP INDEX IF EXISTS idx_items_timeline;
                 CREATE INDEX IF NOT EXISTS idx_items_timeline
                 ON Items(UserId, PublishDateOrder DESC, Id DESC);";
             command.ExecuteNonQuery();
