@@ -48,9 +48,8 @@ namespace Server.Controllers
         public async Task<IActionResult> RegisterAsync()
         {
             var aadId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            var email = User.FindFirst(ClaimTypes.Name)?.Value;
 
-            if (string.IsNullOrEmpty(aadId) && string.IsNullOrEmpty(email))
+            if (string.IsNullOrEmpty(aadId))
             {
                 return Unauthorized("User is not authenticated.");
             }

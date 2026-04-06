@@ -4,83 +4,161 @@
 
 <div class="legal-container">
     <h1 class="legal-title">Privacy Policy</h1>
+    <p class="legal-updated">Last updated: April 6, 2026</p>
 
     <section class="legal-section">
-        <h2>What data does RSS Reader collect?</h2>
-        <ul>
-            <li><strong>An anonymized account identifier</strong> &mdash; your Microsoft email address is never stored. We use an opaque identifier provided by Microsoft to link your account.</li>
-            <li><strong>Feeds you subscribe to</strong></li>
-            <li><strong>Feed item metadata</strong> &mdash; text content, tags, read/unread status, saved posts</li>
-        </ul>
+        <h2>Who we are</h2>
         <p>
-            You are trusting <strong>me</strong> (Brandon) and the <strong>RSS Reader code &amp; infrastructure</strong> with the above data.
+            RSS Reader is an independent, open-source project operated by a single developer. No company or
+            third-party team has access to your data. You can
+            <a href="https://github.com/brandonchastain/rss-reader">inspect the source code</a> to see exactly
+            how your data is handled.
         </p>
     </section>
 
     <section class="legal-section">
-        <h2>How is that data used?</h2>
+        <h2>What we collect</h2>
         <ul>
-            <li>This data is used solely for authentication and app functionality.</li>
-            <li>No third-party analytics or ad services are provisioned in the infrastructure.</li>
-            <li>No data is shared with third parties except Microsoft/Azure as the cloud provider.</li>
+            <li>
+                <strong>A unique account identifier</strong> &mdash; when you sign in with Microsoft, Azure Static
+                Web Apps generates an app-specific identifier for your account. This ID cannot be used to identify
+                you across other apps or services. <strong>Your email address is never stored.</strong>
+            </li>
+            <li><strong>Your feed subscriptions</strong> &mdash; the RSS feeds you add to your account.</li>
+            <li>
+                <strong>Feed content and metadata</strong> &mdash; article text from your feeds, any tags
+                you create, which posts you&rsquo;ve saved, and whether you&rsquo;ve read an article (so we can
+                show it as read next time you open the app).
+            </li>
+            <li>
+                <strong>Server logs</strong> &mdash; standard request logs that may include your IP address and
+                the pages you visit. These are retained for 30 days and then automatically deleted.
+            </li>
+        </ul>
+        <p>We do not collect analytics, run tracking scripts, or use advertising services of any kind.</p>
+    </section>
+
+    <section class="legal-section">
+        <h2>How we use your data</h2>
+        <p>Your data is used solely to provide and improve RSS Reader. Specifically:</p>
+        <ul>
+            <li>To authenticate you and keep your feeds and reading progress in sync.</li>
+            <li>To fetch and display articles from the feeds you subscribe to.</li>
+            <li>To diagnose errors and maintain the service (via server logs).</li>
+        </ul>
+        <p>We will never send you emails. Your email address passes through our server during authentication but is not stored or used for any purpose.</p>
+    </section>
+
+    <section class="legal-section">
+        <h2>Who can access your data</h2>
+        <ul>
+            <li><strong>The operator</strong> &mdash; a single developer, for service maintenance and support.</li>
+            <li>
+                <strong>Microsoft / Azure</strong> &mdash; our cloud infrastructure provider. Your data is
+                processed on Azure services under
+                <a href="https://privacy.microsoft.com/en-us/privacystatement">Microsoft&rsquo;s Privacy Statement</a>.
+            </li>
+            <li>
+                <strong>Law enforcement</strong> &mdash; only if required by a valid legal process (e.g., a court order).
+            </li>
+        </ul>
+        <p><strong>We will never sell your personal data.</strong></p>
+    </section>
+
+    <section class="legal-section">
+        <h2>Data storage and security</h2>
+        <ul>
+            <li>All data is stored in encrypted Azure storage in the United States.</li>
+            <li>All network traffic between your browser and our servers uses HTTPS.</li>
+            <li>The API enforces strict access controls &mdash; you can only access your own data.</li>
+            <li>Authentication is handled entirely by Microsoft; your password is never exposed to RSS Reader.</li>
         </ul>
     </section>
 
     <section class="legal-section">
-        <h2>Email anonymization</h2>
+        <h2>Data retention and deletion</h2>
+        <ul>
+            <li><strong>Account data</strong> (feeds, articles, reading activity) is kept as long as your account is active.</li>
+            <li><strong>Server logs</strong> are automatically deleted after 30 days.</li>
+            <li><strong>Backups</strong> are maintained for service reliability and are overwritten on a rolling basis.</li>
+        </ul>
         <p>
-            When you sign in with your Microsoft account, RSS Reader receives an opaque account identifier from Azure Active Directory.
-            <strong>Your email address is never written to our database.</strong>
-            We cannot see, search, or recover your email from the identifier we store.
+            To request deletion of your data, email
+            <a href="mailto:privacy@brandonchastain.com">privacy@brandonchastain.com</a>.
+            We will process your request within 30 days.
         </p>
     </section>
 
     <section class="legal-section">
-        <h2>Microsoft account required</h2>
-        <p>
-            A personal Microsoft account is required to log in. Microsoft securely handles the authentication &mdash; your credentials are never exposed to RSS Reader.
-        </p>
-    </section>
-
-    <section class="legal-section">
-        <h2>Alternative options</h2>
-        <p>If you prefer not to use a Microsoft account at all:</p>
+        <h2>Your rights</h2>
+        <p>Regardless of where you live, you can:</p>
         <ul>
-            <li><strong>Self-host the app</strong> for absolute privacy &mdash; <a href="https://github.com/brandonchastain/rss-reader/blob/main/README.md">Docs</a></li>
+            <li><strong>Export</strong> your feed subscriptions at any time via OPML export.</li>
+            <li><strong>Request a copy</strong> of all data we hold about you.</li>
+            <li><strong>Request deletion</strong> of your account and data.</li>
         </ul>
-    </section>
-
-    <section class="legal-section">
-        <h2>Security</h2>
-        <ul>
-            <li>All data is stored on an encrypted Azure Storage Account.</li>
-            <li>The backend server runs in an Azure Container App (Azure-managed PaaS).</li>
-            <li>Error logs are sent to Azure Log Analytics and retained for 30 days.</li>
-            <li>All network traffic is protected by HTTPS.</li>
-            <li>The backend has two layers of authentication: a verified Microsoft identity <em>and</em> a frontend-origin secret key.</li>
-            <li>The API prevents users from accessing any data that isn&rsquo;t their own.</li>
-        </ul>
-    </section>
-
-    <section class="legal-section">
-        <h2>No spam</h2>
-        <p>We don&rsquo;t send any emails at all. We don&rsquo;t even have your email address.</p>
-    </section>
-
-    <section class="legal-section">
-        <h2>We will never share or sell any personal data.</h2>
     </section>
 
     <section class="legal-section legal-gdpr">
-        <h2>GDPR Notice</h2>
-        <p>If you are an EU resident, the following applies:</p>
+        <h2>Additional rights for EU residents (GDPR)</h2>
+        <p>If you are in the European Union, you also have the right to:</p>
         <ul>
-            <li><strong>Legal Basis:</strong> Data is processed solely to provide app functionality and authentication, based on your consent when you use RSS Reader.</li>
-            <li><strong>Your Rights:</strong> You have the right to access, correct, delete, restrict, or object to the processing of your personal data. You may also request a copy of your data.</li>
-            <li><strong>Data Retention:</strong> Your data is retained only as long as your account exists. When the account deletion feature is available, you will be able to remove your data at any time.</li>
-            <li><strong>International Transfers:</strong> Data is stored in Microsoft Azure data centers in the United States.</li>
-            <li><strong>Contact:</strong> To exercise your rights or for privacy concerns, please open an issue in <a href="https://github.com/brandonchastain/rss-reader">this repository</a>.</li>
+            <li>Correct inaccurate personal data.</li>
+            <li>Restrict or object to processing of your data.</li>
+            <li>Request data portability.</li>
+            <li>Lodge a complaint with your local data protection authority.</li>
         </ul>
-        <p>RSS Reader is primarily intended for US users, but basic GDPR protections are provided for EU residents.</p>
+        <p>
+            <strong>Legal basis:</strong> We process your data to provide the service you signed up for
+            (performance of a contract) and to maintain the security and reliability of the service
+            (legitimate interest).
+        </p>
+        <p>
+            <strong>International transfers:</strong> Your data is stored in the United States on Microsoft Azure
+            infrastructure.
+        </p>
+    </section>
+
+    <section class="legal-section">
+        <h2>Cookies and local storage</h2>
+        <p>
+            RSS Reader does not use tracking cookies. We use a service worker to cache the app for faster loading,
+            and browser local storage to remember your session. These are essential for the app to function and
+            cannot be used to track you across other websites.
+        </p>
+    </section>
+
+    <section class="legal-section">
+        <h2>Children&rsquo;s privacy</h2>
+        <p>
+            RSS Reader is not intended for children under 13. We do not knowingly collect personal data from
+            children. If you believe a child has provided us with data, please contact us and we will delete it.
+        </p>
+    </section>
+
+    <section class="legal-section">
+        <h2>Changes to this policy</h2>
+        <p>
+            We may update this policy from time to time. Changes will be posted on this page with an updated
+            &ldquo;Last updated&rdquo; date. Since we don&rsquo;t have your email, we cannot notify you directly
+            &mdash; we encourage you to review this page periodically.
+        </p>
+    </section>
+
+    <section class="legal-section">
+        <h2>Self-hosting</h2>
+        <p>
+            RSS Reader is open source. If you prefer complete control over your data, you can
+            <a href="https://github.com/brandonchastain/rss-reader/blob/main/README.md">self-host the app</a>
+            on your own infrastructure.
+        </p>
+    </section>
+
+    <section class="legal-section">
+        <h2>Contact</h2>
+        <p>
+            For any privacy-related questions or requests, email
+            <a href="mailto:privacy@brandonchastain.com">privacy@brandonchastain.com</a>.
+        </p>
     </section>
 </div>
