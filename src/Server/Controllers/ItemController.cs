@@ -71,7 +71,7 @@ namespace Server.Controllers
             }
 
             var feed = new NewsFeed("%", user.Id);
-            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId: lastId, lastPublishDateOrder: lastPublishDateOrder, excludeFeedUrls: excludeFeedUrls);
+            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId: lastId, lastPublishDateOrder: lastPublishDateOrder, excludeFeedUrls: excludeFeedUrls, includeContent: false);
             var result = items
                 .DistinctBy(i => i.Href)
                 .Where(i => string.IsNullOrWhiteSpace(filterTag) || (i.FeedTags?.Contains(filterTag) ?? false))
@@ -106,7 +106,7 @@ namespace Server.Controllers
                 lastPublishDateOrder = cursorPublishDateOrder;
             }
 
-            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId: lastId, lastPublishDateOrder: lastPublishDateOrder);
+            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId: lastId, lastPublishDateOrder: lastPublishDateOrder, includeContent: false);
             var result = items
                 .DistinctBy(i => i.Href)
                 .Where(i => string.IsNullOrWhiteSpace(filterTag) || (i.FeedTags?.Contains(filterTag) ?? false))

@@ -103,6 +103,36 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 );";
             command.ExecuteNonQuery();
 
+            // Rebuild FTS5 index from existing ItemContent data.
+            // If the index is corrupted, drop and recreate it.
+            try
+            {
+                command = connection.CreateCommand();
+                command.CommandText = @"INSERT INTO Items_fts(Items_fts) VALUES('rebuild');";
+                command.ExecuteNonQuery();
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 11) // SQLITE_CORRUPT
+            {
+                logger.LogWarning(ex, "FTS5 index corrupt — dropping and recreating");
+                command = connection.CreateCommand();
+                command.CommandText = @"DROP TABLE IF EXISTS Items_fts;";
+                command.ExecuteNonQuery();
+
+                command = connection.CreateCommand();
+                command.CommandText = @"
+                    CREATE VIRTUAL TABLE Items_fts
+                    USING fts5(
+                        Title, Content, Href, FeedUrl,
+                        UserId UNINDEXED,
+                        content='ItemContent', content_rowid='Id'
+                    );";
+                command.ExecuteNonQuery();
+
+                command = connection.CreateCommand();
+                command.CommandText = @"INSERT INTO Items_fts(Items_fts) VALUES('rebuild');";
+                command.ExecuteNonQuery();
+            }
+
             // Trigger to keep the FTS table in sync with the main table
             command = connection.CreateCommand();
             command.CommandText = @"
@@ -147,6 +177,19 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public async Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize)
     {
+        try
+        {
+            return await SearchItemsWithFtsAsync(query, user, page, pageSize);
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 11) // SQLITE_CORRUPT
+        {
+            logger.LogWarning(ex, "FTS5 index corrupt, falling back to LIKE-only search for query: {Query}", query);
+            return await SearchItemsLikeOnlyAsync(query, user, page, pageSize);
+        }
+    }
+
+    private async Task<IEnumerable<NewsFeedItem>> SearchItemsWithFtsAsync(string query, RssUser user, int page, int pageSize)
+    {
         var set = new HashSet<NewsFeedItem>();
 
         using (var connection = new SqliteConnection(this.connectionString))
@@ -188,39 +231,15 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command.Parameters.AddWithValue("@pageSize", pageSize);
             command.Parameters.AddWithValue("@offset", page * pageSize);
 
-            using (var reader = await command.ExecuteReaderAsync())
-            {
-                while (await reader.ReadAsync())
-                {
-                    var item = this.ReadItemFromResults(reader);
-
-                    if (!set.Contains(item))
-                    {
-                        set.Add(item);
-                    }
-
-                    set.TryGetValue(item, out var storedItem);
-                    storedItem.FeedTags = storedItem.FeedTags.Union(item.FeedTags).ToList();
-                }
-            }
+            ReadItemsFromCommand(command, set);
         }
 
         return set.ToList();
     }
 
-    public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
-        NewsFeed feed,
-        bool isFilterUnread,
-        bool isFilterSaved,
-        string filterTag,
-        int? page = null,
-        int? pageSize = null,
-        long? lastId = null,
-        long? lastPublishDateOrder = null,
-        IEnumerable<string> excludeFeedUrls = null)
+    private async Task<IEnumerable<NewsFeedItem>> SearchItemsLikeOnlyAsync(string query, RssUser user, int page, int pageSize)
     {
-        var items = new List<NewsFeedItem>();
-        var user = this.userStore.GetUserById(feed.UserId);
+        var set = new HashSet<NewsFeedItem>();
 
         using (var connection = new SqliteConnection(this.connectionString))
         {
@@ -244,6 +263,86 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 FROM Items i
                 LEFT JOIN ItemContent ic
                     ON i.FeedUrl = ic.FeedUrl AND i.Href = ic.Href AND i.UserId = ic.UserId
+                LEFT JOIN Feeds f
+                    ON i.FeedUrl = f.Url
+                WHERE (i.Title LIKE @plainQuery OR ic.Content LIKE @plainQuery)
+                AND i.UserId = @userId
+                ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC
+                LIMIT @pageSize OFFSET @offset
+            """;
+
+            command.Parameters.AddWithValue("@plainQuery", $"%{query}%");
+            command.Parameters.AddWithValue("@userId", user.Id);
+            command.Parameters.AddWithValue("@pageSize", pageSize);
+            command.Parameters.AddWithValue("@offset", page * pageSize);
+
+            ReadItemsFromCommand(command, set);
+        }
+
+        return set.ToList();
+    }
+
+    private void ReadItemsFromCommand(SqliteCommand command, HashSet<NewsFeedItem> set)
+    {
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                var item = this.ReadItemFromResults(reader);
+
+                if (!set.Contains(item))
+                {
+                    set.Add(item);
+                }
+
+                set.TryGetValue(item, out var storedItem);
+                storedItem.FeedTags = storedItem.FeedTags.Union(item.FeedTags).ToList();
+            }
+        }
+    }
+
+    public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
+        NewsFeed feed,
+        bool isFilterUnread,
+        bool isFilterSaved,
+        string filterTag,
+        int? page = null,
+        int? pageSize = null,
+        long? lastId = null,
+        long? lastPublishDateOrder = null,
+        IEnumerable<string> excludeFeedUrls = null,
+        bool includeContent = true)
+    {
+        var items = new List<NewsFeedItem>();
+        var user = this.userStore.GetUserById(feed.UserId);
+
+        using (var connection = new SqliteConnection(this.connectionString))
+        {
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+
+            var contentColumn = includeContent ? "ic.Content" : "NULL AS Content";
+            var contentJoin = includeContent
+                ? "LEFT JOIN ItemContent ic ON i.FeedUrl = ic.FeedUrl AND i.Href = ic.Href AND i.UserId = ic.UserId"
+                : "";
+
+            command.CommandText = $"""
+                SELECT
+                    i.Id,
+                    i.FeedUrl,
+                    i.Href,
+                    i.CommentsHref,
+                    i.Title,
+                    i.PublishDateOrder,
+                    i.PublishDate,
+                    {contentColumn},
+                    i.IsRead,
+                    i.UserId,
+                    i.ThumbnailUrl,
+                    i.IsSaved,
+                    i.Tags
+                FROM Items i
+                {contentJoin}
             """;
 
             command.CommandText += " WHERE i.UserId=@userId";

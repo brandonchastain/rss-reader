@@ -48,23 +48,30 @@
         <p>
             Published on @FormatDate(Post.ParsedDate)
         </p>
-        <p>
-            @if (_isSpeaking)
-            {
-                <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => StopSpeaking()"><i class="fa-solid fa-stop"></i> [stop speaking]</button>
-            }
-            else
-            {
-                <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)"><i class="fa-solid fa-volume-high"></i> [speak this text]</button>
-            }
-        </p>
-        @if (Post?.GetThumbnailUrl() != null && Post.Content?.TrimStart().IndexOf(Post.GetThumbnailUrl()) < 0)
+        @if (_isLoadingContent)
         {
-            <p><img src="@Post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" /></p>
+            <p><em>Loading content…</em></p>
         }
-        <p>
-            @((MarkupString)HtmlSanitizer.Sanitize(Post.Content ?? ""))
-        </p>
+        else
+        {
+            <p>
+                @if (_isSpeaking)
+                {
+                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => StopSpeaking()"><i class="fa-solid fa-stop"></i> [stop speaking]</button>
+                }
+                else
+                {
+                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)"><i class="fa-solid fa-volume-high"></i> [speak this text]</button>
+                }
+            </p>
+            @if (Post?.GetThumbnailUrl() != null && Post.Content?.TrimStart().IndexOf(Post.GetThumbnailUrl()) < 0)
+            {
+                <p><img src="@Post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" /></p>
+            }
+            <p>
+                @((MarkupString)HtmlSanitizer.Sanitize(Post.Content ?? ""))
+            </p>
+        }
         <p>
             <button class="btn-link" @onclick="async () => await HandleClick(Post)">Collapse</button>
         </p>
@@ -84,6 +91,7 @@
     public bool IsFilterUnread { get; set; }
 
     private bool _isSpeaking = false;
+    private bool _isLoadingContent = false;
     private DotNetObjectReference<PostDetail> _dotNetRef;
     private ElementReference _postRowRef;
 
@@ -199,12 +207,34 @@
 
     private async Task HandleClick(NewsFeedItem post, bool preview = true)
     {
-        if (preview)
+        if (!preview || _isLoadingContent) return;
+
+        // Update read state immediately in the UI, then fire the API call
+        // without blocking content loading. During feed refresh, MarkAsRead
+        // competes for the SQLite write lock and can hang for seconds.
+        _ = MarkAsReadAsync(post, true);
+
+        // Lazy-load content on first expand
+        if (!post.IsBeingPreviewed && post.Content == null)
         {
-            // Update read state immediately in the UI, then fire the API call
-            // without blocking content loading. During feed refresh, MarkAsRead
-            // competes for the SQLite write lock and can hang for seconds.
-            _ = MarkAsReadAsync(post, true);
+            post.IsBeingPreviewed = true;
+            _isLoadingContent = true;
+            await InvokeAsync(StateHasChanged);
+
+            try
+            {
+                post.Content = await feedClient.GetItemContentAsync(post);
+            }
+            catch (Exception)
+            {
+                post.Content = "[content unavailable]";
+            }
+
+            _isLoadingContent = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        else
+        {
             await PreviewPostAsync(post);
         }
     }
