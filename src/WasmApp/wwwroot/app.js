@@ -121,67 +121,33 @@ window.Observer = {
 };
 
 window.rssApp = {
-    // Functions to save, get, and clear the last post ID in localStorage
-    setLastPostId: function(postId, isFilterUnread, isFilterSaved, filterTags, setDateTime) {
-        localStorage.setItem('rssApp.lastPostId', postId);
-        localStorage.setItem('rssApp.lastPage', document.title);
-        localStorage.setItem('rssApp.isFilterUnread', isFilterUnread);
-        localStorage.setItem('rssApp.isFilterSaved', isFilterSaved);
-        localStorage.setItem('rssApp.filterTags', filterTags);
-        localStorage.setItem('rssApp.lastSet', setDateTime);
+    saveScrollStateAndNavigate: function(postId, targetHref) {
+        var itemCount = document.querySelectorAll('[data-post-id]').length;
+        var pageEstimate = Math.ceil(itemCount / 20);
+        sessionStorage.setItem('rssApp.scrollAnchorPostId', postId);
+        sessionStorage.setItem('rssApp.scrollAnchorPage', pageEstimate.toString());
+        sessionStorage.setItem('rssApp.scrollAnchorPath', window.location.pathname);
+        window.location.href = targetHref;
     },
-    getLastPostId: function() {
-        return localStorage.getItem('rssApp.lastPostId');
+    getScrollState: function() {
+        var postId = sessionStorage.getItem('rssApp.scrollAnchorPostId');
+        if (!postId) return null;
+        var page = parseInt(sessionStorage.getItem('rssApp.scrollAnchorPage') || '0');
+        var path = sessionStorage.getItem('rssApp.scrollAnchorPath') || '';
+        return { postId: postId, page: page, path: path };
     },
-    getIsFilterUnread: function() {
-        return localStorage.getItem('rssApp.isFilterUnread') === 'true';
+    clearScrollState: function() {
+        sessionStorage.removeItem('rssApp.scrollAnchorPostId');
+        sessionStorage.removeItem('rssApp.scrollAnchorPage');
+        sessionStorage.removeItem('rssApp.scrollAnchorPath');
     },
-    getIsFilterSaved: function() {
-        return localStorage.getItem('rssApp.isFilterSaved') === 'true';
-    },
-    getFilterTags: function() {
-        return localStorage.getItem('rssApp.filterTags') || '';
-    },
-    getLastSet: function() {
-        return localStorage.getItem('rssApp.lastSet');
-    },
-    clearData: function() {
-        localStorage.removeItem('rssApp.lastPostId');
-        localStorage.removeItem('rssApp.isFilterUnread');
-        localStorage.removeItem('rssApp.isFilterSaved');
-        localStorage.removeItem('rssApp.filterTags');
-        localStorage.removeItem('rssApp.lastSet');
-    },
-    scrollToLastPost: function() {
-        const lastPostId = this.getLastPostId();
-        const isSamePage = document.title === localStorage.getItem('rssApp.lastPage');
-        if (!lastPostId || !isSamePage) {
-            return;
+    scrollToPost: function(postId) {
+        var el = document.querySelector('[data-post-id="' + postId + '"]');
+        if (el) {
+            el.scrollIntoView({ behavior: 'instant', block: 'center' });
+            return true;
         }
-
-        const maxAttempts = 100;
-        const scrollStep = 10000; // px
-        const delay = 100; // ms
-        let attempts = 0;
-
-        function tryScroll() {
-            const postElement = document.querySelector(`a[href="${lastPostId}"]`);
-            if (postElement) {
-                postElement.scrollIntoView({
-                    behavior: 'instant', // or 'instant' or 'smooth'
-                    block: 'center',
-                    inline: 'nearest'
-                });
-                postElement.parentElement.click();
-                return;
-            }
-            if (attempts < maxAttempts) {
-                window.scrollBy(0, scrollStep);
-                attempts++;
-                setTimeout(tryScroll, delay);
-            }
-        }
-        tryScroll();
+        return false;
     }
 };
 

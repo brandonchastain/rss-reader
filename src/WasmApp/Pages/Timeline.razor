@@ -18,9 +18,11 @@
 
 @code {
 
-    protected override async Task<List<NewsFeedItem>> GetPostsAsync()
+    protected override string GetBasePath() => "/timeline";
+
+    protected override async Task<List<NewsFeedItem>> GetPostsAsync(int pageSize = 20)
     {
-        var posts = await this.feedClient.GetTimelineAsync(Page, cursorPublishDateOrder: CursorPublishDateOrder, cursorId: CursorId);
+        var posts = await this.feedClient.GetTimelineAsync(Page, pageSize: pageSize, cursorPublishDateOrder: CursorPublishDateOrder, cursorId: CursorId);
         return posts?.ToList() ?? new List<NewsFeedItem>();
     }
 

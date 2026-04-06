@@ -1,4 +1,5 @@
 @using System.Threading.Tasks
+@using Microsoft.JSInterop
 @inherits PageBase
 @implements IDisposable
 
@@ -11,7 +12,7 @@
 
 @if (Post != null)
 {
-<div @ref="_postRowRef" class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="async () => await HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
+<div @ref="_postRowRef" data-post-id="@Post.Id" class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="async () => await HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
     <div class="col thumbnail">
         @{
             var thumbnailUrl = Post.GetThumbnailUrl();
@@ -31,11 +32,11 @@
             {
                 <span class="post-tag">@tag</span>
             }
-            <a tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => { await MarkAsReadAsync(Post, true); navigationManager.NavigateTo(Post.Href); }">@Post.Title</a><br/>
+            <a tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnArticleLinkClick(Post)">@Post.Title</a><br/>
             <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await MarkAsReadAsync(Post, !Post.IsRead)">[mark @(!Post.IsRead ? "read" : "unread")]</button><button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)">[@(!Post.IsSaved ? "save" : "unsave")]</button>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
-                <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => navigationManager.NavigateTo(Post.CommentsHref)">[comments]</button>
+                <a class="link" href="@Post.CommentsHref" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnCommentsLinkClick(Post.CommentsHref)">[comments]</a>
             }
             <a class="post-domain" href="/posts?href=@System.Net.WebUtility.UrlEncode(Post.FeedUrl)" @onclick:stopPropagation="true">@Post.Href.GetRootDomain()</a>
         </p>
@@ -132,6 +133,27 @@
     public void Dispose()
     {
         _dotNetRef?.Dispose();
+    }
+
+    private async Task OnArticleLinkClick(NewsFeedItem post)
+    {
+        _ = MarkAsReadAsync(post, true);
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("rssApp.saveScrollStateAndNavigate", post.Id, post.Href);
+        }
+        catch (TaskCanceledException) { }
+        catch (JSException) { }
+    }
+
+    private async Task OnCommentsLinkClick(string commentsHref)
+    {
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("rssApp.saveScrollStateAndNavigate", Post.Id, commentsHref);
+        }
+        catch (TaskCanceledException) { }
+        catch (JSException) { }
     }
 
     private bool ShouldPostBeHidden(NewsFeedItem post)
