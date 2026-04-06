@@ -49,8 +49,11 @@ else if (hasSearched)
 
     private async Task SearchPosts()
     {
-        ResetPagination();
-        Items = await this.GetPostsAsync();
+        Page = 0;
+        CursorPublishDateOrder = null;
+        CursorId = null;
+        var newItems = await this.GetPostsAsync();
+        Items = newItems;
         hasSearched = true;
         await InvokeAsync(StateHasChanged);
     }

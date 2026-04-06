@@ -1,6 +1,5 @@
 @using WasmApp.Services
 @using RssApp.Config
-@implements IDisposable
 @inject IJSRuntime JS
 @inject IFeedClient FeedClient
 @inject ILogger<Toolbar> Logger
@@ -79,14 +78,6 @@
 
     private bool tagsAreHidden = true;
     private bool isRefreshing = false;
-
-    public void Dispose()
-    {
-        if (FeedClient != null)
-        {
-            FeedClient.Dispose();
-        }
-    }
 
     private bool isClearing = false;
 
