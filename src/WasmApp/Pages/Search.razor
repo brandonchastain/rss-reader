@@ -13,7 +13,11 @@
     <button class="btn btn-primary" @onclick="() => SearchPosts()"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
 </div>
 
-@if (hasSearched && !Items.Any())
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+else if (hasSearched && !Items.Any())
 {
     <div class="alert alert-warning">No results found. Try a different search.</div>
 }
@@ -29,6 +33,7 @@ else if (hasSearched)
 @code {
     private string searchTerm = string.Empty;
     private bool hasSearched = false;
+    private string errorMessage = string.Empty;
 
     protected override Task OnAfterRenderAsync(bool firstRender)
     {
@@ -49,12 +54,22 @@ else if (hasSearched)
 
     private async Task SearchPosts()
     {
-        Page = 0;
-        CursorPublishDateOrder = null;
-        CursorId = null;
-        var newItems = await this.GetPostsAsync();
-        Items = newItems;
-        hasSearched = true;
+        try
+        {
+            errorMessage = string.Empty;
+            Page = 0;
+            CursorPublishDateOrder = null;
+            CursorId = null;
+            var newItems = await this.GetPostsAsync();
+            Items = newItems;
+            hasSearched = true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Search failed for term: {SearchTerm}", searchTerm);
+            errorMessage = "Search failed. Please try again later.";
+            hasSearched = false;
+        }
         await InvokeAsync(StateHasChanged);
     }
 
