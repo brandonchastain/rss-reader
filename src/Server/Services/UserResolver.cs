@@ -6,9 +6,8 @@ using RssApp.Data;
 namespace RssApp.ComponentServices;
 
 /// <summary>
-/// Resolves the authenticated RssUser from claims, using AAD GUID as the
-/// primary identifier with email fallback for existing users. Handles
-/// lazy migration of existing users to AAD GUID-based lookup.
+/// Resolves the authenticated RssUser from claims, using the SWA-provided
+/// user identifier as the sole lookup key.
 /// </summary>
 public interface IUserResolver
 {
@@ -20,8 +19,7 @@ public interface IUserResolver
 
     /// <summary>
     /// Resolves or creates the authenticated user during registration.
-    /// New users are created with the AAD GUID as their username (email never stored).
-    /// Existing users found by email are migrated to AAD GUID-based lookup.
+    /// New users are created with the SWA user ID as their username (email never stored).
     /// </summary>
     RssUser ResolveOrCreateUser(ClaimsPrincipal principal);
 }
@@ -40,39 +38,12 @@ public class UserResolver : IUserResolver
     public RssUser? ResolveUser(ClaimsPrincipal principal)
     {
         var aadId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var email = principal.FindFirst(ClaimTypes.Name)?.Value;
 
-        // Primary lookup: AAD GUID
         if (!string.IsNullOrEmpty(aadId))
         {
             var user = _userRepository.GetUserByAadId(aadId);
             if (user != null)
                 return user;
-        }
-
-        // Fallback: email-based lookup for existing users not yet migrated
-        if (!string.IsNullOrEmpty(email))
-        {
-            var user = _userRepository.GetUserByName(email);
-            if (user != null)
-            {
-                // Lazy migration: set the AadUserId so future lookups use the GUID.
-                // Wrapped in try-catch so a DB error (e.g. unique constraint race)
-                // doesn't break the login — the user is still valid.
-                if (!string.IsNullOrEmpty(aadId))
-                {
-                    try
-                    {
-                        _userRepository.SetAadUserId(user.Id, aadId);
-                        _logger.LogInformation("Migrated user {UserId} to AAD GUID-based lookup", user.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to lazy-migrate AadUserId for user {UserId}; will retry on next login", user.Id);
-                    }
-                }
-                return user;
-            }
         }
 
         return null;
