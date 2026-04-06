@@ -15,7 +15,9 @@ These rules apply to every step in this skill, without exception:
 4. **Never use `Invoke-RestMethod` or `curl` with a raw token value** extracted from the credential store. Use `gh` CLI or GitHub MCP tools (`github-mcp-server-*`) for all GitHub API operations — they handle auth internally without exposing tokens.
 5. If authentication is needed for any step and no safe method is available, **stop and ask the user** to run the auth command themselves, then continue.
 
-## Step 0: Confirm with user before proceeding
+## Step 0: Pre-deploy checks
+
+### 0a: Confirm with user
 
 **⛔ STOP — do not proceed without explicit user confirmation.**
 
@@ -25,7 +27,22 @@ Before doing anything else, use the `ask_user` tool to ask:
 
 Wait for the user to confirm. If they say anything other than a clear yes, abort the deployment and report that it was cancelled.
 
-Only continue to Step 1 after receiving explicit confirmation.
+### 0b: Ensure changes are merged to main
+
+**⛔ All code changes must be committed, pushed, and merged to `main` before deploying.**
+
+This is a hard prerequisite — production deploys always build from a clean `main` branch. The only exception is when the user has **explicitly** said they are experimenting with a specific branch (e.g., "deploy from feature-x to test something").
+
+1. Run `git --no-pager status` and `git --no-pager log --oneline -1` to check the current state.
+2. **If there are uncommitted changes** or the current branch is not `main`, stop and tell the user:
+   > "There are uncommitted changes (or you're not on main). I need to commit these to a branch, push, create a PR, and merge before deploying. Want me to proceed?"
+   Wait for confirmation, then:
+   - Create a feature branch, commit, push, and create a PR using GitHub MCP tools.
+   - Merge the PR (squash merge preferred).
+   - Switch back to `main` and pull.
+3. **If `main` is clean and up to date**, continue to Step 1.
+
+Only continue to Step 1 after `main` is clean, up to date, and contains all the changes to be deployed.
 
 ## Step 1: Check prerequisites
 

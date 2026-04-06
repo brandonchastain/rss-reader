@@ -1,9 +1,11 @@
 @page "/privacy"
+@using Microsoft.AspNetCore.Authorization
+@attribute [AllowAnonymous]
 
-<div class="privacy-container">
-    <h1 class="privacy-title">Privacy Policy</h1>
+<div class="legal-container">
+    <h1 class="legal-title">Privacy Policy</h1>
 
-    <section class="privacy-section">
+    <section class="legal-section">
         <h2>What data does RSS Reader collect?</h2>
         <ul>
             <li><strong>An anonymized account identifier</strong> &mdash; your Microsoft email address is never stored. We use an opaque identifier provided by Microsoft to link your account.</li>
@@ -15,7 +17,7 @@
         </p>
     </section>
 
-    <section class="privacy-section">
+    <section class="legal-section">
         <h2>How is that data used?</h2>
         <ul>
             <li>This data is used solely for authentication and app functionality.</li>
@@ -24,7 +26,7 @@
         </ul>
     </section>
 
-    <section class="privacy-section">
+    <section class="legal-section">
         <h2>Email anonymization</h2>
         <p>
             When you sign in with your Microsoft account, RSS Reader receives an opaque account identifier from Azure Active Directory.
@@ -33,14 +35,14 @@
         </p>
     </section>
 
-    <section class="privacy-section">
+    <section class="legal-section">
         <h2>Microsoft account required</h2>
         <p>
             A personal Microsoft account is required to log in. Microsoft securely handles the authentication &mdash; your credentials are never exposed to RSS Reader.
         </p>
     </section>
 
-    <section class="privacy-section">
+    <section class="legal-section">
         <h2>Alternative options</h2>
         <p>If you prefer not to use a Microsoft account at all:</p>
         <ul>
@@ -48,7 +50,7 @@
         </ul>
     </section>
 
-    <section class="privacy-section">
+    <section class="legal-section">
         <h2>Security</h2>
         <ul>
             <li>All data is stored on an encrypted Azure Storage Account.</li>
@@ -60,16 +62,16 @@
         </ul>
     </section>
 
-    <section class="privacy-section">
+    <section class="legal-section">
         <h2>No spam</h2>
         <p>We don&rsquo;t send any emails at all. We don&rsquo;t even have your email address.</p>
     </section>
 
-    <section class="privacy-section">
+    <section class="legal-section">
         <h2>We will never share or sell any personal data.</h2>
     </section>
 
-    <section class="privacy-section privacy-gdpr">
+    <section class="legal-section legal-gdpr">
         <h2>GDPR Notice</h2>
         <p>If you are an EU resident, the following applies:</p>
         <ul>
@@ -82,57 +84,3 @@
         <p>RSS Reader is primarily intended for US users, but basic GDPR protections are provided for EU residents.</p>
     </section>
 </div>
-
-<style>
-    .privacy-container {
-        max-width: 720px;
-        margin: 0 auto;
-        padding: 2rem 1.5rem;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        font-size: 1.05rem;
-        line-height: 1.7;
-        color: #e0e0e0;
-    }
-
-    .privacy-title {
-        font-size: 2rem;
-        font-weight: 700;
-        margin-bottom: 2rem;
-        border-bottom: 2px solid rgba(255,255,255,0.1);
-        padding-bottom: 0.75rem;
-    }
-
-    .privacy-section {
-        margin-bottom: 2rem;
-    }
-
-    .privacy-section h2 {
-        font-size: 1.25rem;
-        font-weight: 600;
-        margin-bottom: 0.75rem;
-        color: #f0f0f0;
-    }
-
-    .privacy-section p {
-        margin-bottom: 0.75rem;
-    }
-
-    .privacy-section ul {
-        padding-left: 1.5rem;
-        margin-bottom: 0.75rem;
-    }
-
-    .privacy-section li {
-        margin-bottom: 0.4rem;
-    }
-
-    .privacy-section a {
-        color: #7ec8e3;
-        text-decoration: underline;
-    }
-
-    .privacy-gdpr {
-        border-top: 1px solid rgba(255,255,255,0.1);
-        padding-top: 1.5rem;
-    }
-</style>
