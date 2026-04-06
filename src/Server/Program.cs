@@ -69,7 +69,7 @@ builder.Services
 // Creation order matters — feed and user repos must exist before item repo.
 builder.Services
     .AddSingleton<RssAppConfig>(_ => config)
-    .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbConnectionString, sb, config.IsReadOnly))
+    .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbConnectionString, sb, config.IsReadOnly, config.RebuildFtsOnStartup))
     .AddSingleton<IFeedRepository>(sb =>
     {
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateFeedRepository();

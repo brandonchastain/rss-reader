@@ -10,15 +10,18 @@ public class RepositoryFactory
     private readonly string connectionString;
     private readonly IServiceProvider serviceProvider;
     private readonly bool isReadOnly;
+    private readonly bool rebuildFtsOnStartup;
 
     public RepositoryFactory(
         string connectionString,
         IServiceProvider serviceProvider,
-        bool isReadOnly = false)
+        bool isReadOnly = false,
+        bool rebuildFtsOnStartup = false)
     {
         this.connectionString = connectionString;
         this.serviceProvider = serviceProvider;
         this.isReadOnly = isReadOnly;
+        this.rebuildFtsOnStartup = rebuildFtsOnStartup;
     }
 
     public IUserRepository CreateUserRepository()
@@ -45,6 +48,7 @@ public class RepositoryFactory
             this.serviceProvider.GetRequiredService<IFeedRepository>(),
             this.serviceProvider.GetRequiredService<IUserRepository>(),
             this.serviceProvider.GetRequiredService<FeedThumbnailRetriever>(),
-            this.isReadOnly);
+            this.isReadOnly,
+            this.rebuildFtsOnStartup);
     }
 }
