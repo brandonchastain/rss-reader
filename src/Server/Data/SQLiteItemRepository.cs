@@ -14,6 +14,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     private readonly IFeedRepository feedStore;
     private readonly IUserRepository userStore;
     private readonly FeedThumbnailRetriever feedThumbnailRetriever;
+    private readonly bool rebuildFtsOnStartup;
 
     public SQLiteItemRepository(
         string connectionString,
@@ -21,13 +22,15 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         IFeedRepository feedStore,
         IUserRepository userStore,
         FeedThumbnailRetriever feedThumbnailRetriever,
-        bool isReadOnly = false)
+        bool isReadOnly = false,
+        bool rebuildFtsOnStartup = false)
     {
         this.connectionString = connectionString;
         this.logger = logger;
         this.feedStore = feedStore;
         this.userStore = userStore;
         this.feedThumbnailRetriever = feedThumbnailRetriever ?? throw new ArgumentNullException(nameof(feedThumbnailRetriever));
+        this.rebuildFtsOnStartup = rebuildFtsOnStartup;
         if (!isReadOnly) this.InitializeDatabase();
     }
 
@@ -103,34 +106,49 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 );";
             command.ExecuteNonQuery();
 
-            // Rebuild FTS5 index from existing ItemContent data.
-            // If the index is corrupted, drop and recreate it.
-            try
+            // Only rebuild FTS5 index when empty (fresh table or post-corruption recreation)
+            // or when explicitly requested via config (RssAppConfig__RebuildFtsOnStartup=true).
+            command = connection.CreateCommand();
+            command.CommandText = @"SELECT count(*) FROM Items_fts;";
+            var ftsRowCount = Convert.ToInt64(command.ExecuteScalar());
+            var needsRebuild = ftsRowCount == 0 || this.rebuildFtsOnStartup;
+
+            if (needsRebuild)
             {
-                command = connection.CreateCommand();
-                command.CommandText = @"INSERT INTO Items_fts(Items_fts) VALUES('rebuild');";
-                command.ExecuteNonQuery();
+                logger.LogInformation("FTS5 rebuild starting (rows={FtsRows}, forced={Forced})", ftsRowCount, this.rebuildFtsOnStartup);
+                try
+                {
+                    command = connection.CreateCommand();
+                    command.CommandText = @"INSERT INTO Items_fts(Items_fts) VALUES('rebuild');";
+                    command.ExecuteNonQuery();
+                    logger.LogInformation("FTS5 rebuild completed successfully");
+                }
+                catch (SqliteException ex) when (ex.SqliteErrorCode == 11) // SQLITE_CORRUPT
+                {
+                    logger.LogWarning(ex, "FTS5 index corrupt — dropping and recreating");
+                    command = connection.CreateCommand();
+                    command.CommandText = @"DROP TABLE IF EXISTS Items_fts;";
+                    command.ExecuteNonQuery();
+
+                    command = connection.CreateCommand();
+                    command.CommandText = @"
+                        CREATE VIRTUAL TABLE Items_fts
+                        USING fts5(
+                            Title, Content, Href, FeedUrl,
+                            UserId UNINDEXED,
+                            content='ItemContent', content_rowid='Id'
+                        );";
+                    command.ExecuteNonQuery();
+
+                    command = connection.CreateCommand();
+                    command.CommandText = @"INSERT INTO Items_fts(Items_fts) VALUES('rebuild');";
+                    command.ExecuteNonQuery();
+                    logger.LogInformation("FTS5 recreated and rebuilt from scratch");
+                }
             }
-            catch (SqliteException ex) when (ex.SqliteErrorCode == 11) // SQLITE_CORRUPT
+            else
             {
-                logger.LogWarning(ex, "FTS5 index corrupt — dropping and recreating");
-                command = connection.CreateCommand();
-                command.CommandText = @"DROP TABLE IF EXISTS Items_fts;";
-                command.ExecuteNonQuery();
-
-                command = connection.CreateCommand();
-                command.CommandText = @"
-                    CREATE VIRTUAL TABLE Items_fts
-                    USING fts5(
-                        Title, Content, Href, FeedUrl,
-                        UserId UNINDEXED,
-                        content='ItemContent', content_rowid='Id'
-                    );";
-                command.ExecuteNonQuery();
-
-                command = connection.CreateCommand();
-                command.CommandText = @"INSERT INTO Items_fts(Items_fts) VALUES('rebuild');";
-                command.ExecuteNonQuery();
+                logger.LogInformation("FTS5 index has {FtsRows} rows — skipping rebuild", ftsRowCount);
             }
 
             // Trigger to keep the FTS table in sync with the main table

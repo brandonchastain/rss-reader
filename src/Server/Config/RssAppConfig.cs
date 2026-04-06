@@ -12,6 +12,7 @@ namespace RssApp.Config
         public bool IsReadOnly { get; set; }
         public int BackgroundWorkerCount { get; set; } = 3;
         public int BackgroundQueueCapacity { get; set; } = 1000;
+        public bool RebuildFtsOnStartup { get; set; }
 
         public static RssAppConfig LoadFromAppSettings(IConfiguration configuration)
         {
