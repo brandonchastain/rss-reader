@@ -23,6 +23,15 @@
     [SupplyParameterFromQuery]
     public string Href { get; set; }
 
+    protected override string GetBasePath() => "/posts";
+
+    protected override Dictionary<string, string> GetExtraQueryParams()
+    {
+        var extra = new Dictionary<string, string>();
+        if (!string.IsNullOrEmpty(Href)) extra["href"] = Href;
+        return extra;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -32,15 +41,14 @@
                 NavigationManager.NavigateTo("/feeds");
                 return;
             }
-            await this.jsRuntime.InvokeVoidAsync("rssApp.clearData");
         }
         await base.OnAfterRenderAsync(firstRender);
     }
 
-    protected override async Task<List<NewsFeedItem>> GetPostsAsync()
+    protected override async Task<List<NewsFeedItem>> GetPostsAsync(int pageSize = 20)
     {
         var decodedUrl = System.Net.WebUtility.UrlDecode(Href);
-        var posts = await this.feedClient.GetFeedItemsAsync(new NewsFeed(decodedUrl, -1), Page, cursorPublishDateOrder: CursorPublishDateOrder, cursorId: CursorId);
+        var posts = await this.feedClient.GetFeedItemsAsync(new NewsFeed(decodedUrl, -1), Page, pageSize: pageSize, cursorPublishDateOrder: CursorPublishDateOrder, cursorId: CursorId);
         return posts?.ToList() ?? new List<NewsFeedItem>();
     }
 }

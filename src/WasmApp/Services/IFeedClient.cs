@@ -13,7 +13,7 @@ public interface IFeedClient : IDisposable
     Task AddFeedAsync(NewsFeed feed);
     Task<IEnumerable<NewsFeed>> GetFeedsAsync();
     Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null);
-    Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page, long? cursorPublishDateOrder = null, long? cursorId = null);
+    Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null);
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, int page, int pageSize = 20);
     Task<bool> RefreshFeedsAsync();
     Task<string> GetItemContentAsync(NewsFeedItem item);

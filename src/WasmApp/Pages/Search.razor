@@ -35,20 +35,43 @@ else if (hasSearched)
     private bool hasSearched = false;
     private string errorMessage = string.Empty;
 
-    protected override Task OnAfterRenderAsync(bool firstRender)
+    [SupplyParameterFromQuery(Name = "q")]
+    public string QueryParam { get; set; }
+
+    protected override string GetBasePath() => "/search";
+
+    protected override Dictionary<string, string> GetExtraQueryParams()
     {
-        // Skip base initialization so the empty state doesn't auto-trigger
-        return Task.CompletedTask;
+        var extra = new Dictionary<string, string>();
+        if (!string.IsNullOrEmpty(searchTerm)) extra["q"] = searchTerm;
+        return extra;
     }
 
-    protected override async Task<List<NewsFeedItem>> GetPostsAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Apply filters from URL
+            ApplyFiltersFromUrl();
+
+            // If search query is in URL, auto-search
+            if (!string.IsNullOrWhiteSpace(QueryParam))
+            {
+                searchTerm = QueryParam;
+                await SearchPosts();
+            }
+        }
+        // Skip base OnAfterRenderAsync — search only loads on explicit action
+    }
+
+    protected override async Task<List<NewsFeedItem>> GetPostsAsync(int pageSize = 20)
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
         {
             return new List<NewsFeedItem>();
         }
 
-        var res = await feedClient.SearchItemsAsync(searchTerm, Page);
+        var res = await feedClient.SearchItemsAsync(searchTerm, Page, pageSize: pageSize);
         return res.ToList();
     }
 
@@ -63,6 +86,7 @@ else if (hasSearched)
             var newItems = await this.GetPostsAsync();
             Items = newItems;
             hasSearched = true;
+            UpdateUrlFromFilters();
         }
         catch (Exception ex)
         {

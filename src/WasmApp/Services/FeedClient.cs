@@ -48,7 +48,7 @@ namespace WasmApp.Services
 
         public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
-            pageSize = Math.Min(pageSize, 100);
+            pageSize = Math.Min(pageSize, 500);
             var url = $"{_config.ApiBaseUrl}api/item/timeline?isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
             if (cursorPublishDateOrder.HasValue && cursorId.HasValue)
             {
@@ -57,9 +57,10 @@ namespace WasmApp.Services
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
-        public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page, long? cursorPublishDateOrder = null, long? cursorId = null)
+        public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
-            var url = $"{_config.ApiBaseUrl}api/item/feed?href={Uri.EscapeDataString(feed.Href)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}";
+            pageSize = Math.Min(pageSize, 500);
+            var url = $"{_config.ApiBaseUrl}api/item/feed?href={Uri.EscapeDataString(feed.Href)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
             if (cursorPublishDateOrder.HasValue && cursorId.HasValue)
             {
                 url += $"&cursorPublishDateOrder={cursorPublishDateOrder.Value}&cursorId={cursorId.Value}";
@@ -69,7 +70,7 @@ namespace WasmApp.Services
 
         public async Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, int page, int pageSize = 20)
         {
-            pageSize = Math.Min(pageSize, 100);
+            pageSize = Math.Min(pageSize, 500);
             var url = $"{_config.ApiBaseUrl}api/item/search?query={Uri.EscapeDataString(query)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }   
