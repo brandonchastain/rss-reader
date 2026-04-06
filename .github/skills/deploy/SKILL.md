@@ -40,7 +40,11 @@ This is a hard prerequisite — production deploys always build from a clean `ma
    - Create a feature branch, commit, push, and create a PR using GitHub MCP tools.
    - Merge the PR (squash merge preferred).
    - Switch back to `main` and pull.
-3. **If `main` is clean and up to date**, continue to Step 1.
+3. **If `main` is clean**, pull the latest changes to ensure the local branch matches the remote:
+   ```powershell
+   git pull origin main
+   ```
+   If the pull introduces merge conflicts or fails, stop and report the error.
 
 Only continue to Step 1 after `main` is clean, up to date, and contains all the changes to be deployed.
 
