@@ -10,6 +10,7 @@ public interface IUserRepository
     RssUser GetUserById(int userId);
     RssUser GetUserByAadId(string aadUserId);
     void SetAadUserId(int userId, string aadUserId);
+    void UpdateUsername(int userId, string newUsername);
     void DeleteUser(int userId);
     IEnumerable<RssUser> GetAllUsers();
 }

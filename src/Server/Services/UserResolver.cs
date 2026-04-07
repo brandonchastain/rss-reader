@@ -43,7 +43,16 @@ public class UserResolver : IUserResolver
         {
             var user = _userRepository.GetUserByAadId(aadId);
             if (user != null)
+            {
+                // Lazy migration: replace email-based usernames with AAD GUID
+                if (user.Username != aadId)
+                {
+                    _logger.LogInformation("Migrating username for user {UserId} from legacy value to AAD GUID", user.Id);
+                    _userRepository.UpdateUsername(user.Id, aadId);
+                    user.Username = aadId;
+                }
                 return user;
+            }
         }
 
         return null;
