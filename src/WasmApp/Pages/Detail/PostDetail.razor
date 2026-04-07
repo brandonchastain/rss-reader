@@ -1,4 +1,6 @@
 @using System.Threading.Tasks
+@using System.Net
+@using System.Text.RegularExpressions
 @using Microsoft.JSInterop
 @inherits PageBase
 @implements IDisposable
@@ -32,7 +34,7 @@
             {
                 <span class="post-tag">@tag</span>
             }
-            <a tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnArticleLinkClick(Post)">@Post.Title</a><br/>
+            <a tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnArticleLinkClick(Post)">@CleanTitle(Post.Title)</a><br/>
             <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await MarkAsReadAsync(Post, !Post.IsRead)">[mark @(!Post.IsRead ? "read" : "unread")]</button><button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)">[@(!Post.IsSaved ? "save" : "unsave")]</button>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
@@ -95,6 +97,13 @@
     private bool _isLoadingContent = false;
     private DotNetObjectReference<PostDetail> _dotNetRef;
     private ElementReference _postRowRef;
+
+    private static string CleanTitle(string title)
+    {
+        if (string.IsNullOrEmpty(title)) return title;
+        var cleaned = Regex.Replace(title, "<[^>]+>", string.Empty);
+        return WebUtility.HtmlDecode(cleaned);
+    }
 
     protected override void OnInitialized()
     {
