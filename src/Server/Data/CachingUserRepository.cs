@@ -111,6 +111,12 @@ public sealed class CachingUserRepository : IUserRepository
         EvictAll();
     }
 
+    public void UpdateUsername(int userId, string newUsername)
+    {
+        _inner.UpdateUsername(userId, newUsername);
+        EvictAll();
+    }
+
     public void DeleteUser(int userId)
     {
         _inner.DeleteUser(userId);

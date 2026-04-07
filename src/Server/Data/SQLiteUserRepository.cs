@@ -140,6 +140,19 @@ public class SQLiteUserRepository : IUserRepository
         }
     }
 
+    public void UpdateUsername(int userId, string newUsername)
+    {
+        using (var connection = new SqliteConnection(this.connectionString))
+        {
+            connection.OpenWithPragmas();
+            var command = connection.CreateCommand();
+            command.CommandText = "UPDATE Users SET Username = @newUsername WHERE Id = @userId";
+            command.Parameters.AddWithValue("@newUsername", newUsername);
+            command.Parameters.AddWithValue("@userId", userId);
+            command.ExecuteNonQuery();
+        }
+    }
+
     public RssUser AddUser(string username, int? id = null)
     {
         using (var connection = new SqliteConnection(this.connectionString))

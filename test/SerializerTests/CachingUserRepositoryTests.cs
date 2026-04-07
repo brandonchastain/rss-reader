@@ -67,6 +67,13 @@ internal sealed class FakeUserRepository : IUserRepository
         AadUserIds[userId] = aadUserId;
     }
 
+    public void UpdateUsername(int userId, string newUsername)
+    {
+        var user = Users.FirstOrDefault(u => u.Id == userId);
+        if (user != null)
+            user.Username = newUsername;
+    }
+
     public IEnumerable<RssUser> GetAllUsers()
     {
         GetAllUsersCallCount++;
