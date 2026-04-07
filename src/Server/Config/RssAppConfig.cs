@@ -20,6 +20,8 @@ namespace RssApp.Config
         public int BackgroundQueueCapacity { get; set; } = 1000;
         public bool RebuildFtsOnStartup { get; set; }
 
+        public string AdminAadUserIds { get; set; } = string.Empty;
+
         public static RssAppConfig LoadFromAppSettings(IConfiguration configuration)
         {
             var config = new RssAppConfig();

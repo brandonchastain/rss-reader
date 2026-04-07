@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using RssApp.Data;
 using RssApp.Contracts;
 using RssApp.ComponentServices;
+using RssApp.Config;
 using System.Threading.Tasks;
 using System.Security.Claims;
 
@@ -19,6 +20,7 @@ namespace Server.Controllers
         private readonly IItemRepository itemRepository;
         private readonly IUserResolver userResolver;
         private readonly ILogger<UserController> logger;
+        private readonly RssAppConfig config;
         private readonly SemaphoreSlim locker = new SemaphoreSlim(1, 1);
 
         public UserController(
@@ -26,13 +28,15 @@ namespace Server.Controllers
             IFeedRepository feedRepository,
             IItemRepository itemRepository,
             IUserResolver userResolver,
-            ILogger<UserController> logger)
+            ILogger<UserController> logger,
+            RssAppConfig config)
         {
             this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
             this.itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
             this.userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            this.config = config ?? throw new ArgumentNullException(nameof(config));
         }
 
         // GET: api/user
@@ -46,6 +50,7 @@ namespace Server.Controllers
                 return NotFound();
             }
 
+            user.IsAdmin = IsAdmin(User);
             return Ok(user);
         }
 
@@ -66,10 +71,12 @@ namespace Server.Controllers
                 var existing = this.userResolver.ResolveUser(User);
                 if (existing != null)
                 {
+                    existing.IsAdmin = IsAdmin(User);
                     return Ok(existing);
                 }
 
                 var newUser = this.userResolver.ResolveOrCreateUser(User);
+                newUser.IsAdmin = IsAdmin(User);
                 return Created(nameof(RegisterAsync), newUser);
             }
             finally
@@ -118,6 +125,21 @@ namespace Server.Controllers
 
             logger.LogWarning("User {UserId} deleted their account", user.Id);
             return NoContent();
+        }
+
+        private bool IsAdmin(ClaimsPrincipal principal)
+        {
+            if (config.IsTestUserEnabled)
+                return true;
+
+            var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId))
+                return false;
+
+            var adminIds = config.AdminAadUserIds
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            return adminIds.Contains(userId, StringComparer.OrdinalIgnoreCase);
         }
     }
 }

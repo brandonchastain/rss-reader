@@ -5,8 +5,11 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using RssApp.Contracts;
+using RssApp.Data;
 
 namespace RssReader.Server.Services
 {
@@ -30,18 +33,28 @@ namespace RssReader.Server.Services
     {
         private readonly ILogger<DatabaseBackupService> _logger;
         private readonly DatabaseBackupPaths _paths;
+        private readonly IServiceProvider _serviceProvider;
         private readonly TimeSpan _backupInterval = TimeSpan.FromMinutes(5);
         private string _lastBackupHash = string.Empty;
 
         public DatabaseBackupService(ILogger<DatabaseBackupService> logger)
-            : this(logger, new DatabaseBackupPaths())
+            : this(logger, new DatabaseBackupPaths(), null)
         {
         }
 
         public DatabaseBackupService(ILogger<DatabaseBackupService> logger, DatabaseBackupPaths paths)
+            : this(logger, paths, null)
+        {
+        }
+
+        public DatabaseBackupService(
+            ILogger<DatabaseBackupService> logger,
+            DatabaseBackupPaths paths,
+            IServiceProvider serviceProvider)
         {
             _logger = logger;
             _paths = paths;
+            _serviceProvider = serviceProvider;
         }
 
         public override async Task StartAsync(CancellationToken cancellationToken)
@@ -67,6 +80,7 @@ namespace RssReader.Server.Services
                     if (!stoppingToken.IsCancellationRequested)
                     {
                         await BackupToStorageAsync(stoppingToken);
+                        await RecordStatsSnapshotAsync();
                     }
                 }
                 catch (OperationCanceledException)
@@ -110,6 +124,68 @@ namespace RssReader.Server.Services
             }
             
             await base.StopAsync(cancellationToken);
+        }
+
+        private async Task RecordStatsSnapshotAsync()
+        {
+            if (_serviceProvider == null) return;
+
+            try
+            {
+                var statsRepo = _serviceProvider.GetService<ISystemStatsRepository>();
+                if (statsRepo == null) return;
+
+                int userCount = 0, feedCount = 0, itemCount = 0;
+                long dbSizeBytes = 0;
+
+                // Count directly from DB tables to avoid per-user repository API
+                if (File.Exists(_paths.ActiveDbPath))
+                {
+                    dbSizeBytes = new FileInfo(_paths.ActiveDbPath).Length;
+
+                    await Task.Run(() =>
+                    {
+                        using var conn = new SqliteConnection(
+                            $"Data Source={_paths.ActiveDbPath};Mode=ReadOnly;Pooling=False");
+                        conn.Open();
+
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "SELECT COUNT(*) FROM Users";
+                            userCount = Convert.ToInt32(cmd.ExecuteScalar());
+                        }
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "SELECT COUNT(*) FROM Feeds";
+                            feedCount = Convert.ToInt32(cmd.ExecuteScalar());
+                        }
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "SELECT COUNT(*) FROM Items";
+                            itemCount = Convert.ToInt32(cmd.ExecuteScalar());
+                        }
+                    });
+                }
+
+                var snapshot = new SystemStatsSnapshot
+                {
+                    Timestamp   = DateTime.UtcNow,
+                    UserCount   = userCount,
+                    FeedCount   = feedCount,
+                    ItemCount   = itemCount,
+                    DbSizeBytes = dbSizeBytes
+                };
+
+                statsRepo.RecordSnapshot(snapshot);
+                statsRepo.CleanupOlderThan(30);
+                _logger.LogInformation(
+                    "Stats snapshot recorded: {Users} users, {Feeds} feeds, {Items} items, {Db:N0} bytes",
+                    userCount, feedCount, itemCount, dbSizeBytes);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to record stats snapshot");
+            }
         }
 
         public async Task RestoreFromBackupAsync(CancellationToken cancellationToken)

@@ -1,8 +1,0 @@
-- generic [ref=e2]:
-  - generic [ref=e3]:
-    - heading "Content Encoding Error" [level=1] [ref=e5]
-    - paragraph [ref=e6]: The page you are trying to view cannot be shown because it uses an invalid or unsupported form of compression.
-    - paragraph
-    - list [ref=e8]:
-      - listitem [ref=e9]: Please contact the website owners to inform them of this problem.
-  - button "Try Again" [active] [ref=e11]

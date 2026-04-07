@@ -86,7 +86,9 @@ builder.Services
         return new CachingItemRepository(inner, sb.GetRequiredService<IMemoryCache>());
     })
     .AddSingleton<IUserResolver, UserResolver>()
-    .AddSingleton<FeedThumbnailRetriever>();
+    .AddSingleton<FeedThumbnailRetriever>()
+    .AddSingleton<ISystemStatsRepository>(sb =>
+        new SQLiteSystemStatsRepository(dbConnectionString));
 
 if (!config.IsReadOnly)
 {
@@ -94,7 +96,11 @@ if (!config.IsReadOnly)
     builder.Services
         .AddSingleton<RssDeserializer>()
         .AddSingleton<BackgroundWorkQueue>()
-        .AddSingleton<DatabaseBackupService>()
+        .AddSingleton<DatabaseBackupService>(sb =>
+            new DatabaseBackupService(
+                sb.GetRequiredService<ILogger<DatabaseBackupService>>(),
+                new DatabaseBackupPaths(),
+                sb))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
         .AddHostedService<BackgroundWorker>()
         .AddSingleton<IFeedRefresher, FeedRefresher>()
@@ -140,6 +146,7 @@ if (!config.IsReadOnly)
 var a = app.Services.GetRequiredService<IFeedRepository>();
 var b = app.Services.GetRequiredService<IUserRepository>();
 var c = app.Services.GetRequiredService<IItemRepository>();
+var d = app.Services.GetRequiredService<ISystemStatsRepository>();
 
 // After schema init (writer) or startup (reader), enable PRAGMA query_only
 // on all subsequent connections. This is the DB-level backstop — even if a
