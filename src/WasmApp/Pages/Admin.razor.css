@@ -72,6 +72,32 @@
     height: 260px;
 }
 
+/* ── Users Table ─────────────────────────────────────────────── */
+.users-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.users-table th,
+.users-table td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.users-table th {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.users-table td {
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
 /* ── Error ───────────────────────────────────────────────────── */
 .admin-error {
     color: #f85149;
