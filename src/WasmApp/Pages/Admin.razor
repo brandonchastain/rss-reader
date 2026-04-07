@@ -1,0 +1,190 @@
+@page "/admin"
+@using Microsoft.AspNetCore.Authorization
+@using RssApp.Contracts
+@attribute [Authorize]
+@implements IDisposable
+
+@inject IAdminClient adminClient
+@inject IUserClient userClient
+@inject IJSRuntime JS
+@inject NavigationManager navigationManager
+
+<div class="admin-container">
+    <h1 class="admin-title">Admin Dashboard</h1>
+
+    @if (loading)
+    {
+        <div class="text-center mt-5">
+            <div class="spinner-border" role="status"></div>
+        </div>
+    }
+    else if (!isAdmin)
+    {
+        <p class="text-muted">Access denied.</p>
+    }
+    else
+    {
+        @* Stats Cards *@
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Users</div>
+                <div class="stat-value">@(current?.UserCount.ToString("N0") ?? "—")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Feeds</div>
+                <div class="stat-value">@(current?.FeedCount.ToString("N0") ?? "—")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Posts</div>
+                <div class="stat-value">@(current?.ItemCount.ToString("N0") ?? "—")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">DB Size</div>
+                <div class="stat-value">@FormatBytes(current?.DbSizeBytes ?? 0)</div>
+            </div>
+        </div>
+
+        @if (current != null)
+        {
+            <p class="snapshot-timestamp">
+                Last snapshot: @current.Timestamp.ToLocalTime().ToString("g")
+            </p>
+        }
+
+        @* Chart *@
+        <div class="chart-section">
+            <h2 class="section-title">Trends (30 days)</h2>
+            @if (history.Count > 1)
+            {
+                <div class="chart-wrapper">
+                    <canvas id="admin-stats-chart"></canvas>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted">Not enough data for chart yet. Check back after the first backup cycle.</p>
+            }
+        </div>
+
+        @if (error != null)
+        {
+            <div class="admin-error mt-3">@error</div>
+        }
+    }
+</div>
+
+@code {
+    private bool loading = true;
+    private bool isAdmin = false;
+    private SystemStatsSnapshot current;
+    private List<SystemStatsSnapshot> history = new();
+    private string error;
+    private System.Threading.Timer _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var user = await userClient.GetFeedUserAsync();
+            isAdmin = user?.IsAdmin ?? false;
+
+            if (!isAdmin)
+            {
+                navigationManager.NavigateTo("/timeline");
+                return;
+            }
+
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            error = $"Failed to load admin data: {ex.Message}";
+        }
+        finally
+        {
+            loading = false;
+        }
+
+        // Auto-refresh every 60 seconds
+        _refreshTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await LoadDataAsync();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!loading && isAdmin && history.Count > 1)
+        {
+            await RenderChartAsync();
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        try
+        {
+            current = await adminClient.GetCurrentStatsAsync();
+            history = await adminClient.GetStatsHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            error = $"Failed to refresh stats: {ex.Message}";
+        }
+    }
+
+    private async Task RenderChartAsync()
+    {
+        try
+        {
+            var labels = history
+                .Select(s => s.Timestamp.ToLocalTime().ToString("MM/dd HH:mm"))
+                .ToArray();
+
+            var datasets = new object[]
+            {
+                new {
+                    label = "Feeds",
+                    data = history.Select(s => s.FeedCount).ToArray(),
+                    borderColor = "#3fb950",
+                    backgroundColor = "rgba(63,185,80,0.1)"
+                },
+                new {
+                    label = "Posts",
+                    data = history.Select(s => s.ItemCount).ToArray(),
+                    borderColor = "#79b8ff",
+                    backgroundColor = "rgba(121,184,255,0.1)"
+                },
+                new {
+                    label = "Users",
+                    data = history.Select(s => s.UserCount).ToArray(),
+                    borderColor = "#e3b341",
+                    backgroundColor = "rgba(227,179,65,0.1)"
+                }
+            };
+
+            await JS.InvokeVoidAsync("AdminChart.render", "admin-stats-chart", labels, datasets);
+        }
+        catch (Exception ex)
+        {
+            error = $"Chart render error: {ex.Message}";
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes >= 1_073_741_824) return $"{bytes / 1_073_741_824.0:F1} GB";
+        if (bytes >= 1_048_576)     return $"{bytes / 1_048_576.0:F1} MB";
+        if (bytes >= 1_024)         return $"{bytes / 1_024.0:F1} KB";
+        return $"{bytes} B";
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}

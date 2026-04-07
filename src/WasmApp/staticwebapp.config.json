@@ -35,6 +35,11 @@
       "headers": { "cache-control": "no-store" }
     },
     {
+      "route": "/admin*",
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
+    },
+    {
       "route": "/_framework/blazor.boot.json",
       "headers": {
         "cache-control": "no-cache"

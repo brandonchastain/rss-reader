@@ -1,6 +1,7 @@
-﻿@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Sections
 @using WasmApp.Services
+@using RssApp.Contracts
 
 @inject IUserClient userClient
 
@@ -27,6 +28,10 @@
                 <NavLink class="desktop-nav-link" href="/tags" Match="NavLinkMatch.Prefix">Tags</NavLink>
                 <NavLink class="desktop-nav-link" href="/account" Match="NavLinkMatch.Prefix">Account</NavLink>
                 <NavLink class="desktop-nav-link" href="/privacy" Match="NavLinkMatch.Prefix">Privacy</NavLink>
+                @if (feedUser?.IsAdmin == true)
+                {
+                    <NavLink class="desktop-nav-link" href="/admin" Match="NavLinkMatch.Prefix">Admin</NavLink>
+                }
             </Authorized>
             <NotAuthorized>
                 <NavLink class="desktop-nav-link" href="/privacy" Match="NavLinkMatch.Prefix">Privacy</NavLink>
@@ -91,6 +96,14 @@
                         Privacy Policy
                     </NavLink>
                 </div>
+                @if (feedUser?.IsAdmin == true)
+                {
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="/admin">
+                            Admin
+                        </NavLink>
+                    </div>
+                }
                 <div class="nav-item px-3">
                     <a class="nav-link" href="/.auth/logout">
                         Logout
@@ -115,13 +128,22 @@
 
 @code {
     private string username = null;
+    private RssUser feedUser = null;
     private bool collapseNavMenu = true;
 
     private string NavMenuCssClass => collapseNavMenu ? "collapse" : null;
 
     protected override async Task OnInitializedAsync()
     {
-        username = await userClient.GetUsernameAsync();
+        try
+        {
+            feedUser = await userClient.GetFeedUserAsync();
+            username = feedUser?.Username;
+        }
+        catch
+        {
+            username = await userClient.GetUsernameAsync();
+        }
         if (string.IsNullOrEmpty(username))
         {
             username = "Guest";

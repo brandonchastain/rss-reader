@@ -14,4 +14,6 @@ public class RssUser
     public int Id { get; set; }
 
     public string? AadUserId { get; set; }
+
+    public bool IsAdmin { get; set; }
 }
