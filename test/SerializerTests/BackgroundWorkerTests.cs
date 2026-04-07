@@ -56,10 +56,10 @@ public class BackgroundWorkerTests
     }
 
     [TestMethod]
-    public void RssAppConfig_DefaultWorkerCountIsThree()
+    public void RssAppConfig_DefaultWorkerCountIsOne()
     {
         var config = new RssAppConfig();
-        Assert.AreEqual(3, config.BackgroundWorkerCount);
+        Assert.AreEqual(1, config.BackgroundWorkerCount);
     }
 
     [TestMethod]

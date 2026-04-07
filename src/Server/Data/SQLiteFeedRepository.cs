@@ -128,34 +128,22 @@ public class SQLiteFeedRepository : IFeedRepository
             using (var connection = new SqliteConnection(this.connectionString))
             {
                 connection.OpenWithPragmas();
+
                 var command = connection.CreateCommand();
                 command.CommandText = "INSERT INTO Feeds (Url, UserId) VALUES (@url, @userId)";
                 command.Parameters.AddWithValue("@url", feed.Href);
                 command.Parameters.AddWithValue("@userId", feed.UserId);
-
                 command.ExecuteNonQuery();
-            }
 
-            using (var connection = new SqliteConnection(this.connectionString))
-            {
-                connection.OpenWithPragmas();
-                var command = connection.CreateCommand();
-                command.CommandText = "SELECT Id FROM Feeds WHERE Url = @url AND UserId = @userId";
-                command.Parameters.AddWithValue("@url", feed.Href);
-                command.Parameters.AddWithValue("@userId", feed.UserId);
-
-                using (var reader = command.ExecuteReader())
-                {
-                    if (reader.Read())
-                    {
-                        feed.FeedId = reader.GetInt32(0);
-                    }
-                }
+                // Reuse same connection for last_insert_rowid()
+                command = connection.CreateCommand();
+                command.CommandText = "SELECT last_insert_rowid()";
+                feed.FeedId = Convert.ToInt32(command.ExecuteScalar());
             }
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.Message.Contains("UNIQUE"))
         {
-            // Feed already exists, just update the ID
+            // Feed already exists, just get the ID
             using (var connection = new SqliteConnection(this.connectionString))
             {
                 connection.OpenWithPragmas();
@@ -233,32 +221,55 @@ public class SQLiteFeedRepository : IFeedRepository
         var existingFeeds = GetFeeds(user).ToList();
         var existingUrls = existingFeeds.Select(f => f.Href).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        using var connection = new SqliteConnection(this.connectionString);
+        connection.OpenWithPragmas();
+        using var transaction = connection.BeginTransaction();
+
         foreach (var feed in feeds)
         {
-            // Set the user ID for the feed
             feed.UserId = user.Id;
             
-            // Skip if feed already exists for this user
             if (existingUrls.Contains(feed.Href))
             {
                 continue;
             }
 
-            // Add the feed using the existing method
-            AddFeed(feed);
-            
-            // Add tags if any
+            // Insert feed and get ID in single connection
+            var insertCmd = connection.CreateCommand();
+            insertCmd.CommandText = "INSERT INTO Feeds (Url, UserId) VALUES (@url, @userId)";
+            insertCmd.Parameters.AddWithValue("@url", feed.Href);
+            insertCmd.Parameters.AddWithValue("@userId", feed.UserId);
+
+            try
+            {
+                insertCmd.ExecuteNonQuery();
+
+                var idCmd = connection.CreateCommand();
+                idCmd.CommandText = "SELECT last_insert_rowid()";
+                feed.FeedId = Convert.ToInt32(idCmd.ExecuteScalar());
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
+            {
+                continue; // Already exists
+            }
+
+            // Build tags string in-memory and set once (not read-modify-write per tag)
             if (feed.Tags != null && feed.Tags.Any())
             {
-                foreach (var tag in feed.Tags)
+                var tagString = string.Join(",", feed.Tags.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct());
+                if (!string.IsNullOrEmpty(tagString))
                 {
-                    if (!string.IsNullOrWhiteSpace(tag))
-                    {
-                        AddTag(feed, tag);
-                    }
+                    var tagCmd = connection.CreateCommand();
+                    tagCmd.CommandText = "UPDATE Feeds SET Tags = @tags WHERE Id = @feedId AND UserId = @userId";
+                    tagCmd.Parameters.AddWithValue("@tags", tagString);
+                    tagCmd.Parameters.AddWithValue("@feedId", feed.FeedId);
+                    tagCmd.Parameters.AddWithValue("@userId", feed.UserId);
+                    tagCmd.ExecuteNonQuery();
                 }
             }
         }
+
+        transaction.Commit();
     }
 
     private NewsFeed ReadSingleRecord(SqliteDataReader reader)

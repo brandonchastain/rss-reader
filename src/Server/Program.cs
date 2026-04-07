@@ -24,8 +24,8 @@ string dbConnectionString = config.IsReadOnly
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    serverOptions.Limits.MaxConcurrentConnections = 50;
-    serverOptions.Limits.MaxConcurrentUpgradedConnections = 50;
+    serverOptions.Limits.MaxConcurrentConnections = 500;
+    serverOptions.Limits.MaxConcurrentUpgradedConnections = 500;
     serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
 });
 
