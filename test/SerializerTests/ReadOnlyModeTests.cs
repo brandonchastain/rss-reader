@@ -43,11 +43,13 @@ public sealed class ReadOnlyModeTests
     }
 
     [TestMethod]
-    public async Task NoOpFeedRefresher_HasNewItems_AlwaysReturnsFalse()
+    public void NoOpFeedRefresher_GetRefreshStatus_AlwaysReturnsInactive()
     {
         var refresher = new NoOpFeedRefresher();
-        var result = await refresher.HasNewItemsAsync(new RssUser("testuser", 1));
-        Assert.IsFalse(result);
+        var status = refresher.GetRefreshStatus(new RssUser("testuser", 1));
+        Assert.IsFalse(status.HasNewItems);
+        Assert.IsFalse(status.IsRefreshing);
+        Assert.AreEqual(0, status.PendingFeeds);
     }
 
     [TestMethod]

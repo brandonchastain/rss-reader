@@ -19,11 +19,49 @@ public class FeedRefresher : IFeedRefresher
     private readonly IUserRepository userStore;
     private readonly BackgroundWorkQueue backgroundWorkQueue;
     private readonly RssAppConfig config;
-    private readonly ConcurrentDictionary<int, bool> hasNewItems = new();
-    private DateTime? lastCacheReloadTime;
+    private readonly ConcurrentDictionary<int, UserRefreshState> refreshStates = new();
     private DateTime startupTime = DateTime.UtcNow;
     private Exception lastRefreshException;
-    private int pendingRefreshes = 0;
+
+    /// <summary>
+    /// Per-user refresh state. Thread-safe via Interlocked/volatile.
+    /// </summary>
+    private class UserRefreshState
+    {
+        private int _pendingFeeds;
+        private volatile bool _hasNewItems;
+        private volatile bool _isRefreshing;
+        private DateTime? _lastRefreshTime;
+
+        public bool IsRefreshing => _isRefreshing;
+        public int PendingFeeds => Volatile.Read(ref _pendingFeeds);
+        public bool HasNewItems => _hasNewItems;
+        public DateTime? LastRefreshTime => _lastRefreshTime;
+
+        public void StartRefresh(int feedCount)
+        {
+            _hasNewItems = false;
+            Interlocked.Exchange(ref _pendingFeeds, feedCount);
+            _isRefreshing = true;
+        }
+
+        public void CompleteFeed(bool hadNewItems)
+        {
+            if (hadNewItems) _hasNewItems = true;
+            var remaining = Interlocked.Decrement(ref _pendingFeeds);
+            if (remaining <= 0)
+            {
+                _lastRefreshTime = DateTime.UtcNow;
+                _isRefreshing = false;
+            }
+        }
+
+        public void FailRefresh()
+        {
+            Interlocked.Exchange(ref _pendingFeeds, 0);
+            _isRefreshing = false;
+        }
+    }
 
     public FeedRefresher(
         IHttpClientFactory httpClientFactory,
@@ -45,23 +83,25 @@ public class FeedRefresher : IFeedRefresher
         this.config = config;
     }
 
-    public DateTime? LastCacheReloadTime => this.lastCacheReloadTime;
-
     public void ResetRefreshCooldown()
     {
-        this.lastCacheReloadTime = null;
+        // Clear all per-user cooldowns
+        foreach (var state in refreshStates.Values)
+        {
+            // Force next refresh to proceed by clearing state
+        }
+        refreshStates.Clear();
     }
 
-    public Task<bool> HasNewItemsAsync(RssUser user)
+    public RefreshStatusResponse GetRefreshStatus(RssUser user)
     {
-        var key = user.Id;
-        if (hasNewItems.TryGetValue(key, out var value) && value)
+        var state = refreshStates.GetOrAdd(user.Id, _ => new UserRefreshState());
+        return new RefreshStatusResponse
         {
-            hasNewItems[key] = false;
-            return Task.FromResult(true);
-        }
-
-        return Task.FromResult(false);
+            HasNewItems = state.HasNewItems,
+            IsRefreshing = state.IsRefreshing,
+            PendingFeeds = state.PendingFeeds
+        };
     }
 
     public async Task AddFeedAsync(NewsFeed feed)
@@ -71,12 +111,21 @@ public class FeedRefresher : IFeedRefresher
 
     public async Task RefreshAsync(RssUser user)
     {
+        var state = refreshStates.GetOrAdd(user.Id, _ => new UserRefreshState());
+
+        // If a refresh is already running for this user, don't start another
+        if (state.IsRefreshing)
+        {
+            return;
+        }
+
         bool isJustStarted = this.startupTime + this.config.CacheReloadStartupDelay > DateTime.UtcNow;
-        bool isRecentRefresh = this.lastCacheReloadTime + this.config.CacheReloadInterval > DateTime.UtcNow;
+        bool isRecentRefresh = state.LastRefreshTime + this.config.CacheReloadInterval > DateTime.UtcNow;
 
         if (isJustStarted || isRecentRefresh)
         {
-            hasNewItems[user.Id] = true;
+            // Cooldown active — don't fake hasNewItems, just return.
+            // The status endpoint will honestly report isRefreshing=false.
             return;
         }
 
@@ -87,19 +136,19 @@ public class FeedRefresher : IFeedRefresher
 
             if (totalFeeds == 0)
             {
-                this.lastCacheReloadTime = DateTime.UtcNow;
                 return;
             }
 
-            Interlocked.Exchange(ref pendingRefreshes, totalFeeds);
+            state.StartRefresh(totalFeeds);
 
             foreach (var feed in feeds)
             {
                 await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
                 {
+                    bool hadNewItems = false;
                     try
                     {
-                        await ReloadCachedItemsAsync(feed);
+                        hadNewItems = await ReloadCachedItemsAsync(feed);
                     }
                     catch (Exception ex)
                     {
@@ -107,12 +156,7 @@ public class FeedRefresher : IFeedRefresher
                     }
                     finally
                     {
-                        var remaining = Interlocked.Decrement(ref pendingRefreshes);
-                        if (remaining == 0)
-                        {
-                            this.lastCacheReloadTime = DateTime.UtcNow;
-                            this.hasNewItems[user.Id] = true;
-                        }
+                        state.CompleteFeed(hadNewItems);
                     }
                 });
             }
@@ -120,11 +164,15 @@ public class FeedRefresher : IFeedRefresher
         catch (Exception ex)
         {
             this.logger.LogError(ex, "Error reloading cache");
-            Interlocked.Exchange(ref pendingRefreshes, 0);
+            state.FailRefresh();
         }
     }
 
-    private async Task ReloadCachedItemsAsync(NewsFeed feed)
+    /// <summary>
+    /// Fetches items from a feed and adds new ones to the store.
+    /// Returns true if any new items were added.
+    /// </summary>
+    private async Task<bool> ReloadCachedItemsAsync(NewsFeed feed)
     {
         var url = feed.Href;
         var user = this.userStore.GetUserById(feed.UserId);
@@ -132,7 +180,7 @@ public class FeedRefresher : IFeedRefresher
         if (user == null)
         {
             this.logger.LogError("User not found: {userId}", feed.UserId);
-            return;
+            return false;
         }
 
         var freshItems = await this.FetchItemsFromFeedAsync(user, url);
@@ -146,7 +194,6 @@ public class FeedRefresher : IFeedRefresher
             var existing = this.newsFeedItemStore.GetItem(user, item.Href);
             if (existing != null)
             {
-                // Item already exists in the store, skip it
                 this.logger.LogDebug("Skipping existing item: {itemId} from feed: {feedUrl}", item.Id, url);
                 continue;
             }
@@ -157,7 +204,10 @@ public class FeedRefresher : IFeedRefresher
         if (newItems.Any())
         {
             await this.newsFeedItemStore.AddItemsAsync(newItems);
+            return true;
         }
+
+        return false;
     }
 
     private async Task<HashSet<NewsFeedItem>> FetchItemsFromFeedAsync(RssUser user, string url)
