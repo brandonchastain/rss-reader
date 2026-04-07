@@ -10,7 +10,12 @@ namespace RssApp.ComponentServices
     {
         public Task AddFeedAsync(NewsFeed feed) => Task.CompletedTask;
         public Task RefreshAsync(RssUser user) => Task.CompletedTask;
-        public Task<bool> HasNewItemsAsync(RssUser user) => Task.FromResult(false);
+        public RefreshStatusResponse GetRefreshStatus(RssUser user) => new()
+        {
+            HasNewItems = false,
+            IsRefreshing = false,
+            PendingFeeds = 0
+        };
         public void ResetRefreshCooldown() { }
     }
 }

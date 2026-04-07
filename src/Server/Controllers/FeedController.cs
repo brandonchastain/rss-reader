@@ -98,6 +98,7 @@ namespace Server.Controllers
 
         [HttpGet]
         [Route("refresh")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public async Task<IActionResult> RefreshFeedsAsync()
         {
             var user = this.userResolver.ResolveUser(User);
@@ -114,7 +115,8 @@ namespace Server.Controllers
 
         [HttpGet]
         [Route("refresh/status")]
-        public async Task<IActionResult> RefreshStatusAsync()
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult GetRefreshStatus()
         {
             var user = this.userResolver.ResolveUser(User);
 
@@ -123,13 +125,8 @@ namespace Server.Controllers
                 return NotFound($"Authenticated user not found.");
             }
 
-            bool hasNewItems = await this.feedRefresher.HasNewItemsAsync(user);
-            if (hasNewItems)
-            {
-                return Ok();
-            }
-
-            return NoContent();
+            var status = this.feedRefresher.GetRefreshStatus(user);
+            return Ok(status);
         }
 
         [HttpPost]

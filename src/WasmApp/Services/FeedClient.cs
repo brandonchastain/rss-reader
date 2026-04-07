@@ -145,21 +145,33 @@ namespace WasmApp.Services
                     return false;
                 }
 
-                // Poll for completion
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                // Poll until backend reports refresh is complete (no hard 30s timeout)
+                bool everHadNewItems = false;
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
                 while (!cts.IsCancellationRequested)
                 {
                     await Task.Delay(1000, cts.Token);
                     var statusResponse = await _httpClient.GetAsync(statusUrl, cts.Token);
-                    if (statusResponse.StatusCode == System.Net.HttpStatusCode.OK)
+
+                    if (statusResponse.IsSuccessStatusCode)
                     {
-                        return true;
+                        var status = await statusResponse.Content.ReadFromJsonAsync<RefreshStatusResponse>(cancellationToken: cts.Token);
+                        if (status != null)
+                        {
+                            if (status.HasNewItems) everHadNewItems = true;
+                            if (!status.IsRefreshing) return everHadNewItems;
+                        }
+                    }
+                    else
+                    {
+                        // Non-success status — stop polling
+                        return everHadNewItems;
                     }
                 }
             }
             catch (OperationCanceledException)
             {
-                // Polling timed out
+                // Polling timed out at 120s
             }
             catch (Exception ex)
             {
