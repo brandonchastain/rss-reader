@@ -65,6 +65,7 @@ internal sealed class FakeFeedRepository : IFeedRepository
     public IEnumerable<TagSetting> GetTagSettings(RssUser user) => Enumerable.Empty<TagSetting>();
     public void SetTagHidden(RssUser user, string tag, bool isHidden) { }
     public IEnumerable<string> GetHiddenFeedUrls(RssUser user) => Enumerable.Empty<string>();
+    public void DeleteAllFeeds(RssUser user) { Feeds.RemoveAll(f => f.UserId == user.Id); }
 }
 
 // ---------------------------------------------------------------------------

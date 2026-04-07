@@ -101,4 +101,10 @@ public class CachingFeedRepository : IFeedRepository
 
     public IEnumerable<string> GetHiddenFeedUrls(RssUser user)
         => _inner.GetHiddenFeedUrls(user);
+
+    public void DeleteAllFeeds(RssUser user)
+    {
+        _inner.DeleteAllFeeds(user);
+        _cache.Remove(FeedsKey(user.Id));
+    }
 }

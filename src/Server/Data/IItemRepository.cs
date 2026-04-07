@@ -15,4 +15,5 @@ public interface IItemRepository : IDisposable
     void UpdateTags(NewsFeedItem item, string tags);
     string GetItemContent(NewsFeedItem item);
     Task DeleteAllItemsAsync(RssUser user);
+    int GetItemCountForFeed(RssUser user, string feedUrl);
 }

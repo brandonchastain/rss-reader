@@ -21,4 +21,6 @@ public interface IFeedRepository
     void SetTagHidden(RssUser user, string tag, bool isHidden);
 
     IEnumerable<string> GetHiddenFeedUrls(RssUser user);
+
+    void DeleteAllFeeds(RssUser user);
 }

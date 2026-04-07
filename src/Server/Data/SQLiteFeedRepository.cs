@@ -378,4 +378,23 @@ public class SQLiteFeedRepository : IFeedRepository
             .Select(f => f.Href)
             .ToList();
     }
+
+    public void DeleteAllFeeds(RssUser user)
+    {
+        using var connection = new SqliteConnection(this.connectionString);
+        connection.OpenWithPragmas();
+        using var transaction = connection.BeginTransaction();
+
+        var cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM UserTagSettings WHERE UserId = @userId";
+        cmd.Parameters.AddWithValue("@userId", user.Id);
+        cmd.ExecuteNonQuery();
+
+        cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM Feeds WHERE UserId = @userId";
+        cmd.Parameters.AddWithValue("@userId", user.Id);
+        cmd.ExecuteNonQuery();
+
+        transaction.Commit();
+    }
 }
