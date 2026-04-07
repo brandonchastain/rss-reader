@@ -128,7 +128,17 @@
 
     protected override async Task OnInitializedAsync()
     {
-        username = await userClient.GetUsernameAsync();
+        try
+        {
+            // Fetch from backend (triggers lazy username migration)
+            var user = await userClient.GetFeedUserAsync();
+            username = user.Username;
+        }
+        catch
+        {
+            // Fallback to auth provider display name
+            username = await userClient.GetUsernameAsync();
+        }
     }
 
     private async Task LoadReport()
