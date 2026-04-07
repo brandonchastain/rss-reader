@@ -32,19 +32,56 @@ public static class DatabaseMode
 public static class SqliteConnectionExtensions
 {
     /// <summary>
-    /// Opens the connection and applies PRAGMA query_only = ON when
-    /// <see cref="DatabaseMode.QueryOnly"/> is set. This is the DB-level
-    /// backstop that prevents writes even if the HTTP filter is bypassed.
+    /// Opens the connection and applies per-connection PRAGMAs:
+    /// - busy_timeout=5000 (wait up to 5s on write lock) — skipped for read-only connections
+    /// - query_only=ON when <see cref="DatabaseMode.QueryOnly"/> is set
     /// </summary>
     public static void OpenWithPragmas(this SqliteConnection connection)
     {
         connection.Open();
 
-        if (DatabaseMode.QueryOnly)
+        var isReadOnly = connection.ConnectionString?.Contains("Mode=ReadOnly", StringComparison.OrdinalIgnoreCase) == true;
+        if (isReadOnly && !DatabaseMode.QueryOnly) return;
+
+        using var cmd = connection.CreateCommand();
+        if (isReadOnly && DatabaseMode.QueryOnly)
         {
-            using var cmd = connection.CreateCommand();
             cmd.CommandText = "PRAGMA query_only = ON";
-            cmd.ExecuteNonQuery();
         }
+        else if (DatabaseMode.QueryOnly)
+        {
+            cmd.CommandText = "PRAGMA busy_timeout=5000; PRAGMA query_only = ON";
+        }
+        else
+        {
+            cmd.CommandText = "PRAGMA busy_timeout=5000";
+        }
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Async version of <see cref="OpenWithPragmas"/>.
+    /// </summary>
+    public static async Task OpenWithPragmasAsync(this SqliteConnection connection)
+    {
+        await connection.OpenAsync();
+
+        var isReadOnly = connection.ConnectionString?.Contains("Mode=ReadOnly", StringComparison.OrdinalIgnoreCase) == true;
+        if (isReadOnly && !DatabaseMode.QueryOnly) return;
+
+        using var cmd = connection.CreateCommand();
+        if (isReadOnly && DatabaseMode.QueryOnly)
+        {
+            cmd.CommandText = "PRAGMA query_only = ON";
+        }
+        else if (DatabaseMode.QueryOnly)
+        {
+            cmd.CommandText = "PRAGMA busy_timeout=5000; PRAGMA query_only = ON";
+        }
+        else
+        {
+            cmd.CommandText = "PRAGMA busy_timeout=5000";
+        }
+        await cmd.ExecuteNonQueryAsync();
     }
 }
