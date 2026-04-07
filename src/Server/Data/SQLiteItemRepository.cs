@@ -737,6 +737,17 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         this.logger.LogInformation("Deleted {Count} items for user {UserId}", deleted, user.Id);
     }
 
+    public int GetItemCountForFeed(RssUser user, string feedUrl)
+    {
+        using var connection = new SqliteConnection(this.connectionString);
+        connection.OpenWithPragmas();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM Items WHERE UserId = @userId AND FeedUrl = @feedUrl";
+        command.Parameters.AddWithValue("@userId", user.Id);
+        command.Parameters.AddWithValue("@feedUrl", feedUrl);
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
     public void Dispose()
     {
     }

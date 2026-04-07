@@ -111,6 +111,12 @@ public sealed class CachingUserRepository : IUserRepository
         EvictAll();
     }
 
+    public void DeleteUser(int userId)
+    {
+        _inner.DeleteUser(userId);
+        EvictAll();
+    }
+
     // --- Helpers ---
 
     private void EvictAll()

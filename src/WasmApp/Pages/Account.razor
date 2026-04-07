@@ -1,0 +1,168 @@
+@page "/account"
+@using Microsoft.AspNetCore.Authorization
+@using RssApp.Contracts
+@attribute [Authorize]
+
+@inject IUserClient userClient
+@inject NavigationManager navigationManager
+
+<div class="account-container">
+    <h1 class="account-title">My Account</h1>
+
+    <section class="account-section">
+        <h2>Account Info</h2>
+        @if (username == null)
+        {
+            <p class="text-muted">Loading...</p>
+        }
+        else
+        {
+            <dl class="account-dl">
+                <dt>Username</dt>
+                <dd><code>@username</code></dd>
+            </dl>
+        }
+    </section>
+
+    <section class="account-section">
+        <h2>Your Data</h2>
+        <p>Export your feed subscriptions as an OPML file from the <a href="/feeds">Feeds page</a>.</p>
+        <button class="btn btn-outline-primary" @onclick="LoadReport" disabled="@loadingReport">
+            @if (loadingReport)
+            {
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                <span>Loading...</span>
+            }
+            else
+            {
+                <span>View My Data</span>
+            }
+        </button>
+
+        @if (reportError != null)
+        {
+            <div class="alert alert-danger mt-3">@reportError</div>
+        }
+
+        @if (report != null)
+        {
+            <div class="account-report mt-3">
+                <dl class="account-dl">
+                    <dt>Feeds</dt>
+                    <dd>@report.FeedCount</dd>
+                    <dt>Total Items</dt>
+                    <dd>@report.TotalItemCount</dd>
+                </dl>
+                @if (report.Feeds.Any())
+                {
+                    <table class="table table-sm account-table">
+                        <thead>
+                            <tr>
+                                <th>Feed URL</th>
+                                <th>Tags</th>
+                                <th class="text-end">Items</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var feed in report.Feeds)
+                            {
+                                <tr>
+                                    <td class="feed-url-cell">@feed.Url</td>
+                                    <td>@(feed.Tags != null && feed.Tags.Any() ? string.Join(", ", feed.Tags) : "—")</td>
+                                    <td class="text-end">@feed.ItemCount</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="account-section account-danger-zone">
+        <h2>Delete Account</h2>
+        <p>
+            Permanently delete your account and all associated data — feeds, items, read history, and saved posts.
+            <strong>This cannot be undone.</strong>
+        </p>
+
+        @if (!showConfirm)
+        {
+            <button class="btn btn-outline-danger" @onclick="() => showConfirm = true">Delete My Account</button>
+        }
+        else
+        {
+            <div class="alert alert-danger">
+                <strong>Are you sure?</strong> All your feeds and data will be permanently deleted.
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-danger" @onclick="DeleteAccount" disabled="@deleting">
+                    @if (deleting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        <span>Deleting...</span>
+                    }
+                    else
+                    {
+                        <span>Yes, Delete Everything</span>
+                    }
+                </button>
+                <button class="btn btn-secondary" @onclick="() => showConfirm = false" disabled="@deleting">Cancel</button>
+            </div>
+            @if (deleteError != null)
+            {
+                <div class="alert alert-danger mt-3">@deleteError</div>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private string username;
+    private UserDataReport report;
+    private bool loadingReport = false;
+    private string reportError;
+    private bool showConfirm = false;
+    private bool deleting = false;
+    private string deleteError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        username = await userClient.GetUsernameAsync();
+    }
+
+    private async Task LoadReport()
+    {
+        loadingReport = true;
+        reportError = null;
+        report = null;
+        try
+        {
+            report = await userClient.GetDataReportAsync();
+        }
+        catch (Exception ex)
+        {
+            reportError = $"Failed to load data report: {ex.Message}";
+        }
+        finally
+        {
+            loadingReport = false;
+        }
+    }
+
+    private async Task DeleteAccount()
+    {
+        deleting = true;
+        deleteError = null;
+        try
+        {
+            await userClient.DeleteAccountAsync();
+            navigationManager.NavigateTo("/", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            deleteError = $"Failed to delete account: {ex.Message}";
+            deleting = false;
+        }
+    }
+}

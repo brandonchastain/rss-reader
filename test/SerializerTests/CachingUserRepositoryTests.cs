@@ -73,6 +73,11 @@ internal sealed class FakeUserRepository : IUserRepository
         // Return a new list each time so lazy-vs-materialized bugs surface clearly.
         return Users.ToList();
     }
+
+    public void DeleteUser(int userId)
+    {
+        Users.RemoveAll(u => u.Id == userId);
+    }
 }
 
 // ---------------------------------------------------------------------------

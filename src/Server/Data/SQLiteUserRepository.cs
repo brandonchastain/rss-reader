@@ -185,6 +185,16 @@ public class SQLiteUserRepository : IUserRepository
         }
     }
 
+    public void DeleteUser(int userId)
+    {
+        using var connection = new SqliteConnection(this.connectionString);
+        connection.OpenWithPragmas();
+        var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM Users WHERE Id = @userId";
+        command.Parameters.AddWithValue("@userId", userId);
+        command.ExecuteNonQuery();
+    }
+
     private RssUser ReadItemFromResults(SqliteDataReader reader)
     {
         var id = reader.IsDBNull(reader.GetOrdinal("Id")) ? 0 : reader.GetInt32(reader.GetOrdinal("Id"));

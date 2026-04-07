@@ -162,6 +162,10 @@ public sealed class CachingItemRepository : IItemRepository
             mc.Compact(1.0);
     }
 
+    /// <inheritdoc/>
+    public int GetItemCountForFeed(RssUser user, string feedUrl)
+        => _inner.GetItemCountForFeed(user, feedUrl);
+
     // -------------------------------------------------------------------------
     // IDisposable
     // -------------------------------------------------------------------------
