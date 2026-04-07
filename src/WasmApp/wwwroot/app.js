@@ -121,12 +121,16 @@ window.Observer = {
 };
 
 window.rssApp = {
-    saveScrollStateAndNavigate: function(postId, targetHref) {
+    saveScrollStateAndNavigate: function(postId, targetHref, markReadUrl) {
         var itemCount = document.querySelectorAll('[data-post-id]').length;
         var pageEstimate = Math.ceil(itemCount / 20);
         sessionStorage.setItem('rssApp.scrollAnchorPostId', postId);
         sessionStorage.setItem('rssApp.scrollAnchorPage', pageEstimate.toString());
         sessionStorage.setItem('rssApp.scrollAnchorPath', window.location.pathname);
+        // Fire mark-as-read with keepalive so it completes even after navigation
+        if (markReadUrl) {
+            fetch(markReadUrl, { method: 'GET', keepalive: true }).catch(function() {});
+        }
         window.location.href = targetHref;
     },
     getScrollState: function() {

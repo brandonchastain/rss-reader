@@ -137,10 +137,12 @@
 
     private async Task OnArticleLinkClick(NewsFeedItem post)
     {
-        _ = MarkAsReadAsync(post, true);
+        post.IsRead = true;
+        await InvokeAsync(StateHasChanged);
         try
         {
-            await jsRuntime.InvokeVoidAsync("rssApp.saveScrollStateAndNavigate", post.Id, post.Href);
+            var markReadUrl = $"/api/item/markAsRead?itemId={post.Id}&isRead=true";
+            await jsRuntime.InvokeVoidAsync("rssApp.saveScrollStateAndNavigate", post.Id, post.Href, markReadUrl);
         }
         catch (TaskCanceledException) { }
         catch (JSException) { }
