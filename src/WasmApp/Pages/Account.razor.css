@@ -2,17 +2,19 @@
     max-width: 800px;
     margin: 2rem auto;
     padding: 0 1rem;
+    color: var(--text);
 }
 
 .account-title {
     font-size: 1.75rem;
     font-weight: 600;
     margin-bottom: 1.5rem;
+    color: var(--text);
 }
 
 .account-section {
-    background: var(--bs-body-bg);
-    border: 1px solid var(--bs-border-color);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 0.5rem;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
@@ -23,7 +25,8 @@
     font-weight: 600;
     margin-bottom: 1rem;
     padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--bs-border-color);
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
 }
 
 .account-dl {
@@ -35,24 +38,87 @@
 
 .account-dl dt {
     font-weight: 600;
-    color: var(--bs-secondary-color);
+    color: var(--text-muted);
 }
 
 .account-dl dd {
     margin: 0;
+    color: var(--text);
+}
+
+::deep .account-section .btn-outline-primary {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: transparent;
+}
+
+::deep .account-section .btn-outline-primary:hover {
+    color: var(--bg);
+    background-color: var(--accent);
+    border-color: var(--accent);
 }
 
 .account-danger-zone {
-    border-color: var(--bs-danger);
+    border-color: #6e2020;
 }
 
 .account-danger-zone h2 {
-    color: var(--bs-danger);
-    border-bottom-color: var(--bs-danger-border-subtle);
+    color: #f85149;
+    border-bottom-color: #6e2020;
+}
+
+::deep .account-danger-zone .btn-outline-danger {
+    color: #f85149;
+    border-color: #f85149;
+    background: transparent;
+}
+
+::deep .account-danger-zone .btn-outline-danger:hover {
+    color: #fff;
+    background-color: #f85149;
+    border-color: #f85149;
+}
+
+::deep .account-danger-zone .btn-danger {
+    color: #fff;
+    background-color: #da3633;
+    border-color: #da3633;
+}
+
+::deep .account-danger-zone .btn-danger:hover {
+    background-color: #f85149;
+    border-color: #f85149;
+}
+
+::deep .account-section .btn-secondary {
+    color: var(--text);
+    background-color: var(--bg-elevated);
+    border-color: var(--border);
+}
+
+::deep .account-section .btn-secondary:hover {
+    background-color: var(--bg-hover);
+}
+
+::deep .account-section .alert-danger {
+    color: #f85149;
+    background-color: rgba(248, 81, 73, 0.1);
+    border-color: #6e2020;
 }
 
 .account-table {
     margin-top: 1rem;
+    color: var(--text);
+}
+
+::deep .account-table th {
+    color: var(--text-muted);
+    border-color: var(--border);
+}
+
+::deep .account-table td {
+    color: var(--text);
+    border-color: var(--border);
 }
 
 .feed-url-cell {
@@ -61,7 +127,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.85rem;
-    font-family: var(--bs-font-monospace);
+}
+
+::deep .account-section .spinner-border {
+    color: inherit;
 }
 
 @media (max-width: 575px) {
