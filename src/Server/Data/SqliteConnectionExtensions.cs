@@ -43,20 +43,19 @@ public static class SqliteConnectionExtensions
         var isReadOnly = connection.ConnectionString?.Contains("Mode=ReadOnly", StringComparison.OrdinalIgnoreCase) == true;
         if (isReadOnly && !DatabaseMode.QueryOnly) return;
 
-        using var cmd = connection.CreateCommand();
-        if (isReadOnly && DatabaseMode.QueryOnly)
+        if (!isReadOnly)
         {
-            cmd.CommandText = "PRAGMA query_only = ON";
+            using var busyCmd = connection.CreateCommand();
+            busyCmd.CommandText = "PRAGMA busy_timeout=5000";
+            busyCmd.ExecuteNonQuery();
         }
-        else if (DatabaseMode.QueryOnly)
+
+        if (DatabaseMode.QueryOnly)
         {
-            cmd.CommandText = "PRAGMA busy_timeout=5000; PRAGMA query_only = ON";
+            using var qoCmd = connection.CreateCommand();
+            qoCmd.CommandText = "PRAGMA query_only = ON";
+            qoCmd.ExecuteNonQuery();
         }
-        else
-        {
-            cmd.CommandText = "PRAGMA busy_timeout=5000";
-        }
-        cmd.ExecuteNonQuery();
     }
 
     /// <summary>
@@ -69,19 +68,18 @@ public static class SqliteConnectionExtensions
         var isReadOnly = connection.ConnectionString?.Contains("Mode=ReadOnly", StringComparison.OrdinalIgnoreCase) == true;
         if (isReadOnly && !DatabaseMode.QueryOnly) return;
 
-        using var cmd = connection.CreateCommand();
-        if (isReadOnly && DatabaseMode.QueryOnly)
+        if (!isReadOnly)
         {
-            cmd.CommandText = "PRAGMA query_only = ON";
+            using var busyCmd = connection.CreateCommand();
+            busyCmd.CommandText = "PRAGMA busy_timeout=5000";
+            await busyCmd.ExecuteNonQueryAsync();
         }
-        else if (DatabaseMode.QueryOnly)
+
+        if (DatabaseMode.QueryOnly)
         {
-            cmd.CommandText = "PRAGMA busy_timeout=5000; PRAGMA query_only = ON";
+            using var qoCmd = connection.CreateCommand();
+            qoCmd.CommandText = "PRAGMA query_only = ON";
+            await qoCmd.ExecuteNonQueryAsync();
         }
-        else
-        {
-            cmd.CommandText = "PRAGMA busy_timeout=5000";
-        }
-        await cmd.ExecuteNonQueryAsync();
     }
 }
