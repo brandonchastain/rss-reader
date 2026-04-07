@@ -6,23 +6,28 @@
     },
     {
       "route": "/timeline*",
-      "rewrite": "/index.html"
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
     },
     {
       "route": "/feeds*",
-      "rewrite": "/index.html"
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
     },
     {
       "route": "/tags*",
-      "rewrite": "/index.html"
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
     },
     {
       "route": "/search*",
-      "rewrite": "/index.html"
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
     },
     {
       "route": "/posts*",
-      "rewrite": "/index.html"
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
     },
     {
       "route": "/_framework/blazor.boot.json",
