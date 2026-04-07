@@ -22,4 +22,10 @@ public class AdminClient : IAdminClient
         return await _apiClient.GetFromJsonAsync<List<SystemStatsSnapshot>>("api/admin/stats/history")
                ?? new List<SystemStatsSnapshot>();
     }
+
+    public async Task<List<AdminUser>> GetUsersAsync()
+    {
+        return await _apiClient.GetFromJsonAsync<List<AdminUser>>("api/admin/users")
+               ?? new List<AdminUser>();
+    }
 }

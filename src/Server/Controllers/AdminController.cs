@@ -14,15 +14,18 @@ namespace Server.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly ISystemStatsRepository _statsRepo;
+    private readonly IUserRepository _userRepo;
     private readonly RssAppConfig _config;
     private readonly IUserResolver _userResolver;
 
     public AdminController(
         ISystemStatsRepository statsRepo,
+        IUserRepository userRepo,
         RssAppConfig config,
         IUserResolver userResolver)
     {
         _statsRepo    = statsRepo    ?? throw new ArgumentNullException(nameof(statsRepo));
+        _userRepo     = userRepo     ?? throw new ArgumentNullException(nameof(userRepo));
         _config       = config       ?? throw new ArgumentNullException(nameof(config));
         _userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
     }
@@ -50,6 +53,20 @@ public class AdminController : ControllerBase
 
         var history = _statsRepo.GetHistory(30).ToList();
         return Ok(history);
+    }
+
+    // GET /api/admin/users
+    [HttpGet("users")]
+    public IActionResult GetUsers()
+    {
+        if (!IsAdmin(User))
+            return Forbid();
+
+        var users = _userRepo.GetAllUsers()
+            .Select(u => new { u.Id, u.Username })
+            .ToList();
+
+        return Ok(users);
     }
 
     private bool IsAdmin(ClaimsPrincipal principal)
