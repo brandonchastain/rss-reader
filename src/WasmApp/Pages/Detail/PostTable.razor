@@ -26,52 +26,17 @@
 
 
 <div id="post-table" class="table">
-    @if (isLoading && !_showTerminal)
+    @if (isLoading)
     {
         <div class="loading-spinner-container">
             <div class="spinner"></div>
         </div>
     }
-    else if (isLoading && _showTerminal)
-    {
-        <div class="shell-boot">
-            <div class="shell-line shell-cmd">$ rssreader --connect</div>
-            <div class="shell-banner">
-                <span><span class="comment-slash">// </span><span class="comment-text">rssreader [v1.1]</span></span>
-                <span><span class="comment-slash">// </span><span class="comment-text">read what matters to you.</span></span>
-            </div>
-            @foreach (var msg in _visibleMessages.Take(_visibleMessages.Count - (_hasTimedOut ? 0 : 1)))
-            {
-                <div class="shell-line"><span class="shell-prompt">&gt;</span> @msg</div>
-            }
-            @if (!_hasTimedOut && _visibleMessages.Count > 0)
-            {
-                <div class="shell-line shell-active">
-                    <span class="shell-prompt">&gt;</span> @_visibleMessages[^1]@(new string('.', _dotCount))
-                </div>
-                <div class="shell-line"><span class="shell-cursor">█</span></div>
-            }
-            @if (_hasTimedOut)
-            {
-                <div class="shell-line shell-error"><span class="shell-prompt">&gt;</span> ERROR: Connection timed out</div>
-                <div class="shell-line shell-cmd">$ <button class="shell-retry-btn" @onclick="Retry">[Retry]</button></div>
-            }
-        </div>
-    }
     else if (Posts == null || Posts.Count == 0)
     {
-        @if (_isInitialLoad)
-        {
-            <div class="loading-spinner-container">
-                <div class="spinner"></div>
-            </div>
-        }
-        else
-        {
-            <div class="no-posts-message">
-                <p>No posts found.</p>
-            </div>
-        }
+        <div class="no-posts-message">
+            <p>No posts found.</p>
+        </div>
     }
     else
     {
@@ -126,42 +91,11 @@
     private string filterTag => FeedClient.FilterTag;
 
     private const int MaxPostsToKeep = 100;  // Adjust this number based on your needs
-    private const int LoadingTimeoutMs = 30000;
-    private const int SpinnerDelayMs = 2000;
-    private const int MessageIntervalMs = 1500;
-    private const int DotIntervalMs = 500;
-
-    private static readonly string[] _statusMessages =
-    {
-        "Initializing",
-        "Loading configuration",
-        "Connecting to feed service",
-        "Fetching subscriptions",
-        "Loading posts"
-    };
 
     private bool isLoading = true;
-    private bool _showTerminal = false;
-    private bool _hasTimedOut = false;
-    private bool _isInitialLoad = true;
-    private List<string> _visibleMessages = new();
-    private int _messageIndex = 0;
-    private int _dotCount = 0;
-    private System.Timers.Timer _timeoutTimer;
-    private System.Timers.Timer _spinnerTimer;
-    private System.Timers.Timer _messageTimer;
-    private System.Timers.Timer _dotTimer;
 
     public void Dispose()
     {
-        _timeoutTimer?.Stop();
-        _timeoutTimer?.Dispose();
-        _spinnerTimer?.Stop();
-        _spinnerTimer?.Dispose();
-        _messageTimer?.Stop();
-        _messageTimer?.Dispose();
-        _dotTimer?.Stop();
-        _dotTimer?.Dispose();
     }
     
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -169,155 +103,43 @@
         await base.OnAfterRenderAsync(firstRender);
         if (firstRender)
         {
-            StartSpinnerTimer();
             this.userTags = await FeedClient.GetUserTagsAsync(CurrentUser);
             StateHasChanged();
         }
     }
 
-    private void StartSpinnerTimer()
-    {
-        _showTerminal = false;
-        _spinnerTimer?.Stop();
-        _spinnerTimer?.Dispose();
-
-        // Only escalate to terminal animation on the very first load
-        if (!_isInitialLoad) return;
-
-        _spinnerTimer = new System.Timers.Timer(SpinnerDelayMs);
-        _spinnerTimer.AutoReset = false;
-        _spinnerTimer.Elapsed += (s, e) =>
-        {
-            if (!isLoading) return;
-            _showTerminal = true;
-            StartTimeoutTimer();
-            StartMessageTimer();
-            StartDotTimer();
-            InvokeAsync(StateHasChanged);
-        };
-        _spinnerTimer.Start();
-    }
-
-    private void StartMessageTimer()
-    {
-        _visibleMessages.Clear();
-        _messageIndex = 0;
-        _visibleMessages.Add(_statusMessages[0]);
-
-        _messageTimer?.Stop();
-        _messageTimer?.Dispose();
-        _messageTimer = new System.Timers.Timer(MessageIntervalMs);
-        _messageTimer.AutoReset = true;
-        _messageTimer.Elapsed += (s, e) =>
-        {
-            if (!isLoading) return;
-            _messageIndex++;
-            if (_messageIndex < _statusMessages.Length)
-            {
-                _visibleMessages.Add(_statusMessages[_messageIndex]);
-                InvokeAsync(StateHasChanged);
-            }
-            else
-            {
-                _messageTimer?.Stop();
-            }
-        };
-        _messageTimer.Start();
-    }
-
-    private void StartDotTimer()
-    {
-        _dotCount = 0;
-        _dotTimer?.Stop();
-        _dotTimer?.Dispose();
-        _dotTimer = new System.Timers.Timer(DotIntervalMs);
-        _dotTimer.AutoReset = true;
-        _dotTimer.Elapsed += (s, e) =>
-        {
-            if (!isLoading) return;
-            _dotCount = (_dotCount + 1) % 4;
-            InvokeAsync(StateHasChanged);
-        };
-        _dotTimer.Start();
-    }
-
-    private void StartTimeoutTimer()
-    {
-        _hasTimedOut = false;
-        _timeoutTimer?.Stop();
-        _timeoutTimer?.Dispose();
-        _timeoutTimer = new System.Timers.Timer(LoadingTimeoutMs);
-        _timeoutTimer.AutoReset = false;
-        _timeoutTimer.Elapsed += (s, e) =>
-        {
-            if (isLoading)
-            {
-                _hasTimedOut = true;
-                InvokeAsync(StateHasChanged);
-            }
-        };
-        _timeoutTimer.Start();
-    }
-
-    private void StopTimeoutTimer()
-    {
-        _spinnerTimer?.Stop();
-        _showTerminal = false;
-        _timeoutTimer?.Stop();
-        _hasTimedOut = false;
-        _messageTimer?.Stop();
-        _dotTimer?.Stop();
-        _dotCount = 0;
-    }
-
-    private void Retry()
-    {
-        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
-    }
-
     protected override void OnParametersSet()
     {
         base.OnParametersSet();
-        // Only stop loading when posts actually arrive.
-        // Filter toggles set isLoading=false explicitly after their await completes,
-        // so we don't prematurely clear it on intermediate renders with an empty list.
-        if (Posts != null && Posts.Count > 0)
+        if (Posts != null)
         {
             isLoading = false;
-            StopTimeoutTimer();
-            _isInitialLoad = false;
         }
     }
 
     private async Task ToggleUnreadFilterAsync()
     {
         isLoading = true;
-        StartSpinnerTimer();
         await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag, false));
         isLoading = false;
-        StopTimeoutTimer();
     }
 
     private async Task ToggleSavedFilterAsync()
     {
         isLoading = true;
-        StartSpinnerTimer();
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag, false));
         isLoading = false;
-        StopTimeoutTimer();
     }
 
     private async Task FilterForTag(string tag)
     {
         isLoading = true;
-        StartSpinnerTimer();
         if (this.filterTag == tag)
         {
             tag = null;
         }
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, tag, false));
         isLoading = false;
-        StopTimeoutTimer();
     }
 
     private async Task OnRefreshComplete()
