@@ -1,7 +1,9 @@
 ﻿@page "/"
 @page "/index"
 @using WasmApp.Services
+@using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
+@attribute [AllowAnonymous]
 @inject NavigationManager NavigationManager
 @inject ILogger<Index> logger
 @inject IUserClient userClient
@@ -28,7 +30,7 @@
                 <div class="shell-line shell-cmd desktop-only" style="margin-top: 1.5rem;">$ press [ENTER] to continue<span class="shell-cursor">█</span></div>
                 @* Mobile: button *@
                 <div class="mobile-only" style="margin-top: 1.5rem;">
-                    <a href="/.auth/login/aad" class="btn btn-outline-success btn-sm" style="font-family: inherit; letter-spacing: 0.05em;">Login / Sign Up</a>
+                    <a href="@LoginUrl" class="btn btn-outline-success btn-sm" style="font-family: inherit; letter-spacing: 0.05em;">Login / Sign Up</a>
                 </div>
             </NotAuthorized>
         </AuthorizeView>
@@ -38,6 +40,12 @@
 @code {
     // Auto-focus for keyboard handling; FocusAsync runs after first render
     private ElementReference _terminalRef;
+    private string _returnUrl;
+
+    private string LoginUrl =>
+        string.IsNullOrEmpty(_returnUrl)
+            ? "/.auth/login/aad"
+            : $"/.auth/login/aad?post_login_redirect_uri={_returnUrl}";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -51,7 +59,13 @@
                 return;
             }
 
+            // Read returnUrl from query string (set by RedirectToLogin for deep links)
+            var uri = new Uri(NavigationManager.Uri);
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            _returnUrl = query["returnUrl"];
+
             await _terminalRef.FocusAsync();
+            StateHasChanged();
         }
     }
 
@@ -59,7 +73,7 @@
     {
         if (e.Key == "Enter")
         {
-            NavigationManager.NavigateTo("/.auth/login/aad", forceLoad: true);
+            NavigationManager.NavigateTo(LoginUrl, forceLoad: true);
         }
     }
 }
