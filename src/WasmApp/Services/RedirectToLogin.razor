@@ -1,14 +1,12 @@
 @inject NavigationManager NavigationManager
 
 @code {
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override void OnAfterRender(bool firstRender)
     {
         if (firstRender)
         {
             var returnUrl = Uri.EscapeDataString(NavigationManager.Uri);
-            NavigationManager.NavigateTo(
-                $"/.auth/login/aad?post_login_redirect_uri={returnUrl}",
-                forceLoad: true);
+            NavigationManager.NavigateTo($"/?returnUrl={returnUrl}", replace: true);
         }
     }
 }

@@ -1,9 +1,11 @@
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Sections
 @using WasmApp.Services
 @using RssApp.Contracts
 
 @inject IUserClient userClient
+@inject AuthenticationStateProvider AuthStateProvider
 
 @rendermode InteractiveWebAssembly
 
@@ -135,6 +137,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (authState.User?.Identity?.IsAuthenticated != true)
+        {
+            username = "Guest";
+            return;
+        }
+
         try
         {
             feedUser = await userClient.GetFeedUserAsync();

@@ -121,8 +121,13 @@ window.Observer = {
 };
 
 window.rssApp = {
+    _loadedItemCount: 0,
+    setLoadedItemCount: function(count) {
+        window.rssApp._loadedItemCount = count;
+    },
     saveScrollStateAndNavigate: function(postId, targetHref, markReadUrl) {
-        var itemCount = document.querySelectorAll('[data-post-id]').length;
+        // Use Blazor-provided count (works with Virtualize) with DOM fallback
+        var itemCount = window.rssApp._loadedItemCount || document.querySelectorAll('[data-post-id]').length;
         var pageEstimate = Math.ceil(itemCount / 20);
         sessionStorage.setItem('rssApp.scrollAnchorPostId', postId);
         sessionStorage.setItem('rssApp.scrollAnchorPage', pageEstimate.toString());
@@ -144,6 +149,10 @@ window.rssApp = {
         sessionStorage.removeItem('rssApp.scrollAnchorPostId');
         sessionStorage.removeItem('rssApp.scrollAnchorPage');
         sessionStorage.removeItem('rssApp.scrollAnchorPath');
+    },
+    scrollToEstimatedIndex: function(index, itemSize) {
+        var estimatedPosition = index * itemSize;
+        window.scrollTo(0, estimatedPosition);
     },
     scrollToPost: function(postId) {
         var el = document.querySelector('[data-post-id="' + postId + '"]');

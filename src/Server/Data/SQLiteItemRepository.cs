@@ -404,7 +404,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             bool useCursor = lastPublishDateOrder.HasValue && lastId.HasValue;
             if (useCursor)
             {
-                command.CommandText += " AND (i.PublishDateOrder < @lastOrder OR (i.PublishDateOrder = @lastOrder AND i.Id < @lastId))";
+                command.CommandText += " AND (i.PublishDateOrder, i.Id) < (@lastOrder, @lastId)";
                 command.Parameters.AddWithValue("@lastOrder", lastPublishDateOrder.Value);
                 command.Parameters.AddWithValue("@lastId", lastId.Value);
             }
