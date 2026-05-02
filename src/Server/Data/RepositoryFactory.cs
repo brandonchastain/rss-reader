@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using RssApp.Contracts;
 using RssReader.Server.Services;
@@ -7,21 +6,18 @@ namespace RssApp.Data;
 
 public class RepositoryFactory
 {
-    private readonly string writeConnectionString;
-    private readonly string readConnectionString;
+    private readonly IDbConnections connections;
     private readonly IServiceProvider serviceProvider;
     private readonly bool isReadOnly;
     private readonly bool rebuildFtsOnStartup;
 
     public RepositoryFactory(
-        string writeConnectionString,
-        string readConnectionString,
+        IDbConnections connections,
         IServiceProvider serviceProvider,
         bool isReadOnly = false,
         bool rebuildFtsOnStartup = false)
     {
-        this.writeConnectionString = writeConnectionString;
-        this.readConnectionString = readConnectionString;
+        this.connections = connections;
         this.serviceProvider = serviceProvider;
         this.isReadOnly = isReadOnly;
         this.rebuildFtsOnStartup = rebuildFtsOnStartup;
@@ -30,24 +26,23 @@ public class RepositoryFactory
     public IUserRepository CreateUserRepository()
     {
         return new SQLiteUserRepository(
-            this.writeConnectionString,
-            this.readConnectionString,
-            this.serviceProvider.GetRequiredService<ILogger<SQLiteUserRepository>>());
+            this.connections,
+            this.serviceProvider.GetRequiredService<ILogger<SQLiteUserRepository>>(),
+            this.isReadOnly);
     }
 
     public IFeedRepository CreateFeedRepository()
     {
         return new SQLiteFeedRepository(
-            this.writeConnectionString,
-            this.readConnectionString,
-            this.serviceProvider.GetRequiredService<ILogger<SQLiteFeedRepository>>());
+            this.connections,
+            this.serviceProvider.GetRequiredService<ILogger<SQLiteFeedRepository>>(),
+            this.isReadOnly);
     }
 
     public IItemRepository CreateItemRepository()
     {
         return new SQLiteItemRepository(
-            this.writeConnectionString,
-            this.readConnectionString,
+            this.connections,
             this.serviceProvider.GetRequiredService<ILogger<SQLiteItemRepository>>(),
             this.serviceProvider.GetRequiredService<IFeedRepository>(),
             this.serviceProvider.GetRequiredService<IUserRepository>(),

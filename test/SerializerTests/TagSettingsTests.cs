@@ -12,7 +12,6 @@ using RssReader.Server.Services;
 public sealed class TagSettingsTests
 {
     private string testDbFile;
-    private string connectionString;
 
     private SQLiteUserRepository userRepo;
     private SQLiteFeedRepository feedRepo;
@@ -24,15 +23,15 @@ public sealed class TagSettingsTests
     public void Setup()
     {
         testDbFile = $"tagsettings-{Guid.NewGuid():N}.db";
-        connectionString = $"Data Source={testDbFile}";
+        var dbConnections = new SqliteDbConnections(testDbFile, isReadOnly: false);
 
         Directory.CreateDirectory(Path.Combine("wwwroot", "images"));
 
-        userRepo = new SQLiteUserRepository(connectionString, connectionString, new NullLogger<SQLiteUserRepository>());
+        userRepo = new SQLiteUserRepository(dbConnections, new NullLogger<SQLiteUserRepository>());
         userRepo.AddUser("tagTestUser", 0);
         testUser = new RssUser("tagTestUser", 0);
 
-        feedRepo = new SQLiteFeedRepository(connectionString, connectionString, new NullLogger<SQLiteFeedRepository>());
+        feedRepo = new SQLiteFeedRepository(dbConnections, new NullLogger<SQLiteFeedRepository>());
 
         var serviceCollection = new ServiceCollection();
         serviceCollection
@@ -43,8 +42,7 @@ public sealed class TagSettingsTests
             .AddSingleton<IUserRepository>(userRepo)
             .AddSingleton<IItemRepository>(sb =>
                 new SQLiteItemRepository(
-                    connectionString,
-                    connectionString,
+                    dbConnections,
                     sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
                     sb.GetRequiredService<IFeedRepository>(),
                     sb.GetRequiredService<IUserRepository>(),

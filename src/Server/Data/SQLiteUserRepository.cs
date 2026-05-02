@@ -6,29 +6,24 @@ namespace RssApp.Data;
 
 public class SQLiteUserRepository : IUserRepository
 {
-    private readonly string writeConnectionString;
-    private readonly string readConnectionString;
+    private readonly IDbConnections connections;
     private readonly ILogger<SQLiteUserRepository> logger;
 
     public SQLiteUserRepository(
-        string writeConnectionString,
-        string readConnectionString,
+        IDbConnections connections,
         ILogger<SQLiteUserRepository> logger,
         bool isReadOnly = false)
     {
-        this.writeConnectionString = writeConnectionString;
-        this.readConnectionString = readConnectionString;
+        this.connections = connections;
         this.logger = logger;
         if (!isReadOnly) this.InitializeDatabase();
     }
 
     private void InitializeDatabase()
     {
-        using (var connection = new SqliteConnection(this.writeConnectionString))
+        using (var connection = this.connections.OpenWrite())
         {
-            connection.OpenWithWritePragmas();
-
-            // WAL mode is persistent — only needs to be set once per database file.
+            // WAL mode is persistent  only needs to be set once per database file.
             var walCmd = connection.CreateCommand();
             walCmd.CommandText = "PRAGMA journal_mode=WAL;";
             walCmd.ExecuteNonQuery();
@@ -65,9 +60,8 @@ public class SQLiteUserRepository : IUserRepository
 
     public RssUser GetUserByName(string username)
     {
-        using (var connection = new SqliteConnection(this.readConnectionString))
+        using (var connection = this.connections.OpenRead())
         {
-            connection.OpenWithReadPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "SELECT * FROM Users WHERE Username = @username";
             command.Parameters.AddWithValue("@username", username);
@@ -86,9 +80,8 @@ public class SQLiteUserRepository : IUserRepository
 
     public RssUser GetUserById(int userId)
     {
-        using (var connection = new SqliteConnection(this.readConnectionString))
+        using (var connection = this.connections.OpenRead())
         {
-            connection.OpenWithReadPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "SELECT * FROM Users WHERE Id = @userId";
             command.Parameters.AddWithValue("@userId", userId);
@@ -108,9 +101,8 @@ public class SQLiteUserRepository : IUserRepository
 
     public RssUser GetUserByAadId(string aadUserId)
     {
-        using (var connection = new SqliteConnection(this.readConnectionString))
+        using (var connection = this.connections.OpenRead())
         {
-            connection.OpenWithReadPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "SELECT * FROM Users WHERE AadUserId = @aadUserId";
             command.Parameters.AddWithValue("@aadUserId", aadUserId);
@@ -129,9 +121,8 @@ public class SQLiteUserRepository : IUserRepository
 
     public void SetAadUserId(int userId, string aadUserId)
     {
-        using (var connection = new SqliteConnection(this.writeConnectionString))
+        using (var connection = this.connections.OpenWrite())
         {
-            connection.OpenWithWritePragmas();
             var command = connection.CreateCommand();
             command.CommandText = "UPDATE Users SET AadUserId = @aadUserId WHERE Id = @userId";
             command.Parameters.AddWithValue("@aadUserId", aadUserId);
@@ -142,9 +133,8 @@ public class SQLiteUserRepository : IUserRepository
 
     public void UpdateUsername(int userId, string newUsername)
     {
-        using (var connection = new SqliteConnection(this.writeConnectionString))
+        using (var connection = this.connections.OpenWrite())
         {
-            connection.OpenWithWritePragmas();
             var command = connection.CreateCommand();
             command.CommandText = "UPDATE Users SET Username = @newUsername WHERE Id = @userId";
             command.Parameters.AddWithValue("@newUsername", newUsername);
@@ -155,9 +145,8 @@ public class SQLiteUserRepository : IUserRepository
 
     public RssUser AddUser(string username, int? id = null)
     {
-        using (var connection = new SqliteConnection(this.writeConnectionString))
+        using (var connection = this.connections.OpenWrite())
         {
-            connection.OpenWithWritePragmas();
             var command = connection.CreateCommand();
             command.CommandText = "INSERT INTO Users (Username";
             if (id.HasValue)
@@ -181,9 +170,8 @@ public class SQLiteUserRepository : IUserRepository
 
     public IEnumerable<RssUser> GetAllUsers()
     {
-        using (var connection = new SqliteConnection(this.readConnectionString))
+        using (var connection = this.connections.OpenRead())
         {
-            connection.OpenWithReadPragmas();
             var command = connection.CreateCommand();
             command.CommandText = "SELECT * FROM Users";
 
@@ -200,8 +188,7 @@ public class SQLiteUserRepository : IUserRepository
 
     public void DeleteUser(int userId)
     {
-        using var connection = new SqliteConnection(this.writeConnectionString);
-        connection.OpenWithWritePragmas();
+        using var connection = this.connections.OpenWrite();
         var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM Users WHERE Id = @userId";
         command.Parameters.AddWithValue("@userId", userId);
