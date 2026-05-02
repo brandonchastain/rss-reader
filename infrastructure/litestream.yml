@@ -10,3 +10,6 @@ dbs:
         account-name: ${LITESTREAM_AZURE_ACCOUNT_NAME}
         bucket: litestream
         path: storage.db
+        # Batch WAL frame uploads to reduce blob storage transaction costs.
+        # Trade-off: up to 30s RPO if the container dies between syncs.
+        sync-interval: 30s
