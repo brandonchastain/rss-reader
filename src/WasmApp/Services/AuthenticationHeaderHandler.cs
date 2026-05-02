@@ -5,7 +5,7 @@ namespace WasmApp.Services;
 
 /// <summary>
 /// HTTP handler that ensures credentials (cookies) are sent with API requests
-/// and auto-redirects to login when the SWA Easy Auth session expires.
+/// and redirects appropriately when the SWA Easy Auth session expires.
 /// 
 /// SECURITY NOTE: We do NOT manually send identity headers. With Easy Auth:
 /// 1. User authenticates via /.auth/login/... 
@@ -15,16 +15,17 @@ namespace WasmApp.Services;
 /// 
 /// The browser cannot and should not forge identity headers - that's the platform's job.
 /// 
-/// SESSION EXPIRY: SWA sessions last ~8 hours, but the AAD browser session persists
-/// much longer. When a 401 is detected, we redirect to /.auth/login/aad which will
-/// silently re-authenticate if the AAD session is still valid (no password prompt).
+/// SESSION EXPIRY: SWA sessions last ~8 hours. When a 401 is detected, we re-check
+/// /.auth/me to distinguish intentional logout from session expiry:
+/// - If still authenticated: silently re-authenticate via /.auth/login/aad
+/// - If no longer authenticated: navigate home (user logged out intentionally)
 /// </summary>
 public class AuthenticationHeaderHandler : DelegatingHandler
 {
     private readonly AuthenticationStateProvider _authStateProvider;
     private readonly NavigationManager _navigationManager;
 
-    private static volatile bool _isRedirecting;
+    private static int _isRedirecting;
 
     public AuthenticationHeaderHandler(
         AuthenticationStateProvider authStateProvider,
@@ -38,13 +39,26 @@ public class AuthenticationHeaderHandler : DelegatingHandler
     {
         var response = await base.SendAsync(request, cancellationToken);
 
-        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && !_isRedirecting)
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+            && Interlocked.CompareExchange(ref _isRedirecting, 1, 0) == 0)
         {
-            _isRedirecting = true;
+            var authState = await _authStateProvider.GetAuthenticationStateAsync();
             var returnUrl = Uri.EscapeDataString(_navigationManager.Uri);
-            _navigationManager.NavigateTo(
-                $"/.auth/login/aad?post_login_redirect_uri={returnUrl}",
-                forceLoad: true);
+
+            if (authState.User?.Identity?.IsAuthenticated == true)
+            {
+                // Session expired while user was authenticated - do silent re-auth and return to current page
+                _navigationManager.NavigateTo(
+                    $"/.auth/login/aad?post_login_redirect_uri={returnUrl}",
+                    forceLoad: true);
+            }
+            else
+            {
+                // User logged out intentionally - navigate home with returnUrl so they can log back in
+                _navigationManager.NavigateTo(
+                    $"/?returnUrl={returnUrl}",
+                    forceLoad: true);
+            }
         }
 
         return response;

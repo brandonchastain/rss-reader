@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Components.WebAssembly.Http;
 using RssApp.Config;
 
 namespace WasmApp.Services;
@@ -31,7 +32,10 @@ public class MyAuthenticationStateProvider : AuthenticationStateProvider
 
         try
         {
-            var state = await _client.GetFromJsonAsync<UserAuthenticationState>("/.auth/me");
+            using var authRequest = new HttpRequestMessage(HttpMethod.Get, "/.auth/me");
+            authRequest.SetBrowserRequestCache(BrowserRequestCache.NoStore);
+            using var authResponse = await _client.SendAsync(authRequest);
+            var state = await authResponse.Content.ReadFromJsonAsync<UserAuthenticationState>();
 
             var principal = state.ClientPrincipal;
             principal.UserRoles = principal.UserRoles.Except(new string[] { "anonymous" }, StringComparer.CurrentCultureIgnoreCase);
