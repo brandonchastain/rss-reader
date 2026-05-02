@@ -74,6 +74,9 @@ internal static class SqliteConnectionExtensions
         using var cmd = connection.CreateCommand();
         cmd.CommandText = WritePragmas;
         cmd.ExecuteNonQuery();
+        // DB-level backstop: if DatabaseMode.QueryOnly is set (read-replica mode),
+        // reject writes even on connections that were opened with write intent.
+        ApplyQueryOnly(connection);
     }
 
     public static async Task OpenWithWritePragmasAsync(this SqliteConnection connection)
@@ -82,13 +85,20 @@ internal static class SqliteConnectionExtensions
         using var cmd = connection.CreateCommand();
         cmd.CommandText = WritePragmas;
         await cmd.ExecuteNonQueryAsync();
+        // DB-level backstop: if DatabaseMode.QueryOnly is set (read-replica mode),
+        // reject writes even on connections that were opened with write intent.
+        await ApplyQueryOnlyAsync(connection);
     }
 
     /// <summary>
     /// Opens the connection and applies per-connection PRAGMAs.
     /// Delegates to <see cref="OpenWithReadPragmas"/> or <see cref="OpenWithWritePragmas"/>
     /// based on whether the connection string contains Mode=ReadOnly.
-    /// Also applies PRAGMA query_only = ON when <see cref="DatabaseMode.QueryOnly"/> is set.
+    /// <para>
+    /// Used by services that receive a pre-chosen connection string (e.g. SQLiteSystemStatsRepository)
+    /// and don't explicitly call the read/write variants. Both variants already enforce
+    /// <see cref="DatabaseMode.QueryOnly"/> as a DB-level backstop.
+    /// </para>
     /// </summary>
     public static void OpenWithPragmas(this SqliteConnection connection)
     {
@@ -96,10 +106,7 @@ internal static class SqliteConnectionExtensions
         if (isReadOnly)
             connection.OpenWithReadPragmas();
         else
-        {
             connection.OpenWithWritePragmas();
-            ApplyQueryOnly(connection);
-        }
     }
 
     /// <summary>
@@ -111,10 +118,7 @@ internal static class SqliteConnectionExtensions
         if (isReadOnly)
             await connection.OpenWithReadPragmasAsync();
         else
-        {
             await connection.OpenWithWritePragmasAsync();
-            await ApplyQueryOnlyAsync(connection);
-        }
     }
 
     private static void ApplyQueryOnly(SqliteConnection connection)
