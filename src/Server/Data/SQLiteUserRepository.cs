@@ -13,12 +13,13 @@ public class SQLiteUserRepository : IUserRepository
     public SQLiteUserRepository(
         string writeConnectionString,
         string readConnectionString,
-        ILogger<SQLiteUserRepository> logger)
+        ILogger<SQLiteUserRepository> logger,
+        bool isReadOnly = false)
     {
         this.writeConnectionString = writeConnectionString;
         this.readConnectionString = readConnectionString;
         this.logger = logger;
-        this.InitializeDatabase();
+        if (!isReadOnly) this.InitializeDatabase();
     }
 
     private void InitializeDatabase()
@@ -39,6 +40,26 @@ public class SQLiteUserRepository : IUserRepository
                     Username TEXT NOT NULL UNIQUE
                 )";
             command.ExecuteNonQuery();
+
+            // Add AadUserId column if it doesn't exist (migration for existing databases)
+            var alterCommand = connection.CreateCommand();
+            alterCommand.CommandText = @"
+                SELECT COUNT(*) FROM pragma_table_info('Users') WHERE name = 'AadUserId'";
+            var hasColumn = Convert.ToInt64(alterCommand.ExecuteScalar()) > 0;
+            if (!hasColumn)
+            {
+                var addColumn = connection.CreateCommand();
+                addColumn.CommandText = "ALTER TABLE Users ADD COLUMN AadUserId TEXT";
+                addColumn.ExecuteNonQuery();
+                logger.LogInformation("Added AadUserId column to Users table");
+            }
+
+            // Create index on AadUserId for fast lookups
+            var indexCommand = connection.CreateCommand();
+            indexCommand.CommandText = @"
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_AadUserId 
+                ON Users(AadUserId) WHERE AadUserId IS NOT NULL";
+            indexCommand.ExecuteNonQuery();
         }
     }
 
@@ -82,6 +103,53 @@ public class SQLiteUserRepository : IUserRepository
                 var item = this.ReadItemFromResults(reader);
                 return item;
             }
+        }
+    }
+
+    public RssUser GetUserByAadId(string aadUserId)
+    {
+        using (var connection = new SqliteConnection(this.readConnectionString))
+        {
+            connection.OpenWithReadPragmas();
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT * FROM Users WHERE AadUserId = @aadUserId";
+            command.Parameters.AddWithValue("@aadUserId", aadUserId);
+
+            using (var reader = command.ExecuteReader())
+            {
+                if (!reader.Read())
+                {
+                    return null;
+                }
+
+                return this.ReadItemFromResults(reader);
+            }
+        }
+    }
+
+    public void SetAadUserId(int userId, string aadUserId)
+    {
+        using (var connection = new SqliteConnection(this.writeConnectionString))
+        {
+            connection.OpenWithWritePragmas();
+            var command = connection.CreateCommand();
+            command.CommandText = "UPDATE Users SET AadUserId = @aadUserId WHERE Id = @userId";
+            command.Parameters.AddWithValue("@aadUserId", aadUserId);
+            command.Parameters.AddWithValue("@userId", userId);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    public void UpdateUsername(int userId, string newUsername)
+    {
+        using (var connection = new SqliteConnection(this.writeConnectionString))
+        {
+            connection.OpenWithWritePragmas();
+            var command = connection.CreateCommand();
+            command.CommandText = "UPDATE Users SET Username = @newUsername WHERE Id = @userId";
+            command.Parameters.AddWithValue("@newUsername", newUsername);
+            command.Parameters.AddWithValue("@userId", userId);
+            command.ExecuteNonQuery();
         }
     }
 
@@ -130,10 +198,22 @@ public class SQLiteUserRepository : IUserRepository
         }
     }
 
+    public void DeleteUser(int userId)
+    {
+        using var connection = new SqliteConnection(this.writeConnectionString);
+        connection.OpenWithWritePragmas();
+        var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM Users WHERE Id = @userId";
+        command.Parameters.AddWithValue("@userId", userId);
+        command.ExecuteNonQuery();
+    }
+
     private RssUser ReadItemFromResults(SqliteDataReader reader)
     {
         var id = reader.IsDBNull(reader.GetOrdinal("Id")) ? 0 : reader.GetInt32(reader.GetOrdinal("Id"));
         var username = reader.IsDBNull(reader.GetOrdinal("Username")) ? "" : reader.GetString(reader.GetOrdinal("Username"));
-        return new RssUser(username, id);
+        var aadOrdinal = reader.GetOrdinal("AadUserId");
+        var aadUserId = reader.IsDBNull(aadOrdinal) ? null : reader.GetString(aadOrdinal);
+        return new RssUser(username, id) { AadUserId = aadUserId };
     }
 }

@@ -13,12 +13,13 @@ public class SQLiteFeedRepository : IFeedRepository
     public SQLiteFeedRepository(
         string writeConnectionString,
         string readConnectionString,
-        ILogger<SQLiteFeedRepository> logger)
+        ILogger<SQLiteFeedRepository> logger,
+        bool isReadOnly = false)
     {
         this.writeConnectionString = writeConnectionString;
         this.readConnectionString = readConnectionString;
         this.logger = logger;
-        this.InitializeDatabase();
+        if (!isReadOnly) this.InitializeDatabase();
     }
 
     private void InitializeDatabase()
@@ -44,6 +45,17 @@ public class SQLiteFeedRepository : IFeedRepository
                     FOREIGN KEY (UserId) REFERENCES Users(Id)
                 )";
             command.ExecuteNonQuery();
+
+            var tagSettingsCommand = connection.CreateCommand();
+            tagSettingsCommand.CommandText = @"
+                CREATE TABLE IF NOT EXISTS UserTagSettings (
+                    UserId INTEGER NOT NULL,
+                    Tag TEXT NOT NULL,
+                    IsHidden BOOLEAN NOT NULL DEFAULT 0,
+                    PRIMARY KEY (UserId, Tag),
+                    FOREIGN KEY (UserId) REFERENCES Users(Id)
+                )";
+            tagSettingsCommand.ExecuteNonQuery();
         }
     }
 
@@ -120,25 +132,12 @@ public class SQLiteFeedRepository : IFeedRepository
                 command.CommandText = "INSERT INTO Feeds (Url, UserId) VALUES (@url, @userId)";
                 command.Parameters.AddWithValue("@url", feed.Href);
                 command.Parameters.AddWithValue("@userId", feed.UserId);
-
                 command.ExecuteNonQuery();
-            }
 
-            using (var connection = new SqliteConnection(this.readConnectionString))
-            {
-                connection.OpenWithReadPragmas();
-                var command = connection.CreateCommand();
-                command.CommandText = "SELECT Id FROM Feeds WHERE Url = @url AND UserId = @userId";
-                command.Parameters.AddWithValue("@url", feed.Href);
-                command.Parameters.AddWithValue("@userId", feed.UserId);
-
-                using (var reader = command.ExecuteReader())
-                {
-                    if (reader.Read())
-                    {
-                        feed.FeedId = reader.GetInt32(0);
-                    }
-                }
+                // Reuse same connection for last_insert_rowid()
+                command = connection.CreateCommand();
+                command.CommandText = "SELECT last_insert_rowid()";
+                feed.FeedId = Convert.ToInt32(command.ExecuteScalar());
             }
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.Message.Contains("UNIQUE"))
@@ -221,32 +220,55 @@ public class SQLiteFeedRepository : IFeedRepository
         var existingFeeds = GetFeeds(user).ToList();
         var existingUrls = existingFeeds.Select(f => f.Href).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        using var connection = new SqliteConnection(this.writeConnectionString);
+        connection.OpenWithWritePragmas();
+        using var transaction = connection.BeginTransaction();
+
         foreach (var feed in feeds)
         {
-            // Set the user ID for the feed
             feed.UserId = user.Id;
             
-            // Skip if feed already exists for this user
             if (existingUrls.Contains(feed.Href))
             {
                 continue;
             }
 
-            // Add the feed using the existing method
-            AddFeed(feed);
-            
-            // Add tags if any
+            // Insert feed and get ID in single connection
+            var insertCmd = connection.CreateCommand();
+            insertCmd.CommandText = "INSERT INTO Feeds (Url, UserId) VALUES (@url, @userId)";
+            insertCmd.Parameters.AddWithValue("@url", feed.Href);
+            insertCmd.Parameters.AddWithValue("@userId", feed.UserId);
+
+            try
+            {
+                insertCmd.ExecuteNonQuery();
+
+                var idCmd = connection.CreateCommand();
+                idCmd.CommandText = "SELECT last_insert_rowid()";
+                feed.FeedId = Convert.ToInt32(idCmd.ExecuteScalar());
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
+            {
+                continue; // Already exists
+            }
+
+            // Build tags string in-memory and set once (not read-modify-write per tag)
             if (feed.Tags != null && feed.Tags.Any())
             {
-                foreach (var tag in feed.Tags)
+                var tagString = string.Join(",", feed.Tags.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct());
+                if (!string.IsNullOrEmpty(tagString))
                 {
-                    if (!string.IsNullOrWhiteSpace(tag))
-                    {
-                        AddTag(feed, tag);
-                    }
+                    var tagCmd = connection.CreateCommand();
+                    tagCmd.CommandText = "UPDATE Feeds SET Tags = @tags WHERE Id = @feedId AND UserId = @userId";
+                    tagCmd.Parameters.AddWithValue("@tags", tagString);
+                    tagCmd.Parameters.AddWithValue("@feedId", feed.FeedId);
+                    tagCmd.Parameters.AddWithValue("@userId", feed.UserId);
+                    tagCmd.ExecuteNonQuery();
                 }
             }
         }
+
+        transaction.Commit();
     }
 
     private NewsFeed ReadSingleRecord(SqliteDataReader reader)
@@ -275,5 +297,103 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@userId", user.Id);
             command.ExecuteNonQuery();
         }
+    }
+
+    public IEnumerable<TagSetting> GetTagSettings(RssUser user)
+    {
+        var allTags = GetFeeds(user)
+            .SelectMany(f => f.Tags ?? Enumerable.Empty<string>())
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var hiddenTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        using (var connection = new SqliteConnection(this.readConnectionString))
+        {
+            connection.OpenWithReadPragmas();
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT Tag FROM UserTagSettings WHERE UserId = @userId AND IsHidden = 1";
+            command.Parameters.AddWithValue("@userId", user.Id);
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    hiddenTags.Add(reader.GetString(0));
+                }
+            }
+        }
+
+        return allTags.Select(t => new TagSetting
+        {
+            Tag = t,
+            IsHidden = hiddenTags.Contains(t)
+        }).OrderBy(t => t.Tag).ToList();
+    }
+
+    public void SetTagHidden(RssUser user, string tag, bool isHidden)
+    {
+        using (var connection = new SqliteConnection(this.writeConnectionString))
+        {
+            connection.OpenWithWritePragmas();
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                INSERT INTO UserTagSettings (UserId, Tag, IsHidden)
+                VALUES (@userId, @tag, @isHidden)
+                ON CONFLICT(UserId, Tag) DO UPDATE SET IsHidden = excluded.IsHidden";
+            command.Parameters.AddWithValue("@userId", user.Id);
+            command.Parameters.AddWithValue("@tag", tag);
+            command.Parameters.AddWithValue("@isHidden", isHidden);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    public IEnumerable<string> GetHiddenFeedUrls(RssUser user)
+    {
+        var hiddenTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        using (var connection = new SqliteConnection(this.readConnectionString))
+        {
+            connection.OpenWithReadPragmas();
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT Tag FROM UserTagSettings WHERE UserId = @userId AND IsHidden = 1";
+            command.Parameters.AddWithValue("@userId", user.Id);
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    hiddenTags.Add(reader.GetString(0));
+                }
+            }
+        }
+
+        if (!hiddenTags.Any())
+        {
+            return Enumerable.Empty<string>();
+        }
+
+        return GetFeeds(user)
+            .Where(f => f.Tags != null && f.Tags.Any(t => hiddenTags.Contains(t)))
+            .Select(f => f.Href)
+            .ToList();
+    }
+
+    public void DeleteAllFeeds(RssUser user)
+    {
+        using var connection = new SqliteConnection(this.writeConnectionString);
+        connection.OpenWithWritePragmas();
+        using var transaction = connection.BeginTransaction();
+
+        var cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM UserTagSettings WHERE UserId = @userId";
+        cmd.Parameters.AddWithValue("@userId", user.Id);
+        cmd.ExecuteNonQuery();
+
+        cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM Feeds WHERE UserId = @userId";
+        cmd.Parameters.AddWithValue("@userId", user.Id);
+        cmd.ExecuteNonQuery();
+
+        transaction.Commit();
     }
 }

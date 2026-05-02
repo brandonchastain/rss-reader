@@ -10,15 +10,21 @@ public class RepositoryFactory
     private readonly string writeConnectionString;
     private readonly string readConnectionString;
     private readonly IServiceProvider serviceProvider;
+    private readonly bool isReadOnly;
+    private readonly bool rebuildFtsOnStartup;
 
     public RepositoryFactory(
         string writeConnectionString,
         string readConnectionString,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        bool isReadOnly = false,
+        bool rebuildFtsOnStartup = false)
     {
         this.writeConnectionString = writeConnectionString;
         this.readConnectionString = readConnectionString;
         this.serviceProvider = serviceProvider;
+        this.isReadOnly = isReadOnly;
+        this.rebuildFtsOnStartup = rebuildFtsOnStartup;
     }
 
     public IUserRepository CreateUserRepository()
@@ -45,6 +51,8 @@ public class RepositoryFactory
             this.serviceProvider.GetRequiredService<ILogger<SQLiteItemRepository>>(),
             this.serviceProvider.GetRequiredService<IFeedRepository>(),
             this.serviceProvider.GetRequiredService<IUserRepository>(),
-            this.serviceProvider.GetRequiredService<FeedThumbnailRetriever>());
+            this.serviceProvider.GetRequiredService<FeedThumbnailRetriever>(),
+            this.isReadOnly,
+            this.rebuildFtsOnStartup);
     }
 }

@@ -19,13 +19,49 @@ public class FeedRefresher : IFeedRefresher
     private readonly IUserRepository userStore;
     private readonly BackgroundWorkQueue backgroundWorkQueue;
     private readonly RssAppConfig config;
-
-    // Lock-free state: Interlocked for counter, ConcurrentDictionary for flags.
-    private readonly ConcurrentDictionary<int, bool> _hasNewItems = new();
-    private long _lastCacheReloadTicks = 0;
+    private readonly ConcurrentDictionary<int, UserRefreshState> refreshStates = new();
     private DateTime startupTime = DateTime.UtcNow;
     private Exception lastRefreshException;
-    private int _pendingRefreshes = 0;
+
+    /// <summary>
+    /// Per-user refresh state. Thread-safe via Interlocked/volatile.
+    /// </summary>
+    private class UserRefreshState
+    {
+        private int _pendingFeeds;
+        private volatile bool _hasNewItems;
+        private volatile bool _isRefreshing;
+        private DateTime? _lastRefreshTime;
+
+        public bool IsRefreshing => _isRefreshing;
+        public int PendingFeeds => Volatile.Read(ref _pendingFeeds);
+        public bool HasNewItems => _hasNewItems;
+        public DateTime? LastRefreshTime => _lastRefreshTime;
+
+        public void StartRefresh(int feedCount)
+        {
+            _hasNewItems = false;
+            Interlocked.Exchange(ref _pendingFeeds, feedCount);
+            _isRefreshing = true;
+        }
+
+        public void CompleteFeed(bool hadNewItems)
+        {
+            if (hadNewItems) _hasNewItems = true;
+            var remaining = Interlocked.Decrement(ref _pendingFeeds);
+            if (remaining <= 0)
+            {
+                _lastRefreshTime = DateTime.UtcNow;
+                _isRefreshing = false;
+            }
+        }
+
+        public void FailRefresh()
+        {
+            Interlocked.Exchange(ref _pendingFeeds, 0);
+            _isRefreshing = false;
+        }
+    }
 
     public FeedRefresher(
         IHttpClientFactory httpClientFactory,
@@ -47,22 +83,25 @@ public class FeedRefresher : IFeedRefresher
         this.config = config;
     }
 
-    public DateTime? LastCacheReloadTime
+    public void ResetRefreshCooldown()
     {
-        get
+        // Clear all per-user cooldowns
+        foreach (var state in refreshStates.Values)
         {
-            long ticks = Interlocked.Read(ref _lastCacheReloadTicks);
-            return ticks == 0 ? null : new DateTime(ticks, DateTimeKind.Utc);
+            // Force next refresh to proceed by clearing state
         }
+        refreshStates.Clear();
     }
 
-    public bool IsRefreshing => Volatile.Read(ref _pendingRefreshes) > 0;
-
-    public Task<bool> HasNewItemsAsync(RssUser user)
+    public RefreshStatusResponse GetRefreshStatus(RssUser user)
     {
-        // Atomically read and reset the flag. No lock needed.
-        var hasNew = _hasNewItems.TryRemove(user.Id, out var val) && val;
-        return Task.FromResult(hasNew);
+        var state = refreshStates.GetOrAdd(user.Id, _ => new UserRefreshState());
+        return new RefreshStatusResponse
+        {
+            HasNewItems = state.HasNewItems,
+            IsRefreshing = state.IsRefreshing,
+            PendingFeeds = state.PendingFeeds
+        };
     }
 
     public async Task AddFeedAsync(NewsFeed feed)
@@ -72,36 +111,44 @@ public class FeedRefresher : IFeedRefresher
 
     public async Task RefreshAsync(RssUser user)
     {
+        var state = refreshStates.GetOrAdd(user.Id, _ => new UserRefreshState());
+
+        // If a refresh is already running for this user, don't start another
+        if (state.IsRefreshing)
+        {
+            return;
+        }
+
         bool isJustStarted = this.startupTime + this.config.CacheReloadStartupDelay > DateTime.UtcNow;
-        long lastTicks = Interlocked.Read(ref _lastCacheReloadTicks);
-        bool isRecentRefresh = lastTicks > 0
-            && new DateTime(lastTicks, DateTimeKind.Utc) + this.config.CacheReloadInterval > DateTime.UtcNow;
+        bool isRecentRefresh = state.LastRefreshTime + this.config.CacheReloadInterval > DateTime.UtcNow;
 
         if (isJustStarted || isRecentRefresh)
         {
-            _hasNewItems[user.Id] = true;
+            // Cooldown active — don't fake hasNewItems, just return.
+            // The status endpoint will honestly report isRefreshing=false.
             return;
         }
 
         try
         {
             var feeds = this.persistedFeeds.GetFeeds(user).ToList();
+            var totalFeeds = feeds.Count;
 
             if (feeds.Count == 0)
             {
-                Interlocked.Exchange(ref _lastCacheReloadTicks, DateTime.UtcNow.Ticks);
                 return;
             }
 
-            Interlocked.Exchange(ref _pendingRefreshes, feeds.Count);
+            state.StartRefresh(totalFeeds);
 
             foreach (var feed in feeds)
             {
                 await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
                 {
+                    bool hadNewItems = false;
                     try
                     {
-                        await ReloadCachedItemsAsync(feed);
+                        hadNewItems = await ReloadCachedItemsAsync(feed);
                     }
                     catch (Exception ex)
                     {
@@ -109,11 +156,7 @@ public class FeedRefresher : IFeedRefresher
                     }
                     finally
                     {
-                        if (Interlocked.Decrement(ref _pendingRefreshes) == 0)
-                        {
-                            Interlocked.Exchange(ref _lastCacheReloadTicks, DateTime.UtcNow.Ticks);
-                            _hasNewItems[user.Id] = true;
-                        }
+                        state.CompleteFeed(hadNewItems);
                     }
                 });
             }
@@ -121,16 +164,17 @@ public class FeedRefresher : IFeedRefresher
         catch (Exception ex)
         {
             this.logger.LogError(ex, "Error reloading cache");
-            Interlocked.Exchange(ref _pendingRefreshes, 0);
+            state.FailRefresh();
         }
     }
 
     /// <summary>
     /// Fetches fresh items from a feed and passes ALL of them to AddItemsAsync.
-    /// Deduplication is handled inside AddItemsAsync via pre-fetch + HashSet,
+    /// Deduplication is handled inside AddItemsAsync via INSERT OR IGNORE,
     /// so no per-item GetItem() calls are needed here.
+    /// Returns true if any items were processed.
     /// </summary>
-    private async Task ReloadCachedItemsAsync(NewsFeed feed)
+    private async Task<bool> ReloadCachedItemsAsync(NewsFeed feed)
     {
         var url = feed.Href;
         var user = this.userStore.GetUserById(feed.UserId);
@@ -138,7 +182,7 @@ public class FeedRefresher : IFeedRefresher
         if (user == null)
         {
             this.logger.LogError("User not found: {userId}", feed.UserId);
-            return;
+            return false;
         }
 
         var freshItems = await this.FetchItemsFromFeedAsync(user, url);
@@ -152,7 +196,10 @@ public class FeedRefresher : IFeedRefresher
         if (freshItems.Any())
         {
             await this.newsFeedItemStore.AddItemsAsync(freshItems);
+            return true;
         }
+
+        return false;
     }
 
     private async Task<HashSet<NewsFeedItem>> FetchItemsFromFeedAsync(RssUser user, string url)

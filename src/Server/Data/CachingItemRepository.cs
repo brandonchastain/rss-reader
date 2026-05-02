@@ -107,8 +107,10 @@ public sealed class CachingItemRepository : IItemRepository
         int? page = null,
         int? pageSize = null,
         long? lastId = null,
-        string lastPublishDate = null)
-        => _inner.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId, lastPublishDate);
+        long? lastPublishDateOrder = null,
+        IEnumerable<string> excludeFeedUrls = null,
+        bool includeContent = true)
+        => _inner.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId, lastPublishDateOrder, excludeFeedUrls, includeContent);
 
     /// <inheritdoc/>
     public Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize)
@@ -168,6 +170,19 @@ public sealed class CachingItemRepository : IItemRepository
         EvictItem(item.UserId, item);
         _inner.UpdateTags(item, tags);
     }
+
+    /// <inheritdoc/>
+    public async Task DeleteAllItemsAsync(RssUser user)
+    {
+        await _inner.DeleteAllItemsAsync(user);
+        // Bulk eviction — compact the entire cache since we can't enumerate keys.
+        if (_cache is MemoryCache mc)
+            mc.Compact(1.0);
+    }
+
+    /// <inheritdoc/>
+    public int GetItemCountForFeed(RssUser user, string feedUrl)
+        => _inner.GetItemCountForFeed(user, feedUrl);
 
     // -------------------------------------------------------------------------
     // IDisposable

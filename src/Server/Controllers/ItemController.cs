@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using RssApp.Data;
 using RssApp.Contracts;
+using RssApp.ComponentServices;
+using RssApp.Config;
 using System.Text;
 using System.Threading.Tasks;
 using System.Security.Claims;
@@ -17,57 +19,77 @@ namespace Server.Controllers
         private readonly IItemRepository itemRepository;
         private readonly IFeedRepository feedRepository;
         private readonly IUserRepository userRepository;
+        private readonly IUserResolver userResolver;
+        private readonly IFeedRefresher feedRefresher;
+        private readonly RssAppConfig config;
         private readonly ILogger<ItemController> logger;
 
         public ItemController(
             IItemRepository itemRepository,
             IFeedRepository feedRepository,
             IUserRepository userRepository,
+            IUserResolver userResolver,
+            IFeedRefresher feedRefresher,
+            RssAppConfig config,
             ILogger<ItemController> logger
         )
         {
             this.itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
             this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            this.userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
+            this.feedRefresher = feedRefresher ?? throw new ArgumentNullException(nameof(feedRefresher));
+            this.config = config ?? throw new ArgumentNullException(nameof(config));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         // GET: api/item/timeline
         [HttpGet("timeline")]
-        public async Task<IActionResult> TimelineAsync(bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
+        public async Task<IActionResult> TimelineAsync(bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                return Unauthorized("User is not authenticated.");
+                return NotFound("Authenticated user not found.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
+            // Enforce both-or-neither cursor params
+            long? lastId = null;
+            long? lastPublishDateOrder = null;
+            if (cursorPublishDateOrder.HasValue && cursorId.HasValue)
+            {
+                lastId = cursorId;
+                lastPublishDateOrder = cursorPublishDateOrder;
+            }
 
-            // TODO: authenticate the real user
+            // When no explicit tag filter and not filtering saved items, exclude feeds with hidden tags
+            IEnumerable<string> excludeFeedUrls = null;
+            if (string.IsNullOrWhiteSpace(filterTag) && !isFilterSaved)
+            {
+                excludeFeedUrls = this.feedRepository.GetHiddenFeedUrls(user);
+            }
+
             var feed = new NewsFeed("%", user.Id);
-            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize);
+            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId: lastId, lastPublishDateOrder: lastPublishDateOrder, excludeFeedUrls: excludeFeedUrls, includeContent: false);
             var result = items
                 .DistinctBy(i => i.Href)
-                .OrderByDescending(i => i.PublishDateOrder)
                 .Where(i => string.IsNullOrWhiteSpace(filterTag) || (i.FeedTags?.Contains(filterTag) ?? false))
-                .ToHashSet();
+                .ToList();
 
             return Ok(result);
         }
 
         [HttpGet("feed")]
-        public async Task<IActionResult> FeedAsync(string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20)
+        public async Task<IActionResult> FeedAsync(string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                return Unauthorized("User is not authenticated.");
+                return NotFound("Authenticated user not found.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
             var feed = this.feedRepository.GetFeed(user, href);
 
             if (feed == null)
@@ -75,12 +97,20 @@ namespace Server.Controllers
                 return NotFound($"Feed was not found.");
             }
 
-            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize);
+            // Enforce both-or-neither cursor params
+            long? lastId = null;
+            long? lastPublishDateOrder = null;
+            if (cursorPublishDateOrder.HasValue && cursorId.HasValue)
+            {
+                lastId = cursorId;
+                lastPublishDateOrder = cursorPublishDateOrder;
+            }
+
+            var items = await this.itemRepository.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId: lastId, lastPublishDateOrder: lastPublishDateOrder, includeContent: false);
             var result = items
                 .DistinctBy(i => i.Href)
-                .OrderByDescending(i => i.PublishDateOrder)
                 .Where(i => string.IsNullOrWhiteSpace(filterTag) || (i.FeedTags?.Contains(filterTag) ?? false))
-                .ToHashSet();
+                .ToList();
 
             return Ok(result);
         }
@@ -88,11 +118,11 @@ namespace Server.Controllers
         [HttpGet("search")]
         public async Task<IActionResult> SearchAsync(string query, int page = 0, int pageSize = 20)
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                return Unauthorized("User is not authenticated.");
+                return NotFound("Authenticated user not found.");
             }
 
             if (query == null)
@@ -100,7 +130,6 @@ namespace Server.Controllers
                 return BadRequest("query is required.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
             var items = await this.itemRepository.SearchItemsAsync(query, user, page, pageSize);
 
             return Ok(items);
@@ -108,16 +137,16 @@ namespace Server.Controllers
 
         // GET: api/item/content
         [HttpGet("content")]
+        [ResponseCache(Duration = 3600, Location = ResponseCacheLocation.Client)]
         public IActionResult GetItemContent(int itemId)
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                return Unauthorized("User is not authenticated.");
+                return NotFound("Authenticated user not found.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
             var item = this.itemRepository.GetItem(user, itemId);
 
             if (item == null)
@@ -140,14 +169,13 @@ namespace Server.Controllers
         [HttpGet("markAsRead")]
         public IActionResult MarkAsRead(int itemId, bool isRead)
         {
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
             {
-                return Unauthorized("User is not authenticated.");
+                return NotFound("Authenticated user not found.");
             }
 
-            var user = this.userRepository.GetUserByName(username);
             var item = this.itemRepository.GetItem(user, itemId);
 
             if (item == null)
@@ -167,14 +195,7 @@ namespace Server.Controllers
                 return BadRequest("Item is required.");
             }
 
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var authenticatedUser = this.userRepository.GetUserByName(username);
+            var authenticatedUser = this.userResolver.ResolveUser(User);
             if (authenticatedUser == null)
             {
                 return NotFound($"Authenticated user not found.");
@@ -182,7 +203,7 @@ namespace Server.Controllers
 
             if (item.UserId != authenticatedUser.Id)
             {
-                return Forbid("You can only save items to your own account.");
+                return StatusCode(403, "You can only save items to your own account.");
             }
 
             var user = this.userRepository.GetUserById(item.UserId);
@@ -203,14 +224,7 @@ namespace Server.Controllers
                 return BadRequest("Item is required.");
             }
 
-            var username = User.FindFirst(ClaimTypes.Name)?.Value;
-            
-            if (username == null)
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            var authenticatedUser = this.userRepository.GetUserByName(username);
+            var authenticatedUser = this.userResolver.ResolveUser(User);
             if (authenticatedUser == null)
             {
                 return NotFound($"Authenticated user not found.");
@@ -218,7 +232,7 @@ namespace Server.Controllers
 
             if (item.UserId != authenticatedUser.Id)
             {
-                return Forbid("You can only unsave items from your own account.");
+                return StatusCode(403, "You can only unsave items from your own account.");
             }
 
             var user = this.userRepository.GetUserById(item.UserId);
@@ -228,6 +242,25 @@ namespace Server.Controllers
             }
 
             this.itemRepository.UnsavePost(item, user);
+            return Ok();
+        }
+
+        [HttpDelete("all")]
+        public async Task<IActionResult> DeleteAllItemsAsync()
+        {
+            if (!this.config.IsTestUserEnabled)
+            {
+                return StatusCode(403, "This endpoint is only available in test mode.");
+            }
+
+            var user = this.userResolver.ResolveUser(User);
+            if (user == null)
+            {
+                return NotFound("Authenticated user not found.");
+            }
+
+            await this.itemRepository.DeleteAllItemsAsync(user);
+            this.feedRefresher.ResetRefreshCooldown();
             return Ok();
         }
     }

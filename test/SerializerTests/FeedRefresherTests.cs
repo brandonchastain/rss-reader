@@ -69,35 +69,92 @@ public sealed class FeedRefresherTests
     }
 
     [TestMethod]
-    public async Task HasNewItemsAsync_ResetsFlag_AfterReturningTrue()
+    public async Task GetRefreshStatus_ReportsNoNewItems_WhenCooldownActive()
     {
-        var (refresher, _) = CreateRefresher();
-        var user = new RssUser("testUser", 1);
-
-        // Use startup delay to trigger the cooldown path (sets hasNewItems immediately)
-        var config = new RssAppConfig { CacheReloadStartupDelay = TimeSpan.FromMinutes(5) };
-        var (refresherWithDelay, _) = CreateRefresher(config: config);
-
-        await refresherWithDelay.RefreshAsync(user);
-
-        // First check should return true
-        bool firstCheck = await refresherWithDelay.HasNewItemsAsync(user);
-        Assert.IsTrue(firstCheck, "First check should return true after refresh with cooldown");
-
-        // Second check should return false (flag was reset)
-        bool secondCheck = await refresherWithDelay.HasNewItemsAsync(user);
-        Assert.IsFalse(secondCheck, "Second check should return false after flag was consumed");
-    }
-
-    [TestMethod]
-    public async Task RefreshAsync_WithCooldown_SetsHasNewItemsImmediately()
-    {
+        // Cooldown path no longer fakes hasNewItems — it returns honestly
         var config = new RssAppConfig { CacheReloadStartupDelay = TimeSpan.FromMinutes(5) };
         var (refresher, _) = CreateRefresher(config: config);
         var user = new RssUser("testUser", 1);
 
         await refresher.RefreshAsync(user);
-        bool hasItems = await refresher.HasNewItemsAsync(user);
-        Assert.IsTrue(hasItems, "Should set hasNewItems immediately when cooldown is active");
+
+        var status = refresher.GetRefreshStatus(user);
+        Assert.IsFalse(status.HasNewItems, "Cooldown should not fake hasNewItems");
+        Assert.IsFalse(status.IsRefreshing, "Cooldown should not start a refresh");
+        Assert.AreEqual(0, status.PendingFeeds, "Cooldown should not queue feeds");
+    }
+
+    [TestMethod]
+    public async Task GetRefreshStatus_ReportsRefreshing_WhenFeedsAreQueued()
+    {
+        var feedRepo = new Mock<IFeedRepository>();
+        feedRepo.Setup(r => r.GetFeeds(It.IsAny<RssUser>()))
+            .Returns(new List<NewsFeed>
+            {
+                new NewsFeed("https://example.com/feed1", userId: 1),
+                new NewsFeed("https://example.com/feed2", userId: 1),
+            });
+
+        var (refresher, _) = CreateRefresher(feedRepo: feedRepo);
+        var user = new RssUser("testUser", 1);
+
+        await refresher.RefreshAsync(user);
+
+        var status = refresher.GetRefreshStatus(user);
+        Assert.IsTrue(status.IsRefreshing, "Should report refreshing after queuing feeds");
+        Assert.AreEqual(2, status.PendingFeeds, "Should report correct pending feed count");
+    }
+
+    [TestMethod]
+    public async Task RefreshAsync_IgnoresDuplicateRequests_WhileRefreshing()
+    {
+        var feedRepo = new Mock<IFeedRepository>();
+        feedRepo.Setup(r => r.GetFeeds(It.IsAny<RssUser>()))
+            .Returns(new List<NewsFeed>
+            {
+                new NewsFeed("https://example.com/feed1", userId: 1),
+            });
+
+        var (refresher, _) = CreateRefresher(feedRepo: feedRepo);
+        var user = new RssUser("testUser", 1);
+
+        // First refresh starts normally
+        await refresher.RefreshAsync(user);
+        var status1 = refresher.GetRefreshStatus(user);
+        Assert.IsTrue(status1.IsRefreshing);
+        Assert.AreEqual(1, status1.PendingFeeds);
+
+        // Second refresh while first is still running — should be ignored
+        await refresher.RefreshAsync(user);
+        var status2 = refresher.GetRefreshStatus(user);
+        Assert.AreEqual(1, status2.PendingFeeds, "Duplicate refresh should not re-queue feeds");
+    }
+
+    [TestMethod]
+    public void GetRefreshStatus_ReturnsDefault_ForUnknownUser()
+    {
+        var (refresher, _) = CreateRefresher();
+        var user = new RssUser("unknownUser", 999);
+
+        var status = refresher.GetRefreshStatus(user);
+        Assert.IsFalse(status.HasNewItems);
+        Assert.IsFalse(status.IsRefreshing);
+        Assert.AreEqual(0, status.PendingFeeds);
+    }
+
+    [TestMethod]
+    public async Task RefreshAsync_WithNoFeeds_DoesNotStartRefresh()
+    {
+        var feedRepo = new Mock<IFeedRepository>();
+        feedRepo.Setup(r => r.GetFeeds(It.IsAny<RssUser>()))
+            .Returns(new List<NewsFeed>());
+
+        var (refresher, _) = CreateRefresher(feedRepo: feedRepo);
+        var user = new RssUser("testUser", 1);
+
+        await refresher.RefreshAsync(user);
+
+        var status = refresher.GetRefreshStatus(user);
+        Assert.IsFalse(status.IsRefreshing, "Should not be refreshing with no feeds");
     }
 }

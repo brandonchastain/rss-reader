@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Memory;
 using RssApp.ComponentServices;
 using RssApp.Config;
 using RssApp.Data;
+using RssApp.Filters;
 using RssApp.RssClient;
 using RssApp.Serialization;
 using RssReader.Server.Services;
@@ -14,17 +16,28 @@ builder.Configuration
     .AddJsonFile("appsettings.Development.json", optional: true)
     .AddEnvironmentVariables();
 var config = RssAppConfig.LoadFromAppSettings(builder.Configuration);
+// Separate read/write connection strings for WAL concurrency.
+// Read connections use Mode=ReadOnly to avoid SQLite WAL/SHM conflicts with Litestream follow mode.
+// Write connections use ReadWriteCreate with Cache=Shared for normal operation.
 string dbWriteConnectionString = $"Data Source={config.DbLocation};Mode=ReadWriteCreate;Cache=Shared;Pooling=True";
 string dbReadConnectionString = $"Data Source={config.DbLocation};Mode=ReadOnly;Pooling=True";
+// dbConnectionString is used for services that don't need read/write split (e.g. stats, backup)
+string dbConnectionString = config.IsReadOnly ? dbReadConnectionString : dbWriteConnectionString;
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    serverOptions.Limits.MaxConcurrentConnections = 50;
-    serverOptions.Limits.MaxConcurrentUpgradedConnections = 50;
+    serverOptions.Limits.MaxConcurrentConnections = 500;
+    serverOptions.Limits.MaxConcurrentUpgradedConnections = 500;
     serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
 });
 
 builder.Services.AddMemoryCache();
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
 builder.Services.AddLogging(loggingBuilder =>
 {
     loggingBuilder.ClearProviders();
@@ -58,7 +71,7 @@ builder.Services
 // Creation order matters — feed and user repos must exist before item repo.
 builder.Services
     .AddSingleton<RssAppConfig>(_ => config)
-    .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbWriteConnectionString, dbReadConnectionString, sb))
+    .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbWriteConnectionString, dbReadConnectionString, sb, config.IsReadOnly, config.RebuildFtsOnStartup))
     .AddSingleton<IFeedRepository>(sb =>
     {
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateFeedRepository();
@@ -74,22 +87,46 @@ builder.Services
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateItemRepository();
         return new CachingItemRepository(inner, sb.GetRequiredService<IMemoryCache>());
     })
-    .AddSingleton<RssDeserializer>()
-    .AddSingleton<BackgroundWorkQueue>()
-    .AddSingleton<DatabaseBackupService>()
-    .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
-    .AddHostedService<BackgroundWorker>()
-    .AddSingleton<IFeedRefresher, FeedRefresher>()
+    .AddSingleton<IUserResolver, UserResolver>()
     .AddSingleton<FeedThumbnailRetriever>()
-    .AddTransient<RedirectDowngradeHandler>()
-    .AddHttpClient("RssClient")
-    .AddHttpMessageHandler<RedirectDowngradeHandler>()
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        AllowAutoRedirect = false
-    });
+    .AddSingleton<ISystemStatsRepository>(sb =>
+        new SQLiteSystemStatsRepository(dbConnectionString));
 
-builder.Services.AddControllers();
+if (!config.IsReadOnly)
+{
+    // Write-mode services: background feed refresh, database backup, RSS fetching
+    builder.Services
+        .AddSingleton<RssDeserializer>()
+        .AddSingleton<BackgroundWorkQueue>()
+        .AddSingleton<DatabaseBackupService>(sb =>
+            new DatabaseBackupService(
+                sb.GetRequiredService<ILogger<DatabaseBackupService>>(),
+                new DatabaseBackupPaths(),
+                sb))
+        .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
+        .AddHostedService<BackgroundWorker>()
+        .AddSingleton<IFeedRefresher, FeedRefresher>()
+        .AddTransient<RedirectDowngradeHandler>()
+        .AddHttpClient("RssClient")
+        .AddHttpMessageHandler<RedirectDowngradeHandler>()
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            AllowAutoRedirect = false
+        });
+}
+else
+{
+    // Read-only mode: register no-op IFeedRefresher so controllers can still resolve it
+    builder.Services.AddSingleton<IFeedRefresher, NoOpFeedRefresher>();
+}
+
+builder.Services.AddControllers(options =>
+{
+    if (config.IsReadOnly)
+    {
+        options.Filters.Add<ReadOnlyActionFilter>();
+    }
+});
 
 if (!builder.Environment.IsDevelopment())
 {
@@ -98,17 +135,32 @@ if (!builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-// Restore database from backup
-var backup = app.Services.GetRequiredService<DatabaseBackupService>();
-await backup.RestoreFromBackupAsync(CancellationToken.None);
+// Restore database from backup (writer mode only — readers use Litestream restore)
+if (!config.IsReadOnly)
+{
+    var backup = app.Services.GetRequiredService<DatabaseBackupService>();
+    await backup.RestoreFromBackupAsync(CancellationToken.None);
+}
 
-// Instantiate repos to ensure database tables are created in order.
+// Writer: instantiate repos to create database tables in order.
+// Reader: repos are still instantiated (singletons), but skip schema init
+// because the DB is restored from Litestream with tables already in place.
 var a = app.Services.GetRequiredService<IFeedRepository>();
 var b = app.Services.GetRequiredService<IUserRepository>();
 var c = app.Services.GetRequiredService<IItemRepository>();
+var d = app.Services.GetRequiredService<ISystemStatsRepository>();
+
+// After schema init (writer) or startup (reader), enable PRAGMA query_only
+// on all subsequent connections. This is the DB-level backstop — even if a
+// write request bypasses the HTTP filter, SQLite will reject the mutation.
+if (config.IsReadOnly)
+{
+    DatabaseMode.EnableQueryOnly();
+}
 
 // Enable middleware 
 app.UseHttpsRedirection();
+app.UseResponseCompression();
 app.UseStaticFiles();
 app.UseCors("LocalFrontend");
 app.UseAuthentication();
@@ -116,7 +168,7 @@ app.UseAuthorization();
 
 // Setup endpoints
 app.MapControllers();
-app.MapGet("/api/healthz", () => Results.Ok("healthy")).AllowAnonymous();
+app.MapGet("/api/healthz", () => Results.Ok(new { status = "healthy", role = config.IsReadOnly ? "reader" : "writer" })).AllowAnonymous();
 
 if (config.IsTestUserEnabled)
 {

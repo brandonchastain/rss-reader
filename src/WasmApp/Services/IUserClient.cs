@@ -8,4 +8,6 @@ public interface IUserClient : IDisposable
     Task<string> GetUsernameAsync();
     Task<RssUser> GetFeedUserAsync();
     Task<(RssUser, bool)> RegisterUserAsync(string username);
+    Task<UserDataReport> GetDataReportAsync();
+    Task DeleteAccountAsync();
 }

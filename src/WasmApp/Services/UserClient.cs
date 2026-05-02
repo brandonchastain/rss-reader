@@ -69,6 +69,16 @@ public class UserClient : IUserClient
         return (user, false);
     }
 
+    public async Task<UserDataReport> GetDataReportAsync()
+    {
+        return await _apiClient.GetFromJsonAsync<UserDataReport>("api/user/report");
+    }
+
+    public async Task DeleteAccountAsync()
+    {
+        await _apiClient.DeleteAsync("api/user");
+    }
+
     public void Dispose()
     {
         _httpClient.Dispose();

@@ -46,22 +46,31 @@ namespace WasmApp.Services
             await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/feed/tags", feed);
         }
 
-        public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20)
+        public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
-            pageSize = Math.Min(pageSize, 100);
+            pageSize = Math.Min(pageSize, 500);
             var url = $"{_config.ApiBaseUrl}api/item/timeline?isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
+            if (cursorPublishDateOrder.HasValue && cursorId.HasValue)
+            {
+                url += $"&cursorPublishDateOrder={cursorPublishDateOrder.Value}&cursorId={cursorId.Value}";
+            }
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
-        public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page)
+        public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
-            var url = $"{_config.ApiBaseUrl}api/item/feed?href={Uri.EscapeDataString(feed.Href)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}";
+            pageSize = Math.Min(pageSize, 500);
+            var url = $"{_config.ApiBaseUrl}api/item/feed?href={Uri.EscapeDataString(feed.Href)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
+            if (cursorPublishDateOrder.HasValue && cursorId.HasValue)
+            {
+                url += $"&cursorPublishDateOrder={cursorPublishDateOrder.Value}&cursorId={cursorId.Value}";
+            }
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
         public async Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, int page, int pageSize = 20)
         {
-            pageSize = Math.Min(pageSize, 100);
+            pageSize = Math.Min(pageSize, 500);
             var url = $"{_config.ApiBaseUrl}api/item/search?query={Uri.EscapeDataString(query)}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}&page={page}&pageSize={pageSize}";
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }   
@@ -75,6 +84,19 @@ namespace WasmApp.Services
         {
             var user = await userClient.GetFeedUserAsync();
             return await _httpClient.GetFromJsonAsync<List<string>>($"{_config.ApiBaseUrl}api/feed/tags?userId={user.Id}");
+        }
+
+        public async Task<IEnumerable<TagSetting>> GetTagSettingsAsync()
+        {
+            return await _httpClient.GetFromJsonAsync<List<TagSetting>>($"{_config.ApiBaseUrl}api/feed/tagSettings");
+        }
+
+        public async Task<IEnumerable<TagSetting>> SetTagHiddenAsync(string tag, bool isHidden)
+        {
+            var setting = new TagSetting { Tag = tag, IsHidden = isHidden };
+            var response = await _httpClient.PutAsJsonAsync($"{_config.ApiBaseUrl}api/feed/tagSettings", setting);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<List<TagSetting>>();
         }
 
         public async Task SavePostAsync(NewsFeedItem item)
@@ -111,38 +133,45 @@ namespace WasmApp.Services
 
         public async Task<bool> RefreshFeedsAsync()
         {
-            var refreshUrl = $"{_config.ApiBaseUrl}api/feed/refresh";
+            var url = $"{_config.ApiBaseUrl}api/feed/refresh";
             var statusUrl = $"{_config.ApiBaseUrl}api/feed/refresh/status";
 
             try
             {
-                // Fire the refresh (returns 202 immediately).
-                var response = await _httpClient.GetAsync(refreshUrl);
-                if (!response.IsSuccessStatusCode) return false;
+                // Fire the refresh — returns immediately (202 Accepted)
+                var triggerResponse = await _httpClient.GetAsync(url);
+                if (!triggerResponse.IsSuccessStatusCode)
+                {
+                    return false;
+                }
 
-                // Poll the status endpoint until complete or timeout.
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                // Poll until backend reports refresh is complete (no hard 30s timeout)
+                bool everHadNewItems = false;
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
                 while (!cts.IsCancellationRequested)
                 {
-                    await Task.Delay(2000, cts.Token);
-
+                    await Task.Delay(1000, cts.Token);
                     var statusResponse = await _httpClient.GetAsync(statusUrl, cts.Token);
-                    if (!statusResponse.IsSuccessStatusCode) continue;
 
-                    var json = await statusResponse.Content.ReadAsStringAsync(cts.Token);
-
-                    // Check if refresh finished with new items.
-                    if (json.Contains("\"hasNewItems\":true", StringComparison.OrdinalIgnoreCase))
-                        return true;
-
-                    // If not refreshing anymore and no new items, we're done.
-                    if (json.Contains("\"isRefreshing\":false", StringComparison.OrdinalIgnoreCase))
-                        return false;
+                    if (statusResponse.IsSuccessStatusCode)
+                    {
+                        var status = await statusResponse.Content.ReadFromJsonAsync<RefreshStatusResponse>(cancellationToken: cts.Token);
+                        if (status != null)
+                        {
+                            if (status.HasNewItems) everHadNewItems = true;
+                            if (!status.IsRefreshing) return everHadNewItems;
+                        }
+                    }
+                    else
+                    {
+                        // Non-success status — stop polling
+                        return everHadNewItems;
+                    }
                 }
             }
             catch (OperationCanceledException)
             {
-                // Polling timed out — refresh may still be running in the background.
+                // Polling timed out at 120s
             }
             catch (Exception ex)
             {
@@ -176,6 +205,21 @@ namespace WasmApp.Services
             {
                 _logger.LogWarning($"No OPML export found for user {user.Username}. Returning empty string.");
                 return string.Empty;
+            }
+        }
+
+        public async Task<bool> ClearAllItemsAsync()
+        {
+            var url = $"{_config.ApiBaseUrl}api/item/all";
+            try
+            {
+                var response = await _httpClient.DeleteAsync(url);
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to clear all items.");
+                return false;
             }
         }
 

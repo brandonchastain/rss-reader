@@ -8,11 +8,11 @@ This guide shows how to build and test your RSS Reader API locally using Docker 
 ## Build the Docker Image
 
 ```powershell
-# Navigate to the src directory (parent of Server and Shared)
-cd c:\dev\rssreader\rss-reader\src
+# Navigate to the repo root
+cd c:\dev\rssreader\rss-reader
 
 # Build the Docker image
-docker build -f Server/Dockerfile -t rss-reader-api:local .
+docker build -f src/Server/Dockerfile -t rss-reader-api:local .
 ```
 
 ## Run Locally with Persistent Storage
@@ -109,7 +109,7 @@ docker image prune
 docker rm -f rss-reader-test
 
 # Rebuild image
-docker build -f Server/Dockerfile -t rss-reader-api:local .
+docker build -f src/Server/Dockerfile -t rss-reader-api:local .
 
 # Run new container
 docker run -d `

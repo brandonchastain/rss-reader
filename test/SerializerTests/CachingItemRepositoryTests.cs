@@ -47,7 +47,8 @@ internal sealed class FakeItemRepository : IItemRepository
 
     public Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
         NewsFeed feed, bool isFilterUnread, bool isFilterSaved,
-        string filterTag, int? page, int? pageSize, long? lastId, string lastPublishDate)
+        string filterTag, int? page, int? pageSize, long? lastId, long? lastPublishDateOrder,
+        IEnumerable<string> excludeFeedUrls = null, bool includeContent = true)
     {
         GetItemsAsyncCallCount++;
         return Task.FromResult<IEnumerable<NewsFeedItem>>(Array.Empty<NewsFeedItem>());
@@ -63,6 +64,8 @@ internal sealed class FakeItemRepository : IItemRepository
     public void SavePost(NewsFeedItem item, RssUser user)                => SavePostCallCount++;
     public void UnsavePost(NewsFeedItem item, RssUser user)              => UnsavePostCallCount++;
     public void UpdateTags(NewsFeedItem item, string tags)               => UpdateTagsCallCount++;
+    public Task DeleteAllItemsAsync(RssUser user)                        => Task.CompletedTask;
+    public int GetItemCountForFeed(RssUser user, string feedUrl)         => 0;
     public void Dispose()                                                => DisposeCallCount++;
 }
 

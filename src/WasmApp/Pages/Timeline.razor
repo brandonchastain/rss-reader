@@ -18,20 +18,12 @@
 
 @code {
 
-    protected override async Task<List<NewsFeedItem>> GetPostsAsync()
+    protected override string GetBasePath() => "/timeline";
+
+    protected override async Task<List<NewsFeedItem>> GetPostsAsync(int pageSize = 20)
     {
-        var posts = await this.feedClient.GetTimelineAsync(Page);
+        var posts = await this.feedClient.GetTimelineAsync(Page, pageSize: pageSize, cursorPublishDateOrder: CursorPublishDateOrder, cursorId: CursorId);
         return posts?.ToList() ?? new List<NewsFeedItem>();
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        await base.OnAfterRenderAsync(firstRender);
-
-        if (firstRender && this.Items != null && this.Items.Any())
-        {
-            this.Items = await GetPostsAsync();
-            this.StateHasChanged();
-        }
-    }
 }

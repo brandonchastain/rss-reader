@@ -1,9 +1,10 @@
 @using WasmApp.Services
-@implements IDisposable
+@using RssApp.Config
 @inject IJSRuntime JS
 @inject IFeedClient FeedClient
 @inject ILogger<Toolbar> Logger
 @inject NavigationManager NavigationManager
+@inject RssWasmConfig Config
 
 <div class="toolbar">
 
@@ -17,6 +18,20 @@
             <i class="fas fa-sync"></i>
         }
     </button>
+
+    @if (Config.EnableTestAuth)
+    {
+        <button class="btn-link" title="Clear all posts (test mode)" @onclick="() => ClearAllItemsAsync()">
+            @if (isClearing)
+            {
+                <i class="fas fa-trash fa-spin"></i>
+            }
+            else
+            {
+                <i class="fas fa-trash"></i>
+            }
+        </button>
+    }
 
     <button class="btn-link @(this.IsFilterUnread ? "toolbar-active" : "")" @onclick="async () => {await ToggleUnreadFilterAsync.InvokeAsync(); }">[unread]</button>
     <button class="btn-link @(this.IsFilterSaved ? "toolbar-active" : "")" @onclick="async () => {await ToggleSavedFilterAsync.InvokeAsync(); }">[saved]</button>
@@ -64,13 +79,7 @@
     private bool tagsAreHidden = true;
     private bool isRefreshing = false;
 
-    public void Dispose()
-    {
-        if (FeedClient != null)
-        {
-            FeedClient.Dispose();
-        }
-    }
+    private bool isClearing = false;
 
     private async Task RefreshAsync()
     {
@@ -94,5 +103,23 @@
     {
         tagsAreHidden = !tagsAreHidden;
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ClearAllItemsAsync()
+    {
+        if (isClearing) return;
+
+        isClearing = true;
+        StateHasChanged();
+
+        var success = await FeedClient.ClearAllItemsAsync();
+
+        isClearing = false;
+        StateHasChanged();
+
+        if (success)
+        {
+            await OnRefreshComplete.InvokeAsync();
+        }
     }
 }

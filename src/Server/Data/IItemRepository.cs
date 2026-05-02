@@ -4,7 +4,7 @@ namespace RssApp.Data;
 
 public interface IItemRepository : IDisposable
 {
-    Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string filterTag, int? page = null, int? pageSize = null, long? lastId = null, string lastPublishDate = null);
+    Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string filterTag, int? page = null, int? pageSize = null, long? lastId = null, long? lastPublishDateOrder = null, IEnumerable<string> excludeFeedUrls = null, bool includeContent = true);
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize);
     NewsFeedItem GetItem(RssUser user, string href);
     NewsFeedItem GetItem(RssUser user, int itemId);
@@ -14,4 +14,6 @@ public interface IItemRepository : IDisposable
     void UnsavePost(NewsFeedItem item, RssUser user);
     void UpdateTags(NewsFeedItem item, string tags);
     string GetItemContent(NewsFeedItem item);
+    Task DeleteAllItemsAsync(RssUser user);
+    int GetItemCountForFeed(RssUser user, string feedUrl);
 }

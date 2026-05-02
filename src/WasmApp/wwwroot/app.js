@@ -120,68 +120,47 @@ window.Observer = {
     }
 };
 
-// Functions to save, get, and clear the last post ID in localStorage
 window.rssApp = {
-    setLastPostId: function(postId, isFilterUnread, isFilterSaved, filterTags, setDateTime) {
-        localStorage.setItem('rssApp.lastPostId', postId);
-        localStorage.setItem('rssApp.lastPage', document.title);
-        localStorage.setItem('rssApp.isFilterUnread', isFilterUnread);
-        localStorage.setItem('rssApp.isFilterSaved', isFilterSaved);
-        localStorage.setItem('rssApp.filterTags', filterTags);
-        localStorage.setItem('rssApp.lastSet', setDateTime);
+    _loadedItemCount: 0,
+    setLoadedItemCount: function(count) {
+        window.rssApp._loadedItemCount = count;
     },
-    getLastPostId: function() {
-        return localStorage.getItem('rssApp.lastPostId');
-    },
-    getIsFilterUnread: function() {
-        return localStorage.getItem('rssApp.isFilterUnread') === 'true';
-    },
-    getIsFilterSaved: function() {
-        return localStorage.getItem('rssApp.isFilterSaved') === 'true';
-    },
-    getFilterTags: function() {
-        return localStorage.getItem('rssApp.filterTags') || '';
-    },
-    getLastSet: function() {
-        return localStorage.getItem('rssApp.lastSet');
-    },
-    clearData: function() {
-        localStorage.removeItem('rssApp.lastPostId');
-        localStorage.removeItem('rssApp.isFilterUnread');
-        localStorage.removeItem('rssApp.isFilterSaved');
-        localStorage.removeItem('rssApp.filterTags');
-        localStorage.removeItem('rssApp.lastSet');
-    },
-    scrollToLastPost: function() {
-        const lastPostId = this.getLastPostId();
-        const isSamePage = document.title === localStorage.getItem('rssApp.lastPage');
-        if (!lastPostId || !isSamePage) {
-            return;
+    saveScrollStateAndNavigate: function(postId, targetHref, markReadUrl) {
+        // Use Blazor-provided count (works with Virtualize) with DOM fallback
+        var itemCount = window.rssApp._loadedItemCount || document.querySelectorAll('[data-post-id]').length;
+        var pageEstimate = Math.ceil(itemCount / 20);
+        sessionStorage.setItem('rssApp.scrollAnchorPostId', postId);
+        sessionStorage.setItem('rssApp.scrollAnchorPage', pageEstimate.toString());
+        sessionStorage.setItem('rssApp.scrollAnchorPath', window.location.pathname);
+        // Fire mark-as-read with keepalive so it completes even after navigation
+        if (markReadUrl) {
+            fetch(markReadUrl, { method: 'GET', keepalive: true }).catch(function() {});
         }
-
-        const maxAttempts = 100;
-        const scrollStep = 10000; // px
-        const delay = 100; // ms
-        let attempts = 0;
-
-        function tryScroll() {
-            const postElement = document.querySelector(`a[href="${lastPostId}"]`);
-            if (postElement) {
-                postElement.scrollIntoView({
-                    behavior: 'instant', // or 'instant' or 'smooth'
-                    block: 'center',
-                    inline: 'nearest'
-                });
-                postElement.parentElement.click();
-                return;
-            }
-            if (attempts < maxAttempts) {
-                window.scrollBy(0, scrollStep);
-                attempts++;
-                setTimeout(tryScroll, delay);
-            }
+        window.location.href = targetHref;
+    },
+    getScrollState: function() {
+        var postId = sessionStorage.getItem('rssApp.scrollAnchorPostId');
+        if (!postId) return null;
+        var page = parseInt(sessionStorage.getItem('rssApp.scrollAnchorPage') || '0');
+        var path = sessionStorage.getItem('rssApp.scrollAnchorPath') || '';
+        return { postId: postId, page: page, path: path };
+    },
+    clearScrollState: function() {
+        sessionStorage.removeItem('rssApp.scrollAnchorPostId');
+        sessionStorage.removeItem('rssApp.scrollAnchorPage');
+        sessionStorage.removeItem('rssApp.scrollAnchorPath');
+    },
+    scrollToEstimatedIndex: function(index, itemSize) {
+        var estimatedPosition = index * itemSize;
+        window.scrollTo(0, estimatedPosition);
+    },
+    scrollToPost: function(postId) {
+        var el = document.querySelector('[data-post-id="' + postId + '"]');
+        if (el) {
+            el.scrollIntoView({ behavior: 'instant', block: 'center' });
+            return true;
         }
-        tryScroll();
+        return false;
     }
 };
 

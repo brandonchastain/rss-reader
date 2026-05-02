@@ -12,17 +12,20 @@ public interface IFeedClient : IDisposable
 
     Task AddFeedAsync(NewsFeed feed);
     Task<IEnumerable<NewsFeed>> GetFeedsAsync();
-    Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20);
-    Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page);
+    Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null);
+    Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null);
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, int page, int pageSize = 20);
     Task<bool> RefreshFeedsAsync();
     Task<string> GetItemContentAsync(NewsFeedItem item);
     Task AddTagAsync(NewsFeed feed, string tag);
     Task<IEnumerable<string>> GetUserTagsAsync(RssUser user);
+    Task<IEnumerable<TagSetting>> GetTagSettingsAsync();
+    Task<IEnumerable<TagSetting>> SetTagHiddenAsync(string tag, bool isHidden);
     Task MarkAsReadAsync(NewsFeedItem item, bool isRead);
     Task SavePostAsync(NewsFeedItem item);
     Task UnsavePostAsync(NewsFeedItem item);
     Task DeleteFeedAsync(string feedHref);
+    Task<bool> ClearAllItemsAsync();
     Task ImportOpmlAsync(string opmlContent);
     Task<string> ExportOpmlAsync();
 }

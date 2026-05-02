@@ -12,12 +12,18 @@ internal sealed class FakeUserRepository : IUserRepository
 {
     // Backing store — tests can pre-populate this to simulate existing data.
     public List<RssUser> Users { get; } = new();
+    public Dictionary<int, string> AadUserIds { get; } = new();
 
     // Call counters so tests can assert how many times each method was invoked.
     public int AddUserCallCount { get; private set; }
     public int GetUserByNameCallCount { get; private set; }
     public int GetUserByIdCallCount { get; private set; }
+    public int GetUserByAadIdCallCount { get; private set; }
+    public int SetAadUserIdCallCount { get; private set; }
     public int GetAllUsersCallCount { get; private set; }
+
+    // When true, SetAadUserId throws to simulate a DB constraint violation.
+    public bool ThrowOnSetAadUserId { get; set; }
 
     private int _nextId = 1;
 
@@ -42,11 +48,42 @@ internal sealed class FakeUserRepository : IUserRepository
         return Users.FirstOrDefault(u => u.Id == userId)!;
     }
 
+    public RssUser GetUserByAadId(string aadUserId)
+    {
+        GetUserByAadIdCallCount++;
+        var userId = AadUserIds.FirstOrDefault(kvp => kvp.Value == aadUserId);
+        if (userId.Value != null)
+        {
+            return Users.FirstOrDefault(u => u.Id == userId.Key)!;
+        }
+        return null!;
+    }
+
+    public void SetAadUserId(int userId, string aadUserId)
+    {
+        SetAadUserIdCallCount++;
+        if (ThrowOnSetAadUserId)
+            throw new InvalidOperationException("Simulated DB constraint violation");
+        AadUserIds[userId] = aadUserId;
+    }
+
+    public void UpdateUsername(int userId, string newUsername)
+    {
+        var user = Users.FirstOrDefault(u => u.Id == userId);
+        if (user != null)
+            user.Username = newUsername;
+    }
+
     public IEnumerable<RssUser> GetAllUsers()
     {
         GetAllUsersCallCount++;
         // Return a new list each time so lazy-vs-materialized bugs surface clearly.
         return Users.ToList();
+    }
+
+    public void DeleteUser(int userId)
+    {
+        Users.RemoveAll(u => u.Id == userId);
     }
 }
 

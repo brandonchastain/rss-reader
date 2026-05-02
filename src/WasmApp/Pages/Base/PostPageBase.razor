@@ -3,22 +3,58 @@
 @implements IDisposable
 @inject ILogger<PostPageBase> logger
 @inject IJSRuntime jsRuntime
+@inject NavigationManager NavigationManager
 
 @code {
     private bool _isRefreshing;
+    private bool _pendingForceReset;
+    private string _scrollAnchorPostId;
+    private bool _needsScrollRestore;
+    private bool _scrolledToEstimate;
+    private int _restorePageSize;
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
     public int Page { get; set; } = 0;
+    public long? CursorPublishDateOrder { get; set; }
+    public long? CursorId { get; set; }
     protected bool initialized = false;
+
+    protected class ScrollState
+    {
+        public string PostId { get; set; }
+        public int Page { get; set; }
+        public string Path { get; set; }
+    }
 
     public void Dispose()
     {
         this.Items.Clear();
     }
 
-    protected virtual Task<List<NewsFeedItem>> GetPostsAsync()
+    protected virtual string GetBasePath() => "/timeline";
+    protected virtual Dictionary<string, string> GetExtraQueryParams() => new();
+
+    protected virtual Task<List<NewsFeedItem>> GetPostsAsync(int pageSize = 20)
     {
         // overridden
         throw new NotImplementedException();
+    }
+
+    protected void ResetPagination()
+    {
+        Items.Clear();
+        Page = 0;
+        CursorPublishDateOrder = null;
+        CursorId = null;
+    }
+
+    protected void UpdateCursorFromItems(IEnumerable<NewsFeedItem> items)
+    {
+        var lastItem = items.LastOrDefault();
+        if (lastItem != null && long.TryParse(lastItem.Id, out var parsedId))
+        {
+            CursorPublishDateOrder = lastItem.PublishDateOrder;
+            CursorId = parsedId;
+        }
     }
 
     protected async Task UpdatePage(int page)
@@ -29,43 +65,62 @@
         }
 
         Page = page;
-        await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag));
+        await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag, false));
     }
 
-    protected async Task RefreshItems((bool isFilterUnread, bool isFilterSaved, string filterTag) filters)
+    protected async Task RefreshItems((bool isFilterUnread, bool isFilterSaved, string filterTag, bool forceReset) filters)
     {
-        // Being invoked by async javascript, this method can be called multiple times before the first call is complete.
-        // A race condition can happen where either the 1st or 2nd page are overwritten, causing an incomplete response.
-        // To avoid this race condition, we use _isRefreshing to ensure that only one call is processed at a time.
-        // There is no multi-threading in this context (currently not enabled), so thread synchronization is not needed.
-        // We just need to exit early for overlapping calls if they are made while refresh is in progress.
-
         if (_isRefreshing)
         {
+            if (filters.forceReset) _pendingForceReset = true;
             return;
         }
 
         try
         {
             _isRefreshing = true;
-            
-            if (UpdateFilters(filters))
+
+            bool forceReset = filters.forceReset || _pendingForceReset;
+            _pendingForceReset = false;
+
+            bool filtersChanged = UpdateFilters(
+                (filters.isFilterUnread, filters.isFilterSaved, filters.filterTag));
+
+            if (forceReset || filtersChanged)
             {
-                Items.Clear();
-                Page = 0;
+                ResetPagination();
+                if (filtersChanged) UpdateUrlFromFilters();
             }
+
+            int pageSize = _restorePageSize > 0 ? _restorePageSize : 20;
+            _restorePageSize = 0;
             
-            var newPageRes = await this.GetPostsAsync();
+            var newPageRes = await this.GetPostsAsync(pageSize);
             // Deduplicate by Href before adding
             var existingHrefs = new HashSet<string>(Items.Select(i => i.Href), StringComparer.OrdinalIgnoreCase);
             var dedupedNewPosts = newPageRes.Where(i => !existingHrefs.Contains(i.Href)).ToList();
             Items.AddRange(dedupedNewPosts);
+
+            // Update cursor from the new page results (not deduplicated — use original to get true last item)
+            if (newPageRes.Any())
+            {
+                UpdateCursorFromItems(newPageRes);
+            }
+
+            // Sync loaded item count to JS for scroll state estimation (works with Virtualize)
+            try { await jsRuntime.InvokeVoidAsync("rssApp.setLoadedItemCount", Items.Count); } catch { }
             
             this.StateHasChanged();
         }
         finally
         {
             _isRefreshing = false;
+        }
+
+        // If a forceReset arrived while we were fetching, run again now
+        if (_pendingForceReset)
+        {
+            await RefreshItems((feedClient.IsFilterUnread, feedClient.IsFilterSaved, feedClient.FilterTag, true));
         }
     }
 
@@ -85,6 +140,68 @@
         return hasChanged;
     }
 
+    protected void ApplyFiltersFromUrl()
+    {
+        var qs = ParseQueryString(NavigationManager.Uri);
+        this.feedClient.IsFilterUnread = qs.TryGetValue("unread", out var u) && u == "true";
+        this.feedClient.IsFilterSaved = qs.TryGetValue("saved", out var s) && s == "true";
+        this.feedClient.FilterTag = qs.TryGetValue("tag", out var t) ? t : null;
+    }
+
+    protected void UpdateUrlFromFilters()
+    {
+        var queryParams = new Dictionary<string, string>();
+        if (feedClient.IsFilterUnread) queryParams["unread"] = "true";
+        if (feedClient.IsFilterSaved) queryParams["saved"] = "true";
+        if (!string.IsNullOrEmpty(feedClient.FilterTag)) queryParams["tag"] = feedClient.FilterTag;
+
+        foreach (var kv in GetExtraQueryParams())
+            if (!string.IsNullOrEmpty(kv.Value))
+                queryParams[kv.Key] = kv.Value;
+
+        var path = GetBasePath();
+        var url = queryParams.Count > 0
+            ? path + "?" + string.Join("&", queryParams.Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}"))
+            : path;
+
+        var currentRelative = "/" + NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        var currentPath = currentRelative.Contains('?') ? currentRelative[..currentRelative.IndexOf('?')] : currentRelative;
+        var newPath = url.Contains('?') ? url[..url.IndexOf('?')] : url;
+
+        // Only navigate if something actually changed (compare full normalized URLs)
+        var currentQs = ParseQueryString(NavigationManager.Uri);
+        var newQs = ParseQueryString("http://x" + url);
+        if (currentPath != newPath || !QueryParamsEqual(currentQs, newQs))
+        {
+            NavigationManager.NavigateTo(url, replace: true);
+        }
+    }
+
+    private static bool QueryParamsEqual(Dictionary<string, string> a, Dictionary<string, string> b)
+    {
+        if (a.Count != b.Count) return false;
+        foreach (var kv in a)
+        {
+            if (!b.TryGetValue(kv.Key, out var val) || val != kv.Value) return false;
+        }
+        return true;
+    }
+
+    private static Dictionary<string, string> ParseQueryString(string uri)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var qIndex = uri.IndexOf('?');
+        if (qIndex < 0) return result;
+        var query = uri[(qIndex + 1)..];
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eqIndex = pair.IndexOf('=');
+            if (eqIndex > 0)
+                result[Uri.UnescapeDataString(pair[..eqIndex])] = Uri.UnescapeDataString(pair[(eqIndex + 1)..]);
+        }
+        return result;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await base.OnAfterRenderAsync(firstRender);
@@ -92,9 +209,71 @@
         if (firstRender)
         {
             this.initialized = true;
+
+            // Apply filter state from URL query parameters
+            ApplyFiltersFromUrl();
+
+            // Check for scroll restoration from sessionStorage
+            try
+            {
+                var scrollState = await jsRuntime.InvokeAsync<ScrollState>("rssApp.getScrollState");
+                if (scrollState != null && scrollState.Path == GetBasePath())
+                {
+                    _scrollAnchorPostId = scrollState.PostId;
+                    _needsScrollRestore = true;
+                    _restorePageSize = Math.Min((scrollState.Page + 2) * 20, 500);
+                    await jsRuntime.InvokeVoidAsync("rssApp.clearScrollState");
+                }
+            }
+            catch (Exception)
+            {
+                // sessionStorage may be unavailable
+            }
+
             if (this.Items == null || !this.Items.Any())
             {
-                await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag));
+                await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag, false));
+            }
+        }
+        else if (_needsScrollRestore && !string.IsNullOrEmpty(_scrollAnchorPostId))
+        {
+            try
+            {
+                // With Virtualize, the target post may not be in the DOM yet.
+                // First try a direct scroll; if it fails, estimate position to trigger
+                // Virtualize to render items near the target, then retry next render.
+                var scrolled = await jsRuntime.InvokeAsync<bool>("rssApp.scrollToPost", _scrollAnchorPostId);
+                if (scrolled)
+                {
+                    _needsScrollRestore = false;
+                    _scrollAnchorPostId = null;
+                }
+                else if (!_scrolledToEstimate)
+                {
+                    // Find the target's index in the loaded items and scroll to estimated position
+                    var targetIndex = Items.FindIndex(i => i.Id == _scrollAnchorPostId);
+                    if (targetIndex >= 0)
+                    {
+                        // Add ~1.1x multiplier to account for day headers interspersed
+                        await jsRuntime.InvokeVoidAsync("rssApp.scrollToEstimatedIndex", (int)(targetIndex * 1.1), 72);
+                        _scrolledToEstimate = true;
+                    }
+                    else
+                    {
+                        _needsScrollRestore = false;
+                    }
+                }
+                else
+                {
+                    // Already scrolled to estimate but element still not found — give up
+                    _needsScrollRestore = false;
+                    _scrollAnchorPostId = null;
+                    _scrolledToEstimate = false;
+                }
+            }
+            catch (Exception)
+            {
+                _needsScrollRestore = false;
             }
         }
     }

@@ -15,7 +15,9 @@ These rules apply to every step in this skill, without exception:
 4. **Never use `Invoke-RestMethod` or `curl` with a raw token value** extracted from the credential store. Use `gh` CLI or GitHub MCP tools (`github-mcp-server-*`) for all GitHub API operations — they handle auth internally without exposing tokens.
 5. If authentication is needed for any step and no safe method is available, **stop and ask the user** to run the auth command themselves, then continue.
 
-## Step 0: Confirm with user before proceeding
+## Step 0: Pre-deploy checks
+
+### 0a: Confirm with user
 
 **⛔ STOP — do not proceed without explicit user confirmation.**
 
@@ -25,7 +27,26 @@ Before doing anything else, use the `ask_user` tool to ask:
 
 Wait for the user to confirm. If they say anything other than a clear yes, abort the deployment and report that it was cancelled.
 
-Only continue to Step 1 after receiving explicit confirmation.
+### 0b: Ensure changes are merged to main
+
+**⛔ All code changes must be committed, pushed, and merged to `main` before deploying.**
+
+This is a hard prerequisite — production deploys always build from a clean `main` branch. The only exception is when the user has **explicitly** said they are experimenting with a specific branch (e.g., "deploy from feature-x to test something").
+
+1. Run `git --no-pager status` and `git --no-pager log --oneline -1` to check the current state.
+2. **If there are uncommitted changes** or the current branch is not `main`, stop and tell the user:
+   > "There are uncommitted changes (or you're not on main). I need to commit these to a branch, push, create a PR, and merge before deploying. Want me to proceed?"
+   Wait for confirmation, then:
+   - Create a feature branch, commit, push, and create a PR using GitHub MCP tools.
+   - Merge the PR (squash merge preferred).
+   - Switch back to `main` and pull.
+3. **If `main` is clean**, pull the latest changes to ensure the local branch matches the remote:
+   ```powershell
+   git pull origin main
+   ```
+   If the pull introduces merge conflicts or fails, stop and report the error.
+
+Only continue to Step 1 after `main` is clean, up to date, and contains all the changes to be deployed.
 
 ## Step 1: Check prerequisites
 
@@ -73,13 +94,13 @@ Run `swa --version` to confirm `swa` is installed. If it fails, stop and tell th
 
 ## Step 2: Build & push the backend Docker image
 
-Navigate to the `src\` directory and build the image tagged for GHCR. Resolve `$ghUser` inline in the same command:
+Navigate to the repo root and build the image tagged for GHCR. Resolve `$ghUser` inline in the same command:
 
 ```powershell
 $remoteUrl = git remote get-url origin 2>$null
 if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
-cd C:\Users\brand\dev\rssreader\rss-reader\src
-docker build -t "ghcr.io/$ghUser/rss-reader-api:latest" -f Server/Dockerfile .
+cd C:\Users\brand\dev\rssreader\rss-reader
+docker build -t "ghcr.io/$ghUser/rss-reader-api:latest" -f src/Server/Dockerfile .
 ```
 
 If the build fails, stop and report the error.
@@ -106,11 +127,15 @@ Update the running container app to use the new image (resolve `$ghUser` inline)
 ```powershell
 $remoteUrl = git remote get-url origin 2>$null
 if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
+$suffix = "deploy$(Get-Date -Format 'yyyyMMddHHmm')"
 az containerapp update `
   --name rss-reader-api `
   --resource-group rss-container-rg `
-  --image "ghcr.io/$ghUser/rss-reader-api:latest"
+  --image "ghcr.io/$ghUser/rss-reader-api:latest" `
+  --revision-suffix $suffix
 ```
+
+**Important:** Always use `--revision-suffix` with a unique value. Without it, Azure may reuse the cached `:latest` image and the container won't pick up your code changes.
 
 If this fails, check that the user is logged in to Azure (`az login`) and that the container app `rss-reader-api` exists in the `rss-container-rg` resource group.
 
@@ -147,7 +172,23 @@ The most recent revision should have `ACTIVE` state and a traffic weight of `100
 
 ### 5b: Browser smoke test (Playwright)
 
-First check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snapshot`) are available.
+First, run the Firefox profile recovery procedure to clear any stale locks:
+
+```powershell
+$staleFirefox = Get-Process -Name firefox -ErrorAction SilentlyContinue
+if ($staleFirefox) {
+    foreach ($proc in $staleFirefox) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2
+}
+$profileDir = "$env:LOCALAPPDATA\ms-playwright\mcp-firefox"
+if (Test-Path $profileDir) {
+    Remove-Item -Recurse -Force $profileDir -ErrorAction SilentlyContinue
+}
+```
+
+Then check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snapshot`) are available.
 
 **If Playwright tools are NOT available:** skip this sub-step and note it in the summary.
 
@@ -174,6 +215,7 @@ First check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snap
 5. Once logged in (or if already logged in), run these basic scenarios:
    - Navigate to `/feeds` — confirm the feeds list page loads without errors.
    - Navigate to `/timeline` — confirm the timeline page loads and shows content (or an empty state, not a crash).
+   - **Content display check**: Click a post thumbnail to expand it. Verify that article content text is visible in the expanded area (not just "Published on" date and action buttons). Empty content is a deployment bug — the backend LEFT JOIN may not have been deployed.
    - Take a screenshot: `browser_take_screenshot(type: "png")` for visual confirmation.
 
 6. Report what was observed: page titles, any visible errors or blank screens, HTTP failures in the console.

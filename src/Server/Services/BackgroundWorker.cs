@@ -1,3 +1,5 @@
+using RssApp.Config;
+
 namespace RssApp.ComponentServices;
 
 using RssApp.Config;

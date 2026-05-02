@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using System.Xml.Serialization;
@@ -42,7 +43,7 @@ public class RssDeserializer
                     var item = new NewsFeedItem(
                         x.Id,
                         user.Id,
-                        x.Title,
+                        CleanTitle(x.Title),
                         x.Link.Href,
                         x.CommentsLink?.Href,
                         date,
@@ -64,7 +65,7 @@ public class RssDeserializer
                     var item = new NewsFeedItem(
                         x.Id,
                         user.Id,
-                        x.Title,
+                        CleanTitle(x.Title),
                         x.Link.Href,
                         x.CommentsLink?.Href,
                         date,
@@ -86,7 +87,7 @@ public class RssDeserializer
                     var item = new NewsFeedItem(
                         x.Id,
                         user.Id,
-                        x.Title,
+                        CleanTitle(x.Title),
                         x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href,
                         commentsHref: null,
                         date,
@@ -117,6 +118,22 @@ public class RssDeserializer
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Strips HTML tags and decodes HTML entities from feed titles.
+    /// RSS feeds sometimes embed markup (e.g. &lt;i&gt;) in title elements.
+    /// </summary>
+    internal static string CleanTitle(string title)
+    {
+        if (string.IsNullOrEmpty(title))
+            return title;
+
+        // Strip HTML tags
+        var cleaned = Regex.Replace(title, "<[^>]+>", string.Empty);
+        // Decode HTML entities (&amp; → &, &#39; → ', etc.)
+        cleaned = WebUtility.HtmlDecode(cleaned);
+        return cleaned.Trim();
     }
 
     private static DateTime? ParseDateTime(string dateString)

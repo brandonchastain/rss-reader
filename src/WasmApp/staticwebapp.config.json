@@ -5,6 +5,41 @@
       "allowedRoles": ["anonymous"]
     },
     {
+      "route": "/timeline*",
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
+    },
+    {
+      "route": "/feeds*",
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
+    },
+    {
+      "route": "/tags*",
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
+    },
+    {
+      "route": "/search*",
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
+    },
+    {
+      "route": "/posts*",
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
+    },
+    {
+      "route": "/account*",
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
+    },
+    {
+      "route": "/admin*",
+      "rewrite": "/index.html",
+      "headers": { "cache-control": "no-store" }
+    },
+    {
       "route": "/_framework/blazor.boot.json",
       "headers": {
         "cache-control": "no-cache"
@@ -37,9 +72,9 @@
   ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/.auth/*"]
+    "exclude": ["/.auth/*", "/timeline*", "/feeds*", "/tags*", "/search*", "/posts*"]
   },
-  "globalHeaders": {
+  "globalHeaders":{
     "cache-control": "no-cache"
   },
   "mimeTypes": {

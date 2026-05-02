@@ -5,30 +5,56 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using RssApp.Contracts;
+using RssApp.Data;
 
 namespace RssReader.Server.Services
 {
     /// <summary>
-    /// Background service that handles backing up and restoring the SQLite database
-    /// to/from Azure Files mounted storage. 
-    /// - On startup: Restores database from backup if it exists
-    /// - Periodically: Backs up active database to mounted storage
+    /// Configuration for database backup file paths. Extracted for testability.
+    /// </summary>
+    public record DatabaseBackupPaths(
+        string ActiveDbPath = "/tmp/storage.db",
+        string BackupDbPath = "/data/storage.db",
+        string TempBackupDbPath = "/tmp/storage-backup.db",
+        string ActiveImagesPath = "wwwroot/images/",
+        string BackupImagesPath = "/data/images/");
+
+    /// <summary>
+    /// Complementary backup service that runs alongside Litestream.
+    /// - On startup: Restores database from Azure Files backup if Litestream hasn't already restored it; always restores cached images.
+    /// - Periodically: Backs up active database to Azure Files and syncs cached images to/from mounted storage.
+    /// Litestream handles primary WAL replication to Azure Blob Storage; this service provides a secondary backup layer and image persistence.
     /// </summary>
     public class DatabaseBackupService : BackgroundService
     {
         private readonly ILogger<DatabaseBackupService> _logger;
+        private readonly DatabaseBackupPaths _paths;
+        private readonly IServiceProvider _serviceProvider;
         private readonly TimeSpan _backupInterval = TimeSpan.FromMinutes(5);
-        private const string ActiveDbPath = "/tmp/storage.db";
-        private const string BackupDbPath = "/data/storage.db";
-        private const string ActiveImagesPath = "wwwroot/images/";
-        private const string BackupImagesPath = "/data/images/";
-        private string _lastBackupHash = string.Empty; // Track last written hash to avoid redundant writes
+        private string _lastBackupHash = string.Empty;
 
         public DatabaseBackupService(ILogger<DatabaseBackupService> logger)
+            : this(logger, new DatabaseBackupPaths(), null)
+        {
+        }
+
+        public DatabaseBackupService(ILogger<DatabaseBackupService> logger, DatabaseBackupPaths paths)
+            : this(logger, paths, null)
+        {
+        }
+
+        public DatabaseBackupService(
+            ILogger<DatabaseBackupService> logger,
+            DatabaseBackupPaths paths,
+            IServiceProvider serviceProvider)
         {
             _logger = logger;
+            _paths = paths;
+            _serviceProvider = serviceProvider;
         }
 
         public override async Task StartAsync(CancellationToken cancellationToken)
@@ -54,6 +80,7 @@ namespace RssReader.Server.Services
                     if (!stoppingToken.IsCancellationRequested)
                     {
                         await BackupToStorageAsync(stoppingToken);
+                        await RecordStatsSnapshotAsync();
                     }
                 }
                 catch (OperationCanceledException)
@@ -99,45 +126,108 @@ namespace RssReader.Server.Services
             await base.StopAsync(cancellationToken);
         }
 
+        private async Task RecordStatsSnapshotAsync()
+        {
+            if (_serviceProvider == null) return;
+
+            try
+            {
+                var statsRepo = _serviceProvider.GetService<ISystemStatsRepository>();
+                if (statsRepo == null) return;
+
+                int userCount = 0, feedCount = 0, itemCount = 0;
+                long dbSizeBytes = 0;
+
+                // Count directly from DB tables to avoid per-user repository API
+                if (File.Exists(_paths.ActiveDbPath))
+                {
+                    dbSizeBytes = new FileInfo(_paths.ActiveDbPath).Length;
+
+                    await Task.Run(() =>
+                    {
+                        using var conn = new SqliteConnection(
+                            $"Data Source={_paths.ActiveDbPath};Mode=ReadOnly;Pooling=False");
+                        conn.Open();
+
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "SELECT COUNT(*) FROM Users";
+                            userCount = Convert.ToInt32(cmd.ExecuteScalar());
+                        }
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "SELECT COUNT(*) FROM Feeds";
+                            feedCount = Convert.ToInt32(cmd.ExecuteScalar());
+                        }
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "SELECT COUNT(*) FROM Items";
+                            itemCount = Convert.ToInt32(cmd.ExecuteScalar());
+                        }
+                    });
+                }
+
+                var snapshot = new SystemStatsSnapshot
+                {
+                    Timestamp   = DateTime.UtcNow,
+                    UserCount   = userCount,
+                    FeedCount   = feedCount,
+                    ItemCount   = itemCount,
+                    DbSizeBytes = dbSizeBytes
+                };
+
+                statsRepo.RecordSnapshot(snapshot);
+                statsRepo.CleanupOlderThan(30);
+                _logger.LogInformation(
+                    "Stats snapshot recorded: {Users} users, {Feeds} feeds, {Items} items, {Db:N0} bytes",
+                    userCount, feedCount, itemCount, dbSizeBytes);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to record stats snapshot");
+            }
+        }
+
         public async Task RestoreFromBackupAsync(CancellationToken cancellationToken)
         {
             try
             {
                 // Check if backup exists
-                if (!File.Exists(BackupDbPath))
+                if (!File.Exists(_paths.BackupDbPath))
                 {
-                    _logger.LogInformation("No backup database found at {BackupPath}. Starting with empty database", BackupDbPath);
+                    _logger.LogInformation("No backup database found at {BackupPath}. Starting with empty database", _paths.BackupDbPath);
                     return;
                 }
 
-                // Check if active database already exists (shouldn't happen on container start, but be safe)
-                if (File.Exists(ActiveDbPath))
+                // Check if active database already exists (Litestream may have restored it)
+                if (File.Exists(_paths.ActiveDbPath))
                 {
-                    _logger.LogWarning("Active database already exists at {ActivePath}. Skipping restore", ActiveDbPath);
-                    return;
+                    _logger.LogWarning("Active database already exists at {ActivePath}. Skipping DB restore", _paths.ActiveDbPath);
+                }
+                else
+                {
+                    // Ensure /tmp directory exists
+                    var activeDir = Path.GetDirectoryName(_paths.ActiveDbPath);
+                    if (!string.IsNullOrEmpty(activeDir) && !Directory.Exists(activeDir))
+                    {
+                        Directory.CreateDirectory(activeDir);
+                    }
+
+                    _logger.LogInformation("Restoring database from {BackupPath} to {ActivePath}", _paths.BackupDbPath, _paths.ActiveDbPath);
+                    
+                    // Simple file copy on startup is safe since nothing is using the database yet
+                    await CopyFileAsync(_paths.BackupDbPath, _paths.ActiveDbPath, cancellationToken);
+                    
+                    // Compute hash of the backup so we can detect changes later
+                    _lastBackupHash = await ComputeFileHashAsync(_paths.BackupDbPath, cancellationToken);
+                    _logger.LogInformation("Computed baseline backup hash for change detection");
+                    
+                    var fileInfo = new FileInfo(_paths.ActiveDbPath);
+                    _logger.LogInformation("Database restored successfully. Size: {Size:N0} bytes", fileInfo.Length);
                 }
 
-                // Ensure /tmp directory exists
-                var activeDir = Path.GetDirectoryName(ActiveDbPath);
-                if (!string.IsNullOrEmpty(activeDir) && !Directory.Exists(activeDir))
-                {
-                    Directory.CreateDirectory(activeDir);
-                }
-
-                _logger.LogInformation("Restoring database from {BackupPath} to {ActivePath}", BackupDbPath, ActiveDbPath);
-                
-                // Simple file copy on startup is safe since nothing is using the database yet
-                await CopyFileAsync(BackupDbPath, ActiveDbPath, cancellationToken);
-                
-                // Compute hash of the backup so we can detect changes later
-                _lastBackupHash = await ComputeFileHashAsync(BackupDbPath, cancellationToken);
-                _logger.LogInformation("Computed baseline backup hash for change detection");
-                
-                // Restore image files
-                await CopyFilesAsync(BackupImagesPath, ActiveImagesPath, cancellationToken);
-                
-                var fileInfo = new FileInfo(ActiveDbPath);
-                _logger.LogInformation("Database restored successfully. Size: {Size:N0} bytes", fileInfo.Length);
+                // Always restore images, even if DB was already restored by Litestream
+                await CopyFilesAsync(_paths.BackupImagesPath, _paths.ActiveImagesPath, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -145,29 +235,29 @@ namespace RssReader.Server.Services
             }
         }
 
-        private async Task BackupToStorageAsync(CancellationToken cancellationToken)
+        internal async Task BackupToStorageAsync(CancellationToken cancellationToken)
         {
             try
             {
                 // Check if active database exists
-                if (!File.Exists(ActiveDbPath))
+                if (!File.Exists(_paths.ActiveDbPath))
                 {
-                    _logger.LogWarning("No active database found at {ActivePath}. Skipping backup", ActiveDbPath);
+                    _logger.LogWarning("No active database found at {ActivePath}. Skipping backup", _paths.ActiveDbPath);
                     return;
                 }
 
                 // Ensure backup directory exists
-                var backupDir = Path.GetDirectoryName(BackupDbPath);
+                var backupDir = Path.GetDirectoryName(_paths.BackupDbPath);
                 if (!string.IsNullOrEmpty(backupDir) && !Directory.Exists(backupDir))
                 {
                     Directory.CreateDirectory(backupDir);
                     _logger.LogInformation("Created backup directory: {BackupDir}", backupDir);
                 }
 
-                _logger.LogInformation("Backing up database from {ActivePath} to {BackupPath}", ActiveDbPath, BackupDbPath);
+                _logger.LogInformation("Backing up database from {ActivePath} to {BackupPath}", _paths.ActiveDbPath, _paths.BackupDbPath);
                 
                 // Create backup in /tmp first (SQLite backup API doesn't work well with network filesystems)
-                var tempBackupPath = "/tmp/storage-backup.db";
+                var tempBackupPath = _paths.TempBackupDbPath;
                 
                 // Delete any existing temp backup file
                 if (File.Exists(tempBackupPath))
@@ -178,7 +268,7 @@ namespace RssReader.Server.Services
                 try
                 {
                     // Use SQLite's native backup API to create consistent backup in /tmp
-                    await PerformSqliteBackupAsync(ActiveDbPath, tempBackupPath, cancellationToken);
+                    await PerformSqliteBackupAsync(_paths.ActiveDbPath, tempBackupPath, cancellationToken);
                     
                     // Compute hash of the backup to detect changes
                     var backupHash = await ComputeFileHashAsync(tempBackupPath, cancellationToken);
@@ -187,10 +277,10 @@ namespace RssReader.Server.Services
                     if (backupHash != _lastBackupHash)
                     {
                         _logger.LogInformation("Database content changed. Uploading to Azure Files...");
-                        await CopyFileAsync(tempBackupPath, BackupDbPath, cancellationToken);
+                        await CopyFileAsync(tempBackupPath, _paths.BackupDbPath, cancellationToken);
                         _lastBackupHash = backupHash;
                         
-                        var fileInfo = new FileInfo(BackupDbPath);
+                        var fileInfo = new FileInfo(_paths.BackupDbPath);
                         _logger.LogInformation("Database backed up successfully. Size: {Size:N0} bytes", fileInfo.Length);
                     }
                     else
@@ -199,7 +289,7 @@ namespace RssReader.Server.Services
                     }
                     
                     // Backup image files
-                    await CopyFilesAsync(ActiveImagesPath, BackupImagesPath, cancellationToken);
+                    await CopyFilesAsync(_paths.ActiveImagesPath, _paths.BackupImagesPath, cancellationToken);
                 }
                 finally
                 {
@@ -234,8 +324,8 @@ namespace RssReader.Server.Services
         {
             await Task.Run(() =>
             {
-                using var source = new SqliteConnection($"Data Source={sourceDbPath};Mode=ReadWriteCreate;Cache=Shared;Pooling=True");
-                using var destination = new SqliteConnection($"Data Source={destDbPath};Mode=ReadWriteCreate");
+                using var source = new SqliteConnection($"Data Source={sourceDbPath};Mode=ReadOnly;Pooling=False");
+                using var destination = new SqliteConnection($"Data Source={destDbPath};Mode=ReadWriteCreate;Pooling=False");
                 
                 source.Open();
                 destination.Open();

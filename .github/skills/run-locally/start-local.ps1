@@ -41,9 +41,9 @@ if ($LASTEXITCODE -ne 0) {
 
 # ── Step 2: Build the image ───────────────────────────────────────────────────
 Write-Host "`nBuilding Docker image '$ImageName'..." -ForegroundColor Cyan
-Push-Location $SrcDir
+Push-Location $RepoRoot
 try {
-    docker build -f Server/Dockerfile -t $ImageName .
+    docker build -f src/Server/Dockerfile -t $ImageName .
     if ($LASTEXITCODE -ne 0) { Write-Error "Docker build failed."; exit 1 }
 } finally {
     Pop-Location

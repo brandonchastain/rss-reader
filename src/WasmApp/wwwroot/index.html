@@ -19,19 +19,12 @@
     <script>
         // Warm up the API function to reduce cold start latency
         fetch('/api/healthz').catch(() => {});
-
-        if (location.pathname === '/' || location.pathname === '/index') {
-            fetch('/.auth/me')
-                .then(r => r.json())
-                .then(data => {
-                    if (data.clientPrincipal) location.replace('/timeline');
-                })
-                .catch(() => {});
-        }
     </script>
     <div id="app"></div>
     <script src="_content/Microsoft.AspNetCore.Components.WebAssembly.Authentication/AuthenticationService.js"></script>
     <script src="_framework/blazor.webassembly.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script src="js/admin-chart.js"></script>
     <script src="app.js"></script>
 </body>
 
