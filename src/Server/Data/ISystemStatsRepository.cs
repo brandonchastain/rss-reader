@@ -8,4 +8,7 @@ public interface ISystemStatsRepository
     SystemStatsSnapshot GetLatestSnapshot();
     IEnumerable<SystemStatsSnapshot> GetHistory(int days = 30);
     void CleanupOlderThan(int days = 30);
+    IEnumerable<UserStats> GetPerUserStats();
 }
+
+public record UserStats(int UserId, int FeedCount, int ItemCount);
