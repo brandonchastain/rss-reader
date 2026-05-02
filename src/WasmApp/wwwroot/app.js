@@ -138,6 +138,38 @@ window.rssApp = {
         }
         window.location.href = targetHref;
     },
+    saveScrollStateForLink: function(postId, markReadUrl) {
+        // Synchronous variant: writes scroll anchor + fires fire-and-forget
+        // markAsRead. Called from a capture-phase document click listener so
+        // it runs before any Blazor handler / re-render.
+        if (postId) {
+            var itemCount = window.rssApp._loadedItemCount || document.querySelectorAll('[data-post-id]').length;
+            var pageEstimate = Math.ceil(itemCount / 20);
+            sessionStorage.setItem('rssApp.scrollAnchorPostId', postId);
+            sessionStorage.setItem('rssApp.scrollAnchorPage', pageEstimate.toString());
+            sessionStorage.setItem('rssApp.scrollAnchorPath', window.location.pathname);
+        }
+        if (markReadUrl) {
+            // sendBeacon is specifically designed to fire reliably during
+            // page unload (cross-origin navigation). It's the most robust
+            // way to ensure the markAsRead request reaches the server.
+            // The endpoint accepts both GET and POST.
+            var sent = false;
+            try {
+                if (navigator.sendBeacon) {
+                    sent = navigator.sendBeacon(markReadUrl);
+                }
+            } catch (e) { sent = false; }
+            if (!sent) {
+                // Fallback for older browsers or when sendBeacon refuses
+                // (e.g., quota exceeded). keepalive lets the request outlive
+                // the document on best-effort basis.
+                try {
+                    fetch(markReadUrl, { method: 'POST', keepalive: true, credentials: 'same-origin' }).catch(function() {});
+                } catch (e) {}
+            }
+        }
+    },
     getScrollState: function() {
         var postId = sessionStorage.getItem('rssApp.scrollAnchorPostId');
         if (!postId) return null;
@@ -175,3 +207,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// Capture-phase delegated handler: saves scroll anchor + fires keepalive
+// mark-as-read whenever the user activates an article-link <a>. Runs before
+// Blazor's bubble-phase @onclick handlers, so a Blazor re-render cannot
+// cancel the JS interop. Works for left-click, ctrl-click, and keyboard
+// activation (Enter on focused link fires click). Middle-click fires
+// auxclick (not click) in modern browsers, so listen on both.
+function articleLinkActivated(e) {
+    var link = e.target.closest('a[data-article-link]');
+    if (!link) return;
+    var postId = link.getAttribute('data-post-id');
+    var markReadUrl = link.getAttribute('data-mark-read-url');
+    window.rssApp.saveScrollStateForLink(postId, markReadUrl);
+}
+document.addEventListener('click', articleLinkActivated, true);
+document.addEventListener('auxclick', articleLinkActivated, true);

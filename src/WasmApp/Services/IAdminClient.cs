@@ -2,7 +2,7 @@ using RssApp.Contracts;
 
 namespace WasmApp.Services;
 
-public record AdminUser(int Id, string Username);
+public record AdminUser(int Id, string Username, int FeedCount, int PostCount);
 
 public interface IAdminClient
 {

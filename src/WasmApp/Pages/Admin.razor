@@ -74,12 +74,12 @@
             {
                 <table class="users-table">
                     <thead>
-                        <tr><th>ID</th><th>Username</th></tr>
+                        <tr><th>ID</th><th>Username</th><th>Feeds</th><th>Posts</th></tr>
                     </thead>
                     <tbody>
                         @foreach (var u in users)
                         {
-                            <tr><td>@u.Id</td><td>@u.Username</td></tr>
+                            <tr><td>@u.Id</td><td>@u.Username</td><td>@u.FeedCount.ToString("N0")</td><td>@u.PostCount.ToString("N0")</td></tr>
                         }
                     </tbody>
                 </table>

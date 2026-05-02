@@ -62,8 +62,22 @@ public class AdminController : ControllerBase
         if (!IsAdmin(User))
             return Forbid();
 
+        // Build per-user stats lookup once (one indexed query) and join in-memory.
+        var statsByUser = _statsRepo.GetPerUserStats()
+            .ToDictionary(s => s.UserId);
+
         var users = _userRepo.GetAllUsers()
-            .Select(u => new { u.Id, u.Username })
+            .Select(u =>
+            {
+                statsByUser.TryGetValue(u.Id, out var stats);
+                return new
+                {
+                    u.Id,
+                    u.Username,
+                    FeedCount = stats?.FeedCount ?? 0,
+                    PostCount = stats?.ItemCount ?? 0
+                };
+            })
             .ToList();
 
         return Ok(users);

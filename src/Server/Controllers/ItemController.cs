@@ -167,6 +167,7 @@ namespace Server.Controllers
         }
 
         [HttpGet("markAsRead")]
+        [HttpPost("markAsRead")]
         public IActionResult MarkAsRead(int itemId, bool isRead)
         {
             var user = this.userResolver.ResolveUser(User);

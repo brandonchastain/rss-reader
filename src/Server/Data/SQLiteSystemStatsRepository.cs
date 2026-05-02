@@ -111,6 +111,35 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
         cmd.ExecuteNonQuery();
     }
 
+    public IEnumerable<UserStats> GetPerUserStats()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.OpenWithPragmas();
+
+        // LEFT JOIN ensures users with zero feeds/items still appear.
+        // COUNT(DISTINCT) is needed because joining Feeds and Items on
+        // UserId would multiply rows.
+        var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT
+                u.Id AS UserId,
+                (SELECT COUNT(*) FROM Feeds f WHERE f.UserId = u.Id) AS FeedCount,
+                (SELECT COUNT(*) FROM Items i WHERE i.UserId = u.Id) AS ItemCount
+            FROM Users u
+            ORDER BY u.Id";
+
+        var results = new List<UserStats>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            results.Add(new UserStats(
+                UserId: reader.GetInt32(0),
+                FeedCount: reader.GetInt32(1),
+                ItemCount: reader.GetInt32(2)));
+        }
+        return results;
+    }
+
     private static SystemStatsSnapshot ReadSnapshot(SqliteDataReader reader)
     {
         return new SystemStatsSnapshot
