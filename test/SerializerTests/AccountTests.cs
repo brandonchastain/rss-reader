@@ -11,7 +11,6 @@ using RssReader.Server.Services;
 public sealed class AccountTests
 {
     private string testDbFile;
-    private string connectionString;
 
     private SQLiteUserRepository userRepo;
     private SQLiteFeedRepository feedRepo;
@@ -22,7 +21,7 @@ public sealed class AccountTests
     public void Setup()
     {
         testDbFile = $"account-{Guid.NewGuid():N}.db";
-        connectionString = $"Data Source={testDbFile}";
+        var dbConnections = new SqliteDbConnections(testDbFile, isReadOnly: false);
 
         Directory.CreateDirectory(Path.Combine("wwwroot", "images"));
         // Pre-create favicon to skip network download in AddItemsAsync
@@ -34,8 +33,8 @@ public sealed class AccountTests
         }
         catch (Exception) { /* ignore — another parallel test may be writing it */ }
 
-        userRepo = new SQLiteUserRepository(connectionString, connectionString, new NullLogger<SQLiteUserRepository>());
-        feedRepo = new SQLiteFeedRepository(connectionString, connectionString, new NullLogger<SQLiteFeedRepository>());
+        userRepo = new SQLiteUserRepository(dbConnections, new NullLogger<SQLiteUserRepository>());
+        feedRepo = new SQLiteFeedRepository(dbConnections, new NullLogger<SQLiteFeedRepository>());
 
         var serviceCollection = new ServiceCollection();
         serviceCollection
@@ -46,8 +45,7 @@ public sealed class AccountTests
             .AddSingleton<IUserRepository>(userRepo)
             .AddSingleton<IItemRepository>(sb =>
                 new SQLiteItemRepository(
-                    connectionString,
-                    connectionString,
+                    dbConnections,
                     sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
                     sb.GetRequiredService<IFeedRepository>(),
                     sb.GetRequiredService<IUserRepository>(),

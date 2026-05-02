@@ -26,15 +26,14 @@ public sealed class ItemRepoTests
         Directory.CreateDirectory(Path.Combine("wwwroot", "images"));
 
         var config = new RssAppConfig { DbLocation = "tests.db" };
+        var dbConnections = new SqliteDbConnections("tests.db", isReadOnly: false);
 
         var userRepo = new SQLiteUserRepository(
-            $"Data Source=tests.db;Pooling=True",
-            $"Data Source=tests.db;Mode=ReadOnly;Pooling=True",
+            dbConnections,
             new NullLogger<SQLiteUserRepository>());
         userRepo.AddUser("testUser", 0);
         var feedRepo = new SQLiteFeedRepository(
-            $"Data Source=tests.db;Pooling=True",
-            $"Data Source=tests.db;Mode=ReadOnly;Pooling=True",
+            dbConnections,
             new NullLogger<SQLiteFeedRepository>());
         feedRepo.AddFeed(new NewsFeed(1, "https://feeds.propublica.org/propublica/main", 0));
 
@@ -62,8 +61,7 @@ public sealed class ItemRepoTests
         .AddSingleton<IItemRepository>(sb =>
         {
             return new SQLiteItemRepository(
-                $"Data Source=tests.db;Pooling=True",
-                $"Data Source=tests.db;Mode=ReadOnly;Pooling=True",
+                dbConnections,
                 sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
                 sb.GetRequiredService<IFeedRepository>(),
                 sb.GetRequiredService<IUserRepository>(),
@@ -133,10 +131,10 @@ public sealed class ItemRepoTests
         if (File.Exists(dbName)) File.Delete(dbName);
         Directory.CreateDirectory(Path.Combine("wwwroot", "images"));
 
-        var connStr = $"Data Source={dbName}";
-        var userRepo = new SQLiteUserRepository(connStr, connStr, new NullLogger<SQLiteUserRepository>());
+        var dbConnections = new SqliteDbConnections(dbName, isReadOnly: false);
+        var userRepo = new SQLiteUserRepository(dbConnections, new NullLogger<SQLiteUserRepository>());
         userRepo.AddUser("testUser", 0);
-        var feedRepo = new SQLiteFeedRepository(connStr, connStr, new NullLogger<SQLiteFeedRepository>());
+        var feedRepo = new SQLiteFeedRepository(dbConnections, new NullLogger<SQLiteFeedRepository>());
         var feed = new NewsFeed(1, "https://feeds.example.org/test", 0);
         feedRepo.AddFeed(feed);
 
@@ -151,8 +149,7 @@ public sealed class ItemRepoTests
             .AddSingleton<IUserRepository>(userRepo)
             .AddSingleton<IItemRepository>(sb =>
                 new SQLiteItemRepository(
-                    connStr,
-                    connStr,
+                    dbConnections,
                     sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
                     sb.GetRequiredService<IFeedRepository>(),
                     sb.GetRequiredService<IUserRepository>(),
