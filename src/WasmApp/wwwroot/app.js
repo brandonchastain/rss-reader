@@ -138,6 +138,23 @@ window.rssApp = {
         }
         window.location.href = targetHref;
     },
+    saveScrollStateForLink: function(postId, markReadUrl) {
+        // Synchronous variant: writes scroll anchor + fires keepalive markAsRead.
+        // Browser handles the actual navigation via the link's natural href.
+        // Called from a capture-phase document click listener so it runs before
+        // any Blazor handler / re-render and without the @onclick async race
+        // that was silently swallowing TaskCanceledException.
+        if (postId) {
+            var itemCount = window.rssApp._loadedItemCount || document.querySelectorAll('[data-post-id]').length;
+            var pageEstimate = Math.ceil(itemCount / 20);
+            sessionStorage.setItem('rssApp.scrollAnchorPostId', postId);
+            sessionStorage.setItem('rssApp.scrollAnchorPage', pageEstimate.toString());
+            sessionStorage.setItem('rssApp.scrollAnchorPath', window.location.pathname);
+        }
+        if (markReadUrl) {
+            fetch(markReadUrl, { method: 'GET', keepalive: true }).catch(function() {});
+        }
+    },
     getScrollState: function() {
         var postId = sessionStorage.getItem('rssApp.scrollAnchorPostId');
         if (!postId) return null;
@@ -175,3 +192,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// Capture-phase delegated handler: saves scroll anchor + fires keepalive
+// mark-as-read whenever the user activates an article-link <a>. Runs before
+// Blazor's bubble-phase @onclick handlers, so a Blazor re-render cannot
+// cancel the JS interop. Works for left-click, ctrl-click, and keyboard
+// activation (Enter on focused link fires click). Middle-click fires
+// auxclick (not click) in modern browsers, so listen on both.
+function articleLinkActivated(e) {
+    var link = e.target.closest('a[data-article-link]');
+    if (!link) return;
+    var postId = link.getAttribute('data-post-id');
+    var markReadUrl = link.getAttribute('data-mark-read-url');
+    window.rssApp.saveScrollStateForLink(postId, markReadUrl);
+}
+document.addEventListener('click', articleLinkActivated, true);
+document.addEventListener('auxclick', articleLinkActivated, true);

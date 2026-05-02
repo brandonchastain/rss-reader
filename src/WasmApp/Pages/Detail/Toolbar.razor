@@ -88,15 +88,16 @@
         isRefreshing = true;
         StateHasChanged();
 
-        bool hasNewItems = await FeedClient.RefreshFeedsAsync();
+        // Always trigger a UI reset after the refresh poll cycle finishes.
+        // The server's HasNewItems flag can be stale during cooldown periods,
+        // and re-fetching page 1 is cheap. The user clicked refresh — they
+        // expect a fresh timeline regardless of the server's view.
+        await FeedClient.RefreshFeedsAsync();
 
         isRefreshing = false;
         StateHasChanged();
 
-        if (hasNewItems)
-        {
-            await OnRefreshComplete.InvokeAsync();
-        }
+        await OnRefreshComplete.InvokeAsync();
     }
 
     private async Task ToggleShowFilters()

@@ -34,11 +34,11 @@
             {
                 <span class="post-tag">@tag</span>
             }
-            <a tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnArticleLinkClick(Post)">@CleanTitle(Post.Title)</a><br/>
+            <a tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" data-article-link data-post-id="@Post.Id" data-mark-read-url="/api/item/markAsRead?itemId=@Post.Id&isRead=true" @onclick:stopPropagation="true" @onclick="() => OnArticleLinkClick(Post)">@CleanTitle(Post.Title)</a><br/>
             <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await MarkAsReadAsync(Post, !Post.IsRead)">[mark @(!Post.IsRead ? "read" : "unread")]</button><button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)">[@(!Post.IsSaved ? "save" : "unsave")]</button>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
-                <a class="link" href="@Post.CommentsHref" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnCommentsLinkClick(Post.CommentsHref)">[comments]</a>
+                <a class="link" href="@Post.CommentsHref" data-article-link data-post-id="@Post.Id" @onclick:stopPropagation="true">[comments]</a>
             }
             <a class="post-domain" href="/posts?href=@System.Net.WebUtility.UrlEncode(Post.FeedUrl)" @onclick:stopPropagation="true">@Post.Href.GetRootDomain()</a>
         </p>
@@ -144,21 +144,18 @@
         _dotNetRef?.Dispose();
     }
 
-    private async Task OnArticleLinkClick(NewsFeedItem post)
+    private void OnArticleLinkClick(NewsFeedItem post)
     {
+        // Optimistic UI update only. Scroll-state save and mark-as-read are
+        // handled synchronously by the document-level capture-phase click
+        // listener in app.js (see saveScrollStateForLink + the data-article-link
+        // delegate). The browser then navigates naturally via the link's href.
         post.IsRead = true;
-        await InvokeAsync(StateHasChanged);
-        try
-        {
-            var markReadUrl = $"/api/item/markAsRead?itemId={post.Id}&isRead=true";
-            await jsRuntime.InvokeVoidAsync("rssApp.saveScrollStateAndNavigate", post.Id, post.Href, markReadUrl);
-        }
-        catch (TaskCanceledException) { }
-        catch (JSException) { }
     }
 
     private async Task OnCommentsLinkClick(string commentsHref)
     {
+        // Kept for backward compatibility — current markup no longer wires this up.
         try
         {
             await jsRuntime.InvokeVoidAsync("rssApp.saveScrollStateAndNavigate", Post.Id, commentsHref);
