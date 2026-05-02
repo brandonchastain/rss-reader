@@ -139,11 +139,9 @@ window.rssApp = {
         window.location.href = targetHref;
     },
     saveScrollStateForLink: function(postId, markReadUrl) {
-        // Synchronous variant: writes scroll anchor + fires keepalive markAsRead.
-        // Browser handles the actual navigation via the link's natural href.
-        // Called from a capture-phase document click listener so it runs before
-        // any Blazor handler / re-render and without the @onclick async race
-        // that was silently swallowing TaskCanceledException.
+        // Synchronous variant: writes scroll anchor + fires fire-and-forget
+        // markAsRead. Called from a capture-phase document click listener so
+        // it runs before any Blazor handler / re-render.
         if (postId) {
             var itemCount = window.rssApp._loadedItemCount || document.querySelectorAll('[data-post-id]').length;
             var pageEstimate = Math.ceil(itemCount / 20);
@@ -152,7 +150,24 @@ window.rssApp = {
             sessionStorage.setItem('rssApp.scrollAnchorPath', window.location.pathname);
         }
         if (markReadUrl) {
-            fetch(markReadUrl, { method: 'GET', keepalive: true }).catch(function() {});
+            // sendBeacon is specifically designed to fire reliably during
+            // page unload (cross-origin navigation). It's the most robust
+            // way to ensure the markAsRead request reaches the server.
+            // The endpoint accepts both GET and POST.
+            var sent = false;
+            try {
+                if (navigator.sendBeacon) {
+                    sent = navigator.sendBeacon(markReadUrl);
+                }
+            } catch (e) { sent = false; }
+            if (!sent) {
+                // Fallback for older browsers or when sendBeacon refuses
+                // (e.g., quota exceeded). keepalive lets the request outlive
+                // the document on best-effort basis.
+                try {
+                    fetch(markReadUrl, { method: 'POST', keepalive: true, credentials: 'same-origin' }).catch(function() {});
+                } catch (e) {}
+            }
         }
     },
     getScrollState: function() {
