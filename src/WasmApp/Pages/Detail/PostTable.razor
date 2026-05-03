@@ -3,7 +3,6 @@
 @rendermode InteractiveWebAssembly
 @attribute [StreamRendering]
 @attribute [Authorize]
-@using Microsoft.AspNetCore.Components.Web.Virtualization
 @using Sve.Blazor.InfiniteScroll.Components
 @using WasmApp.Pages.Detail
 
@@ -40,7 +39,8 @@
     }
     else
     {
-        <Virtualize @ref="_virtualizeRef" Items="@_flatEntries" Context="entry" ItemSize="72" OverscanCount="10" SpacerElement="div">
+        @foreach (var entry in _flatEntries)
+        {
             @if (entry.IsDayHeader)
             {
                 <div @key="@entry.DayKey" class="day-separator @(entry.IsFirstHeader ? "day-separator-first" : "")">@GetDayLabel(entry.Date)</div>
@@ -52,7 +52,7 @@
                     FilterTag="@this.filterTag"
                     IsFilterUnread="@this.IsFilterUnread"/>
             }
-        </Virtualize>
+        }
 
         <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
             <div class="row">
@@ -86,9 +86,8 @@
     private string filterTag => FeedClient.FilterTag;
 
     private bool isLoading = true;
-    private Virtualize<TimelineEntry> _virtualizeRef;
 
-    // Pre-computed flat list for Virtualize — rebuilt only when Posts changes
+    // Pre-computed flat list for plain @foreach — rebuilt only when Posts changes
     private List<TimelineEntry> _flatEntries = new();
     private int _lastPostsCount;
 

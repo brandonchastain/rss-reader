@@ -10,7 +10,6 @@
     private bool _pendingForceReset;
     private string _scrollAnchorPostId;
     private bool _needsScrollRestore;
-    private bool _scrolledToEstimate;
     private int _restorePageSize;
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
     public int Page { get; set; } = 0;
@@ -107,7 +106,7 @@
                 UpdateCursorFromItems(newPageRes);
             }
 
-            // Sync loaded item count to JS for scroll state estimation (works with Virtualize)
+            // Sync loaded item count to JS for scroll-state save estimation
             try { await jsRuntime.InvokeVoidAsync("rssApp.setLoadedItemCount", Items.Count); } catch { }
             
             this.StateHasChanged();
@@ -239,37 +238,15 @@
         {
             try
             {
-                // With Virtualize, the target post may not be in the DOM yet.
-                // First try a direct scroll; if it fails, estimate position to trigger
-                // Virtualize to render items near the target, then retry next render.
+                // All items are always in the DOM (no Virtualize), so scrollToPost
+                // will find the element on the first attempt after items are loaded.
                 var scrolled = await jsRuntime.InvokeAsync<bool>("rssApp.scrollToPost", _scrollAnchorPostId);
-                if (scrolled)
+                if (scrolled || Items.Any(i => i.Id == _scrollAnchorPostId))
                 {
                     _needsScrollRestore = false;
                     _scrollAnchorPostId = null;
                 }
-                else if (!_scrolledToEstimate)
-                {
-                    // Find the target's index in the loaded items and scroll to estimated position
-                    var targetIndex = Items.FindIndex(i => i.Id == _scrollAnchorPostId);
-                    if (targetIndex >= 0)
-                    {
-                        // Add ~1.1x multiplier to account for day headers interspersed
-                        await jsRuntime.InvokeVoidAsync("rssApp.scrollToEstimatedIndex", (int)(targetIndex * 1.1), 72);
-                        _scrolledToEstimate = true;
-                    }
-                    else
-                    {
-                        _needsScrollRestore = false;
-                    }
-                }
-                else
-                {
-                    // Already scrolled to estimate but element still not found — give up
-                    _needsScrollRestore = false;
-                    _scrollAnchorPostId = null;
-                    _scrolledToEstimate = false;
-                }
+                // else: items not yet loaded — try again next render cycle
             }
             catch (Exception)
             {
