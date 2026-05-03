@@ -16,11 +16,7 @@ builder.Configuration
     .AddJsonFile("appsettings.Development.json", optional: true)
     .AddEnvironmentVariables();
 var config = RssAppConfig.LoadFromAppSettings(builder.Configuration);
-// Readers use Mode=ReadOnly to avoid SQLite WAL/SHM conflicts with Litestream follow mode.
-// Writers use ReadWriteCreate with Cache=Shared for normal operation.
-string dbConnectionString = config.IsReadOnly
-    ? $"Data Source={config.DbLocation};Mode=ReadOnly;Pooling=True"
-    : $"Data Source={config.DbLocation};Mode=ReadWriteCreate;Cache=Shared;Pooling=True";
+var dbConnections = new SqliteDbConnections(config.DbLocation, config.IsReadOnly);
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
@@ -69,7 +65,8 @@ builder.Services
 // Creation order matters — feed and user repos must exist before item repo.
 builder.Services
     .AddSingleton<RssAppConfig>(_ => config)
-    .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbConnectionString, sb, config.IsReadOnly, config.RebuildFtsOnStartup))
+    .AddSingleton<IDbConnections>(_ => dbConnections)
+    .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbConnections, sb, config.IsReadOnly, config.RebuildFtsOnStartup))
     .AddSingleton<IFeedRepository>(sb =>
     {
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateFeedRepository();
@@ -88,7 +85,7 @@ builder.Services
     .AddSingleton<IUserResolver, UserResolver>()
     .AddSingleton<FeedThumbnailRetriever>()
     .AddSingleton<ISystemStatsRepository>(sb =>
-        new SQLiteSystemStatsRepository(dbConnectionString));
+        new SQLiteSystemStatsRepository(dbConnections));
 
 if (!config.IsReadOnly)
 {
@@ -147,14 +144,6 @@ var a = app.Services.GetRequiredService<IFeedRepository>();
 var b = app.Services.GetRequiredService<IUserRepository>();
 var c = app.Services.GetRequiredService<IItemRepository>();
 var d = app.Services.GetRequiredService<ISystemStatsRepository>();
-
-// After schema init (writer) or startup (reader), enable PRAGMA query_only
-// on all subsequent connections. This is the DB-level backstop — even if a
-// write request bypasses the HTTP filter, SQLite will reject the mutation.
-if (config.IsReadOnly)
-{
-    DatabaseMode.EnableQueryOnly();
-}
 
 // Enable middleware 
 app.UseHttpsRedirection();

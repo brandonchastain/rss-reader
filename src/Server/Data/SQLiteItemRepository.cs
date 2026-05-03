@@ -3,21 +3,23 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using RssApp.Contracts;
 using RssReader.Server.Services;
-using System.Threading.Tasks;
 
 namespace RssApp.Data;
 
 public class SQLiteItemRepository : IItemRepository, IDisposable
 {
-    private readonly string connectionString;
+    private readonly IDbConnections connections;
     private readonly ILogger<SQLiteItemRepository> logger;
     private readonly IFeedRepository feedStore;
     private readonly IUserRepository userStore;
     private readonly FeedThumbnailRetriever feedThumbnailRetriever;
+
+    // Serialize writes  SQLite allows only one writer at a time.
+    private readonly SemaphoreSlim writeSemaphore = new SemaphoreSlim(1, 1);
     private readonly bool rebuildFtsOnStartup;
 
     public SQLiteItemRepository(
-        string connectionString,
+        IDbConnections connections,
         ILogger<SQLiteItemRepository> logger,
         IFeedRepository feedStore,
         IUserRepository userStore,
@@ -25,7 +27,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         bool isReadOnly = false,
         bool rebuildFtsOnStartup = false)
     {
-        this.connectionString = connectionString;
+        this.connections = connections;
         this.logger = logger;
         this.feedStore = feedStore;
         this.userStore = userStore;
@@ -36,23 +38,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     private void InitializeDatabase()
     {
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = this.connections.OpenWrite())
         {
-            connection.OpenWithPragmas();
-            // Set WAL journal mode for better concurrency
-            var pragmaCommand = connection.CreateCommand();
-
-            // Performance optimization settings
-            pragmaCommand = connection.CreateCommand();
-            pragmaCommand.CommandText = """
-                PRAGMA journal_mode=WAL;    
-                PRAGMA cache_size=-20000;  -- Use 20MB of memory for page cache
-                PRAGMA temp_store=MEMORY; -- Store temp tables and indices in memory
-                PRAGMA synchronous=NORMAL; -- Slightly faster than FULL, still safe
-                PRAGMA busy_timeout=5000; -- Wait up to 5s on locks
-                PRAGMA mmap_size=268435456; -- Use memory mapping up to 256MB
-            """;
-            pragmaCommand.ExecuteNonQuery();
+            // WAL mode is persistent  only needs to be set once per database file.
+            var walCmd = connection.CreateCommand();
+            walCmd.CommandText = "PRAGMA journal_mode=WAL;";
+            walCmd.ExecuteNonQuery();
 
             var command = connection.CreateCommand();
             command.CommandText = @"
@@ -125,7 +116,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 }
                 catch (SqliteException ex) when (ex.SqliteErrorCode == 11) // SQLITE_CORRUPT
                 {
-                    logger.LogWarning(ex, "FTS5 index corrupt — dropping and recreating");
+                    logger.LogWarning(ex, "FTS5 index corrupt  dropping and recreating");
                     command = connection.CreateCommand();
                     command.CommandText = @"DROP TABLE IF EXISTS Items_fts;";
                     command.ExecuteNonQuery();
@@ -183,7 +174,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 END;";
             command.ExecuteNonQuery();
 
-            // Index for timeline ORDER BY + cursor pagination — eliminates full-table scan + sort
+            // Index for timeline ORDER BY + cursor pagination  eliminates full-table scan + sort
             command = connection.CreateCommand();
             command.CommandText = @"
                 CREATE INDEX IF NOT EXISTS idx_items_timeline
@@ -209,9 +200,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         var set = new HashSet<NewsFeedItem>();
 
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = await this.connections.OpenReadAsync())
         {
-            await connection.OpenAsync();
             var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT
@@ -258,9 +248,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         var set = new HashSet<NewsFeedItem>();
 
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = await this.connections.OpenReadAsync())
         {
-            await connection.OpenAsync();
             var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT
@@ -333,9 +322,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var items = new List<NewsFeedItem>();
         var user = this.userStore.GetUserById(feed.UserId);
 
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = await this.connections.OpenReadAsync())
         {
-            await connection.OpenAsync();
             var command = connection.CreateCommand();
 
             var contentColumn = includeContent ? "ic.Content" : "NULL AS Content";
@@ -472,9 +460,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public NewsFeedItem GetItem(RssUser user, string href)
     {
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = this.connections.OpenRead())
         {
-            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT * FROM Items
@@ -499,9 +486,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public NewsFeedItem GetItem(RssUser user, int itemId)
     {
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = this.connections.OpenRead())
         {
-            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT * FROM Items
@@ -526,9 +512,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public string GetItemContent(NewsFeedItem item)
     {
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = this.connections.OpenRead())
         {
-            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = @"
                 SELECT Content 
@@ -544,8 +529,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         }
     }
 
+    private const int InsertBatchSize = 25;
+
     public async Task AddItemsAsync(IEnumerable<NewsFeedItem> items)
     {
+        await this.writeSemaphore.WaitAsync();
+
         try
         {
             var itemList = items.ToList();
@@ -567,10 +556,17 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         feedTags[item.FeedUrl] = string.Join(",", feed.Tags ?? []);
                     }
 
-                    item.ThumbnailUrl = item.GetThumbnailUrl();
-                    if (string.IsNullOrWhiteSpace(item.ThumbnailUrl))
+                    try
                     {
-                        item.ThumbnailUrl = await this.feedThumbnailRetriever.RetrieveThumbnailUrlAsync(feed);
+                        item.ThumbnailUrl = item.GetThumbnailUrl();
+                        if (string.IsNullOrWhiteSpace(item.ThumbnailUrl))
+                        {
+                            item.ThumbnailUrl = await this.feedThumbnailRetriever.RetrieveThumbnailUrlAsync(feed);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        this.logger.LogWarning(ex, "Thumbnail retrieval failed for {FeedUrl}, skipping", item.FeedUrl);
                     }
 
                     preparedItems.Add(item);
@@ -584,8 +580,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             if (preparedItems.Count == 0) return;
 
             // Phase 2: Single connection + transaction for all DB writes
-            using var connection = new SqliteConnection(this.connectionString);
-            await connection.OpenWithPragmasAsync();
+            using var connection = await this.connections.OpenWriteAsync();
             using var transaction = connection.BeginTransaction();
 
             foreach (var item in preparedItems)
@@ -645,13 +640,16 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         {
             this.logger.LogError(ex, "Error adding items to SQLite database");
         }
+        finally
+        {
+            this.writeSemaphore.Release();
+        }
     }
 
     public void UpdateTags(NewsFeedItem item, string tags)
     {
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = this.connections.OpenWrite())
         {
-            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = @"
                 UPDATE Items
@@ -667,9 +665,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public void MarkAsRead(NewsFeedItem item, bool isRead, RssUser user)
     {
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = this.connections.OpenWrite())
         {
-            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = @"
                 UPDATE Items
@@ -685,9 +682,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public void SavePost(NewsFeedItem item, RssUser user)
     {
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = this.connections.OpenWrite())
         {
-            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = @"
                 UPDATE Items
@@ -702,9 +698,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public void UnsavePost(NewsFeedItem item, RssUser user)
     {
-        using (var connection = new SqliteConnection(this.connectionString))
+        using (var connection = this.connections.OpenWrite())
         {
-            connection.OpenWithPragmas();
             var command = connection.CreateCommand();
             command.CommandText = @"
                 UPDATE Items
@@ -719,8 +714,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public async Task DeleteAllItemsAsync(RssUser user)
     {
-        using var connection = new SqliteConnection(this.connectionString);
-        await connection.OpenWithPragmasAsync();
+        using var connection = await this.connections.OpenWriteAsync();
         using var transaction = connection.BeginTransaction();
 
         var command = connection.CreateCommand();
@@ -739,8 +733,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public int GetItemCountForFeed(RssUser user, string feedUrl)
     {
-        using var connection = new SqliteConnection(this.connectionString);
-        connection.OpenWithPragmas();
+        using var connection = this.connections.OpenRead();
         var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM Items WHERE UserId = @userId AND FeedUrl = @feedUrl";
         command.Parameters.AddWithValue("@userId", user.Id);
@@ -750,5 +743,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     public void Dispose()
     {
+        this.writeSemaphore.Dispose();
     }
 }

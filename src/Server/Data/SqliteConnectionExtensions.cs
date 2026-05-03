@@ -3,83 +3,56 @@ using Microsoft.Data.Sqlite;
 namespace RssApp.Data;
 
 /// <summary>
-/// Controls whether new SQLite connections are opened with PRAGMA query_only = ON.
-/// Set once at startup after schema initialization; never changed afterward.
+/// Sets per-connection PRAGMAs that must be applied to every pooled connection.
+/// With Pooling=True, new physical connections start with default PRAGMAs.
+/// Calling this after every Open() ensures consistent behavior.
+/// Used internally by <see cref="SqliteDbConnections"/>.
 /// </summary>
-public static class DatabaseMode
+internal static class SqliteConnectionExtensions
 {
-    public static bool QueryOnly { get; private set; }
+    private const string ReadPragmas = """
+        PRAGMA busy_timeout = 5000;
+        PRAGMA cache_size = -20000;
+        PRAGMA mmap_size = 268435456;
+    """;
 
-    /// <summary>
-    /// Enable query_only mode for all subsequent connections opened via
-    /// <see cref="SqliteConnectionExtensions.OpenWithPragmas"/>.
-    /// Call this AFTER schema initialization (CREATE TABLE) has completed.
-    /// </summary>
-    public static void EnableQueryOnly()
-    {
-        QueryOnly = true;
-    }
+    private const string WritePragmas = """
+        PRAGMA busy_timeout = 5000;
+        PRAGMA synchronous = NORMAL;
+        PRAGMA cache_size = -20000;
+        PRAGMA temp_store = MEMORY;
+        PRAGMA mmap_size = 268435456;
+    """;
 
-    /// <summary>
-    /// Reset for testing only. Not intended for production use.
-    /// </summary>
-    internal static void ResetForTesting()
-    {
-        QueryOnly = false;
-    }
-}
-
-public static class SqliteConnectionExtensions
-{
-    /// <summary>
-    /// Opens the connection and applies per-connection PRAGMAs:
-    /// - busy_timeout=5000 (wait up to 5s on write lock) — skipped for read-only connections
-    /// - query_only=ON when <see cref="DatabaseMode.QueryOnly"/> is set
-    /// </summary>
-    public static void OpenWithPragmas(this SqliteConnection connection)
+    public static void OpenWithReadPragmas(this SqliteConnection connection)
     {
         connection.Open();
-
-        var isReadOnly = connection.ConnectionString?.Contains("Mode=ReadOnly", StringComparison.OrdinalIgnoreCase) == true;
-        if (isReadOnly && !DatabaseMode.QueryOnly) return;
-
-        if (!isReadOnly)
-        {
-            using var busyCmd = connection.CreateCommand();
-            busyCmd.CommandText = "PRAGMA busy_timeout=5000";
-            busyCmd.ExecuteNonQuery();
-        }
-
-        if (DatabaseMode.QueryOnly)
-        {
-            using var qoCmd = connection.CreateCommand();
-            qoCmd.CommandText = "PRAGMA query_only = ON";
-            qoCmd.ExecuteNonQuery();
-        }
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = ReadPragmas;
+        cmd.ExecuteNonQuery();
     }
 
-    /// <summary>
-    /// Async version of <see cref="OpenWithPragmas"/>.
-    /// </summary>
-    public static async Task OpenWithPragmasAsync(this SqliteConnection connection)
+    public static async Task OpenWithReadPragmasAsync(this SqliteConnection connection)
     {
         await connection.OpenAsync();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = ReadPragmas;
+        await cmd.ExecuteNonQueryAsync();
+    }
 
-        var isReadOnly = connection.ConnectionString?.Contains("Mode=ReadOnly", StringComparison.OrdinalIgnoreCase) == true;
-        if (isReadOnly && !DatabaseMode.QueryOnly) return;
+    public static void OpenWithWritePragmas(this SqliteConnection connection)
+    {
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = WritePragmas;
+        cmd.ExecuteNonQuery();
+    }
 
-        if (!isReadOnly)
-        {
-            using var busyCmd = connection.CreateCommand();
-            busyCmd.CommandText = "PRAGMA busy_timeout=5000";
-            await busyCmd.ExecuteNonQueryAsync();
-        }
-
-        if (DatabaseMode.QueryOnly)
-        {
-            using var qoCmd = connection.CreateCommand();
-            qoCmd.CommandText = "PRAGMA query_only = ON";
-            await qoCmd.ExecuteNonQueryAsync();
-        }
+    public static async Task OpenWithWritePragmasAsync(this SqliteConnection connection)
+    {
+        await connection.OpenAsync();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = WritePragmas;
+        await cmd.ExecuteNonQueryAsync();
     }
 }

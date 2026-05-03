@@ -5,18 +5,17 @@ namespace RssApp.Data;
 
 public class SQLiteSystemStatsRepository : ISystemStatsRepository
 {
-    private readonly string _connectionString;
+    private readonly IDbConnections _connections;
 
-    public SQLiteSystemStatsRepository(string connectionString)
+    public SQLiteSystemStatsRepository(IDbConnections connections)
     {
-        _connectionString = connectionString;
+        _connections = connections;
         InitializeDatabase();
     }
 
     private void InitializeDatabase()
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.OpenWithPragmas();
+        using var connection = _connections.OpenWrite();
 
         var pragmaCmd = connection.CreateCommand();
         pragmaCmd.CommandText = @"
@@ -42,8 +41,7 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
 
     public void RecordSnapshot(SystemStatsSnapshot snapshot)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.OpenWithPragmas();
+        using var connection = _connections.OpenWrite();
 
         var cmd = connection.CreateCommand();
         cmd.CommandText = @"
@@ -59,8 +57,7 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
 
     public SystemStatsSnapshot GetLatestSnapshot()
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.OpenWithPragmas();
+        using var connection = _connections.OpenRead();
 
         var cmd = connection.CreateCommand();
         cmd.CommandText = @"
@@ -78,8 +75,7 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
 
     public IEnumerable<SystemStatsSnapshot> GetHistory(int days = 30)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.OpenWithPragmas();
+        using var connection = _connections.OpenRead();
 
         var cmd = connection.CreateCommand();
         cmd.CommandText = @"
@@ -100,8 +96,7 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
 
     public void CleanupOlderThan(int days = 30)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.OpenWithPragmas();
+        using var connection = _connections.OpenWrite();
 
         var cmd = connection.CreateCommand();
         cmd.CommandText = @"
@@ -153,3 +148,4 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
         };
     }
 }
+

@@ -5,8 +5,6 @@ using RssApp.Contracts;
 using RssApp.ComponentServices;
 using RssApp.Serialization;
 using System.Runtime.InteropServices;
-using System.Security.Claims;
-
 
 namespace Server.Controllers
 {
@@ -108,6 +106,7 @@ namespace Server.Controllers
                 return NotFound($"Authenticated user not found.");
             }
 
+            // Fire-and-forget: enqueue work and return immediately.
             await this.feedRefresher.RefreshAsync(user);
 
             return Accepted();

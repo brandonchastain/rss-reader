@@ -15,12 +15,6 @@ using RssApp.Filters;
 [TestClass]
 public sealed class ReadOnlyModeTests
 {
-    [TestCleanup]
-    public void Cleanup()
-    {
-        DatabaseMode.ResetForTesting();
-    }
-
     [TestMethod]
     public void IsReadOnly_DefaultsToFalse()
     {
@@ -134,108 +128,76 @@ public sealed class ReadOnlyModeTests
     }
 
     // ========================================================================
-    // PRAGMA query_only tests (DB-level backstop)
+    // IDbConnections read-replica enforcement tests
     // ========================================================================
 
     [TestMethod]
-    public void QueryOnly_RejectsInsert_AfterEnabled()
+    public void IDbConnections_OpenWrite_ThrowsInvalidOperationException_WhenReadOnly()
     {
         var dbPath = $"readonly_test_{Guid.NewGuid():N}.db";
         try
         {
-            var connStr = $"Data Source={dbPath};Mode=ReadWriteCreate";
-
-            // Create a table while query_only is off
-            using (var conn = new SqliteConnection(connStr))
+            // Seed the DB file so ReadOnly mode can open it
+            var writer = new SqliteDbConnections(dbPath, isReadOnly: false);
+            using (var conn = writer.OpenWrite())
             {
-                conn.Open();
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = "CREATE TABLE Test (Id INTEGER PRIMARY KEY, Value TEXT)";
-                cmd.ExecuteNonQuery();
-            }
-
-            // Now open with query_only = ON and try to insert
-            using (var conn = new SqliteConnection(connStr))
-            {
-                conn.Open();
-                using var pragma = conn.CreateCommand();
-                pragma.CommandText = "PRAGMA query_only = ON";
-                pragma.ExecuteNonQuery();
-
-                using var insert = conn.CreateCommand();
-                insert.CommandText = "INSERT INTO Test (Value) VALUES ('should fail')";
-                Assert.ThrowsException<SqliteException>(() => insert.ExecuteNonQuery());
-            }
-        }
-        finally
-        {
-            CleanupDb(dbPath);
-        }
-    }
-
-    [TestMethod]
-    public void QueryOnly_AllowsSelect_AfterEnabled()
-    {
-        var dbPath = $"readonly_test_{Guid.NewGuid():N}.db";
-        try
-        {
-            var connStr = $"Data Source={dbPath};Mode=ReadWriteCreate";
-
-            using (var conn = new SqliteConnection(connStr))
-            {
-                conn.Open();
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = "CREATE TABLE Test (Id INTEGER PRIMARY KEY, Value TEXT)";
-                cmd.ExecuteNonQuery();
-            }
-
-            // SELECT should succeed with query_only
-            using (var conn = new SqliteConnection(connStr))
-            {
-                conn.Open();
-                using var pragma = conn.CreateCommand();
-                pragma.CommandText = "PRAGMA query_only = ON";
-                pragma.ExecuteNonQuery();
-
-                using var select = conn.CreateCommand();
-                select.CommandText = "SELECT COUNT(*) FROM Test";
-                var result = select.ExecuteScalar();
-                Assert.AreEqual(0L, result);
-            }
-        }
-        finally
-        {
-            CleanupDb(dbPath);
-        }
-    }
-
-    [TestMethod]
-    public void OpenWithPragmas_SetsQueryOnly_WhenDatabaseModeEnabled()
-    {
-        var dbPath = $"readonly_test_{Guid.NewGuid():N}.db";
-        try
-        {
-            var connStr = $"Data Source={dbPath};Mode=ReadWriteCreate";
-
-            // Create table before enabling query_only
-            using (var conn = new SqliteConnection(connStr))
-            {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = "CREATE TABLE Test (Id INTEGER PRIMARY KEY)";
                 cmd.ExecuteNonQuery();
             }
 
-            DatabaseMode.EnableQueryOnly();
+            var readOnly = new SqliteDbConnections(dbPath, isReadOnly: true);
+            Assert.ThrowsException<InvalidOperationException>(() => readOnly.OpenWrite());
+        }
+        finally
+        {
+            CleanupDb(dbPath);
+        }
+    }
 
-            // OpenWithPragmas should now set query_only = ON
-            using (var conn = new SqliteConnection(connStr))
+    [TestMethod]
+    public async Task IDbConnections_OpenWriteAsync_ThrowsInvalidOperationException_WhenReadOnly()
+    {
+        var dbPath = $"readonly_test_{Guid.NewGuid():N}.db";
+        try
+        {
+            var writer = new SqliteDbConnections(dbPath, isReadOnly: false);
+            using (var conn = writer.OpenWrite())
             {
-                conn.OpenWithPragmas();
-                using var insert = conn.CreateCommand();
-                insert.CommandText = "INSERT INTO Test (Id) VALUES (1)";
-                Assert.ThrowsException<SqliteException>(() => insert.ExecuteNonQuery());
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "CREATE TABLE Test (Id INTEGER PRIMARY KEY)";
+                cmd.ExecuteNonQuery();
             }
+
+            var readOnly = new SqliteDbConnections(dbPath, isReadOnly: true);
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => readOnly.OpenWriteAsync());
+        }
+        finally
+        {
+            CleanupDb(dbPath);
+        }
+    }
+
+    [TestMethod]
+    public void IDbConnections_OpenRead_Succeeds_WhenReadOnly()
+    {
+        var dbPath = $"readonly_test_{Guid.NewGuid():N}.db";
+        try
+        {
+            var writer = new SqliteDbConnections(dbPath, isReadOnly: false);
+            using (var conn = writer.OpenWrite())
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "CREATE TABLE Test (Id INTEGER PRIMARY KEY)";
+                cmd.ExecuteNonQuery();
+            }
+
+            var readOnly = new SqliteDbConnections(dbPath, isReadOnly: true);
+            using var readConn = readOnly.OpenRead();
+            using var selectCmd = readConn.CreateCommand();
+            selectCmd.CommandText = "SELECT COUNT(*) FROM Test";
+            var result = selectCmd.ExecuteScalar();
+            Assert.AreEqual(0L, result);
         }
         finally
         {
@@ -254,16 +216,16 @@ public sealed class ReadOnlyModeTests
         try
         {
             // Create DB with schema using writer mode
-            var writerConnStr = $"Data Source={dbPath};Mode=ReadWriteCreate";
+            var writerConnections = new SqliteDbConnections(dbPath, isReadOnly: false);
             var repo = new SQLiteFeedRepository(
-                writerConnStr,
+                writerConnections,
                 NullLogger<SQLiteFeedRepository>.Instance,
                 isReadOnly: false);
 
-            // Now open in read-only mode — should NOT throw even without schema init
-            var readerConnStr = $"Data Source={dbPath};Mode=ReadOnly";
+            // Now open in read-only mode  should NOT throw even without schema init
+            var readerConnections = new SqliteDbConnections(dbPath, isReadOnly: true);
             var readOnlyRepo = new SQLiteFeedRepository(
-                readerConnStr,
+                readerConnections,
                 NullLogger<SQLiteFeedRepository>.Instance,
                 isReadOnly: true);
 
@@ -283,15 +245,15 @@ public sealed class ReadOnlyModeTests
         var dbPath = $"readonly_test_{Guid.NewGuid():N}.db";
         try
         {
-            var writerConnStr = $"Data Source={dbPath};Mode=ReadWriteCreate";
+            var writerConnections = new SqliteDbConnections(dbPath, isReadOnly: false);
             var repo = new SQLiteUserRepository(
-                writerConnStr,
+                writerConnections,
                 NullLogger<SQLiteUserRepository>.Instance,
                 isReadOnly: false);
 
-            var readerConnStr = $"Data Source={dbPath};Mode=ReadOnly";
+            var readerConnections = new SqliteDbConnections(dbPath, isReadOnly: true);
             var readOnlyRepo = new SQLiteUserRepository(
-                readerConnStr,
+                readerConnections,
                 NullLogger<SQLiteUserRepository>.Instance,
                 isReadOnly: true);
 

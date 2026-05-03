@@ -15,7 +15,7 @@ public class FeedThumbnailRetriever
         _config = config ?? throw new ArgumentNullException(nameof(config));
     }
 
-    public async Task<string> RetrieveThumbnailUrlAsync(NewsFeed feed)
+    public virtual async Task<string> RetrieveThumbnailUrlAsync(NewsFeed feed)
     {
 
         //await semaphore.WaitAsync();

@@ -134,7 +134,7 @@ public class FeedRefresher : IFeedRefresher
             var feeds = this.persistedFeeds.GetFeeds(user).ToList();
             var totalFeeds = feeds.Count;
 
-            if (totalFeeds == 0)
+            if (feeds.Count == 0)
             {
                 return;
             }
@@ -169,8 +169,10 @@ public class FeedRefresher : IFeedRefresher
     }
 
     /// <summary>
-    /// Fetches items from a feed and adds new ones to the store.
-    /// Returns true if any new items were added.
+    /// Fetches fresh items from a feed and passes ALL of them to AddItemsAsync.
+    /// Deduplication is handled inside AddItemsAsync via INSERT OR IGNORE,
+    /// so no per-item GetItem() calls are needed here.
+    /// Returns true if any items were processed.
     /// </summary>
     private async Task<bool> ReloadCachedItemsAsync(NewsFeed feed)
     {
@@ -184,26 +186,16 @@ public class FeedRefresher : IFeedRefresher
         }
 
         var freshItems = await this.FetchItemsFromFeedAsync(user, url);
-        var newItems = new List<NewsFeedItem>();
 
         foreach (var item in freshItems)
         {
             item.FeedUrl = url;
             item.FeedTags = feed.Tags;
-
-            var existing = this.newsFeedItemStore.GetItem(user, item.Href);
-            if (existing != null)
-            {
-                this.logger.LogDebug("Skipping existing item: {itemId} from feed: {feedUrl}", item.Id, url);
-                continue;
-            }
-
-            newItems.Add(item);
         }
 
-        if (newItems.Any())
+        if (freshItems.Any())
         {
-            await this.newsFeedItemStore.AddItemsAsync(newItems);
+            await this.newsFeedItemStore.AddItemsAsync(freshItems);
             return true;
         }
 
