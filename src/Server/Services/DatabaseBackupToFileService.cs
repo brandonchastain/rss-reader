@@ -317,31 +317,21 @@ namespace RssReader.Server.Services
         {
             await Task.Run(() =>
             {
-                using (var src = new SqliteConnection(
-                    $"Data Source={sourcePath};Mode=ReadOnly;Pooling=False"))
-                using (var dst = new SqliteConnection(
-                    $"Data Source={destPath};Pooling=False"))
-                {
-                    src.Open();
-                    ApplyBusyTimeout(src);
-                    dst.Open();
-                    ApplyBusyTimeout(dst);
-                    src.BackupDatabase(dst);
-
-                    // Force the destination out of WAL mode so the -wal/-shm
-                    // sidecar files are checkpointed and removed when we close.
-                    // Without this, every cycle leaves orphan sidecars in the
-                    // backup dir because the post-backup File.Move only renames
-                    // the main file.
-                    using var pragma = dst.CreateCommand();
-                    pragma.CommandText = "PRAGMA journal_mode=DELETE;";
-                    pragma.ExecuteNonQuery();
-                }
-
-                // Belt-and-suspenders: if the SQLite provider left sidecars
-                // behind despite the journal_mode change, sweep them.
-                SafeDelete(destPath + "-wal");
-                SafeDelete(destPath + "-shm");
+                // Use VACUUM INTO instead of the BackupDatabase API. VACUUM INTO produces a
+                // single, clean, fully-checkpointed DB file in DELETE journal mode with NO
+                // -wal/-shm sidecars. This avoids the corruption observed in production where
+                // BackupDatabase produced a WAL-mode dest, the post-backup PRAGMA journal_mode
+                // change failed to fully checkpoint pages into the main file, and our
+                // subsequent SafeDelete of -wal then orphaned uncommitted pages — making the
+                // staged file fail PRAGMA quick_check on every cycle.
+                using var src = new SqliteConnection(
+                    $"Data Source={sourcePath};Mode=ReadOnly;Pooling=False");
+                src.Open();
+                ApplyBusyTimeout(src);
+                using var cmd = src.CreateCommand();
+                cmd.CommandText = "VACUUM INTO $dest";
+                cmd.Parameters.AddWithValue("$dest", destPath);
+                cmd.ExecuteNonQuery();
             }, cancellationToken);
         }
 
