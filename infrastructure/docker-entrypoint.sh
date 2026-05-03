@@ -32,15 +32,24 @@ fi
 
 # Writer mode: restore from Litestream if a replica exists, then start
 # under Litestream's process supervision for continuous WAL replication.
-litestream restore -if-replica-exists -config /etc/litestream.yml /tmp/storage.db || \
-    echo "WARNING: Litestream restore failed. DatabaseBackupService will restore from Azure Files." >&2
+#
+# Litestream is now the SOLE backup path for the SQLite database — the previous
+# secondary AzureFiles backup (DatabaseBackupService -> /data/storage.db) was
+# removed. If `litestream restore` fails here, we MUST fail fast: starting the
+# app on an empty DB would cause `litestream replicate` to mint a fresh
+# generation against the empty file and orphan the existing replica
+# (silent data loss).
+if ! litestream restore -if-replica-exists -config /etc/litestream.yml /tmp/storage.db; then
+    echo "FATAL: litestream restore failed. Refusing to start with empty DB to avoid orphaning the replica." >&2
+    echo "       Investigate Litestream auth / blob connectivity before restarting." >&2
+    exit 1
+fi
 
 # Litestream continuously replicates WAL changes to Blob Storage.
-# If Litestream fails (auth error, misconfiguration), fall back to running
-# the app directly so DatabaseBackupService can still provide backup coverage.
 litestream replicate -exec "dotnet Server.dll" -config /etc/litestream.yml
 exit_code=$?
 
-# If we reach here, Litestream exited. Fall back to running without replication.
-echo "WARNING: Litestream replicate exited ($exit_code). Starting app without replication." >&2
-exec dotnet Server.dll
+# If `litestream replicate` itself exits, surface the error rather than running
+# unreplicated — the app would write to /tmp/storage.db with no backup at all.
+echo "FATAL: litestream replicate exited ($exit_code). Container will exit so it can be restarted with replication." >&2
+exit $exit_code
