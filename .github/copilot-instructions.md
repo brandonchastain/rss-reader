@@ -85,11 +85,9 @@ Feed refresh runs via a `BackgroundWorkQueue` + `BackgroundWorker` hosted servic
 App config is loaded into `RssAppConfig` from `appsettings.json` under the `RssAppConfig` section. The backend reads `DbLocation` for the SQLite path (`/tmp/storage.db` in Docker, copied to `/data/` for persistence). Frontend config is in `RssWasmConfig`.
 
 ### DatabaseBackupService
-Complementary backup service that runs alongside Litestream. The SQLite database lives at `/tmp/storage.db` (ephemeral container storage). Litestream handles primary replication to Azure Blob Storage; `DatabaseBackupService` provides a secondary backup to Azure Files (`/data/storage.db`) every 5 minutes and syncs cached images between `wwwroot/images/` and `/data/images/`. On container startup, `Program.cs` explicitly calls `RestoreFromBackupAsync` before any repository is instantiated — this ordering is intentional. If Litestream already restored the database, `DatabaseBackupService` skips DB restore but still restores cached images from Azure Files.
+A periodic image-sync + system-stats service. The SQLite database lives at `/tmp/storage.db` (ephemeral container storage) and is replicated to Azure Blob Storage by **Litestream** (the sole DB backup path). On container startup, `Program.cs` calls `RestoreFromBackupAsync` before any repository is instantiated to copy cached images from `/data/images/` (Azure Files) into `wwwroot/images/`. Every 5 minutes it then syncs new images back from `wwwroot/images/` to `/data/images/` (only new files, never overwrites) and records a system-stats snapshot via a read-only query against the active DB.
 
-The backup cycle uses **SQLite's native backup API** (`SqliteConnection.BackupDatabase`) to create a consistent point-in-time snapshot at `/tmp/storage-backup.db`, then computes a SHA256 hash to skip the Azure Files write if nothing changed (reducing transaction costs). Images in `wwwroot/images/` are also synced to `/data/images/` on the same cycle, but only new files are copied (no overwrites).
-
-On shutdown, `StopAsync` attempts a best-effort final backup with a 5-second timeout. If it fails or times out, the last periodic backup (at most 5 minutes old) provides coverage.
+This service must NEVER write to `/tmp/storage.db` — Litestream owns the DB, and any write here would generate WAL/LTX traffic. The tests assert this contract explicitly.
 
 ### OPML Import/Export
 OPML import/export is handled by the static `OpmlSerializer` class (`src/Server/Services/Serialization/OpmlSerializer.cs`), shared between the backend and tests.

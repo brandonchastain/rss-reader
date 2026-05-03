@@ -62,13 +62,13 @@ The database uses a dual backup strategy:
 
 1. **Litestream** (primary) — Continuously replicates SQLite WAL changes to Azure Blob Storage. On container startup, `docker-entrypoint.sh` runs `litestream restore` to recover the latest state, then starts the app under `litestream replicate` supervision. If Litestream fails (auth error, misconfiguration), the entrypoint falls back to running the app directly. Config: `infrastructure/litestream.yml`.
 
-2. **DatabaseBackupService** (complementary) — Periodically copies the SQLite database to Azure Files every 5 minutes and syncs cached images between `wwwroot/images/` and `/data/images/`. Provides a secondary backup layer alongside Litestream. On startup, if Litestream has already restored the database, `DatabaseBackupService` skips its own DB restore but still restores cached images from Azure Files.
+2. **DatabaseBackupService** (image cache + stats only) — Periodically syncs cached images between `wwwroot/images/` and `/data/images/` every 5 minutes and records system-stats snapshots. Does NOT back up the database — Litestream is the sole DB backup path. On startup, restores cached images from `/data/images/` (Litestream restores the DB before the .NET process starts).
 
 ##### Read Replicas (optional)
 
 The backend supports an optional read replica mode controlled by `RssAppConfig.IsReadOnly` and the `APP_ROLE` environment variable:
 
-- **Writer** (`APP_ROLE=writer`, default) — Single replica, runs Litestream replication, all background services (feed refresh, backup), handles reads and writes.
+- **Writer** (`APP_ROLE=writer`, default) — Single replica, runs Litestream replication, all background services (feed refresh, image sync), handles reads and writes.
 - **Reader** (`APP_ROLE=reader`, `IsReadOnly=true`) — 0→N replicas, restores from Litestream blob on startup, serves read-only traffic. No background services (no feed refresh, no backup). Uses `NoOpFeedRefresher` so controllers still resolve.
 
 The Azure Functions proxy (`api/src/functions/ApiProxy.js`) routes GET requests for read-heavy endpoints (timeline, feed list, search, content) to the reader when `RSSREADER_READER_API_URL` is configured. All write endpoints and the `user` endpoint always go to the writer. If the reader is unavailable (5xx or network error), the proxy falls back to the writer.

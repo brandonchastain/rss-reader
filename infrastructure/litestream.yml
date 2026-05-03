@@ -13,3 +13,8 @@ dbs:
         # Batch WAL frame uploads to reduce blob storage transaction costs.
         # Trade-off: up to 30s RPO if the container dies between syncs.
         sync-interval: 30s
+        # Take a full snapshot every hour. Default is 24h, which lets the LTX
+        # chain accumulate ~24h of writes — observed to grow to ~1GB on cold
+        # start, slowing container boot. Hourly snapshots cap the chain at
+        # ~1h of writes at the cost of one extra full-DB upload per hour.
+        snapshot-interval: 1h

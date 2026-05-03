@@ -34,7 +34,7 @@ Browser → Azure SWA (Easy Auth / AAD)
                           X-Gateway-Key + X-User-Id headers
                         → ASP.NET Core backend  (src/Server/)
                               → SQLite at /tmp/storage.db
-                              → Backup to Azure Files at /data/storage.db
+                              → Litestream replicates WAL to Azure Blob Storage
 ```
 
 ### Project layout
@@ -73,8 +73,7 @@ Browser → Azure SWA (Easy Auth / AAD)
 
 ## Tech Stack — Database (SQLite)
 
-- **File location**: `/tmp/storage.db` (ephemeral). Primary replication via Litestream to Azure Blob Storage; secondary backup to `/data/storage.db` (Azure Files) every 5 minutes via `DatabaseBackupService`. Images synced to `/data/images/` on the same cycle.
-- **Backup API**: uses `SqliteConnection.BackupDatabase` (SQLite native backup API) for consistent snapshots — do not replace with file copies
+- **File location**: `/tmp/storage.db` (ephemeral). Replicated to Azure Blob Storage via Litestream — that is the sole DB backup path. `DatabaseBackupService` syncs cached images between `wwwroot/images/` and `/data/images/` every 5 minutes but does NOT touch the DB file.
 - **WAL mode**: the database runs in WAL (Write-Ahead Logging) mode for concurrent reads. Do not change the journal mode
 - **Schema conventions**:
   - Always use `INTEGER PRIMARY KEY` (alias for `rowid`) for surrogate keys

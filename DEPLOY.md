@@ -140,16 +140,12 @@ az containerapp logs show --name rss-reader-api --resource-group rss-container-r
 ```
 
 ### Verify storage mount
-The SQLite database should persist at `/data/storage.db` inside the container, mounted from Azure Files.
+The Azure Files mount at `/data/` persists cached feed images at `/data/images/`. The SQLite database is **not** backed up to Azure Files — it lives at `/tmp/storage.db` and is replicated to Azure Blob Storage by Litestream.
 
-### Litestream Migration Notes
-The Docker image includes [Litestream](https://litestream.io/) for continuous SQLite replication to Azure Blob Storage. `DatabaseBackupService` runs alongside Litestream, providing a secondary backup to Azure Files and syncing cached images. The entrypoint includes a graceful fallback — if Litestream fails to start (auth error, misconfiguration), the app runs directly with `DatabaseBackupService` providing backup coverage. On first deployment:
+### Litestream Notes
+The Docker image includes [Litestream](https://litestream.io/) for continuous SQLite replication to Azure Blob Storage. **Litestream is the sole DB backup path**: the entrypoint runs `litestream restore -if-replica-exists` before starting the app and exits with a fatal error if restore fails (to avoid orphaning the replica with a fresh empty-DB generation). The app then runs under `litestream replicate` supervision, which streams WAL changes to the `litestream` blob container. `DatabaseBackupService` runs alongside but only handles image cache sync and system-stats snapshots — it does not touch the DB file.
 
-1. **Litestream restore is a no-op** — the blob container is empty, so the entrypoint script's `litestream restore -if-replica-exists` succeeds silently.
-2. **DatabaseBackupService restores from Azure Files** — the existing backup at `/data/storage.db` is copied to `/tmp/storage.db` as before.
-3. **Litestream starts replicating** — WAL changes are continuously streamed to the `litestream` blob container.
-
-On subsequent boots, Litestream restores from blob (more up-to-date than Azure Files). `DatabaseBackupService` skips its own DB restore (active DB already exists) but still restores cached images from Azure Files. Both services then run in parallel — Litestream for continuous WAL replication, `DatabaseBackupService` for periodic Azure Files backup and image sync.
+On first deployment the blob container is empty, so `litestream restore -if-replica-exists` succeeds silently and the app starts with a brand-new DB; `litestream replicate` then begins seeding the blob.
 
 **Required environment variables** (set via Bicep):
 - `LITESTREAM_AZURE_ACCOUNT_NAME` — storage account name

@@ -211,8 +211,8 @@ echo $env:GITHUB_PAT | docker login ghcr.io -u $env:GITHUB_USERNAME --password-s
 - Common causes:
   - `RSSREADER_API_KEY` environment variable not set or mismatched with the SWA Function proxy
   - `DbLocation` misconfigured (should be `/tmp/storage.db` inside the container)
-  - Database restore failure on startup (check logs for "RestoreFromBackupAsync" errors)
-  - Azure Files volume mount not available (`/data/storage.db`)
+  - Database restore failure on startup (entrypoint will exit with FATAL if `litestream restore` fails — check container logs for "litestream restore failed")
+  - Image cache restore failure (check logs for "Failed to restore cached images from /data")
 
 ### 5. `swa deploy` auth failure
 ```powershell
@@ -227,10 +227,9 @@ Then retry `swa deploy --env production`.
   (Note: this increases cost — only do if user explicitly requests it.)
 
 ### 7. Database not persisting across restarts
-- The SQLite DB lives at `/tmp/storage.db` (ephemeral) and is backed up to `/data/storage.db` (Azure Files) every 5 minutes.
-- On startup, the app restores from `/data/storage.db` if it exists.
-- If data is lost: check logs for backup/restore errors. The Azure Files share must be mounted at `/data/` in the container.
-- Verify the volume mount in the container app configuration.
+- The SQLite DB lives at `/tmp/storage.db` (ephemeral) and is replicated to Azure Blob Storage by **Litestream** (the sole backup path).
+- On startup, `litestream restore -if-replica-exists` (in `docker-entrypoint.sh`) restores the DB from blob; the entrypoint exits with FATAL if restore fails.
+- If data is lost: check container logs for "litestream restore failed" or `litestream replicate` exit messages; verify the storage account / managed identity grants `Storage Blob Data Contributor` on the `litestream` container.
 
 ### 8. SWA frontend deploys but API calls fail (502 / CORS)
 - The SWA Functions proxy (`api/src/functions/ApiProxy.js`) forwards `/api/*` to the Container App backend.
@@ -260,7 +259,7 @@ Browser → Azure SWA (Easy Auth / AAD)
                           X-Gateway-Key + X-User-Id headers
                         → Azure Container App (rss-reader-api, port 8080)
                               → SQLite at /tmp/storage.db
-                              → Backup to Azure Files at /data/storage.db
+                              → Litestream replicates WAL to Azure Blob Storage
 ```
 
 - The SWA Function proxy injects `X-Gateway-Key` (shared secret) and `X-User-Id` (base64 Easy Auth principal) on every forwarded request.
