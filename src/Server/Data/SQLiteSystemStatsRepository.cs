@@ -108,8 +108,7 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
 
     public IEnumerable<UserStats> GetPerUserStats()
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.OpenWithPragmas();
+        using var connection = _connections.OpenRead();
 
         // LEFT JOIN ensures users with zero feeds/items still appear.
         // COUNT(DISTINCT) is needed because joining Feeds and Items on
