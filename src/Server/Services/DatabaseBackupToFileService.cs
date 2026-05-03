@@ -160,11 +160,14 @@ namespace RssReader.Server.Services
 
                 await BackupSqliteAsync(_paths.ActiveDbPath, stagePath, cancellationToken);
 
-                if (!QuickCheck(stagePath))
+                var stageExists = File.Exists(stagePath);
+                var stageSize = stageExists ? new FileInfo(stagePath).Length : -1;
+                var (qcOk, qcResult, qcError) = QuickCheckDiagnostic(stagePath);
+                if (!qcOk)
                 {
                     _logger.LogError(
-                        "PRAGMA quick_check failed on staged backup '{Stage}' — discarding.",
-                        stagePath);
+                        "PRAGMA quick_check failed on staged backup '{Stage}' (exists={Exists}, size={Size}, result='{Result}', error='{Error}') — discarding.",
+                        stagePath, stageExists, stageSize, qcResult ?? "<null>", qcError ?? "<none>");
                     return false;
                 }
 
@@ -346,6 +349,11 @@ namespace RssReader.Server.Services
 
         private static bool QuickCheck(string path)
         {
+            return QuickCheckDiagnostic(path).Ok;
+        }
+
+        private static (bool Ok, string? Result, string? Error) QuickCheckDiagnostic(string path)
+        {
             try
             {
                 using var conn = new SqliteConnection(
@@ -354,11 +362,12 @@ namespace RssReader.Server.Services
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = "PRAGMA quick_check";
                 var result = cmd.ExecuteScalar() as string;
-                return string.Equals(result, "ok", StringComparison.OrdinalIgnoreCase);
+                var ok = string.Equals(result, "ok", StringComparison.OrdinalIgnoreCase);
+                return (ok, result, null);
             }
-            catch
+            catch (Exception ex)
             {
-                return false;
+                return (false, null, ex.GetType().Name + ": " + ex.Message);
             }
         }
 
