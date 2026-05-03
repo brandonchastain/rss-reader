@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
@@ -14,28 +13,34 @@ using RssApp.Data;
 namespace RssReader.Server.Services
 {
     /// <summary>
-    /// Configuration for database backup file paths. Extracted for testability.
+    /// Configuration for image and stats paths. Extracted for testability.
     /// </summary>
+    /// <remarks>
+    /// As of the Litestream migration, the SQLite database itself is no longer backed up by this
+    /// service — Litestream replicates the DB to Azure Blob Storage. This record only retains the
+    /// active DB path (used for stats snapshots) and image sync paths.
+    /// </remarks>
     public record DatabaseBackupPaths(
         string ActiveDbPath = "/tmp/storage.db",
-        string BackupDbPath = "/data/storage.db",
-        string TempBackupDbPath = "/tmp/storage-backup.db",
         string ActiveImagesPath = "wwwroot/images/",
         string BackupImagesPath = "/data/images/");
 
     /// <summary>
-    /// Complementary backup service that runs alongside Litestream.
-    /// - On startup: Restores database from Azure Files backup if Litestream hasn't already restored it; always restores cached images.
-    /// - Periodically: Backs up active database to Azure Files and syncs cached images to/from mounted storage.
-    /// Litestream handles primary WAL replication to Azure Blob Storage; this service provides a secondary backup layer and image persistence.
+    /// Periodically syncs cached images between the ephemeral container filesystem (wwwroot/images)
+    /// and the persistent Azure Files mount (/data/images), and records system stats snapshots.
+    ///
+    /// Note: this service used to also back up the SQLite database to Azure Files via SQLite's
+    /// BackupDatabase() API. That responsibility now belongs entirely to Litestream, which
+    /// replicates the WAL to Azure Blob Storage. The previous implementation triggered WAL
+    /// checkpoints on every backup cycle, causing Litestream to capture full-DB-sized LTX deltas
+    /// (~127 MB every 5 min) and bloat the cold-start restore chain.
     /// </summary>
     public class DatabaseBackupService : BackgroundService
     {
         private readonly ILogger<DatabaseBackupService> _logger;
         private readonly DatabaseBackupPaths _paths;
         private readonly IServiceProvider _serviceProvider;
-        private readonly TimeSpan _backupInterval = TimeSpan.FromMinutes(5);
-        private string _lastBackupHash = string.Empty;
+        private readonly TimeSpan _syncInterval = TimeSpan.FromMinutes(5);
 
         public DatabaseBackupService(ILogger<DatabaseBackupService> logger)
             : this(logger, new DatabaseBackupPaths(), null)
@@ -59,71 +64,41 @@ namespace RssReader.Server.Services
 
         public override async Task StartAsync(CancellationToken cancellationToken)
         {
-            _logger.LogInformation("DatabaseBackupService starting...");
-            
-            // Restore from backup on startup
+            _logger.LogInformation("DatabaseBackupService starting (image sync + stats only)...");
+
+            // Restore cached images from the persistent /data mount on startup.
             await RestoreFromBackupAsync(cancellationToken);
-            
+
             await base.StartAsync(cancellationToken);
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("DatabaseBackupService is running. Backup interval: {Interval} minutes", _backupInterval.TotalMinutes);
+            _logger.LogInformation("DatabaseBackupService is running. Sync interval: {Interval} minutes", _syncInterval.TotalMinutes);
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
-                    await Task.Delay(_backupInterval, stoppingToken);
-                    
+                    await Task.Delay(_syncInterval, stoppingToken);
+
                     if (!stoppingToken.IsCancellationRequested)
                     {
-                        await BackupToStorageAsync(stoppingToken);
+                        await SyncImagesAsync(stoppingToken);
                         await RecordStatsSnapshotAsync();
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    // Expected when shutting down
                     _logger.LogInformation("DatabaseBackupService is shutting down");
                     break;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error during database backup cycle");
+                    _logger.LogError(ex, "Error during periodic sync cycle");
                     // Continue running despite errors
                 }
             }
-        }
-
-        public override async Task StopAsync(CancellationToken cancellationToken)
-        {
-            _logger.LogInformation("DatabaseBackupService stopping. Attempting best-effort final backup...");
-            
-            try
-            {
-                // Give other background services (BackgroundWorker, FeedRefresher) a moment to 
-                // finish their current database operations before we attempt backup
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-                
-                // Use a short timeout for the final backup to avoid delaying container shutdown
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
-                
-                await BackupToStorageAsync(timeoutCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning("Final backup cancelled or timed out during shutdown. Last periodic backup is current (max 5 min old)");
-            }
-            catch (Exception ex)
-            {
-                // Don't treat shutdown backup failures as errors - periodic backups provide coverage
-                _logger.LogWarning(ex, "Final backup skipped due to shutdown timing. Last periodic backup is current (max 5 min old)");
-            }
-            
-            await base.StopAsync(cancellationToken);
         }
 
         private async Task RecordStatsSnapshotAsync()
@@ -188,221 +163,76 @@ namespace RssReader.Server.Services
             }
         }
 
+        /// <summary>
+        /// Restores cached images from the persistent /data mount on startup. The DB itself is
+        /// restored by Litestream (run before the .NET process starts in docker-entrypoint.sh).
+        /// </summary>
         public async Task RestoreFromBackupAsync(CancellationToken cancellationToken)
         {
             try
             {
-                // Check if backup exists
-                if (!File.Exists(_paths.BackupDbPath))
-                {
-                    _logger.LogInformation("No backup database found at {BackupPath}. Starting with empty database", _paths.BackupDbPath);
-                    return;
-                }
-
-                // Check if active database already exists (Litestream may have restored it)
-                if (File.Exists(_paths.ActiveDbPath))
-                {
-                    _logger.LogWarning("Active database already exists at {ActivePath}. Skipping DB restore", _paths.ActiveDbPath);
-                }
-                else
-                {
-                    // Ensure /tmp directory exists
-                    var activeDir = Path.GetDirectoryName(_paths.ActiveDbPath);
-                    if (!string.IsNullOrEmpty(activeDir) && !Directory.Exists(activeDir))
-                    {
-                        Directory.CreateDirectory(activeDir);
-                    }
-
-                    _logger.LogInformation("Restoring database from {BackupPath} to {ActivePath}", _paths.BackupDbPath, _paths.ActiveDbPath);
-                    
-                    // Simple file copy on startup is safe since nothing is using the database yet
-                    await CopyFileAsync(_paths.BackupDbPath, _paths.ActiveDbPath, cancellationToken);
-                    
-                    // Compute hash of the backup so we can detect changes later
-                    _lastBackupHash = await ComputeFileHashAsync(_paths.BackupDbPath, cancellationToken);
-                    _logger.LogInformation("Computed baseline backup hash for change detection");
-                    
-                    var fileInfo = new FileInfo(_paths.ActiveDbPath);
-                    _logger.LogInformation("Database restored successfully. Size: {Size:N0} bytes", fileInfo.Length);
-                }
-
-                // Always restore images, even if DB was already restored by Litestream
                 await CopyFilesAsync(_paths.BackupImagesPath, _paths.ActiveImagesPath, cancellationToken);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to restore database from backup. Starting with empty database");
+                _logger.LogError(ex, "Failed to restore cached images from /data");
             }
         }
 
-        internal async Task BackupToStorageAsync(CancellationToken cancellationToken)
+        /// <summary>
+        /// Syncs new images from wwwroot/images to /data/images so they survive container recycles.
+        /// </summary>
+        internal async Task SyncImagesAsync(CancellationToken cancellationToken)
         {
             try
             {
-                // Check if active database exists
-                if (!File.Exists(_paths.ActiveDbPath))
-                {
-                    _logger.LogWarning("No active database found at {ActivePath}. Skipping backup", _paths.ActiveDbPath);
-                    return;
-                }
-
-                // Ensure backup directory exists
-                var backupDir = Path.GetDirectoryName(_paths.BackupDbPath);
-                if (!string.IsNullOrEmpty(backupDir) && !Directory.Exists(backupDir))
-                {
-                    Directory.CreateDirectory(backupDir);
-                    _logger.LogInformation("Created backup directory: {BackupDir}", backupDir);
-                }
-
-                _logger.LogInformation("Backing up database from {ActivePath} to {BackupPath}", _paths.ActiveDbPath, _paths.BackupDbPath);
-                
-                // Create backup in /tmp first (SQLite backup API doesn't work well with network filesystems)
-                var tempBackupPath = _paths.TempBackupDbPath;
-                
-                // Delete any existing temp backup file
-                if (File.Exists(tempBackupPath))
-                {
-                    File.Delete(tempBackupPath);
-                }
-                
-                try
-                {
-                    // Use SQLite's native backup API to create consistent backup in /tmp
-                    await PerformSqliteBackupAsync(_paths.ActiveDbPath, tempBackupPath, cancellationToken);
-                    
-                    // Compute hash of the backup to detect changes
-                    var backupHash = await ComputeFileHashAsync(tempBackupPath, cancellationToken);
-                    
-                    // Only copy to Azure Files if content has changed
-                    if (backupHash != _lastBackupHash)
-                    {
-                        _logger.LogInformation("Database content changed. Uploading to Azure Files...");
-                        await CopyFileAsync(tempBackupPath, _paths.BackupDbPath, cancellationToken);
-                        _lastBackupHash = backupHash;
-                        
-                        var fileInfo = new FileInfo(_paths.BackupDbPath);
-                        _logger.LogInformation("Database backed up successfully. Size: {Size:N0} bytes", fileInfo.Length);
-                    }
-                    else
-                    {
-                        _logger.LogInformation("Database content unchanged. Skipping upload to Azure Files (saving transaction costs)");
-                    }
-                    
-                    // Backup image files
-                    await CopyFilesAsync(_paths.ActiveImagesPath, _paths.BackupImagesPath, cancellationToken);
-                }
-                finally
-                {
-                    // Always clean up temp backup file, even if an error occurred
-                    if (File.Exists(tempBackupPath))
-                    {
-                        File.Delete(tempBackupPath);
-                    }
-                }
+                await CopyFilesAsync(_paths.ActiveImagesPath, _paths.BackupImagesPath, cancellationToken);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to backup database to storage");
+                _logger.LogError(ex, "Failed to sync cached images to /data");
             }
-        }
-
-        /// <summary>
-        /// Computes SHA256 hash of a file to detect content changes
-        /// </summary>
-        private async Task<string> ComputeFileHashAsync(string filePath, CancellationToken cancellationToken)
-        {
-            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
-            return Convert.ToHexString(hashBytes);
-        }
-
-        /// <summary>
-        /// Uses SQLite's native backup API to create a consistent backup while the database is in use.
-        /// This is much safer than copying files directly and prevents database corruption.
-        /// </summary>
-        private async Task PerformSqliteBackupAsync(string sourceDbPath, string destDbPath, CancellationToken cancellationToken)
-        {
-            await Task.Run(() =>
-            {
-                using var source = new SqliteConnection($"Data Source={sourceDbPath};Mode=ReadOnly;Pooling=False");
-                using var destination = new SqliteConnection($"Data Source={destDbPath};Mode=ReadWriteCreate;Pooling=False");
-                
-                source.Open();
-                destination.Open();
-                
-                // SQLite's backup API creates a consistent point-in-time snapshot
-                // even while other connections are reading/writing
-                source.BackupDatabase(destination);
-                
-            }, cancellationToken);
-        }
-
-        private async Task CopyFileAsync(string sourcePath, string destPath, CancellationToken cancellationToken)
-        {
-            // Use buffered copy for better performance
-            using var sourceStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var destStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None);
-            
-            await sourceStream.CopyToAsync(destStream, 81920, cancellationToken); // 80KB buffer
-            await destStream.FlushAsync(cancellationToken);
         }
 
         private async Task CopyFilesAsync(string sourceDir, string destDir, CancellationToken cancellationToken)
         {
             try
             {
-                // Check if source directory exists
                 if (!Directory.Exists(sourceDir))
                 {
                     _logger.LogInformation("Source directory {SourceDir} does not exist. Skipping copy.", sourceDir);
                     return;
                 }
 
-                // Ensure destination directory exists
                 if (!Directory.Exists(destDir))
                 {
                     Directory.CreateDirectory(destDir);
-                    _logger.LogInformation("Created destination directory: {DestDir}", destDir);
                 }
 
-                // Get all files in source directory
-                var sourceFiles = Directory.GetFiles(sourceDir);
-                
-                if (sourceFiles.Length == 0)
+                var files = Directory.GetFiles(sourceDir);
+                int copied = 0;
+                foreach (var sourceFile in files)
                 {
-                    _logger.LogInformation("No files found in {SourceDir}", sourceDir);
-                    return;
-                }
+                    if (cancellationToken.IsCancellationRequested) break;
 
-                // Get existing files in destination to avoid re-copying static files
-                var existingDestFiles = new HashSet<string>(
-                    Directory.GetFiles(destDir).Select(Path.GetFileName),
-                    StringComparer.OrdinalIgnoreCase
-                );
-
-                var filesToCopy = sourceFiles
-                    .Where(f => !existingDestFiles.Contains(Path.GetFileName(f)))
-                    .ToList();
-
-                if (filesToCopy.Count == 0)
-                {
-                    _logger.LogInformation("All {FileCount} files already backed up in {DestDir}. Skipping (saving transaction costs)", sourceFiles.Length, destDir);
-                    return;
-                }
-
-                _logger.LogInformation("Copying {NewCount} new files from {SourceDir} to {DestDir} ({SkippedCount} already backed up)", 
-                    filesToCopy.Count, sourceDir, destDir, sourceFiles.Length - filesToCopy.Count);
-
-                // Copy only new files
-                foreach (var sourceFile in filesToCopy)
-                {
                     var fileName = Path.GetFileName(sourceFile);
                     var destFile = Path.Combine(destDir, fileName);
-                    
-                    await CopyFileAsync(sourceFile, destFile, cancellationToken);
+
+                    // Only copy new files (no overwrites)
+                    if (!File.Exists(destFile))
+                    {
+                        using var sourceStream = new FileStream(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read);
+                        using var destStream = new FileStream(destFile, FileMode.Create, FileAccess.Write, FileShare.None);
+                        await sourceStream.CopyToAsync(destStream, 81920, cancellationToken);
+                        await destStream.FlushAsync(cancellationToken);
+                        copied++;
+                    }
                 }
 
-                _logger.LogInformation("Successfully copied {FileCount} new files", filesToCopy.Count);
+                if (copied > 0)
+                {
+                    _logger.LogInformation("Copied {Count} new file(s) from {SourceDir} to {DestDir}", copied, sourceDir, destDir);
+                }
             }
             catch (Exception ex)
             {
