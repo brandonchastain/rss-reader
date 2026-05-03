@@ -329,8 +329,10 @@ namespace RssReader.Server.Services
                 src.Open();
                 ApplyBusyTimeout(src);
                 using var cmd = src.CreateCommand();
-                cmd.CommandText = "VACUUM INTO $dest";
-                cmd.Parameters.AddWithValue("$dest", destPath);
+                // VACUUM INTO requires a string-literal path; parameter binding is not
+                // supported by SQLite for this statement. Escape single quotes by doubling.
+                var escaped = destPath.Replace("'", "''");
+                cmd.CommandText = $"VACUUM INTO '{escaped}'";
                 cmd.ExecuteNonQuery();
             }, cancellationToken);
         }
