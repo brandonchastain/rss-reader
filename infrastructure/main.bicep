@@ -193,6 +193,28 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               mountPath: '/data'
             }
           ]
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/api/healthz'
+                port: 8080
+              }
+              periodSeconds: 30
+              timeoutSeconds: 5
+              failureThreshold: 3
+            }
+            {
+              type: 'Startup'
+              httpGet: {
+                path: '/api/healthz'
+                port: 8080
+              }
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 60
+            }
+          ]
         }
       ]
       scale: {
@@ -316,6 +338,28 @@ resource readerApp 'Microsoft.App/containerApps@2024-03-01' = if (enableReadRepl
             {
               name: 'RssAppConfig__DbLocation'
               value: '/tmp/storage.db'
+            }
+          ]
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/api/healthz'
+                port: 8080
+              }
+              periodSeconds: 30
+              timeoutSeconds: 5
+              failureThreshold: 3
+            }
+            {
+              type: 'Startup'
+              httpGet: {
+                path: '/api/healthz'
+                port: 8080
+              }
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 60
             }
           ]
         }
