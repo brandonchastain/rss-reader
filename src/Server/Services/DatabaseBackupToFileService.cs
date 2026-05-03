@@ -34,7 +34,11 @@ namespace RssReader.Server.Services
     ///
     /// Safety contract:
     ///   - Uses SQLite's online <c>BackupDatabase</c> API (no WAL checkpoint forced on source).
-    ///   - Writes to a unique temp path, runs <c>PRAGMA quick_check</c>, then atomically renames.
+    ///   - The SQLite backup is staged to local disk (next to <c>ActiveDbPath</c>); Azure Files
+    ///     SMB does not reliably support the file-locking semantics SQLite needs, so backing up
+    ///     directly to the share fails with <c>SQLITE_BUSY</c>. After staging we plain-file-copy
+    ///     to a unique temp on the share and atomically rename to <c>BackupDbPath</c>.
+    ///   - Runs <c>PRAGMA quick_check</c> on the staged file before publishing.
     ///   - Holds a lock file on the share to prevent two writer revisions racing.
     ///   - This is SEPARATE from <see cref="DatabaseBackupService"/>, which still owns image
     ///     sync and stats and must NEVER write the DB.
@@ -136,6 +140,13 @@ namespace RssReader.Server.Services
             }
 
             var sw = Stopwatch.StartNew();
+            // Stage the SQLite backup on the LOCAL filesystem (next to ActiveDbPath in /tmp).
+            // SQLite's BackupDatabase API requires file-locking semantics that Azure Files
+            // SMB does not reliably support; running the backup directly against the SMB
+            // mount produces SQLITE_BUSY ("database is locked") errors. We back up to local
+            // disk first and then plain-file-copy to a unique SMB temp before atomically
+            // renaming to BackupDbPath. (Same approach as the legacy DatabaseBackupService.)
+            var stagePath = $"{_paths.ActiveDbPath}.bk-stage.{Guid.NewGuid():N}";
             var tempPath = $"{_paths.BackupDbPath}.tmp.{_hostName}.{_processId}.{Guid.NewGuid():N}";
             try
             {
@@ -147,18 +158,26 @@ namespace RssReader.Server.Services
                     return false;
                 }
 
-                await BackupSqliteAsync(_paths.ActiveDbPath, tempPath, cancellationToken);
+                await BackupSqliteAsync(_paths.ActiveDbPath, stagePath, cancellationToken);
 
-                if (!QuickCheck(tempPath))
+                if (!QuickCheck(stagePath))
                 {
                     _logger.LogError(
-                        "PRAGMA quick_check failed on temp backup '{Temp}' — discarding.",
-                        tempPath);
-                    SafeDelete(tempPath);
+                        "PRAGMA quick_check failed on staged backup '{Stage}' — discarding.",
+                        stagePath);
                     return false;
                 }
 
-                // Atomic rename. File.Move with overwrite=true uses rename(2) on Linux.
+                // Plain-file-copy to a unique temp on the SMB share. This involves no SQLite
+                // file locking on /data, only sequential bytes-on-the-wire writes.
+                using (var src = new FileStream(stagePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var dst = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    await src.CopyToAsync(dst, cancellationToken);
+                }
+
+                // Atomic rename within the same SMB directory. File.Move with overwrite=true
+                // uses rename(2) on Linux and is atomic on Azure Files SMB.
                 File.Move(tempPath, _paths.BackupDbPath, overwrite: true);
 
                 LastSuccessAtUtc = DateTimeOffset.UtcNow;
@@ -170,10 +189,13 @@ namespace RssReader.Server.Services
             }
             finally
             {
-                SafeDelete(tempPath); // no-op if rename succeeded
-                // SQLite may leave -wal/-shm sidecars next to the temp file
-                // when the destination connection ran in WAL mode. Sweep them
-                // so we don't accumulate cruft in the backup directory.
+                // Local stage cleanup. SQLite ran the destination connection in WAL mode
+                // briefly during backup; sweep any sidecars too.
+                SafeDelete(stagePath);
+                SafeDelete(stagePath + "-wal");
+                SafeDelete(stagePath + "-shm");
+                // SMB temp cleanup. No-op if the rename succeeded.
+                SafeDelete(tempPath);
                 SafeDelete(tempPath + "-wal");
                 SafeDelete(tempPath + "-shm");
                 ReleaseLock(lockFs);
