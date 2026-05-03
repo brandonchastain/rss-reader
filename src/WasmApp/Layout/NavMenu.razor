@@ -129,13 +129,15 @@
 </div>
 
 @code {
-    // Chained logout: AAD logout -> SWA logout -> back to home.
-    // We hit AAD's RP-initiated logout endpoint FIRST so the IdP session (and the
-    // upstream login.live.com MSA cookie) is terminated. AAD then redirects to
-    // SWA's /.auth/logout which clears the SWA session cookie and lands on /.
-    // (We can't do SWA-then-AAD because SWA only honors RELATIVE values for its
-    // own post_logout_redirect_uri parameter, so it would strip the AAD URL.)
-    private const string LogoutUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/logout?post_logout_redirect_uri=https%3A%2F%2Frss.brandonchastain.com%2F.auth%2Flogout%3Fpost_logout_redirect_uri%3D%252F";
+    // Two-step logout chain:
+    //   1. SWA /.auth/logout clears the SWA session cookie, then redirects to a
+    //      relative URL (SWA only allows relative post_logout_redirect_uri values).
+    //   2. /signedout.html is a static bounce page that JS-redirects to AAD's
+    //      RP-initiated logout endpoint, which terminates the AAD/MSA session.
+    // We can't chain in a single hop because AAD's post_logout_redirect_uri must
+    // match a registered URI on the app registration, and we don't control the
+    // SWA preconfigured AAD app's registration.
+    private const string LogoutUrl = "/.auth/logout?post_logout_redirect_uri=/signedout.html";
 
     private string username = null;
     private RssUser feedUser = null;
