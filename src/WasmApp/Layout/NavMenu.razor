@@ -50,7 +50,7 @@
     <div class="desktop-nav-auth desktop-only">
         <AuthorizeView>
             <Authorized>
-                <a class="desktop-nav-link" href="/.auth/logout">Logout</a>
+                <a class="desktop-nav-link" href="@LogoutUrl">Logout</a>
             </Authorized>
             <NotAuthorized>
                 <a class="desktop-nav-link" href="/.auth/login/aad?prompt=select_account">Login</a>
@@ -107,7 +107,7 @@
                     </div>
                 }
                 <div class="nav-item px-3">
-                    <a class="nav-link" href="/.auth/logout">
+                    <a class="nav-link" href="@LogoutUrl">
                         Logout
                     </a>
                 </div>
@@ -129,6 +129,13 @@
 </div>
 
 @code {
+    // Chained logout: SWA logout -> AAD logout -> back to home.
+    // SWA's /.auth/logout only clears the SWA session cookie. To also terminate the
+    // AAD/MSA session (so the next login doesn't silently re-auth via the cached
+    // login.live.com cookie), we point post_logout_redirect_uri at AAD's RP-initiated
+    // logout endpoint, which then redirects back to the home page.
+    private const string LogoutUrl = "/.auth/logout?post_logout_redirect_uri=https%3A%2F%2Flogin.microsoftonline.com%2Fcommon%2Foauth2%2Fv2.0%2Flogout%3Fpost_logout_redirect_uri%3Dhttps%253A%252F%252Frss.brandonchastain.com%252F";
+
     private string username = null;
     private RssUser feedUser = null;
     private bool collapseNavMenu = true;
