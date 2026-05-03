@@ -191,6 +191,11 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               value: storageAccount.name
             }
             {
+              // Reduce log volume in production. App still emits Warning+ levels.
+              name: 'Logging__LogLevel__Default'
+              value: 'Warning'
+            }
+            {
               // Default off: file-mount backup is sole durability. Set to 'true'
               // only when rolling out scaling mode (read replicas), per the
               // sequenced rollout in plan.md.
