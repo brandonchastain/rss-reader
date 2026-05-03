@@ -21,6 +21,10 @@ RUN dotnet publish "Server.csproj" -c Release -o /app/publish /p:UseAppHost=fals
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 
+# Install sqlite3 CLI for cold-start quick_check on the seeded DB
+RUN apt-get update && apt-get install -y --no-install-recommends sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Litestream for continuous SQLite replication to Azure Blob Storage
 ADD --checksum=sha256:e8612ef5424802723e8cfa2d07a182df60f9af71839b5ff5ef1e80dff38efbdd \
     https://github.com/benbjohnson/litestream/releases/download/v0.5.9/litestream-0.5.9-linux-x86_64.tar.gz \

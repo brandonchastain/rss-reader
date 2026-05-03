@@ -99,6 +99,15 @@ if (!config.IsReadOnly)
                 new DatabaseBackupPaths(),
                 sb))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
+        .AddSingleton<DatabaseBackupToFileService>(sb =>
+            new DatabaseBackupToFileService(
+                sb.GetRequiredService<ILogger<DatabaseBackupToFileService>>(),
+                new DatabaseBackupToFilePaths(
+                    ActiveDbPath: config.DbLocation,
+                    BackupDbPath: config.BackupDbPath ?? string.Empty,
+                    Interval: config.BackupInterval,
+                    LockStaleThreshold: TimeSpan.FromMinutes(15))))
+        .AddHostedService(p => p.GetRequiredService<DatabaseBackupToFileService>())
         .AddHostedService<BackgroundWorker>()
         .AddSingleton<IFeedRefresher, FeedRefresher>()
         .AddTransient<RedirectDowngradeHandler>()
