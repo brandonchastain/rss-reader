@@ -44,8 +44,8 @@
 
     private string LoginUrl =>
         string.IsNullOrEmpty(_returnUrl)
-            ? "/.auth/login/aad"
-            : $"/.auth/login/aad?post_login_redirect_uri={_returnUrl}";
+            ? "/.auth/login/aad?prompt=select_account"
+            : $"/.auth/login/aad?post_login_redirect_uri={_returnUrl}&prompt=select_account";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
