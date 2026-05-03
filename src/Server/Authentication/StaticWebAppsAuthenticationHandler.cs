@@ -45,8 +45,9 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
             
             if (!Request.Headers.TryGetValue("X-Gateway-Key", out var clientKey))
             {
-                Logger.LogWarning("X-Gateway-Key HEADER NOT FOUND - Authentication will fail");
-                // No authentication header present
+                // Normal for anonymous endpoints (e.g. /api/healthz, liveness probe).
+                // Authorization middleware will reject requests to protected endpoints.
+                Logger.LogDebug("X-Gateway-Key header not present; treating as unauthenticated");
                 return Task.FromResult(AuthenticateResult.NoResult());
             }
 
