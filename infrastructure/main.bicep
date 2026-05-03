@@ -20,7 +20,7 @@ param containerImage string
 param cpuCore string = '1.0'
 
 @description('Memory allocated to a single container instance')
-param memorySize string = '2.0Gi'
+param memorySize string = '1.0Gi'
 
 @description('Minimum number of replicas')
 param minReplicas int = 1

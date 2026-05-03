@@ -8,6 +8,7 @@
 @code {
     private bool _isRefreshing;
     private bool _pendingForceReset;
+    private bool _hasLoadedOnce;
     private string _scrollAnchorPostId;
     private bool _needsScrollRestore;
     private int _restorePageSize;
@@ -16,6 +17,8 @@
     public long? CursorPublishDateOrder { get; set; }
     public long? CursorId { get; set; }
     protected bool initialized = false;
+
+    public bool IsLoading => !_hasLoadedOnce || _isRefreshing;
 
     protected class ScrollState
     {
@@ -114,6 +117,7 @@
         finally
         {
             _isRefreshing = false;
+            _hasLoadedOnce = true;
         }
 
         // If a forceReset arrived while we were fetching, run again now

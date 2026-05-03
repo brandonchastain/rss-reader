@@ -25,7 +25,7 @@
 
 
 <div id="post-table" class="table">
-    @if (isLoading && (_flatEntries == null || _flatEntries.Count == 0))
+    @if (IsLoading && (_flatEntries == null || _flatEntries.Count == 0))
     {
         <div class="loading-spinner-container">
             <div class="spinner"></div>
@@ -71,6 +71,9 @@
     [CascadingParameter(Name = "Page")]
     private int Page { get; set; }
 
+    [CascadingParameter(Name = "IsLoading")]
+    public bool IsLoading { get; set; }
+
     [Parameter]
     public EventCallback<int> OnPageChanged { get; set; }
 
@@ -84,8 +87,6 @@
     public bool IsFilterUnread => FeedClient.IsFilterUnread;
     public bool IsFilterSaved => FeedClient.IsFilterSaved;
     private string filterTag => FeedClient.FilterTag;
-
-    private bool isLoading = true;
 
     // Pre-computed flat list for plain @foreach — rebuilt only when Posts changes
     private List<TimelineEntry> _flatEntries = new();
@@ -112,7 +113,6 @@
         base.OnParametersSet();
         if (Posts != null)
         {
-            isLoading = false;
             RebuildFlatEntries();
         }
     }
@@ -145,30 +145,24 @@
 
     private async Task ToggleUnreadFilterAsync()
     {
-        isLoading = true;
         _lastPostsCount = 0; // force rebuild on next parameter set
         await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag, false));
-        isLoading = false;
     }
 
     private async Task ToggleSavedFilterAsync()
     {
-        isLoading = true;
         _lastPostsCount = 0;
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag, false));
-        isLoading = false;
     }
 
     private async Task FilterForTag(string tag)
     {
-        isLoading = true;
         _lastPostsCount = 0;
         if (this.filterTag == tag)
         {
             tag = null;
         }
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, tag, false));
-        isLoading = false;
     }
 
     private async Task OnRefreshComplete()
@@ -179,9 +173,7 @@
 
     private async Task Next()
     {
-        isLoading = true;
         await this.OnPageChanged.InvokeAsync(this.Page + 1);
-        isLoading = false;
         await InvokeAsync(this.StateHasChanged);
     }
 
