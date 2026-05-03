@@ -135,6 +135,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   properties: {
     environmentId: environment.id
     configuration: {
+      // Single-revision mode minimizes old/new revision overlap during deploy.
+      // Two writer revisions running concurrently would race on /data/storage.db
+      // (mitigated by the BackupToFile lock file, but Single is the proper fix).
+      activeRevisionsMode: 'Single'
       registries: [
         {
           server: 'ghcr.io'
@@ -185,6 +189,24 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'LITESTREAM_AZURE_ACCOUNT_NAME'
               value: storageAccount.name
+            }
+            {
+              // Default off: file-mount backup is sole durability. Set to 'true'
+              // only when rolling out scaling mode (read replicas), per the
+              // sequenced rollout in plan.md.
+              name: 'RSSREADER_ENABLE_LITESTREAM_REPLICATION'
+              value: 'false'
+            }
+            {
+              // Persistent SQLite backup file on the Azure Files mount.
+              // The DatabaseBackupToFileService writes here every 5 min;
+              // the entrypoint seeds /tmp/storage.db from this on cold start.
+              //
+              // NOTE: Path is intentionally inside a NEW subdirectory `/data/db/`
+              // so that any pre-existing `/data/storage.db` (left over from a
+              // previous architecture) cannot be silently trusted as a seed.
+              name: 'RssAppConfig__BackupDbPath'
+              value: '/data/db/storage.db'
             }
           ]
           volumeMounts: [

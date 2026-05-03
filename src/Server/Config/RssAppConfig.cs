@@ -7,6 +7,14 @@ namespace RssApp.Config
         public string ServerHostName { get; set; } = "https://localhost:8080/";
         public string DbLocation { get; set; }
         public bool IsTestUserEnabled { get; set; }
+
+        // Persistent backup file path on the Azure Files mount (or local disk in dev).
+        // Empty string disables the backup-to-file service entirely.
+        // The parent directory must exist and be writable; otherwise the writer
+        // entrypoint and the BackgroundService will fail fast.
+        public string BackupDbPath { get; set; } = string.Empty;
+        public TimeSpan BackupInterval { get; set; } = TimeSpan.FromMinutes(5);
+
         public TimeSpan CacheReloadInterval { get; set; } = TimeSpan.FromMinutes(5);
         public TimeSpan CacheReloadStartupDelay { get; set; } = TimeSpan.FromSeconds(0);
         public bool IsReadOnly { get; set; }
