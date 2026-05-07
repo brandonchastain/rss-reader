@@ -247,6 +247,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       scale: {
         minReplicas: minReplicas
         maxReplicas: maxReplicas
+        cooldownPeriod: 900
         rules: [
           {
             name: 'http-rule'
@@ -394,6 +395,7 @@ resource readerApp 'Microsoft.App/containerApps@2024-03-01' = if (enableReadRepl
       scale: {
         minReplicas: 0
         maxReplicas: maxReadReplicas
+        cooldownPeriod: 900
         rules: [
           {
             name: 'http-rule'
