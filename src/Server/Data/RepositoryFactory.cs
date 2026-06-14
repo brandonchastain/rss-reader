@@ -46,7 +46,6 @@ public class RepositoryFactory
             this.serviceProvider.GetRequiredService<ILogger<SQLiteItemRepository>>(),
             this.serviceProvider.GetRequiredService<IFeedRepository>(),
             this.serviceProvider.GetRequiredService<IUserRepository>(),
-            this.serviceProvider.GetRequiredService<FeedThumbnailRetriever>(),
             this.isReadOnly,
             this.rebuildFtsOnStartup);
     }

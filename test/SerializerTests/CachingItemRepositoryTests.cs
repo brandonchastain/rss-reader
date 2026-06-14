@@ -57,8 +57,8 @@ internal sealed class FakeItemRepository : IItemRepository
     public Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize)
         => Task.FromResult<IEnumerable<NewsFeedItem>>(Array.Empty<NewsFeedItem>());
 
-    public Task AddItemsAsync(IEnumerable<NewsFeedItem> item)
-        => Task.CompletedTask;
+    public Task<int> AddItemsAsync(IEnumerable<NewsFeedItem> item)
+        => Task.FromResult(0);
 
     public void MarkAsRead(NewsFeedItem item, bool isRead, RssUser user) => MarkAsReadCallCount++;
     public void SavePost(NewsFeedItem item, RssUser user)                => SavePostCallCount++;

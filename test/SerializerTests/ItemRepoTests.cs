@@ -39,11 +39,6 @@ public sealed class ItemRepoTests
 
         var user = new RssUser("testUser", 0);
 
-        var mockThumbnailRetriever = new Mock<FeedThumbnailRetriever>(config) { CallBase = false };
-        mockThumbnailRetriever
-            .Setup(x => x.RetrieveThumbnailUrlAsync(It.IsAny<NewsFeed>()))
-            .ReturnsAsync("images/placeholder.jpg");
-
         var serviceCollection = new ServiceCollection();
         serviceCollection
         .AddLogging(loggingBuilder =>
@@ -53,19 +48,16 @@ public sealed class ItemRepoTests
             loggingBuilder.AddDebug();
         })
         .AddSingleton(config)
-        .AddSingleton(mockThumbnailRetriever.Object)
         .AddSingleton<IFeedRepository>(feedRepo)
         .AddSingleton<IUserRepository>(userRepo)
         .AddSingleton(new RssApp.Config.RssAppConfig())
-        .AddSingleton<RssReader.Server.Services.FeedThumbnailRetriever>()
         .AddSingleton<IItemRepository>(sb =>
         {
             return new SQLiteItemRepository(
                 dbConnections,
                 sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
                 sb.GetRequiredService<IFeedRepository>(),
-                sb.GetRequiredService<IUserRepository>(),
-                sb.GetRequiredService<FeedThumbnailRetriever>());
+                sb.GetRequiredService<IUserRepository>());
         });
 
         var provider = serviceCollection.BuildServiceProvider();
@@ -144,7 +136,6 @@ public sealed class ItemRepoTests
         serviceCollection
             .AddLogging(b => { b.ClearProviders(); b.AddConsole(); b.AddDebug(); })
             .AddSingleton(new RssAppConfig { DbLocation = dbName })
-            .AddSingleton<FeedThumbnailRetriever>()
             .AddSingleton<IFeedRepository>(feedRepo)
             .AddSingleton<IUserRepository>(userRepo)
             .AddSingleton<IItemRepository>(sb =>
@@ -152,8 +143,7 @@ public sealed class ItemRepoTests
                     dbConnections,
                     sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
                     sb.GetRequiredService<IFeedRepository>(),
-                    sb.GetRequiredService<IUserRepository>(),
-                    sb.GetRequiredService<FeedThumbnailRetriever>()));
+                    sb.GetRequiredService<IUserRepository>()));
 
         var provider = serviceCollection.BuildServiceProvider();
         var itemRepo = provider.GetRequiredService<IItemRepository>();

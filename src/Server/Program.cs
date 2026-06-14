@@ -26,6 +26,10 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 });
 
 builder.Services.AddMemoryCache();
+// Base IHttpClientFactory for all roles (readers included) so services like
+// FaviconService resolve. The writer additionally configures the named
+// "RssClient" below; on readers CreateClient("RssClient") falls back to a default.
+builder.Services.AddHttpClient();
 builder.Services.AddResponseCompression(options =>
 {
     options.EnableForHttps = true;
@@ -83,7 +87,8 @@ builder.Services
         return new CachingItemRepository(inner, sb.GetRequiredService<IMemoryCache>());
     })
     .AddSingleton<IUserResolver, UserResolver>()
-    .AddSingleton<FeedThumbnailRetriever>()
+    .AddSingleton<FaviconService>()
+    .AddSingleton<ThumbnailResolver>()
     .AddSingleton<ISystemStatsRepository>(sb =>
         new SQLiteSystemStatsRepository(dbConnections));
 
@@ -111,7 +116,9 @@ if (!config.IsReadOnly)
         .AddHostedService<BackgroundWorker>()
         .AddSingleton<IFeedRefresher, FeedRefresher>()
         .AddTransient<RedirectDowngradeHandler>()
-        .AddHttpClient("RssClient")
+        // Per-request timeout so a single slow/hung feed can't stall the whole
+        // parallel refresh batch (the default HttpClient timeout is 100s).
+        .AddHttpClient("RssClient", c => c.Timeout = TimeSpan.FromSeconds(20))
         .AddHttpMessageHandler<RedirectDowngradeHandler>()
         .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
         {

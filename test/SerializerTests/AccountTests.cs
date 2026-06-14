@@ -40,7 +40,6 @@ public sealed class AccountTests
         serviceCollection
             .AddLogging(b => { b.ClearProviders(); b.AddConsole(); })
             .AddSingleton(new RssApp.Config.RssAppConfig())
-            .AddSingleton<FeedThumbnailRetriever>()
             .AddSingleton<IFeedRepository>(feedRepo)
             .AddSingleton<IUserRepository>(userRepo)
             .AddSingleton<IItemRepository>(sb =>
@@ -48,8 +47,7 @@ public sealed class AccountTests
                     dbConnections,
                     sb.GetRequiredService<ILogger<SQLiteItemRepository>>(),
                     sb.GetRequiredService<IFeedRepository>(),
-                    sb.GetRequiredService<IUserRepository>(),
-                    sb.GetRequiredService<FeedThumbnailRetriever>()));
+                    sb.GetRequiredService<IUserRepository>()));
         serviceProvider = serviceCollection.BuildServiceProvider();
         itemRepo = serviceProvider.GetRequiredService<IItemRepository>();
     }

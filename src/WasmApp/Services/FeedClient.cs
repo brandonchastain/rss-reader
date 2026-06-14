@@ -131,54 +131,25 @@ namespace WasmApp.Services
             await _httpClient.PostAsync(url, null);
         }
 
-        public async Task<bool> RefreshFeedsAsync()
+        public async Task TriggerRefreshAsync()
         {
-            var url = $"{_config.ApiBaseUrl}api/feed/refresh";
-            var statusUrl = $"{_config.ApiBaseUrl}api/feed/refresh/status";
+            // Kick off the server-side background refresh and return immediately.
+            // The server enqueues the work and responds 202 Accepted.
+            await _httpClient.GetAsync($"{_config.ApiBaseUrl}api/feed/refresh");
+        }
 
+        public async Task<RefreshStatusResponse> GetRefreshStatusAsync()
+        {
             try
             {
-                // Fire the refresh — returns immediately (202 Accepted)
-                var triggerResponse = await _httpClient.GetAsync(url);
-                if (!triggerResponse.IsSuccessStatusCode)
-                {
-                    return false;
-                }
-
-                // Poll until backend reports refresh is complete (no hard 30s timeout)
-                bool everHadNewItems = false;
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-                while (!cts.IsCancellationRequested)
-                {
-                    await Task.Delay(1000, cts.Token);
-                    var statusResponse = await _httpClient.GetAsync(statusUrl, cts.Token);
-
-                    if (statusResponse.IsSuccessStatusCode)
-                    {
-                        var status = await statusResponse.Content.ReadFromJsonAsync<RefreshStatusResponse>(cancellationToken: cts.Token);
-                        if (status != null)
-                        {
-                            if (status.HasNewItems) everHadNewItems = true;
-                            if (!status.IsRefreshing) return everHadNewItems;
-                        }
-                    }
-                    else
-                    {
-                        // Non-success status — stop polling
-                        return everHadNewItems;
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Polling timed out at 120s
+                return await _httpClient.GetFromJsonAsync<RefreshStatusResponse>(
+                    $"{_config.ApiBaseUrl}api/feed/refresh/status");
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Feed refresh failed or timed out.");
+                _logger.LogWarning(ex, "Failed to read refresh status.");
+                return null;
             }
-
-            return false;
         }
 
         public async Task ImportOpmlAsync(string opmlContent)

@@ -15,7 +15,10 @@ public interface IFeedClient : IDisposable
     Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null);
     Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null);
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, int page, int pageSize = 20);
-    Task<bool> RefreshFeedsAsync();
+    // Fire-and-forget: kick off a server-side background refresh and return
+    // immediately (server responds 202). Poll GetRefreshStatusAsync for progress.
+    Task TriggerRefreshAsync();
+    Task<RefreshStatusResponse> GetRefreshStatusAsync();
     Task<string> GetItemContentAsync(NewsFeedItem item);
     Task AddTagAsync(NewsFeed feed, string tag);
     Task<IEnumerable<string>> GetUserTagsAsync(RssUser user);

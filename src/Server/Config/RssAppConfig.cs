@@ -21,11 +21,18 @@ namespace RssApp.Config
 
         // Keep at 1 to avoid SQLite write contention. Multiple background workers
         // compete for the single-writer lock during feed refresh, causing SQLITE_BUSY
-        // under load. Feed refresh is I/O-bound (HTTP fetch), so 1 worker still
-        // saturates outbound bandwidth. The real fix for refresh speed is incremental
-        // signaling (FeedRefresher per-user state), not parallelism.
+        // under load. A refresh now runs as a single queued job that fans out the
+        // HTTP fetches itself (see RefreshFetchConcurrency) while DB writes stay
+        // serialized through the item repository's write semaphore.
         public int BackgroundWorkerCount { get; set; } = 1;
         public int BackgroundQueueCapacity { get; set; } = 1000;
+
+        // How many feeds to fetch+parse concurrently within a single refresh.
+        // Feed refresh is dominated by external HTTP latency, so fanning the
+        // fetches out turns wall-clock from sum-of-feeds into roughly
+        // slowest-feed * ceil(feeds / concurrency). DB writes remain serialized,
+        // so this does not increase SQLite write contention.
+        public int RefreshFetchConcurrency { get; set; } = 8;
         public bool RebuildFtsOnStartup { get; set; }
 
         public string AdminAadUserIds { get; set; } = string.Empty;

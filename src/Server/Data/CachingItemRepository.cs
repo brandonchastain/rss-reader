@@ -123,10 +123,10 @@ public sealed class CachingItemRepository : IItemRepository
     /// <inheritdoc/>
     /// After delegating to the inner repository, pre-warm the content cache
     /// so expanding freshly-refreshed posts hits cache instead of the database.
-    public async Task AddItemsAsync(IEnumerable<NewsFeedItem> items)
+    public async Task<int> AddItemsAsync(IEnumerable<NewsFeedItem> items)
     {
         var itemList = items.ToList();
-        await _inner.AddItemsAsync(itemList);
+        var inserted = await _inner.AddItemsAsync(itemList);
 
         // Pre-warm: cache each item's content so reads during refresh don't hit SQLite.
         foreach (var item in itemList)
@@ -140,6 +140,8 @@ public sealed class CachingItemRepository : IItemRepository
                 });
             }
         }
+
+        return inserted;
     }
 
     /// <inheritdoc/>

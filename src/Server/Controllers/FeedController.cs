@@ -4,6 +4,7 @@ using RssApp.Data;
 using RssApp.Contracts;
 using RssApp.ComponentServices;
 using RssApp.Serialization;
+using RssReader.Server.Services;
 using System.Runtime.InteropServices;
 
 namespace Server.Controllers
@@ -18,6 +19,7 @@ namespace Server.Controllers
         private readonly IFeedRefresher feedRefresher;
         private readonly IItemRepository itemRepository;
         private readonly IUserResolver userResolver;
+        private readonly FaviconService faviconService;
         private readonly ILogger<UserController> logger;
 
         public FeedController(
@@ -26,6 +28,7 @@ namespace Server.Controllers
             IFeedRefresher feedRefresher,
             IItemRepository itemRepository,
             IUserResolver userResolver,
+            FaviconService faviconService,
             ILogger<UserController> logger)
         {
             this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
@@ -33,7 +36,25 @@ namespace Server.Controllers
             this.feedRefresher = feedRefresher ?? throw new ArgumentNullException(nameof(feedRefresher));
             this.itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
             this.userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
+            this.faviconService = faviconService ?? throw new ArgumentNullException(nameof(faviconService));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        // Serves a site favicon from our own origin (cached server-side) so the
+        // browser never contacts a third-party icon service directly. Anonymous:
+        // favicons aren't user data, and <img> loads shouldn't depend on auth.
+        [HttpGet("icon")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetIconAsync([FromQuery] string domain)
+        {
+            var path = await this.faviconService.GetFaviconPathAsync(domain);
+            if (path == null)
+            {
+                return NotFound();
+            }
+
+            Response.Headers.CacheControl = "public, max-age=604800";
+            return PhysicalFile(path, "image/x-icon");
         }
 
         [HttpPost]
