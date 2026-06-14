@@ -8,7 +8,8 @@ public interface IItemRepository : IDisposable
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize);
     NewsFeedItem GetItem(RssUser user, string href);
     NewsFeedItem GetItem(RssUser user, int itemId);
-    Task AddItemsAsync(IEnumerable<NewsFeedItem> item);
+    /// <summary>Inserts items (dedup via INSERT OR IGNORE). Returns the number of rows actually inserted.</summary>
+    Task<int> AddItemsAsync(IEnumerable<NewsFeedItem> item);
     void MarkAsRead(NewsFeedItem item, bool isRead, RssUser user);
     void SavePost(NewsFeedItem item, RssUser user);
     void UnsavePost(NewsFeedItem item, RssUser user);

@@ -2,6 +2,7 @@
 @using System.Net
 @using System.Text.RegularExpressions
 @using Microsoft.JSInterop
+@using RssApp.Config
 @inherits PageBase
 @implements IDisposable
 
@@ -11,21 +12,27 @@
 
 @inject IJSRuntime jsRuntime
 @inject NavigationManager navigationManager
+@inject RssWasmConfig Config
 
 @if (Post != null)
 {
 <div @ref="_postRowRef" data-post-id="@Post.Id" class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="async () => await HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
     <div class="col thumbnail">
         @{
-            var thumbnailUrl = Post.GetThumbnailUrl();
-            if (!String.IsNullOrWhiteSpace(thumbnailUrl))
-            {
-                <img src="@thumbnailUrl" alt="Thumbnail" class="thumbnail" />
-            }
-            else
-            {
-                <img src="/placeholder.jpg" alt="Placeholder" class="thumbnail" />
-            }
+            var thumbnailUrl = Post.ThumbnailUrl;
+            var faviconUrl = FaviconUrl(Post);
+        }
+        @if (!String.IsNullOrWhiteSpace(thumbnailUrl))
+        {
+            // Article image; if it fails, fall back to the site favicon, then a placeholder.
+            <img src="@thumbnailUrl" alt="Thumbnail" class="thumbnail"
+                 onerror="this.onerror=function(){this.onerror=null;this.src='/placeholder.jpg'};this.src='@faviconUrl'" />
+        }
+        else
+        {
+            // No article image; use the site favicon, falling back to a placeholder.
+            <img src="@faviconUrl" alt="Thumbnail" class="thumbnail"
+                 onerror="this.onerror=null;this.src='/placeholder.jpg'" />
         }
     </div>
     <div class="col">
@@ -103,6 +110,16 @@
         if (string.IsNullOrEmpty(title)) return title;
         var cleaned = Regex.Replace(title, "<[^>]+>", string.Empty);
         return WebUtility.HtmlDecode(cleaned);
+    }
+
+    // Per-domain favicon served from our own origin (GET /api/feed/icon). Resolve
+    // against ApiBaseUrl so it works both in prod (relative, "" -> "/api/...") and
+    // when the API lives on a different origin in local dev.
+    private string FaviconUrl(NewsFeedItem post)
+    {
+        var domain = post.Href.GetRootDomain();
+        var baseUrl = string.IsNullOrEmpty(Config.ApiBaseUrl) ? "/" : Config.ApiBaseUrl;
+        return $"{baseUrl}api/feed/icon?domain={WebUtility.UrlEncode(domain)}";
     }
 
     protected override void OnInitialized()

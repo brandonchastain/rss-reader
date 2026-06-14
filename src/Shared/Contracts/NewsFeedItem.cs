@@ -70,42 +70,13 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
             string.Equals(this.Href, other.Href, StringComparison.OrdinalIgnoreCase);
     }
 
-    public string GetThumbnailUrl()
-    {
-        if (!string.IsNullOrEmpty(this.ThumbnailUrl))
-        {
-            return this.ThumbnailUrl;
-        }
-
-        if (string.IsNullOrEmpty(this.Content))
-        {
-            return null;
-        }
-
-        var doc = new HtmlAgilityPack.HtmlDocument();
-        doc.LoadHtml(this.Content);
-        var img = doc.DocumentNode.SelectSingleNode("//img");
-
-        if (img == null)
-        {
-            return null;
-        }
-
-        var src = img.GetAttributeValue("src", null);
-
-        if (string.IsNullOrEmpty(src))
-        {
-            return null;
-        }
-
-        if (src.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-        {
-            this.ThumbnailUrl = src;
-            return src;
-        }
-
-        return null;
-    }
+    /// <summary>
+    /// The resolved article image, or null when the item has none. Resolution
+    /// (media tags + content &lt;img&gt; scrape) happens once, server-side, in
+    /// ThumbnailResolver; the value is persisted in ThumbnailUrl. The client
+    /// falls back to a per-domain favicon and then a placeholder when this is null.
+    /// </summary>
+    public string GetThumbnailUrl() => this.ThumbnailUrl;
 
     public override int GetHashCode()
     {

@@ -8,6 +8,7 @@ using RssApp.ComponentServices;
 using Microsoft.Extensions.Logging;
 using Moq;
 using RssApp.Data;
+using RssReader.Server.Services;
 using System.Threading.Tasks;
 
 [TestClass]
@@ -36,6 +37,7 @@ public sealed class FeedRefresherTests
             .AddSingleton<BackgroundWorkQueue>()
             .AddHostedService<BackgroundWorker>()
             .AddSingleton<RssDeserializer>()
+            .AddSingleton<ThumbnailResolver>()
             .AddSingleton<IFeedRefresher, FeedRefresher>()
             .AddTransient<RedirectDowngradeHandler>()
             .AddHttpClient("RssClient")

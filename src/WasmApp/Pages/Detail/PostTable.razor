@@ -19,10 +19,26 @@
         ToggleUnreadFilterAsync="@ToggleUnreadFilterAsync"
         ToggleSavedFilterAsync="@ToggleSavedFilterAsync"
         FilterForTag="@FilterForTag"
+        IsRefreshing="@_isBackgroundRefreshing"
+        OnRefreshRequested="@StartBackgroundRefreshAsync"
         OnRefreshComplete="@OnRefreshComplete"
     />
 </SectionContent>
 
+@if (_newPostsCount > 0)
+{
+    <button class="new-posts-toast" @onclick="LoadNewPostsAsync">
+        <i class="fas fa-arrow-up"></i>
+        <span>@_newPostsCount new post@(_newPostsCount == 1 ? "" : "s") — tap to load</span>
+    </button>
+}
+else if (_showUpToDate)
+{
+    <div class="new-posts-toast up-to-date">
+        <i class="fas fa-check"></i>
+        <span>Up to date</span>
+    </div>
+}
 
 <div id="post-table" class="table">
     @if (IsLoading && (_flatEntries == null || _flatEntries.Count == 0))
@@ -92,10 +108,104 @@
     private List<TimelineEntry> _flatEntries = new();
     private int _lastPostsCount;
 
+    // Background-refresh state. The refresh runs server-side; we poll for it
+    // without blocking the UI and surface a non-disruptive toast when it lands.
+    private bool _isBackgroundRefreshing;
+    private int _newPostsCount;
+    private bool _showUpToDate;
+    private CancellationTokenSource _refreshPollCts;
+
     private record TimelineEntry(bool IsDayHeader, DateTime Date, string DayKey, bool IsFirstHeader, NewsFeedItem Post);
 
     public void Dispose()
     {
+        _refreshPollCts?.Cancel();
+        _refreshPollCts?.Dispose();
+    }
+
+    private async Task StartBackgroundRefreshAsync()
+    {
+        if (_isBackgroundRefreshing) return;
+
+        _isBackgroundRefreshing = true;
+        _showUpToDate = false;
+        // Keep any existing "N new posts" toast visible while we re-check, so a
+        // second click never throws away posts the user hasn't loaded yet.
+        StateHasChanged();
+
+        _refreshPollCts?.Cancel();
+        _refreshPollCts = new CancellationTokenSource();
+        var token = _refreshPollCts.Token;
+
+        int newCount = 0;
+        try
+        {
+            // Fire-and-forget on the server; it keeps running even if we stop polling.
+            await FeedClient.TriggerRefreshAsync();
+
+            // Poll progress without blocking — the user keeps reading meanwhile.
+            // The server resets its count at the start of each refresh and
+            // accumulates as feeds complete, so the final value is this run's total.
+            const int maxSeconds = 180;
+            for (int elapsed = 0; elapsed < maxSeconds && !token.IsCancellationRequested; elapsed += 2)
+            {
+                await Task.Delay(2000, token);
+                var status = await FeedClient.GetRefreshStatusAsync();
+                if (status == null) continue;
+                if (status.NewItemCount > newCount) newCount = status.NewItemCount;
+                if (!status.IsRefreshing) break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Background refresh polling failed.");
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                _isBackgroundRefreshing = false;
+                // Add this run's new posts to any still-unloaded from before.
+                _newPostsCount += newCount;
+                _showUpToDate = _newPostsCount == 0;
+                StateHasChanged();
+                if (_showUpToDate) _ = HideUpToDateSoonAsync();
+            }
+        }
+    }
+
+    private async Task HideUpToDateSoonAsync()
+    {
+        try
+        {
+            await Task.Delay(2500);
+            _showUpToDate = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // best-effort auto-dismiss
+        }
+    }
+
+    private async Task LoadNewPostsAsync()
+    {
+        // Stop any in-flight poll so it can't re-add a count for posts we're
+        // about to load right now.
+        _refreshPollCts?.Cancel();
+        _isBackgroundRefreshing = false;
+        _newPostsCount = 0;
+        _showUpToDate = false;
+        StateHasChanged();
+
+        // Reuse the existing force-reset path to reload the timeline from the top.
+        await OnRefreshComplete();
+
+        try { await jsRuntime.InvokeVoidAsync("window.scrollTo", 0, 0); } catch { }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

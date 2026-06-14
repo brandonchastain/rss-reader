@@ -62,6 +62,14 @@ public class RssDeserializer
                 {
                     var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
 
+                    // Prefer an explicit media image; the content <img> scrape in
+                    // ThumbnailResolver is the fallback for items without one.
+                    var media = x.MediaContents?.FirstOrDefault()?.Url
+                        ?? x.MediaThumbnails?.FirstOrDefault()?.Url
+                        ?? (x.Enclosure?.Type?.StartsWith("image", StringComparison.OrdinalIgnoreCase) == true
+                                ? x.Enclosure.Url
+                                : null);
+
                     var item = new NewsFeedItem(
                         x.Id,
                         user.Id,
@@ -70,7 +78,7 @@ public class RssDeserializer
                         x.CommentsLink?.Href,
                         date,
                         x.Description,
-                        x.MediaContents?.FirstOrDefault()?.Url);
+                        media);
 
                     item.PublishDateOrder = item.ParsedDate?.Ticks ?? DateTime.UtcNow.Ticks;
                     return item;

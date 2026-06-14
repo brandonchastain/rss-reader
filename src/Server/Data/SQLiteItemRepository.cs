@@ -2,7 +2,6 @@ using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using RssApp.Contracts;
-using RssReader.Server.Services;
 
 namespace RssApp.Data;
 
@@ -12,7 +11,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     private readonly ILogger<SQLiteItemRepository> logger;
     private readonly IFeedRepository feedStore;
     private readonly IUserRepository userStore;
-    private readonly FeedThumbnailRetriever feedThumbnailRetriever;
 
     // Serialize writes  SQLite allows only one writer at a time.
     private readonly SemaphoreSlim writeSemaphore = new SemaphoreSlim(1, 1);
@@ -23,7 +21,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         ILogger<SQLiteItemRepository> logger,
         IFeedRepository feedStore,
         IUserRepository userStore,
-        FeedThumbnailRetriever feedThumbnailRetriever,
         bool isReadOnly = false,
         bool rebuildFtsOnStartup = false)
     {
@@ -31,7 +28,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         this.logger = logger;
         this.feedStore = feedStore;
         this.userStore = userStore;
-        this.feedThumbnailRetriever = feedThumbnailRetriever ?? throw new ArgumentNullException(nameof(feedThumbnailRetriever));
         this.rebuildFtsOnStartup = rebuildFtsOnStartup;
         if (!isReadOnly) this.InitializeDatabase();
     }
@@ -531,55 +527,44 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     private const int InsertBatchSize = 25;
 
-    public async Task AddItemsAsync(IEnumerable<NewsFeedItem> items)
+    public async Task<int> AddItemsAsync(IEnumerable<NewsFeedItem> items)
     {
+        var itemList = items.ToList();
+        if (itemList.Count == 0) return 0;
+
+        // Phase 1: Resolve per-feed tags OUTSIDE the write lock (cached repo reads,
+        // no single-writer lock needed). Thumbnails are already resolved upstream
+        // by the FeedRefresher (ThumbnailResolver) and arrive on item.ThumbnailUrl.
+        var feedTags = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var preparedItems = new List<NewsFeedItem>();
+
+        foreach (var item in itemList)
+        {
+            try
+            {
+                if (!feedTags.ContainsKey(item.FeedUrl))
+                {
+                    var user = this.userStore.GetUserById(item.UserId);
+                    NewsFeed feed = this.feedStore.GetFeed(user, item.FeedUrl);
+                    feedTags[item.FeedUrl] = string.Join(",", feed.Tags ?? []);
+                }
+
+                preparedItems.Add(item);
+            }
+            catch (Exception ex)
+            {
+                this.logger.LogWarning(ex, "Error preparing item {Href}, skipping", item.Href);
+            }
+        }
+
+        if (preparedItems.Count == 0) return 0;
+
+        // Phase 2: Acquire the write lock only for the transaction.
+        var insertedCount = 0;
         await this.writeSemaphore.WaitAsync();
 
         try
         {
-            var itemList = items.ToList();
-            if (itemList.Count == 0) return;
-
-            // Phase 1: Precompute all data OUTSIDE the transaction (avoid holding write lock during I/O)
-            var feedTags = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var preparedItems = new List<NewsFeedItem>();
-
-            foreach (var item in itemList)
-            {
-                try
-                {
-                    var user = this.userStore.GetUserById(item.UserId);
-                    NewsFeed feed = this.feedStore.GetFeed(user, item.FeedUrl);
-
-                    if (!feedTags.ContainsKey(item.FeedUrl))
-                    {
-                        feedTags[item.FeedUrl] = string.Join(",", feed.Tags ?? []);
-                    }
-
-                    try
-                    {
-                        item.ThumbnailUrl = item.GetThumbnailUrl();
-                        if (string.IsNullOrWhiteSpace(item.ThumbnailUrl))
-                        {
-                            item.ThumbnailUrl = await this.feedThumbnailRetriever.RetrieveThumbnailUrlAsync(feed);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        this.logger.LogWarning(ex, "Thumbnail retrieval failed for {FeedUrl}, skipping", item.FeedUrl);
-                    }
-
-                    preparedItems.Add(item);
-                }
-                catch (Exception ex)
-                {
-                    this.logger.LogWarning(ex, "Error preparing item {Href}, skipping", item.Href);
-                }
-            }
-
-            if (preparedItems.Count == 0) return;
-
-            // Phase 2: Single connection + transaction for all DB writes
             using var connection = await this.connections.OpenWriteAsync();
             using var transaction = connection.BeginTransaction();
 
@@ -593,7 +578,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         INSERT OR IGNORE INTO Items (
                             FeedUrl, Href, CommentsHref, Title,
                             PublishDateOrder, PublishDate, UserId, ThumbnailUrl, Tags
-                        ) 
+                        )
                         VALUES (@feedUrl, @href, @commentsHref, @title,
                                 @publishDateOrder, @publishDate, @userId, @thumbnailUrl, @tags)";
                     command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
@@ -610,6 +595,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     // Only insert content if the Items row was actually inserted (not a duplicate)
                     if (rowsAffected > 0)
                     {
+                        insertedCount += rowsAffected;
                         command = connection.CreateCommand();
                         command.CommandText = @"
                             INSERT OR IGNORE INTO ItemContent (
@@ -639,11 +625,14 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         catch (Exception ex)
         {
             this.logger.LogError(ex, "Error adding items to SQLite database");
+            return 0;
         }
         finally
         {
             this.writeSemaphore.Release();
         }
+
+        return insertedCount;
     }
 
     public void UpdateTags(NewsFeedItem item, string tags)

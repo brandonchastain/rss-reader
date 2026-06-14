@@ -90,6 +90,46 @@ a {
     outline: none;
 }
 
+/* "New posts available" toast — floats below the sticky 48px header, never
+   disturbing the reader. Tapping it loads the new posts and jumps to the top. */
+.new-posts-toast {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    max-width: calc(100vw - 2rem);
+    padding: 0.5rem 1rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: var(--bg);
+    background-color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    animation: new-posts-toast-in 0.25s ease-out;
+}
+
+.new-posts-toast:hover {
+    filter: brightness(1.08);
+}
+
+.new-posts-toast.up-to-date {
+    color: var(--text-muted);
+    background-color: var(--bg-elevated);
+    border-color: var(--border);
+    cursor: default;
+}
+
+@keyframes new-posts-toast-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 .dropdown-container {
     position: relative;
     display: inline-block;

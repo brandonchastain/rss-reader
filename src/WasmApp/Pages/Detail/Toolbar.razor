@@ -8,15 +8,8 @@
 
 <div class="toolbar">
 
-    <button class="btn-link" @onclick="() => RefreshAsync()">
-        @if (isRefreshing)
-        {
-            <i class="fas fa-sync fa-spin"></i>
-        }
-        else
-        {
-            <i class="fas fa-sync"></i>
-        }
+    <button class="btn-link" title="Check for new posts" @onclick="OnRefreshClicked" disabled="@IsRefreshing">
+        <i class="fas fa-sync @(IsRefreshing ? "fa-spin" : "")"></i>
     </button>
 
     @if (Config.EnableTestAuth)
@@ -73,31 +66,28 @@
     [Parameter]
     public EventCallback<string> FilterForTag { get; set; }
 
+    // Reflects an in-progress background refresh (owned by PostTable). Drives
+    // the spinner without blocking the toolbar.
+    [Parameter]
+    public bool IsRefreshing { get; set; }
+
+    // Fired when the user clicks refresh. PostTable kicks off a non-blocking
+    // background refresh and surfaces a "new posts" toast when it finishes.
+    [Parameter]
+    public EventCallback OnRefreshRequested { get; set; }
+
+    // Used by the test-only "clear all" button to force a timeline reload.
     [Parameter]
     public EventCallback OnRefreshComplete { get; set; }
 
     private bool tagsAreHidden = true;
-    private bool isRefreshing = false;
 
     private bool isClearing = false;
 
-    private async Task RefreshAsync()
+    private async Task OnRefreshClicked()
     {
-        if (isRefreshing) return;
-
-        isRefreshing = true;
-        StateHasChanged();
-
-        // Always trigger a UI reset after the refresh poll cycle finishes.
-        // The server's HasNewItems flag can be stale during cooldown periods,
-        // and re-fetching page 1 is cheap. The user clicked refresh — they
-        // expect a fresh timeline regardless of the server's view.
-        await FeedClient.RefreshFeedsAsync();
-
-        isRefreshing = false;
-        StateHasChanged();
-
-        await OnRefreshComplete.InvokeAsync();
+        if (IsRefreshing) return;
+        await OnRefreshRequested.InvokeAsync();
     }
 
     private async Task ToggleShowFilters()

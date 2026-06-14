@@ -3,8 +3,11 @@ using RssApp.Serialization;
 using RssApp.Data;
 using RssApp.ComponentServices;
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using RssApp.Config;
+using RssReader.Server.Services;
 
 namespace RssApp.RssClient;
 
@@ -19,35 +22,44 @@ public class FeedRefresher : IFeedRefresher
     private readonly IUserRepository userStore;
     private readonly BackgroundWorkQueue backgroundWorkQueue;
     private readonly RssAppConfig config;
+    private readonly ThumbnailResolver thumbnailResolver;
     private readonly ConcurrentDictionary<int, UserRefreshState> refreshStates = new();
+
+    // In-memory HTTP cache validators per feed URL, used for conditional GET
+    // (If-None-Match / If-Modified-Since). Lets repeat refreshes within the
+    // process lifetime skip unchanged feeds via a 304. Not persisted: a cold
+    // start simply re-fetches everything, which is the desired behavior anyway.
+    private readonly ConcurrentDictionary<string, (EntityTagHeaderValue ETag, DateTimeOffset? LastModified)> feedValidators = new();
+
     private DateTime startupTime = DateTime.UtcNow;
-    private Exception lastRefreshException;
 
     /// <summary>
-    /// Per-user refresh state. Thread-safe via Interlocked/volatile.
+    /// Per-user refresh state. Thread-safe via Interlocked/volatile so the
+    /// parallel per-feed completions during a single refresh stay consistent.
     /// </summary>
     private class UserRefreshState
     {
         private int _pendingFeeds;
-        private volatile bool _hasNewItems;
+        private int _newItemCount;
         private volatile bool _isRefreshing;
         private DateTime? _lastRefreshTime;
 
         public bool IsRefreshing => _isRefreshing;
         public int PendingFeeds => Volatile.Read(ref _pendingFeeds);
-        public bool HasNewItems => _hasNewItems;
+        public int NewItemCount => Volatile.Read(ref _newItemCount);
+        public bool HasNewItems => NewItemCount > 0;
         public DateTime? LastRefreshTime => _lastRefreshTime;
 
         public void StartRefresh(int feedCount)
         {
-            _hasNewItems = false;
+            Interlocked.Exchange(ref _newItemCount, 0);
             Interlocked.Exchange(ref _pendingFeeds, feedCount);
             _isRefreshing = true;
         }
 
-        public void CompleteFeed(bool hadNewItems)
+        public void CompleteFeed(int newItems)
         {
-            if (hadNewItems) _hasNewItems = true;
+            if (newItems > 0) Interlocked.Add(ref _newItemCount, newItems);
             var remaining = Interlocked.Decrement(ref _pendingFeeds);
             if (remaining <= 0)
             {
@@ -61,6 +73,11 @@ public class FeedRefresher : IFeedRefresher
             Interlocked.Exchange(ref _pendingFeeds, 0);
             _isRefreshing = false;
         }
+
+        public void ClearNewItems()
+        {
+            Interlocked.Exchange(ref _newItemCount, 0);
+        }
     }
 
     public FeedRefresher(
@@ -71,7 +88,8 @@ public class FeedRefresher : IFeedRefresher
         IItemRepository newsFeedItemStore,
         IUserRepository userStore,
         BackgroundWorkQueue backgroundWorkQueue,
-        RssAppConfig config)
+        RssAppConfig config,
+        ThumbnailResolver thumbnailResolver)
     {
         this.httpClientFactory = httpClientFactory;
         this.deserializer = deserializer;
@@ -81,15 +99,11 @@ public class FeedRefresher : IFeedRefresher
         this.userStore = userStore;
         this.backgroundWorkQueue = backgroundWorkQueue;
         this.config = config;
+        this.thumbnailResolver = thumbnailResolver;
     }
 
     public void ResetRefreshCooldown()
     {
-        // Clear all per-user cooldowns
-        foreach (var state in refreshStates.Values)
-        {
-            // Force next refresh to proceed by clearing state
-        }
         refreshStates.Clear();
     }
 
@@ -100,7 +114,8 @@ public class FeedRefresher : IFeedRefresher
         {
             HasNewItems = state.HasNewItems,
             IsRefreshing = state.IsRefreshing,
-            PendingFeeds = state.PendingFeeds
+            PendingFeeds = state.PendingFeeds,
+            NewItemCount = state.NewItemCount
         };
     }
 
@@ -113,7 +128,7 @@ public class FeedRefresher : IFeedRefresher
     {
         var state = refreshStates.GetOrAdd(user.Id, _ => new UserRefreshState());
 
-        // If a refresh is already running for this user, don't start another
+        // If a refresh is already running for this user, don't start another.
         if (state.IsRefreshing)
         {
             return;
@@ -124,31 +139,43 @@ public class FeedRefresher : IFeedRefresher
 
         if (isJustStarted || isRecentRefresh)
         {
-            // Cooldown active — don't fake hasNewItems, just return.
-            // The status endpoint will honestly report isRefreshing=false.
+            // Cooldown active — no refresh runs. Clear any stale new-item count so
+            // the status endpoint honestly reports "up to date" instead of echoing
+            // a previous refresh's count.
+            state.ClearNewItems();
             return;
         }
 
         try
         {
             var feeds = this.persistedFeeds.GetFeeds(user).ToList();
-            var totalFeeds = feeds.Count;
 
             if (feeds.Count == 0)
             {
+                state.ClearNewItems();
                 return;
             }
 
-            state.StartRefresh(totalFeeds);
+            state.StartRefresh(feeds.Count);
 
-            foreach (var feed in feeds)
+            // One queued job orchestrates the whole refresh and returns immediately
+            // to the caller (controller responds 202). The job fetches feeds with
+            // bounded concurrency; DB writes remain serialized inside the item repo.
+            await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
             {
-                await this.backgroundWorkQueue.QueueBackgroundWorkItemAsync(async token =>
+                using var gate = new SemaphoreSlim(Math.Max(1, this.config.RefreshFetchConcurrency));
+
+                var tasks = feeds.Select(async feed =>
                 {
-                    bool hadNewItems = false;
+                    await gate.WaitAsync(token);
+                    int added = 0;
                     try
                     {
-                        hadNewItems = await ReloadCachedItemsAsync(feed);
+                        added = await ReloadCachedItemsAsync(feed, token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Shutdown — let the finally still mark the feed complete.
                     }
                     catch (Exception ex)
                     {
@@ -156,10 +183,13 @@ public class FeedRefresher : IFeedRefresher
                     }
                     finally
                     {
-                        state.CompleteFeed(hadNewItems);
+                        state.CompleteFeed(added);
+                        gate.Release();
                     }
                 });
-            }
+
+                await Task.WhenAll(tasks);
+            });
         }
         catch (Exception ex)
         {
@@ -172,9 +202,9 @@ public class FeedRefresher : IFeedRefresher
     /// Fetches fresh items from a feed and passes ALL of them to AddItemsAsync.
     /// Deduplication is handled inside AddItemsAsync via INSERT OR IGNORE,
     /// so no per-item GetItem() calls are needed here.
-    /// Returns true if any items were processed.
+    /// Returns the number of new items inserted.
     /// </summary>
-    private async Task<bool> ReloadCachedItemsAsync(NewsFeed feed)
+    private async Task<int> ReloadCachedItemsAsync(NewsFeed feed, CancellationToken token = default)
     {
         var url = feed.Href;
         var user = this.userStore.GetUserById(feed.UserId);
@@ -182,74 +212,92 @@ public class FeedRefresher : IFeedRefresher
         if (user == null)
         {
             this.logger.LogError("User not found: {userId}", feed.UserId);
-            return false;
+            return 0;
         }
 
-        var freshItems = await this.FetchItemsFromFeedAsync(user, url);
+        var freshItems = await this.FetchItemsFromFeedAsync(user, url, token);
 
         foreach (var item in freshItems)
         {
             item.FeedUrl = url;
             item.FeedTags = feed.Tags;
+            item.ThumbnailUrl = this.thumbnailResolver.Resolve(item);
         }
 
         if (freshItems.Any())
         {
-            await this.newsFeedItemStore.AddItemsAsync(freshItems);
-            return true;
+            return await this.newsFeedItemStore.AddItemsAsync(freshItems);
         }
 
-        return false;
+        return 0;
     }
 
-    private async Task<HashSet<NewsFeedItem>> FetchItemsFromFeedAsync(RssUser user, string url)
+    private async Task<HashSet<NewsFeedItem>> FetchItemsFromFeedAsync(RssUser user, string url, CancellationToken token = default)
     {
         var freshItems = new HashSet<NewsFeedItem>();
-        string response = null;
+        if (!EnableHttpLookup)
+        {
+            return freshItems;
+        }
+
         string[] agents = ["rss.brandonchastain.com/1.1", "curl/7.79.1"];
+        feedValidators.TryGetValue(url, out var known);
 
         foreach (string agent in agents)
         {
+            string response = null;
             try
             {
-                if (EnableHttpLookup)
+                using var httpClient = httpClientFactory.CreateClient("RssClient");
+                using var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                browserRequest.Headers.UserAgent.ParseAdd(agent);
+                browserRequest.Headers.Accept.ParseAdd("text/xml");
+                browserRequest.Headers.Accept.ParseAdd("application/xml");
+                browserRequest.Headers.Accept.ParseAdd("application/rss+xml");
+                browserRequest.Headers.Accept.ParseAdd("application/atom+xml");
+
+                // Conditional GET: ask the origin to skip sending an unchanged feed.
+                if (known.ETag != null) browserRequest.Headers.IfNoneMatch.Add(known.ETag);
+                if (known.LastModified != null) browserRequest.Headers.IfModifiedSince = known.LastModified;
+
+                using var httpRes = await httpClient.SendAsync(browserRequest, token);
+
+                if (httpRes.StatusCode == HttpStatusCode.NotModified)
                 {
-                    using var httpClient = httpClientFactory.CreateClient("RssClient");
-                    using var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
-                    browserRequest.Headers.UserAgent.ParseAdd(agent);
-                    browserRequest.Headers.Accept.ParseAdd("text/xml");
-                    browserRequest.Headers.Accept.ParseAdd("application/xml");
-                    browserRequest.Headers.Accept.ParseAdd("application/rss+xml");
-                    browserRequest.Headers.Accept.ParseAdd("application/atom+xml");
-
-                    using var httpRes = await httpClient.SendAsync(browserRequest);
-                    response = await httpRes.Content.ReadAsStringAsync();
-
-                    if (string.IsNullOrEmpty(response))
-                    {
-                        this.logger.LogWarning($"Empty response when refreshing feed: {url}");
-                        this.logger.LogWarning($"Empty response headers: {httpRes.Headers}" );
-                        this.logger.LogError($"Error response: {response}");
-                        continue;
-                    }
-
-                    var items = this.deserializer.FromString(response, user);
-                    freshItems.UnionWith(items);
-
-                    // It worked. Exit the loop.
-                    break;
+                    // Nothing changed since last fetch — skip parse + DB write entirely.
+                    return freshItems;
                 }
+
+                response = await httpRes.Content.ReadAsStringAsync(token);
+
+                if (string.IsNullOrEmpty(response))
+                {
+                    this.logger.LogWarning("Empty response when refreshing feed: {url} (headers: {headers})", url, httpRes.Headers);
+                    continue;
+                }
+
+                // Remember validators so future refreshes can short-circuit with a 304.
+                var newEtag = httpRes.Headers.ETag;
+                var newLastModified = httpRes.Content.Headers.LastModified;
+                if (newEtag != null || newLastModified != null)
+                {
+                    feedValidators[url] = (newEtag, newLastModified);
+                }
+
+                var items = this.deserializer.FromString(response, user);
+                freshItems.UnionWith(items);
+
+                // It worked. Exit the loop.
+                break;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                if (lastRefreshException != null)
-                {
-                    throw;
-                }
-
                 int len = Math.Min(500, response?.Length ?? 0);
                 this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
-                lastRefreshException = ex;
             }
         }
 

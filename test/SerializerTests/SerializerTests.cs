@@ -2,13 +2,18 @@
 using RssApp.Serialization;
 using RssApp.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
+using RssReader.Server.Services;
 
 [TestClass]
 public sealed class SerializerTests
 {
     [TestMethod]
-    public void Deserialized_Feed_Thumbnails_Should_Not_Be_Null()
+    public void Resolved_Feed_Thumbnails_Should_Not_Be_Null()
     {
+        // Thumbnail resolution now lives in ThumbnailResolver (media tag, else first
+        // <img> in content), not in the deserializer. Verify a real feed's items all
+        // resolve to an article image.
+        var resolver = new ThumbnailResolver();
         foreach (var file in Directory.GetFiles("feeds").Where(f => f.Contains("vox.xml")))
         {
             var content = File.ReadAllText(file);
@@ -18,8 +23,8 @@ public sealed class SerializerTests
 
             foreach (var item in feed)
             {
-                string thumbUrl = item.GetThumbnailUrl();
-                Assert.IsNotNull(thumbUrl);
+                string thumbUrl = resolver.Resolve(item);
+                Assert.IsNotNull(thumbUrl, $"Expected a resolved thumbnail for {item.Href}");
             }
         }
     }
