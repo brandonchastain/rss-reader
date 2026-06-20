@@ -12,6 +12,20 @@
     --warn: #f0883e;
 }
 
+/* Light theme — applied when the user opts in (data-theme="light" on <html>).
+   Dark remains the default so existing users see no change. */
+:root[data-theme="light"] {
+    --bg: #ffffff;
+    --bg-elevated: #f6f8fa;
+    --bg-hover: #eaeef2;
+    --border: #d0d7de;
+    --text: #1f2328;
+    --text-muted: #59636e;
+    --accent: #1a7f37;
+    --link: #0969da;
+    --warn: #bc4c00;
+}
+
 html, body {
     font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
     background-color: var(--bg);

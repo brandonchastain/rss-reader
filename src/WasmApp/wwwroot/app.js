@@ -121,6 +121,24 @@ window.Observer = {
 };
 
 window.rssApp = {
+    // Theme preference: persisted to localStorage so it survives reloads and
+    // sessions. The initial theme is applied pre-boot by the inline script in
+    // index.html; these helpers let Blazor read/toggle it at runtime.
+    theme: {
+        get: function () {
+            return document.documentElement.getAttribute('data-theme') || 'dark';
+        },
+        set: function (theme) {
+            var value = theme === 'light' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', value);
+            try { localStorage.setItem('rssApp.theme', value); } catch (e) {}
+            return value;
+        },
+        toggle: function () {
+            var next = window.rssApp.theme.get() === 'light' ? 'dark' : 'light';
+            return window.rssApp.theme.set(next);
+        }
+    },
     _loadedItemCount: 0,
     setLoadedItemCount: function(count) {
         window.rssApp._loadedItemCount = count;

@@ -13,6 +13,21 @@
     <link href="WasmApp.styles.css" rel="stylesheet" />
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+    <script>
+        // Apply the saved theme before first paint to avoid a flash of the
+        // wrong theme. Falls back to the OS preference, then to dark (the
+        // app's historical default). Mirrors window.rssApp.theme in app.js.
+        (function () {
+            try {
+                var saved = localStorage.getItem('rssApp.theme');
+                var theme = saved
+                    || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
 </head>
 
 <body>
