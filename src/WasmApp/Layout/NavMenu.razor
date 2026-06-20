@@ -6,6 +6,7 @@
 
 @inject IUserClient userClient
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 
 @rendermode InteractiveWebAssembly
 
@@ -45,6 +46,13 @@
     <div class="toolbar-container">
         <SectionOutlet SectionName="toolbar" />
     </div>
+
+    @* Always visible: light/dark theme toggle *@
+    <button type="button" class="theme-toggle" @onclick="ToggleThemeAsync"
+            title="@(isLight ? "Switch to dark mode" : "Switch to light mode")"
+            aria-label="@(isLight ? "Switch to dark mode" : "Switch to light mode")">
+        <i class="fas @(isLight ? "fa-moon" : "fa-sun")"></i>
+    </button>
 
     @* Desktop only: auth *@
     <div class="desktop-nav-auth desktop-only">
@@ -142,8 +150,26 @@
     private string username = null;
     private RssUser feedUser = null;
     private bool collapseNavMenu = true;
+    private bool isLight = false;
 
     private string NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Sync the icon to the theme the pre-boot script already applied.
+            var theme = await JS.InvokeAsync<string>("rssApp.theme.get");
+            isLight = theme == "light";
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleThemeAsync()
+    {
+        var theme = await JS.InvokeAsync<string>("rssApp.theme.toggle");
+        isLight = theme == "light";
+    }
 
     protected override async Task OnInitializedAsync()
     {
