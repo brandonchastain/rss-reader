@@ -39,6 +39,14 @@ public class RepositoryFactory
             this.isReadOnly);
     }
 
+    public IFeedValidatorStore CreateFeedValidatorStore()
+    {
+        return new SQLiteFeedValidatorStore(
+            this.connections,
+            this.serviceProvider.GetRequiredService<ILogger<SQLiteFeedValidatorStore>>(),
+            this.isReadOnly);
+    }
+
     public IItemRepository CreateItemRepository()
     {
         return new SQLiteItemRepository(
