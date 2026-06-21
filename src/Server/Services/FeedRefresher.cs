@@ -5,6 +5,7 @@ using RssApp.ComponentServices;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using RssApp.Config;
 using RssReader.Server.Services;
@@ -43,6 +44,41 @@ public class FeedRefresher : IFeedRefresher
     // gate would allow more, we never have more than MaxConcurrentFetchesPerHost
     // requests in flight to the same host at once.
     private readonly ConcurrentDictionary<string, SemaphoreSlim> hostGates = new();
+
+    private readonly IFeedScheduleStore scheduleStore;
+
+    // In-memory per-URL next-earliest-fetch schedule, write-through to scheduleStore.
+    // Loaded once from the store (so the cadence survives restarts) and updated after
+    // every fetch. Both the scheduler and manual refreshes consult it to decide whether
+    // a URL is due, which is what dedups a feed shared by many users down to one fetch.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> nextEarliestByUrl = new();
+    private volatile bool scheduleLoaded;
+    private readonly object scheduleLoadLock = new();
+
+    // In-flight fetch coalescing: concurrent callers for the same URL (e.g. a manual
+    // refresh racing the scheduler) share one HTTP fetch instead of each hitting the origin.
+    private readonly ConcurrentDictionary<string, Task<FeedFetchResult>> inflightFetches = new();
+
+    // Placeholder used when parsing a feed not on behalf of a specific user; the real
+    // UserId is assigned per subscriber during fan-out, so this value is never persisted.
+    private static readonly RssUser SchedulerUser = new("scheduler", 0);
+
+    private static readonly Regex TtlRegex =
+        new(@"<ttl>\s*(\d+)\s*</ttl>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex UpdatePeriodRegex =
+        new(@"<sy:updatePeriod>\s*(hourly|daily|weekly|monthly|yearly)\s*</sy:updatePeriod>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex UpdateFrequencyRegex =
+        new(@"<sy:updateFrequency>\s*(\d+)\s*</sy:updateFrequency>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private enum FetchOutcome { Fetched, NotModified, BackedOff, Failed }
+
+    private sealed class FeedFetchResult
+    {
+        public FetchOutcome Outcome { get; init; }
+        public List<NewsFeedItem> Items { get; init; } = new();
+        public TimeSpan? AdvertisedInterval { get; init; }
+        public DateTimeOffset? BackoffUntil { get; init; }
+    }
 
     private DateTime startupTime = DateTime.UtcNow;
 
@@ -135,7 +171,8 @@ public class FeedRefresher : IFeedRefresher
         BackgroundWorkQueue backgroundWorkQueue,
         RssAppConfig config,
         ThumbnailResolver thumbnailResolver,
-        IFeedValidatorStore validatorStore)
+        IFeedValidatorStore validatorStore,
+        IFeedScheduleStore scheduleStore)
     {
         this.httpClientFactory = httpClientFactory;
         this.deserializer = deserializer;
@@ -147,6 +184,7 @@ public class FeedRefresher : IFeedRefresher
         this.config = config;
         this.thumbnailResolver = thumbnailResolver;
         this.validatorStore = validatorStore;
+        this.scheduleStore = scheduleStore;
     }
 
     public void ResetRefreshCooldown()
@@ -168,7 +206,9 @@ public class FeedRefresher : IFeedRefresher
 
     public async Task AddFeedAsync(NewsFeed feed)
     {
-        await ReloadCachedItemsAsync(feed);
+        // A newly added feed: force a fetch and write its items for this user right
+        // away (don't wait for the scheduler), independent of the per-URL schedule.
+        await FetchAndWriteForFeedAsync(feed, force: true, CancellationToken.None);
     }
 
     public async Task RefreshAsync(RssUser user)
@@ -218,7 +258,11 @@ public class FeedRefresher : IFeedRefresher
                     int added = 0;
                     try
                     {
-                        added = await ReloadCachedItemsAsync(feed, token);
+                        // Route through the shared per-URL coordinator: fetches are
+                        // coalesced + deduped, items fan out to every subscriber, and
+                        // we take this user's new-item count for the refresh status.
+                        var counts = await FetchAndFanOutAsync(feed.Href, force: false, token);
+                        counts.TryGetValue(user.Id, out added);
                     }
                     catch (OperationCanceledException)
                     {
@@ -245,59 +289,228 @@ public class FeedRefresher : IFeedRefresher
         }
     }
 
+    public async Task RunSchedulerTickAsync(CancellationToken token)
+    {
+        EnsureScheduleLoaded();
+
+        List<string> urls;
+        try
+        {
+            urls = this.persistedFeeds.GetAllDistinctFeedUrls().ToList();
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogError(ex, "Scheduler: failed to enumerate feed URLs.");
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var due = urls.Where(u => !nextEarliestByUrl.TryGetValue(u, out var next) || next <= now).ToList();
+        if (due.Count == 0)
+        {
+            return;
+        }
+
+        this.logger.LogInformation("Scheduler: {due} of {total} distinct feeds due for refresh.", due.Count, urls.Count);
+
+        using var gate = new SemaphoreSlim(Math.Max(1, this.config.RefreshFetchConcurrency));
+        var tasks = due.Select(async url =>
+        {
+            await gate.WaitAsync(token);
+            try
+            {
+                await FetchAndFanOutAsync(url, force: false, token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Shutdown.
+            }
+            catch (Exception ex)
+            {
+                this.logger.LogError(ex, "Scheduler: error refreshing {url}", url);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+    }
+
     /// <summary>
-    /// Fetches fresh items from a feed and passes ALL of them to AddItemsAsync.
-    /// Deduplication is handled inside AddItemsAsync via INSERT OR IGNORE,
-    /// so no per-item GetItem() calls are needed here.
-    /// Returns the number of new items inserted.
+    /// Fetches a URL once (if due, unless forced) and fans the parsed items out to
+    /// every subscriber, returning each subscriber's new-item count. This is the one
+    /// place a feed's items are produced, so a feed shared by N users is fetched once.
     /// </summary>
-    private async Task<int> ReloadCachedItemsAsync(NewsFeed feed, CancellationToken token = default)
+    private async Task<IReadOnlyDictionary<int, int>> FetchAndFanOutAsync(string url, bool force, CancellationToken token)
+    {
+        var counts = new Dictionary<int, int>();
+        if (!force && !IsDue(url))
+        {
+            return counts;
+        }
+
+        var result = await FetchParsedItemsAsync(url, token);
+        UpdateSchedule(url, result);
+
+        if (result.Outcome != FetchOutcome.Fetched || result.Items.Count == 0)
+        {
+            return counts;
+        }
+
+        var subscribers = this.persistedFeeds.GetFeedsByUrl(url).ToList();
+        foreach (var feed in subscribers)
+        {
+            var userItems = result.Items.Select(t => CloneForSubscriber(t, feed.UserId, feed.Tags)).ToList();
+            counts[feed.UserId] = await this.newsFeedItemStore.AddItemsAsync(userItems);
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// Fetches a URL (if due, unless forced) and writes its items for a single feed's
+    /// user. Used when a user adds a feed so their items appear immediately, without
+    /// waiting for the scheduler and without disturbing the shared per-URL schedule.
+    /// </summary>
+    private async Task<int> FetchAndWriteForFeedAsync(NewsFeed feed, bool force, CancellationToken token)
     {
         var url = feed.Href;
-        var user = this.userStore.GetUserById(feed.UserId);
-
-        if (user == null)
+        if (!force && !IsDue(url))
         {
-            this.logger.LogError("User not found: {userId}", feed.UserId);
             return 0;
         }
 
-        var freshItems = await this.FetchItemsFromFeedAsync(user, url, token);
+        var result = await FetchParsedItemsAsync(url, token);
 
-        foreach (var item in freshItems)
+        if (result.Outcome != FetchOutcome.Fetched || result.Items.Count == 0)
         {
-            item.FeedUrl = url;
-            item.FeedTags = feed.Tags;
-            item.ThumbnailUrl = this.thumbnailResolver.Resolve(item);
+            return 0;
         }
 
-        if (freshItems.Any())
-        {
-            return await this.newsFeedItemStore.AddItemsAsync(freshItems);
-        }
-
-        return 0;
+        var userItems = result.Items.Select(t => CloneForSubscriber(t, feed.UserId, feed.Tags)).ToList();
+        return await this.newsFeedItemStore.AddItemsAsync(userItems);
     }
 
-    private async Task<HashSet<NewsFeedItem>> FetchItemsFromFeedAsync(RssUser user, string url, CancellationToken token = default)
+    /// <summary>Produces a per-subscriber copy of a parsed item with the user's id and tags.</summary>
+    private static NewsFeedItem CloneForSubscriber(NewsFeedItem template, int userId, ICollection<string> tags)
     {
-        var freshItems = new HashSet<NewsFeedItem>();
+        return new NewsFeedItem(
+            template.Id,
+            userId,
+            template.Title,
+            template.Href,
+            template.CommentsHref,
+            template.PublishDate,
+            template.Content,
+            template.ThumbnailUrl)
+        {
+            FeedUrl = template.FeedUrl,
+            PublishDateOrder = template.PublishDateOrder,
+            FeedTags = tags ?? new List<string>(),
+        };
+    }
+
+    // --- Per-URL schedule (write-through cache over IFeedScheduleStore) ---
+
+    private void EnsureScheduleLoaded()
+    {
+        if (scheduleLoaded) return;
+        lock (scheduleLoadLock)
+        {
+            if (scheduleLoaded) return;
+            try
+            {
+                foreach (var kv in this.scheduleStore.GetSchedule())
+                {
+                    nextEarliestByUrl[kv.Key] = kv.Value;
+                }
+            }
+            catch (Exception ex)
+            {
+                this.logger.LogWarning(ex, "Failed to load persisted feed schedule; treating all feeds as due.");
+            }
+            scheduleLoaded = true;
+        }
+    }
+
+    private bool IsDue(string url)
+    {
+        EnsureScheduleLoaded();
+        return !nextEarliestByUrl.TryGetValue(url, out var next) || next <= DateTimeOffset.UtcNow;
+    }
+
+    private void UpdateSchedule(string url, FeedFetchResult result)
+    {
+        var now = DateTimeOffset.UtcNow;
+        TimeSpan interval;
+        DateTimeOffset nextEarliest;
+
+        if (result.Outcome == FetchOutcome.BackedOff || result.Outcome == FetchOutcome.Failed)
+        {
+            // Align the schedule with the politeness backoff so the scheduler doesn't
+            // re-select a struggling feed every tick.
+            interval = this.config.FeedRefreshInterval;
+            nextEarliest = result.BackoffUntil ?? now + interval;
+        }
+        else
+        {
+            interval = ClampInterval(result.AdvertisedInterval ?? this.config.FeedRefreshInterval);
+            nextEarliest = now + interval;
+        }
+
+        nextEarliestByUrl[url] = nextEarliest;
+        this.scheduleStore.Record(url, now, nextEarliest, interval);
+    }
+
+    private TimeSpan ClampInterval(TimeSpan interval)
+    {
+        if (interval < this.config.FeedRefreshIntervalFloor) return this.config.FeedRefreshIntervalFloor;
+        if (interval > this.config.FeedRefreshIntervalMax) return this.config.FeedRefreshIntervalMax;
+        return interval;
+    }
+
+    /// <summary>
+    /// Coalesces concurrent fetches of the same URL: callers that arrive while a
+    /// fetch is in flight share its result instead of each hitting the origin.
+    /// </summary>
+    private Task<FeedFetchResult> FetchParsedItemsAsync(string url, CancellationToken token)
+    {
+        // Share a fetch only while it is genuinely in flight: concurrent callers for
+        // the same URL join the running task, but once it completes the next caller
+        // starts a fresh fetch (the completed entry is replaced, not reused).
+        return inflightFetches.AddOrUpdate(
+            url,
+            u => FetchParsedItemsCoreAsync(u, token),
+            (u, existing) => existing.IsCompleted ? FetchParsedItemsCoreAsync(u, token) : existing);
+    }
+
+    /// <summary>
+    /// Fetches and parses a feed once, applying all politeness (conditional GET,
+    /// per-host throttle, Retry-After/backoff). Returns parsed items with the feed
+    /// URL + resolved thumbnail set but no UserId — that is assigned per subscriber
+    /// during fan-out. The result's outcome tells the caller whether to fan out and
+    /// how to schedule the next fetch.
+    /// </summary>
+    private async Task<FeedFetchResult> FetchParsedItemsCoreAsync(string url, CancellationToken token)
+    {
         if (!EnableHttpLookup)
         {
-            return freshItems;
+            return new FeedFetchResult { Outcome = FetchOutcome.NotModified };
         }
 
         var health = feedHealth.GetOrAdd(url, _ => new FeedFetchHealth());
 
         // Politeness: if this feed is in a backoff window (from a prior failure
         // or an origin Retry-After), don't touch the origin yet.
-        var nextEarliest = health.NextEarliestFetch;
-        if (nextEarliest.HasValue && DateTimeOffset.UtcNow < nextEarliest.Value)
+        var backoffUntil = health.NextEarliestFetch;
+        if (backoffUntil.HasValue && DateTimeOffset.UtcNow < backoffUntil.Value)
         {
             this.logger.LogDebug(
                 "Skipping feed {url}; backing off until {until} ({failures} consecutive failures).",
-                url, nextEarliest.Value, health.ConsecutiveFailures);
-            return freshItems;
+                url, backoffUntil.Value, health.ConsecutiveFailures);
+            return new FeedFetchResult { Outcome = FetchOutcome.BackedOff, BackoffUntil = backoffUntil };
         }
 
         string[] agents = ["rss.brandonchastain.com/1.1", "curl/7.79.1"];
@@ -307,8 +520,10 @@ public class FeedRefresher : IFeedRefresher
         var hostGate = GetHostGate(url);
         await hostGate.WaitAsync(token);
 
-        bool succeeded = false;
+        List<NewsFeedItem> parsed = null;
+        TimeSpan? advertisedInterval = null;
         TimeSpan? originRetryAfter = null;
+        bool notModified = false;
 
         try
         {
@@ -333,10 +548,9 @@ public class FeedRefresher : IFeedRefresher
 
                     if (httpRes.StatusCode == HttpStatusCode.NotModified)
                     {
-                        // Nothing changed since last fetch — skip parse + DB write entirely.
-                        // A 304 is a healthy response: clear any prior backoff.
-                        succeeded = true;
-                        return freshItems;
+                        // Nothing changed since last fetch — a 304 is a healthy response.
+                        notModified = true;
+                        break;
                     }
 
                     // Rate-limited or service-unavailable: respect the origin's wishes
@@ -381,11 +595,16 @@ public class FeedRefresher : IFeedRefresher
                         this.validatorStore.Set(url, newEtag?.ToString(), newLastModified);
                     }
 
-                    var items = this.deserializer.FromString(response, user);
-                    freshItems.UnionWith(items);
+                    var items = this.deserializer.FromString(response, SchedulerUser).ToList();
+                    foreach (var item in items)
+                    {
+                        item.FeedUrl = url;
+                        item.ThumbnailUrl = this.thumbnailResolver.Resolve(item);
+                    }
+                    parsed = items;
+                    advertisedInterval = TryParseAdvertisedInterval(response);
 
                     // It worked. Exit the loop.
-                    succeeded = true;
                     break;
                 }
                 catch (OperationCanceledException)
@@ -404,23 +623,68 @@ public class FeedRefresher : IFeedRefresher
             hostGate.Release();
         }
 
-        if (succeeded)
+        if (notModified)
         {
             health.RecordSuccess();
-        }
-        else
-        {
-            // Record the failure and schedule the next earliest fetch. An explicit
-            // Retry-After from the origin always wins; otherwise use exponential backoff.
-            var failures = health.RecordFailure();
-            var delay = originRetryAfter ?? ComputeBackoffDelay(failures);
-            health.SetNextEarliestFetch(DateTimeOffset.UtcNow + delay);
-            this.logger.LogWarning(
-                "Feed {url} fetch failed ({failures} consecutive); next attempt no earlier than {delay} from now.",
-                url, failures, delay);
+            return new FeedFetchResult { Outcome = FetchOutcome.NotModified };
         }
 
-        return freshItems;
+        if (parsed != null)
+        {
+            health.RecordSuccess();
+            return new FeedFetchResult
+            {
+                Outcome = FetchOutcome.Fetched,
+                Items = parsed,
+                AdvertisedInterval = advertisedInterval,
+            };
+        }
+
+        // Nothing usable came back. Record the failure and schedule the next earliest
+        // fetch — an explicit Retry-After always wins; otherwise exponential backoff.
+        var failures = health.RecordFailure();
+        var delay = originRetryAfter ?? ComputeBackoffDelay(failures);
+        var until = DateTimeOffset.UtcNow + delay;
+        health.SetNextEarliestFetch(until);
+        this.logger.LogWarning(
+            "Feed {url} fetch failed ({failures} consecutive); next attempt no earlier than {delay} from now.",
+            url, failures, delay);
+        return new FeedFetchResult { Outcome = FetchOutcome.Failed, BackoffUntil = until };
+    }
+
+    /// <summary>
+    /// Parses a feed's advertised polling interval from <c>&lt;ttl&gt;</c> (minutes)
+    /// or the syndication module (<c>sy:updatePeriod</c> + optional
+    /// <c>sy:updateFrequency</c>). Returns null when the feed advertises neither.
+    /// </summary>
+    private static TimeSpan? TryParseAdvertisedInterval(string xml)
+    {
+        if (string.IsNullOrEmpty(xml)) return null;
+
+        var ttl = TtlRegex.Match(xml);
+        if (ttl.Success && int.TryParse(ttl.Groups[1].Value, out var minutes) && minutes > 0)
+        {
+            return TimeSpan.FromMinutes(minutes);
+        }
+
+        var period = UpdatePeriodRegex.Match(xml);
+        if (period.Success)
+        {
+            TimeSpan basePeriod = period.Groups[1].Value.ToLowerInvariant() switch
+            {
+                "hourly" => TimeSpan.FromHours(1),
+                "daily" => TimeSpan.FromDays(1),
+                "weekly" => TimeSpan.FromDays(7),
+                "monthly" => TimeSpan.FromDays(30),
+                "yearly" => TimeSpan.FromDays(365),
+                _ => TimeSpan.FromDays(1),
+            };
+            var freqMatch = UpdateFrequencyRegex.Match(xml);
+            int frequency = freqMatch.Success && int.TryParse(freqMatch.Groups[1].Value, out var f) && f > 0 ? f : 1;
+            return basePeriod / frequency;
+        }
+
+        return null;
     }
 
     /// <summary>

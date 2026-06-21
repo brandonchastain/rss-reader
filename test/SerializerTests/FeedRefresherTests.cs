@@ -66,12 +66,25 @@ public sealed class FeedRefresherTests
         }
     }
 
+    /// <summary>In-memory IFeedScheduleStore so scheduling/due-windows are observable in tests.</summary>
+    private sealed class InMemoryScheduleStore : IFeedScheduleStore
+    {
+        private readonly ConcurrentDictionary<string, DateTimeOffset> map = new();
+
+        public IReadOnlyDictionary<string, DateTimeOffset> GetSchedule()
+            => new Dictionary<string, DateTimeOffset>(this.map);
+
+        public void Record(string url, DateTimeOffset lastFetchedUtc, DateTimeOffset nextEarliestFetchUtc, TimeSpan interval)
+            => this.map[url] = nextEarliestFetchUtc;
+    }
+
     private static (FeedRefresher refresher, Mock<IItemRepository> itemRepo) CreateRefresher(
         Mock<IFeedRepository> feedRepo = null,
         Mock<IUserRepository> userRepo = null,
         RssAppConfig config = null,
         HttpMessageHandler primaryHandler = null,
-        IFeedValidatorStore validatorStore = null)
+        IFeedValidatorStore validatorStore = null,
+        IFeedScheduleStore scheduleStore = null)
     {
         feedRepo ??= new Mock<IFeedRepository>();
         var mockItemRepo = new Mock<IItemRepository>();
@@ -82,6 +95,7 @@ public sealed class FeedRefresherTests
             .Setup(repo => repo.GetUserById(It.IsAny<int>()))
             .Returns(new RssUser("testUser", 0));
         validatorStore ??= new InMemoryValidatorStore();
+        scheduleStore ??= new InMemoryScheduleStore();
         var serviceCollection = new ServiceCollection();
         serviceCollection
             .AddLogging(b => { b.ClearProviders(); b.AddConsole(); b.AddDebug(); })
@@ -90,6 +104,7 @@ public sealed class FeedRefresherTests
             .AddSingleton<IItemRepository>(mockItemRepo.Object)
             .AddSingleton<IUserRepository>(userRepo.Object)
             .AddSingleton<IFeedValidatorStore>(validatorStore)
+            .AddSingleton<IFeedScheduleStore>(scheduleStore)
             .AddSingleton<BackgroundWorkQueue>()
             .AddHostedService<BackgroundWorker>()
             .AddSingleton<RssDeserializer>()
@@ -320,5 +335,61 @@ public sealed class FeedRefresherTests
         StringAssert.Contains(handler.LastIfNoneMatch, "persisted-etag",
             "If-None-Match should carry the persisted ETag.");
         Assert.IsNotNull(handler.LastIfModifiedSince, "A conditional GET should also send If-Modified-Since.");
+    }
+
+    [TestMethod]
+    public async Task Scheduler_FetchesSharedUrlOnce_AndFansOutToAllSubscribers()
+    {
+        // Three users subscribe to the same URL. One scheduler tick must fetch the
+        // origin exactly once and write items for each of the three subscribers.
+        var url = "https://shared.example.com/feed";
+        var rss = File.ReadAllText(Path.Combine("feeds", "vox.xml"));
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(rss) });
+
+        var feedRepo = new Mock<IFeedRepository>();
+        feedRepo.Setup(r => r.GetAllDistinctFeedUrls()).Returns(new[] { url });
+        feedRepo.Setup(r => r.GetFeedsByUrl(url)).Returns(new List<NewsFeed>
+        {
+            new NewsFeed(url, userId: 1),
+            new NewsFeed(url, userId: 2),
+            new NewsFeed(url, userId: 3),
+        });
+
+        var (refresher, itemRepo) = CreateRefresher(feedRepo: feedRepo, primaryHandler: handler);
+
+        var fannedOutUserIds = new List<int>();
+        itemRepo.Setup(r => r.AddItemsAsync(It.IsAny<IEnumerable<NewsFeedItem>>()))
+            .Callback<IEnumerable<NewsFeedItem>>(items =>
+            {
+                var list = items.ToList();
+                if (list.Count > 0) fannedOutUserIds.Add(list[0].UserId);
+            })
+            .ReturnsAsync(0);
+
+        await refresher.RunSchedulerTickAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, handler.CallCount, "A feed shared by N users must be fetched once, not N times.");
+        CollectionAssert.AreEquivalent(new[] { 1, 2, 3 }, fannedOutUserIds,
+            "Items should be fanned out to every subscriber, each with their own UserId.");
+    }
+
+    [TestMethod]
+    public async Task Scheduler_SkipsUrls_NotYetDue()
+    {
+        // A URL whose next-earliest-fetch is in the future must not be touched.
+        var url = "https://notdue.example.com/feed";
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<rss/>") });
+
+        var feedRepo = new Mock<IFeedRepository>();
+        feedRepo.Setup(r => r.GetAllDistinctFeedUrls()).Returns(new[] { url });
+
+        var schedule = new InMemoryScheduleStore();
+        schedule.Record(url, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddHours(1), TimeSpan.FromHours(1));
+
+        var (refresher, _) = CreateRefresher(feedRepo: feedRepo, primaryHandler: handler, scheduleStore: schedule);
+
+        await refresher.RunSchedulerTickAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, handler.CallCount, "A feed not yet due must not be fetched by the scheduler.");
     }
 }

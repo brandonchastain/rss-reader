@@ -17,5 +17,6 @@ namespace RssApp.ComponentServices
             PendingFeeds = 0
         };
         public void ResetRefreshCooldown() { }
+        public Task RunSchedulerTickAsync(CancellationToken token) => Task.CompletedTask;
     }
 }

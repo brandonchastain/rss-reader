@@ -88,6 +88,12 @@ public class CachingFeedRepository : IFeedRepository
         _inner.AddTag(feed, tag);
     }
 
+    // --- Scheduler support (pass-through; these scan across users) ---
+
+    public IEnumerable<string> GetAllDistinctFeedUrls() => _inner.GetAllDistinctFeedUrls();
+
+    public IEnumerable<NewsFeed> GetFeedsByUrl(string url) => _inner.GetFeedsByUrl(url);
+
     // --- Tag settings (pass-through, no caching) ---
 
     public IEnumerable<TagSetting> GetTagSettings(RssUser user)

@@ -47,6 +47,14 @@ public class RepositoryFactory
             this.isReadOnly);
     }
 
+    public IFeedScheduleStore CreateFeedScheduleStore()
+    {
+        return new SQLiteFeedScheduleStore(
+            this.connections,
+            this.serviceProvider.GetRequiredService<ILogger<SQLiteFeedScheduleStore>>(),
+            this.isReadOnly);
+    }
+
     public IItemRepository CreateItemRepository()
     {
         return new SQLiteItemRepository(

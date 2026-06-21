@@ -116,7 +116,10 @@ if (!config.IsReadOnly)
         .AddHostedService<BackgroundWorker>()
         .AddSingleton<IFeedValidatorStore>(sb =>
             sb.GetRequiredService<RepositoryFactory>().CreateFeedValidatorStore())
+        .AddSingleton<IFeedScheduleStore>(sb =>
+            sb.GetRequiredService<RepositoryFactory>().CreateFeedScheduleStore())
         .AddSingleton<IFeedRefresher, FeedRefresher>()
+        .AddHostedService<FeedScheduler>()
         .AddTransient<RedirectDowngradeHandler>()
         // Per-request timeout so a single slow/hung feed can't stall the whole
         // parallel refresh batch (the default HttpClient timeout is 100s).
