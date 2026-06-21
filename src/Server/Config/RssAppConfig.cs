@@ -33,6 +33,21 @@ namespace RssApp.Config
         // slowest-feed * ceil(feeds / concurrency). DB writes remain serialized,
         // so this does not increase SQLite write contention.
         public int RefreshFetchConcurrency { get; set; } = 8;
+
+        // Max simultaneous in-flight fetches to a single origin host, across all
+        // users' concurrent refreshes. Keeps a popular host (one many users
+        // subscribe to) from receiving the full RefreshFetchConcurrency burst at
+        // once. Bounds politeness per-host independently of the global gate.
+        public int MaxConcurrentFetchesPerHost { get; set; } = 2;
+
+        // Exponential backoff applied to a single feed URL after a failed or
+        // non-OK fetch (network error, timeout, 5xx, or 429/503 without a usable
+        // Retry-After). Delay grows base * 2^(failures-1), capped at Max, with
+        // jitter. An explicit Retry-After header always takes precedence. State
+        // is in-memory only (resets on restart), matching the validator cache.
+        public TimeSpan FeedBackoffBase { get; set; } = TimeSpan.FromMinutes(2);
+        public TimeSpan FeedBackoffMax { get; set; } = TimeSpan.FromHours(6);
+
         public bool RebuildFtsOnStartup { get; set; }
 
         public string AdminAadUserIds { get; set; } = string.Empty;

@@ -31,7 +31,50 @@ public class FeedRefresher : IFeedRefresher
     // start simply re-fetches everything, which is the desired behavior anyway.
     private readonly ConcurrentDictionary<string, (EntityTagHeaderValue ETag, DateTimeOffset? LastModified)> feedValidators = new();
 
+    // Per-feed-URL fetch health: tracks consecutive failures and a backoff
+    // window. After a failed/non-OK fetch we refuse to re-hit the origin until
+    // the backoff (or an origin-supplied Retry-After) elapses, so repeated user
+    // refreshes don't hammer a struggling or rate-limiting host. In-memory only.
+    private readonly ConcurrentDictionary<string, FeedFetchHealth> feedHealth = new();
+
+    // Per-origin-host concurrency gates. Even when the global RefreshFetchConcurrency
+    // gate would allow more, we never have more than MaxConcurrentFetchesPerHost
+    // requests in flight to the same host at once.
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> hostGates = new();
+
     private DateTime startupTime = DateTime.UtcNow;
+
+    /// <summary>
+    /// Per-feed-URL fetch health. Thread-safe via Interlocked so concurrent
+    /// refreshes touching the same URL stay consistent.
+    /// </summary>
+    private sealed class FeedFetchHealth
+    {
+        private int _consecutiveFailures;
+        private long _nextEarliestFetchTicks; // DateTimeOffset.UtcTicks; 0 = no backoff
+
+        public int ConsecutiveFailures => Volatile.Read(ref _consecutiveFailures);
+
+        public DateTimeOffset? NextEarliestFetch
+        {
+            get
+            {
+                var ticks = Interlocked.Read(ref _nextEarliestFetchTicks);
+                return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+            }
+        }
+
+        public void RecordSuccess()
+        {
+            Interlocked.Exchange(ref _consecutiveFailures, 0);
+            Interlocked.Exchange(ref _nextEarliestFetchTicks, 0);
+        }
+
+        public int RecordFailure() => Interlocked.Increment(ref _consecutiveFailures);
+
+        public void SetNextEarliestFetch(DateTimeOffset when)
+            => Interlocked.Exchange(ref _nextEarliestFetchTicks, when.UtcTicks);
+    }
 
     /// <summary>
     /// Per-user refresh state. Thread-safe via Interlocked/volatile so the
@@ -240,67 +283,181 @@ public class FeedRefresher : IFeedRefresher
             return freshItems;
         }
 
+        var health = feedHealth.GetOrAdd(url, _ => new FeedFetchHealth());
+
+        // Politeness: if this feed is in a backoff window (from a prior failure
+        // or an origin Retry-After), don't touch the origin yet.
+        var nextEarliest = health.NextEarliestFetch;
+        if (nextEarliest.HasValue && DateTimeOffset.UtcNow < nextEarliest.Value)
+        {
+            this.logger.LogDebug(
+                "Skipping feed {url}; backing off until {until} ({failures} consecutive failures).",
+                url, nextEarliest.Value, health.ConsecutiveFailures);
+            return freshItems;
+        }
+
         string[] agents = ["rss.brandonchastain.com/1.1", "curl/7.79.1"];
         feedValidators.TryGetValue(url, out var known);
 
-        foreach (string agent in agents)
+        // Bound concurrent hits to this origin host, independent of the global gate.
+        var hostGate = GetHostGate(url);
+        await hostGate.WaitAsync(token);
+
+        bool succeeded = false;
+        TimeSpan? originRetryAfter = null;
+
+        try
         {
-            string response = null;
-            try
+            foreach (string agent in agents)
             {
-                using var httpClient = httpClientFactory.CreateClient("RssClient");
-                using var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
-                browserRequest.Headers.UserAgent.ParseAdd(agent);
-                browserRequest.Headers.Accept.ParseAdd("text/xml");
-                browserRequest.Headers.Accept.ParseAdd("application/xml");
-                browserRequest.Headers.Accept.ParseAdd("application/rss+xml");
-                browserRequest.Headers.Accept.ParseAdd("application/atom+xml");
-
-                // Conditional GET: ask the origin to skip sending an unchanged feed.
-                if (known.ETag != null) browserRequest.Headers.IfNoneMatch.Add(known.ETag);
-                if (known.LastModified != null) browserRequest.Headers.IfModifiedSince = known.LastModified;
-
-                using var httpRes = await httpClient.SendAsync(browserRequest, token);
-
-                if (httpRes.StatusCode == HttpStatusCode.NotModified)
+                string response = null;
+                try
                 {
-                    // Nothing changed since last fetch — skip parse + DB write entirely.
-                    return freshItems;
+                    using var httpClient = httpClientFactory.CreateClient("RssClient");
+                    using var browserRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                    browserRequest.Headers.UserAgent.ParseAdd(agent);
+                    browserRequest.Headers.Accept.ParseAdd("text/xml");
+                    browserRequest.Headers.Accept.ParseAdd("application/xml");
+                    browserRequest.Headers.Accept.ParseAdd("application/rss+xml");
+                    browserRequest.Headers.Accept.ParseAdd("application/atom+xml");
+
+                    // Conditional GET: ask the origin to skip sending an unchanged feed.
+                    if (known.ETag != null) browserRequest.Headers.IfNoneMatch.Add(known.ETag);
+                    if (known.LastModified != null) browserRequest.Headers.IfModifiedSince = known.LastModified;
+
+                    using var httpRes = await httpClient.SendAsync(browserRequest, token);
+
+                    if (httpRes.StatusCode == HttpStatusCode.NotModified)
+                    {
+                        // Nothing changed since last fetch — skip parse + DB write entirely.
+                        // A 304 is a healthy response: clear any prior backoff.
+                        succeeded = true;
+                        return freshItems;
+                    }
+
+                    // Rate-limited or service-unavailable: respect the origin's wishes
+                    // and stop immediately (other user-agents won't fare better against
+                    // the same host). Honor Retry-After if present.
+                    if (httpRes.StatusCode == HttpStatusCode.TooManyRequests ||
+                        httpRes.StatusCode == HttpStatusCode.ServiceUnavailable)
+                    {
+                        originRetryAfter = GetRetryAfterDelay(httpRes);
+                        this.logger.LogWarning(
+                            "Feed {url} returned {status}; backing off (Retry-After: {retryAfter}).",
+                            url, (int)httpRes.StatusCode, originRetryAfter);
+                        break;
+                    }
+
+                    // Other non-success (403/404/5xx): this agent failed. Fall through
+                    // to try the next user-agent (some hosts block by UA), and if none
+                    // succeed we record a failure + backoff below.
+                    if (!httpRes.IsSuccessStatusCode)
+                    {
+                        this.logger.LogWarning(
+                            "Feed {url} returned {status} for agent {agent}.",
+                            url, (int)httpRes.StatusCode, agent);
+                        continue;
+                    }
+
+                    response = await httpRes.Content.ReadAsStringAsync(token);
+
+                    if (string.IsNullOrEmpty(response))
+                    {
+                        this.logger.LogWarning("Empty response when refreshing feed: {url} (headers: {headers})", url, httpRes.Headers);
+                        continue;
+                    }
+
+                    // Remember validators so future refreshes can short-circuit with a 304.
+                    var newEtag = httpRes.Headers.ETag;
+                    var newLastModified = httpRes.Content.Headers.LastModified;
+                    if (newEtag != null || newLastModified != null)
+                    {
+                        feedValidators[url] = (newEtag, newLastModified);
+                    }
+
+                    var items = this.deserializer.FromString(response, user);
+                    freshItems.UnionWith(items);
+
+                    // It worked. Exit the loop.
+                    succeeded = true;
+                    break;
                 }
-
-                response = await httpRes.Content.ReadAsStringAsync(token);
-
-                if (string.IsNullOrEmpty(response))
+                catch (OperationCanceledException)
                 {
-                    this.logger.LogWarning("Empty response when refreshing feed: {url} (headers: {headers})", url, httpRes.Headers);
-                    continue;
+                    throw;
                 }
-
-                // Remember validators so future refreshes can short-circuit with a 304.
-                var newEtag = httpRes.Headers.ETag;
-                var newLastModified = httpRes.Content.Headers.LastModified;
-                if (newEtag != null || newLastModified != null)
+                catch (Exception ex)
                 {
-                    feedValidators[url] = (newEtag, newLastModified);
+                    int len = Math.Min(500, response?.Length ?? 0);
+                    this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
                 }
+            }
+        }
+        finally
+        {
+            hostGate.Release();
+        }
 
-                var items = this.deserializer.FromString(response, user);
-                freshItems.UnionWith(items);
-
-                // It worked. Exit the loop.
-                break;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                int len = Math.Min(500, response?.Length ?? 0);
-                this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
-            }
+        if (succeeded)
+        {
+            health.RecordSuccess();
+        }
+        else
+        {
+            // Record the failure and schedule the next earliest fetch. An explicit
+            // Retry-After from the origin always wins; otherwise use exponential backoff.
+            var failures = health.RecordFailure();
+            var delay = originRetryAfter ?? ComputeBackoffDelay(failures);
+            health.SetNextEarliestFetch(DateTimeOffset.UtcNow + delay);
+            this.logger.LogWarning(
+                "Feed {url} fetch failed ({failures} consecutive); next attempt no earlier than {delay} from now.",
+                url, failures, delay);
         }
 
         return freshItems;
+    }
+
+    /// <summary>
+    /// Returns the per-origin-host concurrency gate for a feed URL, creating it
+    /// on first use. Hosts that can't be parsed share a single fallback gate.
+    /// </summary>
+    private SemaphoreSlim GetHostGate(string url)
+    {
+        string host = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "__unparsed__";
+        return hostGates.GetOrAdd(host, _ => new SemaphoreSlim(Math.Max(1, this.config.MaxConcurrentFetchesPerHost)));
+    }
+
+    /// <summary>
+    /// Reads the Retry-After header (either a delta in seconds or an HTTP-date)
+    /// and returns it as a non-negative delay, or null if absent/unparseable.
+    /// </summary>
+    private static TimeSpan? GetRetryAfterDelay(HttpResponseMessage response)
+    {
+        var retryAfter = response.Headers.RetryAfter;
+        if (retryAfter == null) return null;
+        if (retryAfter.Delta.HasValue) return retryAfter.Delta.Value;
+        if (retryAfter.Date.HasValue)
+        {
+            var delta = retryAfter.Date.Value - DateTimeOffset.UtcNow;
+            return delta > TimeSpan.Zero ? delta : TimeSpan.Zero;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Exponential backoff with +/-20% jitter: base * 2^(failures-1), capped at
+    /// the configured maximum. Jitter spreads retries so many failing feeds don't
+    /// re-hit their origins in lockstep.
+    /// </summary>
+    private TimeSpan ComputeBackoffDelay(int failures)
+    {
+        var baseMs = this.config.FeedBackoffBase.TotalMilliseconds;
+        var maxMs = this.config.FeedBackoffMax.TotalMilliseconds;
+        // Clamp the exponent so Math.Pow can't overflow to Infinity.
+        var exponent = Math.Min(Math.Max(0, failures - 1), 20);
+        var grown = baseMs * Math.Pow(2, exponent);
+        var capped = Math.Min(grown, maxMs);
+        var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4); // 0.8 .. 1.2
+        return TimeSpan.FromMilliseconds(capped * jitter);
     }
 }
