@@ -113,6 +113,17 @@ public sealed class CachingItemRepository : IItemRepository
         => _inner.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId, lastPublishDateOrder, excludeFeedUrls, includeContent);
 
     /// <inheritdoc/>
+    public Task<int> GetNewItemCountAsync(
+        NewsFeed feed,
+        bool isFilterUnread,
+        bool isFilterSaved,
+        string filterTag,
+        long cursorPublishDateOrder,
+        long cursorId,
+        IEnumerable<string> excludeFeedUrls = null)
+        => _inner.GetNewItemCountAsync(feed, isFilterUnread, isFilterSaved, filterTag, cursorPublishDateOrder, cursorId, excludeFeedUrls);
+
+    /// <inheritdoc/>
     public Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize)
         => _inner.SearchItemsAsync(query, user, page, pageSize);
 

@@ -80,6 +80,35 @@ namespace Server.Controllers
             return Ok(result);
         }
 
+        // GET: api/item/newCount
+        // Cheap "are there new posts?" probe for an already-open timeline. Returns
+        // the number of the user's timeline items NEWER than the client's newest
+        // currently-loaded item (cursorPublishDateOrder, cursorId), using the same
+        // unread/saved/tag/hidden-feed filters as the timeline so the count matches
+        // what a top-of-list reload would surface. COUNT-only; fetches no rows.
+        [HttpGet("newCount")]
+        public async Task<IActionResult> NewCountAsync(long cursorPublishDateOrder, long cursorId, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null)
+        {
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
+            {
+                return NotFound("Authenticated user not found.");
+            }
+
+            // When no explicit tag filter and not filtering saved items, exclude feeds with hidden tags
+            IEnumerable<string> excludeFeedUrls = null;
+            if (string.IsNullOrWhiteSpace(filterTag) && !isFilterSaved)
+            {
+                excludeFeedUrls = this.feedRepository.GetHiddenFeedUrls(user);
+            }
+
+            var feed = new NewsFeed("%", user.Id);
+            var count = await this.itemRepository.GetNewItemCountAsync(feed, isFilterUnread, isFilterSaved, filterTag, cursorPublishDateOrder, cursorId, excludeFeedUrls: excludeFeedUrls);
+
+            return Ok(count);
+        }
+
         [HttpGet("feed")]
         public async Task<IActionResult> FeedAsync(string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {

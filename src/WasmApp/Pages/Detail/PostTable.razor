@@ -120,6 +120,14 @@ else if (_showUpToDate)
     private bool _showUpToDate;
     private CancellationTokenSource _refreshPollCts;
 
+    // Idle "new posts available" poll. While the tab is visible and we're not
+    // already refreshing/loading, periodically ask the server how many items are
+    // newer than our newest-loaded post and drive the same toast. The scheduler
+    // writes posts independently of user action, so without this an open timeline
+    // never learns about them until a manual refresh or reload.
+    private const int NewPostsPollIntervalMs = 90_000;
+    private CancellationTokenSource _newPostsPollCts;
+
     // Headline-reading mode: speaks each post's title top-to-bottom, opening each
     // post for visual preview as it's read, chaining to the next when speech ends.
     private bool _isReadingHeadlines;
@@ -132,6 +140,8 @@ else if (_showUpToDate)
     {
         _refreshPollCts?.Cancel();
         _refreshPollCts?.Dispose();
+        _newPostsPollCts?.Cancel();
+        _newPostsPollCts?.Dispose();
         _headlineRef?.Dispose();
     }
 
@@ -228,7 +238,95 @@ else if (_showUpToDate)
             _headlineRef = DotNetObjectReference.Create(this);
             this.userTags = await FeedClient.GetUserTagsAsync(CurrentUser);
             StateHasChanged();
+            StartNewPostsPoll();
         }
+    }
+
+    // Visibility-gated background poll for scheduler-written posts. Runs for the
+    // lifetime of the component; each tick is skipped (not stopped) while the tab
+    // is hidden, a manual refresh is in flight, or the timeline is still loading,
+    // so it never double-counts with the manual-refresh path or fires off-screen.
+    private void StartNewPostsPoll()
+    {
+        _newPostsPollCts?.Cancel();
+        _newPostsPollCts = new CancellationTokenSource();
+        var token = _newPostsPollCts.Token;
+        _ = PollForNewPostsAsync(token);
+    }
+
+    private async Task PollForNewPostsAsync(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(NewPostsPollIntervalMs, token);
+
+                // Skip this tick when a manual refresh owns the counter, when we're
+                // still loading the initial page, or when the tab is backgrounded.
+                if (_isBackgroundRefreshing || IsLoading) continue;
+
+                var cursor = GetNewestLoadedCursor();
+                if (cursor == null) continue;
+
+                bool visible;
+                try { visible = await jsRuntime.InvokeAsync<bool>("isDocumentVisible"); }
+                catch { visible = true; }
+                if (!visible) continue;
+
+                int count;
+                try
+                {
+                    count = await FeedClient.GetNewTimelineCountAsync(cursor.Value.order, cursor.Value.id);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "New-posts poll failed.");
+                    continue;
+                }
+
+                // A manual refresh may have started while the request was in flight;
+                // if so, leave its counter alone. Otherwise set (not add) the absolute
+                // "new available" count so repeated ticks don't accumulate.
+                if (_isBackgroundRefreshing) continue;
+                if (count != _newPostsCount)
+                {
+                    _newPostsCount = count;
+                    _showUpToDate = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // component disposed — expected
+        }
+    }
+
+    // The newest currently-loaded item's (PublishDateOrder, Id) seek position, or
+    // null when nothing is loaded yet. The timeline is newest-first, but day-header
+    // entries carry no post, so compute the max defensively rather than trusting
+    // Posts[0].
+    private (long order, long id)? GetNewestLoadedCursor()
+    {
+        if (Posts == null || Posts.Count == 0) return null;
+
+        long bestOrder = long.MinValue;
+        long bestId = long.MinValue;
+        bool found = false;
+        foreach (var post in Posts)
+        {
+            if (!long.TryParse(post.Id, out var id)) continue;
+            var order = post.PublishDateOrder;
+            if (!found || order > bestOrder || (order == bestOrder && id > bestId))
+            {
+                bestOrder = order;
+                bestId = id;
+                found = true;
+            }
+        }
+
+        return found ? (bestOrder, bestId) : null;
     }
 
     protected override void OnParametersSet()

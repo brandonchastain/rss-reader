@@ -47,6 +47,12 @@ window.stopSpeaking = function() {
   }
 }
 
+// True when the tab is in the foreground. The timeline's "new posts" poll
+// checks this before each tick so background tabs make no network calls.
+window.isDocumentVisible = function() {
+  return !document.hidden;
+}
+
 // Function to download a file
 window.downloadFile = function (filename, contentType, content) {
     // Create a Blob with the file content

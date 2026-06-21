@@ -423,6 +423,73 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         return items;
     }
 
+    public async Task<int> GetNewItemCountAsync(
+        NewsFeed feed,
+        bool isFilterUnread,
+        bool isFilterSaved,
+        string filterTag,
+        long cursorPublishDateOrder,
+        long cursorId,
+        IEnumerable<string> excludeFeedUrls = null)
+    {
+        var user = this.userStore.GetUserById(feed.UserId);
+
+        using (var connection = await this.connections.OpenReadAsync())
+        {
+            var command = connection.CreateCommand();
+
+            // Mirror the timeline WHERE clause (filters + cursor) but only COUNT —
+            // the same idx_items_timeline(UserId, PublishDateOrder DESC, Id DESC)
+            // index serves the seek, so no rows are materialized.
+            command.CommandText = "SELECT COUNT(*) FROM Items i WHERE i.UserId=@userId";
+            command.Parameters.AddWithValue("@userId", user.Id);
+
+            if (feed.Href != "%")
+            {
+                command.CommandText += " AND i.FeedUrl LIKE @feedUrl";
+                command.Parameters.AddWithValue("@feedUrl", feed.Href);
+            }
+
+            if (isFilterUnread)
+            {
+                command.CommandText += " AND i.IsRead = 0";
+            }
+
+            if (isFilterSaved)
+            {
+                command.CommandText += " AND i.IsSaved = 1";
+            }
+
+            if (!string.IsNullOrWhiteSpace(filterTag))
+            {
+                command.CommandText += " AND i.Tags LIKE @tagName";
+                command.Parameters.AddWithValue("@tagName", $"%{filterTag}%");
+            }
+
+            var excludeUrls = excludeFeedUrls?.ToList();
+            if (excludeUrls != null && excludeUrls.Count > 0)
+            {
+                var excludeParams = new List<string>();
+                for (int idx = 0; idx < excludeUrls.Count; idx++)
+                {
+                    var paramName = $"@excludeUrl{idx}";
+                    excludeParams.Add(paramName);
+                    command.Parameters.AddWithValue(paramName, excludeUrls[idx]);
+                }
+                command.CommandText += $" AND i.FeedUrl NOT IN ({string.Join(",", excludeParams)})";
+            }
+
+            // Strictly newer than the cursor seek position (mirror of the timeline's
+            // "< (lastOrder, lastId)" comparison, flipped to ">").
+            command.CommandText += " AND (i.PublishDateOrder, i.Id) > (@cursorOrder, @cursorId)";
+            command.Parameters.AddWithValue("@cursorOrder", cursorPublishDateOrder);
+            command.Parameters.AddWithValue("@cursorId", cursorId);
+
+            var count = await command.ExecuteScalarAsync();
+            return Convert.ToInt32(count);
+        }
+    }
+
     private NewsFeedItem ReadItemFromResults(DbDataReader reader)
     {
         var id = reader.IsDBNull(reader.GetOrdinal("Id")) ? "" : reader.GetString(reader.GetOrdinal("Id"));
