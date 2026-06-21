@@ -423,6 +423,79 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         return items;
     }
 
+    public async Task<int> GetNewItemCountAsync(
+        NewsFeed feed,
+        bool isFilterUnread,
+        bool isFilterSaved,
+        string filterTag,
+        long cursorPublishDateOrder,
+        long cursorId,
+        IEnumerable<string> excludeFeedUrls = null)
+    {
+        var user = this.userStore.GetUserById(feed.UserId);
+
+        using (var connection = await this.connections.OpenReadAsync())
+        {
+            var command = connection.CreateCommand();
+
+            // Mirror the timeline exactly: same WHERE filters + cursor, plus the
+            // post-query DistinctBy(Href) (COUNT DISTINCT Href) so the hint matches
+            // what a top-of-list reload actually surfaces. The
+            // idx_items_timeline(UserId, PublishDateOrder DESC, Id DESC) index serves
+            // the seek; no rows are materialized.
+            command.CommandText = "SELECT COUNT(DISTINCT i.Href) FROM Items i WHERE i.UserId=@userId";
+            command.Parameters.AddWithValue("@userId", user.Id);
+
+            if (feed.Href != "%")
+            {
+                command.CommandText += " AND i.FeedUrl LIKE @feedUrl";
+                command.Parameters.AddWithValue("@feedUrl", feed.Href);
+            }
+
+            if (isFilterUnread)
+            {
+                command.CommandText += " AND i.IsRead = 0";
+            }
+
+            if (isFilterSaved)
+            {
+                command.CommandText += " AND i.IsSaved = 1";
+            }
+
+            if (!string.IsNullOrWhiteSpace(filterTag))
+            {
+                // Exact comma-delimited membership, mirroring the timeline's
+                // FeedTags.Contains(tag) (Tags is the comma-joined column that
+                // FeedTags is split from) — not a loose substring match, so e.g.
+                // "news" does not match an item tagged only "newsletter".
+                command.CommandText += " AND (',' || i.Tags || ',') LIKE @tagName";
+                command.Parameters.AddWithValue("@tagName", $"%,{filterTag},%");
+            }
+
+            var excludeUrls = excludeFeedUrls?.ToList();
+            if (excludeUrls != null && excludeUrls.Count > 0)
+            {
+                var excludeParams = new List<string>();
+                for (int idx = 0; idx < excludeUrls.Count; idx++)
+                {
+                    var paramName = $"@excludeUrl{idx}";
+                    excludeParams.Add(paramName);
+                    command.Parameters.AddWithValue(paramName, excludeUrls[idx]);
+                }
+                command.CommandText += $" AND i.FeedUrl NOT IN ({string.Join(",", excludeParams)})";
+            }
+
+            // Strictly newer than the cursor seek position (mirror of the timeline's
+            // "< (lastOrder, lastId)" comparison, flipped to ">").
+            command.CommandText += " AND (i.PublishDateOrder, i.Id) > (@cursorOrder, @cursorId)";
+            command.Parameters.AddWithValue("@cursorOrder", cursorPublishDateOrder);
+            command.Parameters.AddWithValue("@cursorId", cursorId);
+
+            var count = await command.ExecuteScalarAsync();
+            return Convert.ToInt32(count);
+        }
+    }
+
     private NewsFeedItem ReadItemFromResults(DbDataReader reader)
     {
         var id = reader.IsDBNull(reader.GetOrdinal("Id")) ? "" : reader.GetString(reader.GetOrdinal("Id"));

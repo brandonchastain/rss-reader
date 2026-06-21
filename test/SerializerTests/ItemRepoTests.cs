@@ -245,6 +245,152 @@ public sealed class ItemRepoTests
     }
 
     [TestMethod]
+    public async Task GetNewItemCountAsync_Should_Count_Items_Newer_Than_Cursor()
+    {
+        var (itemRepo, user, feed) = SetupTestRepo("new_count_test.db");
+
+        // Insert 5 items with distinct, ascending timestamps (1000..1004).
+        for (int i = 0; i < 5; i++)
+        {
+            var item = new NewsFeedItem("0", 0, $"Article {i}", $"https://example.com/article-{i}", null, "2025-01-01", $"<p>Content {i}</p>", null)
+            {
+                FeedUrl = feed.Href,
+                PublishDateOrder = 1000 + i
+            };
+            await itemRepo.AddItemsAsync(new[] { item });
+        }
+
+        var timelineFeed = new NewsFeed("%", user.Id);
+
+        // Cursor at the middle item (order=1002). Items 1003 and 1004 are newer.
+        var middle = (await itemRepo.GetItemsAsync(timelineFeed, false, false, null, 0, 20))
+            .First(i => i.PublishDateOrder == 1002);
+        var count = await itemRepo.GetNewItemCountAsync(
+            timelineFeed, false, false, null, 1002, long.Parse(middle.Id));
+        Assert.AreEqual(2, count, "Two items (1003, 1004) are strictly newer than the cursor.");
+
+        // Cursor at the newest item → nothing newer.
+        var newest = (await itemRepo.GetItemsAsync(timelineFeed, false, false, null, 0, 20)).First();
+        var noneNewer = await itemRepo.GetNewItemCountAsync(
+            timelineFeed, false, false, null, newest.PublishDateOrder, long.Parse(newest.Id));
+        Assert.AreEqual(0, noneNewer, "No items are newer than the newest item.");
+    }
+
+    [TestMethod]
+    public async Task GetNewItemCountAsync_Should_Break_Ties_On_Id()
+    {
+        var (itemRepo, user, feed) = SetupTestRepo("new_count_tie_test.db");
+
+        // Four items sharing one timestamp — ordering falls back to Id.
+        for (int i = 0; i < 4; i++)
+        {
+            var item = new NewsFeedItem("0", 0, $"Tied {i}", $"https://example.com/tied-{i}", null, "2025-01-01", $"<p>Tied {i}</p>", null)
+            {
+                FeedUrl = feed.Href,
+                PublishDateOrder = 5000
+            };
+            await itemRepo.AddItemsAsync(new[] { item });
+        }
+
+        var timelineFeed = new NewsFeed("%", user.Id);
+        var all = (await itemRepo.GetItemsAsync(timelineFeed, false, false, null, 0, 20)).ToList();
+
+        // Use the 3rd-newest item as the cursor; exactly 2 items have a higher Id
+        // at the same timestamp.
+        var cursor = all[2];
+        var count = await itemRepo.GetNewItemCountAsync(
+            timelineFeed, false, false, null, cursor.PublishDateOrder, long.Parse(cursor.Id));
+        Assert.AreEqual(2, count, "Two tied-timestamp items have a higher Id than the cursor.");
+    }
+
+    [TestMethod]
+    public async Task GetNewItemCountAsync_Should_Respect_Unread_Filter()
+    {
+        var (itemRepo, user, feed) = SetupTestRepo("new_count_unread_test.db");
+
+        for (int i = 0; i < 4; i++)
+        {
+            var item = new NewsFeedItem("0", 0, $"Article {i}", $"https://example.com/unread-{i}", null, "2025-01-01", $"<p>{i}</p>", null)
+            {
+                FeedUrl = feed.Href,
+                PublishDateOrder = 2000 + i
+            };
+            await itemRepo.AddItemsAsync(new[] { item });
+        }
+
+        var timelineFeed = new NewsFeed("%", user.Id);
+
+        // Mark the two newest (2002, 2003) as read.
+        foreach (var order in new[] { 2002, 2003 })
+        {
+            var toRead = itemRepo.GetItem(user, $"https://example.com/unread-{order - 2000}");
+            toRead.FeedUrl = feed.Href;
+            itemRepo.MarkAsRead(toRead, true, user);
+        }
+
+        // Cursor at the oldest item (2000). Unfiltered: 3 newer (2001, 2002, 2003).
+        var oldest = (await itemRepo.GetItemsAsync(timelineFeed, false, false, null, 0, 20))
+            .First(i => i.PublishDateOrder == 2000);
+        var unfiltered = await itemRepo.GetNewItemCountAsync(
+            timelineFeed, false, false, null, 2000, long.Parse(oldest.Id));
+        Assert.AreEqual(3, unfiltered, "All three newer items counted when unfiltered.");
+
+        // With the unread filter, the two read items drop out → only 2001 remains.
+        var unreadOnly = await itemRepo.GetNewItemCountAsync(
+            timelineFeed, true, false, null, 2000, long.Parse(oldest.Id));
+        Assert.AreEqual(1, unreadOnly, "Only the unread newer item (2001) is counted.");
+    }
+
+    [TestMethod]
+    public async Task GetNewItemCountAsync_Dedups_By_Href_Across_Feeds()
+    {
+        // The timeline applies DistinctBy(Href), so the same article surfaced by two
+        // feeds shows once — the count must match (COUNT DISTINCT Href), not 2.
+        var (itemRepo, user, feed) = SetupTestRepo("new_count_dedup_test.db");
+
+        // Register a second feed so a duplicate Href can exist (Items is unique per
+        // (FeedUrl, UserId, Href), so the same Href needs a different feed).
+        var feedRepo2 = new SQLiteFeedRepository(
+            new SqliteDbConnections("new_count_dedup_test.db", isReadOnly: false),
+            new NullLogger<SQLiteFeedRepository>());
+        var feed2 = new NewsFeed(2, "https://feeds.example.org/test2", 0);
+        feedRepo2.AddFeed(feed2);
+
+        const string sharedHref = "https://example.com/shared-article";
+        var a = new NewsFeedItem("0", 0, "Shared", sharedHref, null, "2025-01-01", "<p>a</p>", null)
+        { FeedUrl = feed.Href, PublishDateOrder = 2000 };
+        var b = new NewsFeedItem("0", 0, "Shared", sharedHref, null, "2025-01-01", "<p>b</p>", null)
+        { FeedUrl = feed2.Href, PublishDateOrder = 2001 };
+        await itemRepo.AddItemsAsync(new[] { a });
+        await itemRepo.AddItemsAsync(new[] { b });
+
+        var timelineFeed = new NewsFeed("%", user.Id);
+        var count = await itemRepo.GetNewItemCountAsync(timelineFeed, false, false, null, 0, 0);
+        Assert.AreEqual(1, count, "Same Href across two feeds must count once (DistinctBy Href).");
+    }
+
+    [TestMethod]
+    public async Task GetNewItemCountAsync_Tag_Matches_Exactly_Not_Substring()
+    {
+        // The timeline filters by FeedTags.Contains(tag) (exact element), so "news"
+        // must not match an item tagged only "newsletter".
+        var (itemRepo, user, feed) = SetupTestRepo("new_count_tag_exact_test.db");
+
+        var newsItem = new NewsFeedItem("0", 0, "News", "https://example.com/n1", null, "2025-01-01", "<p>n1</p>", null)
+        { FeedUrl = feed.Href, PublishDateOrder = 3000 };
+        var newsletterItem = new NewsFeedItem("0", 0, "Newsletter", "https://example.com/n2", null, "2025-01-01", "<p>n2</p>", null)
+        { FeedUrl = feed.Href, PublishDateOrder = 3001 };
+        await itemRepo.AddItemsAsync(new[] { newsItem });
+        await itemRepo.AddItemsAsync(new[] { newsletterItem });
+        itemRepo.UpdateTags(newsItem, "tech,news");
+        itemRepo.UpdateTags(newsletterItem, "newsletter");
+
+        var timelineFeed = new NewsFeed("%", user.Id);
+        var count = await itemRepo.GetNewItemCountAsync(timelineFeed, false, false, "news", 0, 0);
+        Assert.AreEqual(1, count, "'news' must match only the exact-tagged item, not 'newsletter'.");
+    }
+
+    [TestMethod]
     public void Database_Should_Not_Have_Redundant_ItemContent_Index()
     {
         var dbName = "redundant_idx_test.db";

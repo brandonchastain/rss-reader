@@ -57,6 +57,12 @@ namespace WasmApp.Services
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeedItem>>(url);
         }
 
+        public async Task<int> GetNewTimelineCountAsync(long cursorPublishDateOrder, long cursorId)
+        {
+            var url = $"{_config.ApiBaseUrl}api/item/newCount?cursorPublishDateOrder={cursorPublishDateOrder}&cursorId={cursorId}&isFilterUnread={IsFilterUnread}&isFilterSaved={IsFilterSaved}&filterTag={FilterTag}";
+            return await _httpClient.GetFromJsonAsync<int>(url);
+        }
+
         public async Task<IEnumerable<NewsFeedItem>> GetFeedItemsAsync(NewsFeed feed, int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
             pageSize = Math.Min(pageSize, 500);
