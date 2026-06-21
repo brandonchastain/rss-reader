@@ -83,6 +83,45 @@ public class SQLiteFeedRepository : IFeedRepository
     }
 
 
+    public IEnumerable<string> GetAllDistinctFeedUrls()
+    {
+        using (var connection = this.connections.OpenRead())
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT DISTINCT Url FROM Feeds";
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    if (!reader.IsDBNull(0))
+                    {
+                        yield return reader.GetString(0);
+                    }
+                }
+            }
+        }
+    }
+
+    public IEnumerable<NewsFeed> GetFeedsByUrl(string url)
+    {
+        using (var connection = this.connections.OpenRead())
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT f.Id, f.Url, f.UserId, f.IsPaywalled, f.Tags FROM Feeds f
+                WHERE f.Url = @url
+            """;
+            command.Parameters.AddWithValue("@url", url);
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    yield return ReadSingleRecord(reader);
+                }
+            }
+        }
+    }
+
     public NewsFeed GetFeed(RssUser user, string url)
     {
         var feeds = new HashSet<NewsFeed>();

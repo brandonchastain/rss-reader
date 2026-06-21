@@ -36,6 +36,12 @@ internal sealed class FakeFeedRepository : IFeedRepository
                                          string.Equals(f.Href, url, StringComparison.OrdinalIgnoreCase))!;
     }
 
+    public IEnumerable<string> GetAllDistinctFeedUrls()
+        => Feeds.Select(f => f.Href).Distinct().ToList();
+
+    public IEnumerable<NewsFeed> GetFeedsByUrl(string url)
+        => Feeds.Where(f => string.Equals(f.Href, url, StringComparison.OrdinalIgnoreCase)).ToList();
+
     public void AddFeed(NewsFeed feed)
     {
         AddFeedCallCount++;

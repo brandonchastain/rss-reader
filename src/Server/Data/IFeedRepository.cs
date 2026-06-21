@@ -16,6 +16,13 @@ public interface IFeedRepository
 
     void DeleteFeed(RssUser user, string url);
 
+    // Scheduler support: the set of DISTINCT feed URLs across all users (the unit
+    // the background scheduler fetches), and every subscriber row for a given URL
+    // (so one fetch can fan its items out to all subscribers).
+    IEnumerable<string> GetAllDistinctFeedUrls();
+
+    IEnumerable<NewsFeed> GetFeedsByUrl(string url);
+
     IEnumerable<TagSetting> GetTagSettings(RssUser user);
 
     void SetTagHidden(RssUser user, string tag, bool isHidden);

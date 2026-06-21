@@ -48,6 +48,24 @@ namespace RssApp.Config
         public TimeSpan FeedBackoffBase { get; set; } = TimeSpan.FromMinutes(2);
         public TimeSpan FeedBackoffMax { get; set; } = TimeSpan.FromHours(6);
 
+        // Background feed scheduler: fetches each DISTINCT feed URL on a cadence
+        // (decoupled from user refreshes) and fans new items out to every
+        // subscriber, so a feed shared by N users is fetched once, not N times.
+        // Set false to fall back to purely user-triggered refreshes.
+        public bool SchedulerEnabled { get; set; } = true;
+
+        // How often the scheduler wakes to look for feeds whose next-earliest-fetch
+        // time has arrived.
+        public TimeSpan SchedulerTickInterval { get; set; } = TimeSpan.FromMinutes(1);
+
+        // Polling interval used when a feed advertises no <ttl> / sy:updatePeriod.
+        public TimeSpan FeedRefreshInterval { get; set; } = TimeSpan.FromMinutes(30);
+
+        // Clamp for feed-advertised intervals: never poll more often than the floor
+        // (politeness) nor wait longer than the max (freshness).
+        public TimeSpan FeedRefreshIntervalFloor { get; set; } = TimeSpan.FromMinutes(15);
+        public TimeSpan FeedRefreshIntervalMax { get; set; } = TimeSpan.FromHours(6);
+
         public bool RebuildFtsOnStartup { get; set; }
 
         public string AdminAadUserIds { get; set; } = string.Empty;
