@@ -9,15 +9,48 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using RssApp.Data;
 using RssReader.Server.Services;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Threading;
 using System.Threading.Tasks;
 
 [TestClass]
 public sealed class FeedRefresherTests
 {
+    /// <summary>
+    /// Test HttpMessageHandler that returns canned responses and counts how many
+    /// requests actually reached the network. Lets us assert politeness behavior
+    /// (Retry-After backoff, failure backoff) deterministically and offline.
+    /// </summary>
+    private sealed class StubHandler : HttpMessageHandler
+    {
+        private readonly Func<int, HttpResponseMessage> responder;
+        private int calls;
+
+        public int CallCount => Volatile.Read(ref calls);
+
+        public StubHandler(Func<int, HttpResponseMessage> responder) => this.responder = responder;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var n = Interlocked.Increment(ref calls);
+            try
+            {
+                return Task.FromResult(this.responder(n));
+            }
+            catch (Exception ex)
+            {
+                return Task.FromException<HttpResponseMessage>(ex);
+            }
+        }
+    }
+
     private static (FeedRefresher refresher, Mock<IItemRepository> itemRepo) CreateRefresher(
         Mock<IFeedRepository> feedRepo = null,
         Mock<IUserRepository> userRepo = null,
-        RssAppConfig config = null)
+        RssAppConfig config = null,
+        HttpMessageHandler primaryHandler = null)
     {
         feedRepo ??= new Mock<IFeedRepository>();
         var mockItemRepo = new Mock<IItemRepository>();
@@ -42,7 +75,7 @@ public sealed class FeedRefresherTests
             .AddTransient<RedirectDowngradeHandler>()
             .AddHttpClient("RssClient")
             .AddHttpMessageHandler<RedirectDowngradeHandler>()
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            .ConfigurePrimaryHttpMessageHandler(() => primaryHandler ?? new HttpClientHandler
             {
                 AllowAutoRedirect = false,
                 UseDefaultCredentials = true
@@ -158,5 +191,62 @@ public sealed class FeedRefresherTests
 
         var status = refresher.GetRefreshStatus(user);
         Assert.IsFalse(status.IsRefreshing, "Should not be refreshing with no feeds");
+    }
+
+    [TestMethod]
+    public async Task Fetch_HonorsRetryAfter_AndSkipsSecondRefresh_On429()
+    {
+        // Origin rate-limits us with a long Retry-After. The first refresh hits it
+        // once (and does NOT try the fallback user-agent against a rate-limiting
+        // host); the second refresh must be skipped entirely while backed off.
+        var handler = new StubHandler(_ =>
+        {
+            var res = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            res.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromHours(1));
+            return res;
+        });
+        var (refresher, _) = CreateRefresher(primaryHandler: handler);
+
+        var feed = new NewsFeed("https://ratelimited.example.com/feed", userId: 0);
+        await refresher.AddFeedAsync(feed);
+        await refresher.AddFeedAsync(feed);
+
+        Assert.AreEqual(1, handler.CallCount,
+            "A 429 with Retry-After should back the feed off; the second refresh must not hit the origin.");
+    }
+
+    [TestMethod]
+    public async Task Fetch_BacksOff_AfterNetworkFailure()
+    {
+        // Every request throws. The first refresh tries both user-agents (2 calls)
+        // then schedules a backoff; the second refresh is skipped.
+        var handler = new StubHandler(_ => throw new HttpRequestException("connection refused"));
+        var (refresher, _) = CreateRefresher(primaryHandler: handler);
+
+        var feed = new NewsFeed("https://broken.example.com/feed", userId: 0);
+        await refresher.AddFeedAsync(feed);
+        await refresher.AddFeedAsync(feed);
+
+        Assert.AreEqual(2, handler.CallCount,
+            "After a failed fetch the feed should back off; the second refresh must not hit the origin again.");
+    }
+
+    [TestMethod]
+    public async Task Fetch_DoesNotBackOff_OnSuccess()
+    {
+        // A healthy 200 must not trigger backoff: each refresh fetches normally.
+        var rss = File.ReadAllText(Path.Combine("feeds", "vox.xml"));
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(rss),
+        });
+        var (refresher, _) = CreateRefresher(primaryHandler: handler);
+
+        var feed = new NewsFeed("https://healthy.example.com/feed", userId: 0);
+        await refresher.AddFeedAsync(feed);
+        await refresher.AddFeedAsync(feed);
+
+        Assert.AreEqual(2, handler.CallCount,
+            "Successful fetches must not back off; both refreshes should reach the origin.");
     }
 }
