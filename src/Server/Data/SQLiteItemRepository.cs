@@ -438,10 +438,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         {
             var command = connection.CreateCommand();
 
-            // Mirror the timeline WHERE clause (filters + cursor) but only COUNT —
-            // the same idx_items_timeline(UserId, PublishDateOrder DESC, Id DESC)
-            // index serves the seek, so no rows are materialized.
-            command.CommandText = "SELECT COUNT(*) FROM Items i WHERE i.UserId=@userId";
+            // Mirror the timeline exactly: same WHERE filters + cursor, plus the
+            // post-query DistinctBy(Href) (COUNT DISTINCT Href) so the hint matches
+            // what a top-of-list reload actually surfaces. The
+            // idx_items_timeline(UserId, PublishDateOrder DESC, Id DESC) index serves
+            // the seek; no rows are materialized.
+            command.CommandText = "SELECT COUNT(DISTINCT i.Href) FROM Items i WHERE i.UserId=@userId";
             command.Parameters.AddWithValue("@userId", user.Id);
 
             if (feed.Href != "%")
@@ -462,8 +464,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
             if (!string.IsNullOrWhiteSpace(filterTag))
             {
-                command.CommandText += " AND i.Tags LIKE @tagName";
-                command.Parameters.AddWithValue("@tagName", $"%{filterTag}%");
+                // Exact comma-delimited membership, mirroring the timeline's
+                // FeedTags.Contains(tag) (Tags is the comma-joined column that
+                // FeedTags is split from) — not a loose substring match, so e.g.
+                // "news" does not match an item tagged only "newsletter".
+                command.CommandText += " AND (',' || i.Tags || ',') LIKE @tagName";
+                command.Parameters.AddWithValue("@tagName", $"%,{filterTag},%");
             }
 
             var excludeUrls = excludeFeedUrls?.ToList();

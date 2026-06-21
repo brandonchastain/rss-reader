@@ -342,6 +342,55 @@ public sealed class ItemRepoTests
     }
 
     [TestMethod]
+    public async Task GetNewItemCountAsync_Dedups_By_Href_Across_Feeds()
+    {
+        // The timeline applies DistinctBy(Href), so the same article surfaced by two
+        // feeds shows once — the count must match (COUNT DISTINCT Href), not 2.
+        var (itemRepo, user, feed) = SetupTestRepo("new_count_dedup_test.db");
+
+        // Register a second feed so a duplicate Href can exist (Items is unique per
+        // (FeedUrl, UserId, Href), so the same Href needs a different feed).
+        var feedRepo2 = new SQLiteFeedRepository(
+            new SqliteDbConnections("new_count_dedup_test.db", isReadOnly: false),
+            new NullLogger<SQLiteFeedRepository>());
+        var feed2 = new NewsFeed(2, "https://feeds.example.org/test2", 0);
+        feedRepo2.AddFeed(feed2);
+
+        const string sharedHref = "https://example.com/shared-article";
+        var a = new NewsFeedItem("0", 0, "Shared", sharedHref, null, "2025-01-01", "<p>a</p>", null)
+        { FeedUrl = feed.Href, PublishDateOrder = 2000 };
+        var b = new NewsFeedItem("0", 0, "Shared", sharedHref, null, "2025-01-01", "<p>b</p>", null)
+        { FeedUrl = feed2.Href, PublishDateOrder = 2001 };
+        await itemRepo.AddItemsAsync(new[] { a });
+        await itemRepo.AddItemsAsync(new[] { b });
+
+        var timelineFeed = new NewsFeed("%", user.Id);
+        var count = await itemRepo.GetNewItemCountAsync(timelineFeed, false, false, null, 0, 0);
+        Assert.AreEqual(1, count, "Same Href across two feeds must count once (DistinctBy Href).");
+    }
+
+    [TestMethod]
+    public async Task GetNewItemCountAsync_Tag_Matches_Exactly_Not_Substring()
+    {
+        // The timeline filters by FeedTags.Contains(tag) (exact element), so "news"
+        // must not match an item tagged only "newsletter".
+        var (itemRepo, user, feed) = SetupTestRepo("new_count_tag_exact_test.db");
+
+        var newsItem = new NewsFeedItem("0", 0, "News", "https://example.com/n1", null, "2025-01-01", "<p>n1</p>", null)
+        { FeedUrl = feed.Href, PublishDateOrder = 3000 };
+        var newsletterItem = new NewsFeedItem("0", 0, "Newsletter", "https://example.com/n2", null, "2025-01-01", "<p>n2</p>", null)
+        { FeedUrl = feed.Href, PublishDateOrder = 3001 };
+        await itemRepo.AddItemsAsync(new[] { newsItem });
+        await itemRepo.AddItemsAsync(new[] { newsletterItem });
+        itemRepo.UpdateTags(newsItem, "tech,news");
+        itemRepo.UpdateTags(newsletterItem, "newsletter");
+
+        var timelineFeed = new NewsFeed("%", user.Id);
+        var count = await itemRepo.GetNewItemCountAsync(timelineFeed, false, false, "news", 0, 0);
+        Assert.AreEqual(1, count, "'news' must match only the exact-tagged item, not 'newsletter'.");
+    }
+
+    [TestMethod]
     public void Database_Should_Not_Have_Redundant_ItemContent_Index()
     {
         var dbName = "redundant_idx_test.db";
