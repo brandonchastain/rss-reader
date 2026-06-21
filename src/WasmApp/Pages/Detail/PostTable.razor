@@ -3,6 +3,9 @@
 @rendermode InteractiveWebAssembly
 @attribute [StreamRendering]
 @attribute [Authorize]
+@using System.Net
+@using System.Text.RegularExpressions
+@using Microsoft.JSInterop
 @using Sve.Blazor.InfiniteScroll.Components
 @using WasmApp.Pages.Detail
 
@@ -22,6 +25,8 @@
         IsRefreshing="@_isBackgroundRefreshing"
         OnRefreshRequested="@StartBackgroundRefreshAsync"
         OnRefreshComplete="@OnRefreshComplete"
+        IsReadingHeadlines="@_isReadingHeadlines"
+        OnToggleReadHeadlines="@ToggleReadHeadlinesAsync"
     />
 </SectionContent>
 
@@ -115,12 +120,19 @@ else if (_showUpToDate)
     private bool _showUpToDate;
     private CancellationTokenSource _refreshPollCts;
 
+    // Headline-reading mode: speaks each post's title top-to-bottom, opening each
+    // post for visual preview as it's read, chaining to the next when speech ends.
+    private bool _isReadingHeadlines;
+    private string _currentHeadlinePostId;
+    private DotNetObjectReference<PostTable> _headlineRef;
+
     private record TimelineEntry(bool IsDayHeader, DateTime Date, string DayKey, bool IsFirstHeader, NewsFeedItem Post);
 
     public void Dispose()
     {
         _refreshPollCts?.Cancel();
         _refreshPollCts?.Dispose();
+        _headlineRef?.Dispose();
     }
 
     private async Task StartBackgroundRefreshAsync()
@@ -213,6 +225,7 @@ else if (_showUpToDate)
         await base.OnAfterRenderAsync(firstRender);
         if (firstRender)
         {
+            _headlineRef = DotNetObjectReference.Create(this);
             this.userTags = await FeedClient.GetUserTagsAsync(CurrentUser);
             StateHasChanged();
         }
@@ -285,6 +298,106 @@ else if (_showUpToDate)
     {
         await this.OnPageChanged.InvokeAsync(this.Page + 1);
         await InvokeAsync(this.StateHasChanged);
+    }
+
+    // --- Read-headlines mode ---
+
+    // The posts currently in the list, in display order (day-separators excluded).
+    private List<NewsFeedItem> VisiblePosts()
+        => _flatEntries.Where(e => !e.IsDayHeader && e.Post != null).Select(e => e.Post).ToList();
+
+    private async Task ToggleReadHeadlinesAsync()
+    {
+        if (_isReadingHeadlines)
+        {
+            await PauseReadingHeadlinesAsync();
+        }
+        else
+        {
+            await StartReadingHeadlinesAsync();
+        }
+    }
+
+    private async Task StartReadingHeadlinesAsync()
+    {
+        var posts = VisiblePosts();
+        if (posts.Count == 0) return;
+
+        // Resume from the post we paused on if it's still visible; else start at the top.
+        NewsFeedItem start = _currentHeadlinePostId != null
+            ? posts.FirstOrDefault(p => p.Id == _currentHeadlinePostId)
+            : null;
+        start ??= posts[0];
+
+        _isReadingHeadlines = true;
+        StateHasChanged();
+        await ReadHeadlineAsync(start);
+    }
+
+    private async Task PauseReadingHeadlinesAsync()
+    {
+        _isReadingHeadlines = false;
+        try { await jsRuntime.InvokeVoidAsync("stopSpeaking"); } catch { }
+        StateHasChanged();
+    }
+
+    private async Task ReadHeadlineAsync(NewsFeedItem post)
+    {
+        if (post == null) { await StopAtEndAsync(); return; }
+
+        _currentHeadlinePostId = post.Id;
+
+        // Open the post for visual preview and bring it into view.
+        post.IsBeingPreviewed = true;
+        StateHasChanged();
+        try { await jsRuntime.InvokeVoidAsync("rssApp.scrollToPost", post.Id); } catch { }
+
+        // Fill in the body in the background so the preview appears while the
+        // headline is being read, without delaying the speech.
+        if (post.Content == null) _ = LoadHeadlineContentAsync(post);
+
+        // Speak the headline; OnSpeechStopped advances to the next post when it ends.
+        try { await jsRuntime.InvokeVoidAsync("speakThisText", CleanTitle(post.Title), _headlineRef); }
+        catch { }
+    }
+
+    private async Task LoadHeadlineContentAsync(NewsFeedItem post)
+    {
+        try { post.Content = await FeedClient.GetItemContentAsync(post); }
+        catch { post.Content = "[content unavailable]"; }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Invoked from app.js when an utterance ends. Advances to the next headline.
+    [JSInvokable]
+    public async Task OnSpeechStopped()
+    {
+        if (!_isReadingHeadlines) return; // paused or stopped
+
+        var posts = VisiblePosts();
+        int idx = posts.FindIndex(p => p.Id == _currentHeadlinePostId);
+
+        // Collapse the post we just read so only the current one stays open.
+        if (idx >= 0) posts[idx].IsBeingPreviewed = false;
+
+        var next = (idx >= 0 && idx + 1 < posts.Count) ? posts[idx + 1] : null;
+        if (next == null) { await StopAtEndAsync(); return; }
+
+        await ReadHeadlineAsync(next);
+    }
+
+    private async Task StopAtEndAsync()
+    {
+        _isReadingHeadlines = false;
+        _currentHeadlinePostId = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string CleanTitle(string title)
+    {
+        if (string.IsNullOrEmpty(title)) return title;
+        var cleaned = Regex.Replace(title, "<[^>]+>", string.Empty);
+        return WebUtility.HtmlDecode(cleaned);
     }
 
     private static readonly string[] _months = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
