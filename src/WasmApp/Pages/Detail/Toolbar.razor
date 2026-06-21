@@ -12,6 +12,12 @@
         <i class="fas fa-sync @(IsRefreshing ? "fa-spin" : "")"></i>
     </button>
 
+    <button class="btn-link @(IsReadingHeadlines ? "toolbar-active" : "")"
+            title="@(IsReadingHeadlines ? "Pause reading headlines" : "Read headlines aloud")"
+            @onclick="async () => await OnToggleReadHeadlines.InvokeAsync()">
+        <i class="fas @(IsReadingHeadlines ? "fa-pause" : "fa-headphones")"></i>
+    </button>
+
     @if (Config.EnableTestAuth)
     {
         <button class="btn-link" title="Clear all posts (test mode)" @onclick="() => ClearAllItemsAsync()">
@@ -79,6 +85,14 @@
     // Used by the test-only "clear all" button to force a timeline reload.
     [Parameter]
     public EventCallback OnRefreshComplete { get; set; }
+
+    // Headline-reading mode (owned by PostTable): true while it's speaking
+    // headlines top-to-bottom; the button toggles start/pause.
+    [Parameter]
+    public bool IsReadingHeadlines { get; set; }
+
+    [Parameter]
+    public EventCallback OnToggleReadHeadlines { get; set; }
 
     private bool tagsAreHidden = true;
 
