@@ -23,12 +23,14 @@ public class FeedRefresher : IFeedRefresher
     private readonly BackgroundWorkQueue backgroundWorkQueue;
     private readonly RssAppConfig config;
     private readonly ThumbnailResolver thumbnailResolver;
+    private readonly IFeedValidatorStore validatorStore;
     private readonly ConcurrentDictionary<int, UserRefreshState> refreshStates = new();
 
     // In-memory HTTP cache validators per feed URL, used for conditional GET
-    // (If-None-Match / If-Modified-Since). Lets repeat refreshes within the
-    // process lifetime skip unchanged feeds via a 304. Not persisted: a cold
-    // start simply re-fetches everything, which is the desired behavior anyway.
+    // (If-None-Match / If-Modified-Since). Acts as a write-through cache in front
+    // of IFeedValidatorStore: a cache miss (e.g. the first fetch of a feed after a
+    // restart) loads the persisted validator, so we resume sending conditional GETs
+    // and earn 304s instead of cold-fetching every feed (no restart thundering herd).
     private readonly ConcurrentDictionary<string, (EntityTagHeaderValue ETag, DateTimeOffset? LastModified)> feedValidators = new();
 
     // Per-feed-URL fetch health: tracks consecutive failures and a backoff
@@ -132,7 +134,8 @@ public class FeedRefresher : IFeedRefresher
         IUserRepository userStore,
         BackgroundWorkQueue backgroundWorkQueue,
         RssAppConfig config,
-        ThumbnailResolver thumbnailResolver)
+        ThumbnailResolver thumbnailResolver,
+        IFeedValidatorStore validatorStore)
     {
         this.httpClientFactory = httpClientFactory;
         this.deserializer = deserializer;
@@ -143,6 +146,7 @@ public class FeedRefresher : IFeedRefresher
         this.backgroundWorkQueue = backgroundWorkQueue;
         this.config = config;
         this.thumbnailResolver = thumbnailResolver;
+        this.validatorStore = validatorStore;
     }
 
     public void ResetRefreshCooldown()
@@ -297,7 +301,7 @@ public class FeedRefresher : IFeedRefresher
         }
 
         string[] agents = ["rss.brandonchastain.com/1.1", "curl/7.79.1"];
-        feedValidators.TryGetValue(url, out var known);
+        var known = GetValidators(url);
 
         // Bound concurrent hits to this origin host, independent of the global gate.
         var hostGate = GetHostGate(url);
@@ -368,11 +372,13 @@ public class FeedRefresher : IFeedRefresher
                     }
 
                     // Remember validators so future refreshes can short-circuit with a 304.
+                    // Persisted (keyed by URL) so they also survive a restart.
                     var newEtag = httpRes.Headers.ETag;
                     var newLastModified = httpRes.Content.Headers.LastModified;
                     if (newEtag != null || newLastModified != null)
                     {
                         feedValidators[url] = (newEtag, newLastModified);
+                        this.validatorStore.Set(url, newEtag?.ToString(), newLastModified);
                     }
 
                     var items = this.deserializer.FromString(response, user);
@@ -415,6 +421,31 @@ public class FeedRefresher : IFeedRefresher
         }
 
         return freshItems;
+    }
+
+    /// <summary>
+    /// Returns the conditional-GET validators for a feed URL. Serves from the
+    /// in-memory cache when present; on a miss (e.g. the first fetch after a
+    /// restart) loads the persisted validator from the store and warms the cache,
+    /// so we still send a conditional GET and can earn a 304 instead of a cold fetch.
+    /// </summary>
+    private (EntityTagHeaderValue ETag, DateTimeOffset? LastModified) GetValidators(string url)
+    {
+        if (feedValidators.TryGetValue(url, out var cached))
+        {
+            return cached;
+        }
+
+        var persisted = this.validatorStore.Get(url);
+        EntityTagHeaderValue etag = null;
+        if (persisted != null && !string.IsNullOrEmpty(persisted.ETag))
+        {
+            EntityTagHeaderValue.TryParse(persisted.ETag, out etag);
+        }
+
+        var loaded = (etag, persisted?.LastModified);
+        feedValidators[url] = loaded;
+        return loaded;
     }
 
     /// <summary>

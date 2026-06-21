@@ -114,6 +114,8 @@ if (!config.IsReadOnly)
                     LockStaleThreshold: TimeSpan.FromMinutes(15))))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupToFileService>())
         .AddHostedService<BackgroundWorker>()
+        .AddSingleton<IFeedValidatorStore>(sb =>
+            sb.GetRequiredService<RepositoryFactory>().CreateFeedValidatorStore())
         .AddSingleton<IFeedRefresher, FeedRefresher>()
         .AddTransient<RedirectDowngradeHandler>()
         // Per-request timeout so a single slow/hung feed can't stall the whole

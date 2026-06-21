@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using RssApp.Data;
 using RssReader.Server.Services;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -19,9 +20,10 @@ using System.Threading.Tasks;
 public sealed class FeedRefresherTests
 {
     /// <summary>
-    /// Test HttpMessageHandler that returns canned responses and counts how many
-    /// requests actually reached the network. Lets us assert politeness behavior
-    /// (Retry-After backoff, failure backoff) deterministically and offline.
+    /// Test HttpMessageHandler that returns canned responses, counts how many
+    /// requests reached the network, and records the conditional-GET headers on
+    /// the most recent request. Lets us assert politeness + validator behavior
+    /// (Retry-After backoff, conditional GETs) deterministically and offline.
     /// </summary>
     private sealed class StubHandler : HttpMessageHandler
     {
@@ -29,12 +31,16 @@ public sealed class FeedRefresherTests
         private int calls;
 
         public int CallCount => Volatile.Read(ref calls);
+        public string LastIfNoneMatch { get; private set; }
+        public DateTimeOffset? LastIfModifiedSince { get; private set; }
 
         public StubHandler(Func<int, HttpResponseMessage> responder) => this.responder = responder;
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var n = Interlocked.Increment(ref calls);
+            this.LastIfNoneMatch = request.Headers.IfNoneMatch.Count > 0 ? request.Headers.IfNoneMatch.ToString() : null;
+            this.LastIfModifiedSince = request.Headers.IfModifiedSince;
             try
             {
                 return Task.FromResult(this.responder(n));
@@ -46,11 +52,26 @@ public sealed class FeedRefresherTests
         }
     }
 
+    /// <summary>In-memory IFeedValidatorStore so persistence is observable in tests.</summary>
+    private sealed class InMemoryValidatorStore : IFeedValidatorStore
+    {
+        private readonly ConcurrentDictionary<string, FeedValidator> map = new();
+
+        public FeedValidator Get(string url) => this.map.TryGetValue(url, out var v) ? v : null;
+
+        public void Set(string url, string etag, DateTimeOffset? lastModified)
+        {
+            if (etag == null && lastModified == null) { this.map.TryRemove(url, out _); return; }
+            this.map[url] = new FeedValidator(etag, lastModified);
+        }
+    }
+
     private static (FeedRefresher refresher, Mock<IItemRepository> itemRepo) CreateRefresher(
         Mock<IFeedRepository> feedRepo = null,
         Mock<IUserRepository> userRepo = null,
         RssAppConfig config = null,
-        HttpMessageHandler primaryHandler = null)
+        HttpMessageHandler primaryHandler = null,
+        IFeedValidatorStore validatorStore = null)
     {
         feedRepo ??= new Mock<IFeedRepository>();
         var mockItemRepo = new Mock<IItemRepository>();
@@ -60,6 +81,7 @@ public sealed class FeedRefresherTests
         userRepo
             .Setup(repo => repo.GetUserById(It.IsAny<int>()))
             .Returns(new RssUser("testUser", 0));
+        validatorStore ??= new InMemoryValidatorStore();
         var serviceCollection = new ServiceCollection();
         serviceCollection
             .AddLogging(b => { b.ClearProviders(); b.AddConsole(); b.AddDebug(); })
@@ -67,6 +89,7 @@ public sealed class FeedRefresherTests
             .AddSingleton<IFeedRepository>(feedRepo.Object)
             .AddSingleton<IItemRepository>(mockItemRepo.Object)
             .AddSingleton<IUserRepository>(userRepo.Object)
+            .AddSingleton<IFeedValidatorStore>(validatorStore)
             .AddSingleton<BackgroundWorkQueue>()
             .AddHostedService<BackgroundWorker>()
             .AddSingleton<RssDeserializer>()
@@ -248,5 +271,54 @@ public sealed class FeedRefresherTests
 
         Assert.AreEqual(2, handler.CallCount,
             "Successful fetches must not back off; both refreshes should reach the origin.");
+    }
+
+    [TestMethod]
+    public async Task Fetch_PersistsValidators_ToStore_OnSuccess()
+    {
+        // A successful fetch that returns ETag/Last-Modified must persist them so a
+        // later process (after restart) can issue a conditional GET.
+        var rss = File.ReadAllText(Path.Combine("feeds", "vox.xml"));
+        var lastModified = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        var handler = new StubHandler(_ =>
+        {
+            var res = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(rss) };
+            res.Headers.ETag = new EntityTagHeaderValue("\"vox-etag-123\"");
+            res.Content.Headers.LastModified = lastModified;
+            return res;
+        });
+        var store = new InMemoryValidatorStore();
+        var (refresher, _) = CreateRefresher(primaryHandler: handler, validatorStore: store);
+
+        var url = "https://persist.example.com/feed";
+        await refresher.AddFeedAsync(new NewsFeed(url, userId: 0));
+
+        var saved = store.Get(url);
+        Assert.IsNotNull(saved, "Validators should be persisted after a successful fetch.");
+        StringAssert.Contains(saved.ETag, "vox-etag-123", "Persisted ETag should match the response.");
+        Assert.AreEqual(lastModified, saved.LastModified, "Persisted Last-Modified should match the response.");
+    }
+
+    [TestMethod]
+    public async Task Fetch_SendsConditionalGet_FromPersistedStore_AfterRestart()
+    {
+        // Simulate a restart: the in-memory cache is empty, but the store already
+        // holds a validator from before. The fetcher must load it and send a
+        // conditional GET, earning a 304 instead of a cold full fetch.
+        var url = "https://restart.example.com/feed";
+        var store = new InMemoryValidatorStore();
+        store.Set(url, "\"persisted-etag\"", new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.NotModified));
+        // Fresh refresher instance => cold in-memory cache, exactly like after a restart.
+        var (refresher, _) = CreateRefresher(primaryHandler: handler, validatorStore: store);
+
+        await refresher.AddFeedAsync(new NewsFeed(url, userId: 0));
+
+        Assert.AreEqual(1, handler.CallCount, "Should issue exactly one (conditional) request.");
+        Assert.IsNotNull(handler.LastIfNoneMatch, "A conditional GET should send If-None-Match after a restart.");
+        StringAssert.Contains(handler.LastIfNoneMatch, "persisted-etag",
+            "If-None-Match should carry the persisted ETag.");
+        Assert.IsNotNull(handler.LastIfModifiedSince, "A conditional GET should also send If-Modified-Since.");
     }
 }
