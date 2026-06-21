@@ -10,6 +10,9 @@
     --accent: #3fb950;
     --link: #79b8ff;
     --warn: #f0883e;
+    --tag-bg: #21262d;
+    --tag-border: #30363d;
+    --tag-text: #8b949e;
 }
 
 /* Light theme — applied when the user opts in (data-theme="light" on <html>).
@@ -24,6 +27,9 @@
     --accent: #1a7f37;
     --link: #0969da;
     --warn: #bc4c00;
+    --tag-bg: #eaeef2;
+    --tag-border: #d0d7de;
+    --tag-text: #59636e;
 }
 
 html, body {
@@ -172,9 +178,9 @@ a {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 3px;
-    background: #21262d;
-    border: 1px solid #30363d !important;
-    color: #8b949e;
+    background: var(--tag-bg);
+    border: 1px solid var(--tag-border) !important;
+    color: var(--tag-text);
     font-size: 0.82em;
     font-family: inherit;
     cursor: pointer;
@@ -190,7 +196,7 @@ a {
 .filter-tag-badge.active {
     border-color: var(--warn) !important;
     color: var(--warn);
-    background: #21262d;
+    background: var(--tag-bg);
 }
 #post-table {
     min-height: 100%;
@@ -738,9 +744,9 @@ h1:focus {
     display: inline-block;
     padding: 1px 6px;
     border-radius: 3px;
-    background: #21262d;
-    border: 1px solid #30363d;
-    color: #8b949e;
+    background: var(--tag-bg);
+    border: 1px solid var(--tag-border);
+    color: var(--tag-text);
     font-size: 0.78em;
     margin-right: 0.35em;
     vertical-align: middle;
