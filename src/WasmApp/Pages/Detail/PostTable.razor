@@ -125,7 +125,9 @@ else if (_showUpToDate)
     // newer than our newest-loaded post and drive the same toast. The scheduler
     // writes posts independently of user action, so without this an open timeline
     // never learns about them until a manual refresh or reload.
-    private const int NewPostsPollIntervalMs = 90_000;
+    // Kept short so the count climbs as the scheduler writes posts rather than
+    // jumping once every minute-and-a-half; the request is a cheap COUNT probe.
+    private const int NewPostsPollIntervalMs = 30_000;
     private CancellationTokenSource _newPostsPollCts;
 
     // Headline-reading mode: speaks each post's title top-to-bottom, opening each
@@ -258,43 +260,49 @@ else if (_showUpToDate)
     {
         try
         {
+            // Delay at the end of each iteration, not the start, so the first probe
+            // fires ~one interval after the initial load settles rather than making
+            // the toast invisible for a full interval after the timeline opens.
             while (!token.IsCancellationRequested)
             {
-                await Task.Delay(NewPostsPollIntervalMs, token);
-
                 // Skip this tick when a manual refresh owns the counter, when we're
                 // still loading the initial page, or when the tab is backgrounded.
-                if (_isBackgroundRefreshing || IsLoading) continue;
-
-                var cursor = GetNewestLoadedCursor();
-                if (cursor == null) continue;
-
-                bool visible;
-                try { visible = await jsRuntime.InvokeAsync<bool>("isDocumentVisible"); }
-                catch { visible = true; }
-                if (!visible) continue;
-
-                int count;
-                try
+                if (!_isBackgroundRefreshing && !IsLoading)
                 {
-                    count = await FeedClient.GetNewTimelineCountAsync(cursor.Value.order, cursor.Value.id);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "New-posts poll failed.");
-                    continue;
+                    var cursor = GetNewestLoadedCursor();
+                    if (cursor != null)
+                    {
+                        bool visible;
+                        try { visible = await jsRuntime.InvokeAsync<bool>("isDocumentVisible"); }
+                        catch { visible = true; }
+
+                        if (visible)
+                        {
+                            int count = -1;
+                            try
+                            {
+                                count = await FeedClient.GetNewTimelineCountAsync(cursor.Value.order, cursor.Value.id);
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.LogWarning(ex, "New-posts poll failed.");
+                            }
+
+                            // A manual refresh may have started while the request was in
+                            // flight; if so, leave its counter alone. Otherwise set (not
+                            // add) the absolute "new available" count so repeated ticks
+                            // don't accumulate.
+                            if (count >= 0 && !_isBackgroundRefreshing && count != _newPostsCount)
+                            {
+                                _newPostsCount = count;
+                                _showUpToDate = false;
+                                await InvokeAsync(StateHasChanged);
+                            }
+                        }
+                    }
                 }
 
-                // A manual refresh may have started while the request was in flight;
-                // if so, leave its counter alone. Otherwise set (not add) the absolute
-                // "new available" count so repeated ticks don't accumulate.
-                if (_isBackgroundRefreshing) continue;
-                if (count != _newPostsCount)
-                {
-                    _newPostsCount = count;
-                    _showUpToDate = false;
-                    await InvokeAsync(StateHasChanged);
-                }
+                await Task.Delay(NewPostsPollIntervalMs, token);
             }
         }
         catch (OperationCanceledException)
