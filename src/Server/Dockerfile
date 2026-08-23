@@ -19,6 +19,11 @@ RUN dotnet publish "Server.csproj" -c Release -o /app/publish /p:UseAppHost=fals
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+
+# Links the published GHCR package to this repository, which is what lets the
+# workflow's GITHUB_TOKEN push it -- no personal access token involved.
+LABEL org.opencontainers.image.source=https://github.com/brandonchastain/rss-reader
+
 WORKDIR /app
 
 # Install sqlite3 CLI for cold-start quick_check on the seeded DB
