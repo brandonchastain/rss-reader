@@ -12,8 +12,9 @@
 #   AZURE_TENANT_ID
 #   AZURE_SUBSCRIPTION_ID
 #   GATEWAY_SECRET_KEY     shared by the container app and the SWA proxy
-#   GHCR_PASSWORD          PAT with read:packages, so ACA can pull the image
-#                          (unnecessary if the GHCR package is made public)
+#
+# No registry credential is needed: the container image is a public GHCR package,
+# so ACA pulls it anonymously.
 name: Infrastructure
 
 on:
@@ -59,8 +60,6 @@ jobs:
             --template-file main.bicep \
             --parameters main.bicepparam \
             --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" \
-            --parameters ghcrUsername="${{ github.repository_owner }}" \
-            --parameters ghcrPassword="${{ secrets.GHCR_PASSWORD }}" \
             --query "properties.provisioningState" -o tsv
 
       # Surfaces the resource-level diff in the job log so a reviewer can see
@@ -72,9 +71,7 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --template-file main.bicep \
             --parameters main.bicepparam \
-            --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" \
-            --parameters ghcrUsername="${{ github.repository_owner }}" \
-            --parameters ghcrPassword="${{ secrets.GHCR_PASSWORD }}"
+            --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}"
 
   deploy:
     name: Deploy
@@ -101,8 +98,6 @@ jobs:
             --template-file main.bicep \
             --parameters main.bicepparam \
             --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" \
-            --parameters ghcrUsername="${{ github.repository_owner }}" \
-            --parameters ghcrPassword="${{ secrets.GHCR_PASSWORD }}" \
             --query "properties.provisioningState" -o tsv
 
       # A deployment that reports Succeeded can still leave a revision that never
@@ -110,7 +105,7 @@ jobs:
       - name: Verify the app is serving
         run: |
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 \
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90
               https://rss.brandonchastain.com/api/healthz || true)
             if [ "$code" = "200" ]; then echo "healthz OK"; exit 0; fi
             echo "attempt $i: HTTP $code"
@@ -122,5 +117,5 @@ jobs:
         run: |
           az containerapp revision list \
             --name rss-reader-api --resource-group "$RESOURCE_GROUP" \
-            --query "[?properties.active].{name:name,traffic:properties.trafficWeight,state:properties.runningState,health:properties.healthState}" \
+            --query "[?properties.active].{name:name,traffic:properties.trafficWeight,state:properties.runningState,health:properties.healthState}"
             -o table

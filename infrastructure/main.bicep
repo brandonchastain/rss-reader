@@ -28,13 +28,6 @@ param minReplicas int = 0
 @description('Maximum number of replicas')
 param maxReplicas int = 1
 
-@description('GitHub Container Registry username')
-param ghcrUsername string
-
-@description('GitHub Container Registry password/PAT')
-@secure()
-param ghcrPassword string
-
 @description('Name of the Static Web App')
 param staticWebAppName string = 'rss-reader-swa'
 
@@ -139,18 +132,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
       // Two writer revisions running concurrently would race on /data/storage.db
       // (mitigated by the BackupToFile lock file, but Single is the proper fix).
       activeRevisionsMode: 'Single'
-      registries: [
-        {
-          server: 'ghcr.io'
-          username: ghcrUsername
-          passwordSecretRef: 'ghcr-password'
-        }
-      ]
+      // No registries block: the ghcr.io/brandonchastain/rss-reader-api package
+      // is public, so ACA pulls anonymously and no registry credential exists to
+      // expire, leak, or be forgotten during a rotation.
       secrets: [
-        {
-          name: 'ghcr-password'
-          value: ghcrPassword
-        }
         {
           name: 'gateway-secret-key'
           value: gatewaySecretKey
@@ -315,18 +300,10 @@ resource readerApp 'Microsoft.App/containerApps@2025-01-01' = if (enableReadRepl
   properties: {
     environmentId: environment.id
     configuration: {
-      registries: [
-        {
-          server: 'ghcr.io'
-          username: ghcrUsername
-          passwordSecretRef: 'ghcr-password'
-        }
-      ]
+      // No registries block: the ghcr.io/brandonchastain/rss-reader-api package
+      // is public, so ACA pulls anonymously and no registry credential exists to
+      // expire, leak, or be forgotten during a rotation.
       secrets: [
-        {
-          name: 'ghcr-password'
-          value: ghcrPassword
-        }
         {
           name: 'gateway-secret-key'
           value: gatewaySecretKey
