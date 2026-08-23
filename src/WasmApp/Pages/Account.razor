@@ -3,7 +3,9 @@
 @using RssApp.Contracts
 @attribute [Authorize]
 
+@using WasmApp.Services
 @inject IUserClient userClient
+@inject IPostCache postCache
 @inject NavigationManager navigationManager
 
 <div class="account-container">
@@ -167,6 +169,11 @@
         try
         {
             await userClient.DeleteAccountAsync();
+
+            // The account is gone server-side; leaving its posts in browser
+            // storage would let a reload paint a deleted timeline.
+            await postCache.ClearAsync();
+
             navigationManager.NavigateTo("/", forceLoad: true);
         }
         catch (Exception ex)

@@ -23,6 +23,9 @@ public interface IFeedClient : IDisposable
     Task TriggerRefreshAsync();
     Task<RefreshStatusResponse> GetRefreshStatusAsync();
     Task<string> GetItemContentAsync(NewsFeedItem item);
+    // Fetches bodies for a page of items in one request and caches them, so a
+    // later cold start can render full posts rather than only titles.
+    Task<int> PrefetchContentAsync(IEnumerable<string> itemIds);
     Task AddTagAsync(NewsFeed feed, string tag);
     Task<IEnumerable<string>> GetUserTagsAsync(RssUser user);
     Task<IEnumerable<TagSetting>> GetTagSettingsAsync();

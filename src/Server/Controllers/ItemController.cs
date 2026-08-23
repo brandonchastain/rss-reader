@@ -24,6 +24,9 @@ namespace Server.Controllers
         private readonly RssAppConfig config;
         private readonly ILogger<ItemController> logger;
 
+        // Upper bound on ids honoured by the batch content endpoint.
+        private const int MaxContentBatchSize = 50;
+
         public ItemController(
             IItemRepository itemRepository,
             IFeedRepository feedRepository,
@@ -193,6 +196,61 @@ namespace Server.Controllers
             base64Content = System.Text.Json.JsonSerializer.Serialize(base64Content);
 
             return Ok(base64Content);
+        }
+
+        // Batch sibling of GET content. The client prefetches the content for a
+        // page of timeline items so a later cold start can serve them from its own
+        // cache; doing that one id at a time would be one request per post. Items
+        // with no stored content are omitted rather than failing the whole batch,
+        // so a single empty post can't sink the prefetch.
+        [HttpGet("contentBatch")]
+        [ResponseCache(Duration = 3600, Location = ResponseCacheLocation.Client)]
+        public IActionResult GetItemContentBatch(string itemIds)
+        {
+            var user = this.userResolver.ResolveUser(User);
+
+            if (user == null)
+            {
+                return NotFound("Authenticated user not found.");
+            }
+
+            if (string.IsNullOrWhiteSpace(itemIds))
+            {
+                return Ok(new Dictionary<string, string>());
+            }
+
+            // Bounded so a crafted query can't turn one request into an unbounded
+            // scan; the client only ever prefetches a page's worth.
+            var ids = itemIds
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(raw => int.TryParse(raw, out var parsed) ? parsed : -1)
+                .Where(id => id > 0)
+                .Distinct()
+                .Take(MaxContentBatchSize)
+                .ToList();
+
+            var results = new Dictionary<string, string>(ids.Count);
+
+            foreach (var id in ids)
+            {
+                // GetItem is user-scoped, so ids belonging to another user resolve
+                // to null and are skipped rather than leaking content.
+                var item = this.itemRepository.GetItem(user, id);
+                if (item == null)
+                {
+                    continue;
+                }
+
+                var content = this.itemRepository.GetItemContent(item);
+                if (string.IsNullOrWhiteSpace(content))
+                {
+                    continue;
+                }
+
+                results[id.ToString()] = Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
+            }
+
+            return Ok(results);
         }
 
         [HttpGet("markAsRead")]

@@ -10,14 +10,63 @@
     protected IFeedClient feedClient { get; set; }
 
     [Inject]
-    private IUserClient userClient { get; set; }
+    protected IUserClient userClient { get; set; }
+
+    [Inject]
+    protected IPostCache postCache { get; set; }
 
     protected async Task GetUsernameAsync()
     {
         if (this.CurrentUser == null)
         {
-            this.CurrentUser = await this.userClient.GetFeedUserAsync();
-            StateHasChanged();
+            await EnsureCacheIdentityAsync();
+
+            // Paint the cached record first: GetFeedUserAsync registers against
+            // the writer, so on a cold start it blocks for as long as the
+            // container takes to wake.
+            var cached = await this.postCache.GetUserAsync();
+            if (cached != null)
+            {
+                this.CurrentUser = cached;
+                StateHasChanged();
+            }
+
+            var user = await this.userClient.GetFeedUserAsync();
+            if (user != null)
+            {
+                this.CurrentUser = user;
+                await this.postCache.SetUserAsync(user);
+                StateHasChanged();
+            }
+        }
+    }
+
+    // Resolves the cache partition key from the Easy Auth identity, which is
+    // served by the Static Web App and stays warm while the container is asleep.
+    // Also sweeps slots left by another user or an older cache version.
+    protected async Task<string> EnsureCacheIdentityAsync()
+    {
+        if (!string.IsNullOrEmpty(this.postCache.Username))
+        {
+            return this.postCache.Username;
+        }
+
+        try
+        {
+            var username = await this.userClient.GetUsernameAsync();
+            if (string.IsNullOrEmpty(username))
+            {
+                return null;
+            }
+
+            this.postCache.Username = username;
+            await this.postCache.PruneAsync();
+            return username;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not resolve cache identity; running uncached.");
+            return null;
         }
     }
 }

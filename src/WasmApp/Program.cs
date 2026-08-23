@@ -27,6 +27,7 @@ config.AuthApiBaseUrl = authApiBaseUrl;
 
 builder.Services
     .AddSingleton<RssWasmConfig>(_ => config)
+    .AddSingleton<IPostCache, PostCache>()
     .AddTransient<IFeedClient, FeedClient>()
     .AddTransient<IUserClient, UserClient>()
     .AddTransient<IAdminClient, AdminClient>();

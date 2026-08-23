@@ -22,6 +22,8 @@
 
     protected override string GetBasePath() => "/timeline";
 
+    protected override bool SupportsCache => true;
+
     protected override async Task<List<NewsFeedItem>> GetPostsAsync(int pageSize = 20)
     {
         var posts = await this.feedClient.GetTimelineAsync(Page, pageSize: pageSize, cursorPublishDateOrder: CursorPublishDateOrder, cursorId: CursorId);

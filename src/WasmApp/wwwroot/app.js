@@ -217,6 +217,136 @@ window.rssApp = {
             return true;
         }
         return false;
+    },
+
+    // Cold-start cache. The API runs scale-to-zero, so waking the container costs
+    // ~20s of platform time no request can avoid. This keeps the last-seen
+    // timeline, the user record, the tag list, and recently-read post bodies in
+    // localStorage so the app can paint from them immediately and reconcile with
+    // the server in the background.
+    //
+    // localStorage (not IndexedDB) is deliberate: reads are synchronous, so
+    // hydration paints before anything awaits, and measured content is ~500 bytes
+    // per post -- a 50-post page of bodies is ~25KB. The caps below exist only so
+    // one pathological post (the largest in the live DB is 2.7MB) can't fill the
+    // ~5MB origin budget.
+    cache: {
+        VERSION: 'v1',
+        MAX_ITEM_BYTES: 64 * 1024,
+        MAX_CONTENT_BYTES: 2 * 1024 * 1024,
+
+        _key: function (user, slot) {
+            return 'rssApp.cache.' + window.rssApp.cache.VERSION + '.' + user + '.' + slot;
+        },
+        _get: function (user, slot) {
+            if (!user) return null;
+            try { return localStorage.getItem(window.rssApp.cache._key(user, slot)); }
+            catch (e) { return null; }
+        },
+        _set: function (user, slot, value) {
+            if (!user) return false;
+            try {
+                localStorage.setItem(window.rssApp.cache._key(user, slot), value);
+                return true;
+            } catch (e) {
+                // Quota exceeded (or storage disabled). Drop the content slot --
+                // the largest and most regenerable -- and retry once.
+                try {
+                    localStorage.removeItem(window.rssApp.cache._key(user, 'content'));
+                    localStorage.setItem(window.rssApp.cache._key(user, slot), value);
+                    return true;
+                } catch (e2) {
+                    return false;
+                }
+            }
+        },
+
+        getTimeline: function (user) { return window.rssApp.cache._get(user, 'timeline'); },
+        setTimeline: function (user, json) { return window.rssApp.cache._set(user, 'timeline', json); },
+        getUser: function (user) { return window.rssApp.cache._get(user, 'user'); },
+        setUser: function (user, json) { return window.rssApp.cache._set(user, 'user', json); },
+        getTags: function (user) { return window.rssApp.cache._get(user, 'tags'); },
+        setTags: function (user, json) { return window.rssApp.cache._set(user, 'tags', json); },
+
+        // Post bodies, newest-write-first so trimming drops the least recently
+        // written. Stored as an array rather than an object because integer-like
+        // object keys are ordered numerically by the JS engine, which would
+        // silently destroy recency order.
+        getContent: function (user, itemId) {
+            var raw = window.rssApp.cache._get(user, 'content');
+            if (!raw) return null;
+            try {
+                var entries = JSON.parse(raw);
+                for (var i = 0; i < entries.length; i++) {
+                    if (entries[i].id === itemId) return entries[i].c;
+                }
+            } catch (e) { }
+            return null;
+        },
+
+        // mapJson: { "<itemId>": "<base64 content>" }. Merges into the existing
+        // entries, newest first, dropping oversized items and trimming to budget.
+        mergeContent: function (user, mapJson) {
+            if (!user) return false;
+            var incoming;
+            try { incoming = JSON.parse(mapJson); } catch (e) { return false; }
+
+            var existing = [];
+            var raw = window.rssApp.cache._get(user, 'content');
+            if (raw) { try { existing = JSON.parse(raw) || []; } catch (e) { existing = []; } }
+
+            var seen = {};
+            var merged = [];
+            Object.keys(incoming).forEach(function (id) {
+                var c = incoming[id];
+                if (typeof c !== 'string' || c.length > window.rssApp.cache.MAX_ITEM_BYTES) return;
+                seen[id] = true;
+                merged.push({ id: id, c: c });
+            });
+            existing.forEach(function (e) {
+                if (e && e.id && !seen[e.id]) { seen[e.id] = true; merged.push(e); }
+            });
+
+            var total = 0;
+            var trimmed = [];
+            for (var i = 0; i < merged.length; i++) {
+                total += merged[i].c.length;
+                if (total > window.rssApp.cache.MAX_CONTENT_BYTES) break;
+                trimmed.push(merged[i]);
+            }
+
+            return window.rssApp.cache._set(user, 'content', JSON.stringify(trimmed));
+        },
+
+        // Drops cached slots. With a user, drops that user's slots (sign-out,
+        // account delete, cleared posts); without one, drops every cache key.
+        clear: function (user) {
+            var prefix = user
+                ? 'rssApp.cache.' + window.rssApp.cache.VERSION + '.' + user + '.'
+                : 'rssApp.cache.';
+            window.rssApp.cache._removeMatching(function (k) { return k.indexOf(prefix) === 0; });
+        },
+
+        // Sweeps slots that belong to a different user or an older cache version,
+        // so a shared browser or a shape change can't serve someone else's posts.
+        prune: function (user) {
+            if (!user) return;
+            var mine = 'rssApp.cache.' + window.rssApp.cache.VERSION + '.' + user + '.';
+            window.rssApp.cache._removeMatching(function (k) {
+                return k.indexOf('rssApp.cache.') === 0 && k.indexOf(mine) !== 0;
+            });
+        },
+
+        _removeMatching: function (predicate) {
+            try {
+                var doomed = [];
+                for (var i = 0; i < localStorage.length; i++) {
+                    var k = localStorage.key(i);
+                    if (k && predicate(k)) doomed.push(k);
+                }
+                doomed.forEach(function (k) { localStorage.removeItem(k); });
+            } catch (e) { }
+        }
     }
 };
 

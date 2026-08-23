@@ -2,6 +2,7 @@
 @using RssApp.Config
 @inject IJSRuntime JS
 @inject IFeedClient FeedClient
+@inject IPostCache PostCache
 @inject ILogger<Toolbar> Logger
 @inject NavigationManager NavigationManager
 @inject RssWasmConfig Config
@@ -118,6 +119,13 @@
         StateHasChanged();
 
         var success = await FeedClient.ClearAllItemsAsync();
+
+        if (success)
+        {
+            // Posts were wiped server-side; the cached copy would otherwise be
+            // rehydrated on the next cold start.
+            await PostCache.ClearAsync();
+        }
 
         isClearing = false;
         StateHasChanged();

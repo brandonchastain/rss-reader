@@ -128,6 +128,13 @@ else if (_showUpToDate)
     // Kept short so the count climbs as the scheduler writes posts rather than
     // jumping once every minute-and-a-half; the request is a cheap COUNT probe.
     private const int NewPostsPollIntervalMs = 30_000;
+    // Until the first probe lands, retry on a short interval instead. When the
+    // timeline is hydrated from cache the probe is the only thing that will
+    // surface new posts, and hydration completes after this component's first
+    // render -- a full interval of silence there would be the user staring at a
+    // stale list with no indication anything is coming.
+    private const int NewPostsFirstProbeRetryMs = 1_000;
+    private bool _hasProbedOnce;
     private CancellationTokenSource _newPostsPollCts;
 
     // Headline-reading mode: speaks each post's title top-to-bottom, opening each
@@ -238,9 +245,14 @@ else if (_showUpToDate)
         if (firstRender)
         {
             _headlineRef = DotNetObjectReference.Create(this);
-            this.userTags = await FeedClient.GetUserTagsAsync(CurrentUser);
-            StateHasChanged();
+
+            // Start probing before resolving tags. GetUserTagsAsync registers the
+            // user against the writer, so on a cold start it blocks for the whole
+            // container wake -- awaiting it first would hold the new-posts probe
+            // behind it for no reason.
             StartNewPostsPoll();
+
+            await LoadUserTagsAsync();
         }
     }
 
@@ -292,6 +304,11 @@ else if (_showUpToDate)
                             // flight; if so, leave its counter alone. Otherwise set (not
                             // add) the absolute "new available" count so repeated ticks
                             // don't accumulate.
+                            if (count >= 0)
+                            {
+                                _hasProbedOnce = true;
+                            }
+
                             if (count >= 0 && !_isBackgroundRefreshing && count != _newPostsCount)
                             {
                                 _newPostsCount = count;
@@ -302,7 +319,8 @@ else if (_showUpToDate)
                     }
                 }
 
-                await Task.Delay(NewPostsPollIntervalMs, token);
+                await Task.Delay(
+                    _hasProbedOnce ? NewPostsPollIntervalMs : NewPostsFirstProbeRetryMs, token);
             }
         }
         catch (OperationCanceledException)
@@ -392,6 +410,35 @@ else if (_showUpToDate)
             tag = null;
         }
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, tag, false));
+    }
+
+    // Tags drive the toolbar's filter list. The cached copy paints immediately;
+    // the live call behind it reconciles once the container is up.
+    private async Task LoadUserTagsAsync()
+    {
+        await EnsureCacheIdentityAsync();
+
+        var cached = await postCache.GetTagsAsync();
+        if (cached != null && cached.Count > 0)
+        {
+            this.userTags = cached;
+            StateHasChanged();
+        }
+
+        try
+        {
+            var tags = await FeedClient.GetUserTagsAsync(CurrentUser);
+            if (tags != null)
+            {
+                this.userTags = tags;
+                await postCache.SetTagsAsync(tags);
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to refresh user tags.");
+        }
     }
 
     private async Task OnRefreshComplete()

@@ -33,6 +33,7 @@ const READ_ENDPOINTS = new Set([
     'item/feed',         // GET /api/item/feed — items for specific feed
     'item/search',       // GET /api/item/search — FTS5 search
     'item/content',      // GET /api/item/content — full HTML content
+    'item/contentBatch', // GET /api/item/contentBatch — content for a page of items
 ]);
 
 // ============================================================================
