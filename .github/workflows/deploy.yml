@@ -1,0 +1,174 @@
+# Build and deploy everything: the ARM template, the backend image, and the
+# frontend (Blazor WASM + the Functions API proxy).
+#
+# Before this existed, deploys ran from a laptop. The template had silently
+# stopped being deployable at all, so every change reached production through
+# `az containerapp update` -- which replaces the scale block wholesale and drops
+# settings the template declares. That drift caused a real outage: cooldownPeriod
+# fell to 10s, and KEDA then killed each new revision ~11s into a ~13s boot,
+# leaving it ActivationFailed while holding 100% of the traffic.
+#
+# So: the template is the only thing that writes container app config, and the
+# image tag is passed into it rather than set behind its back.
+#
+# Auth is OIDC via the gh-actions-rss-reader user-assigned managed identity. The
+# federated credentials must match the subject each job presents -- a pull
+# request, a push to main, and an `environment:` job each present a different
+# one, and a missing credential fails only that job.
+#
+# Repo configuration:
+#   AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID   (identifiers)
+#   GATEWAY_SECRET_KEY                                          (the only secret)
+# The image is a public GHCR package, so nothing needs a registry credential at
+# runtime and CI pushes it with GITHUB_TOKEN.
+name: Deploy
+
+on:
+  pull_request:
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/deploy.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC federated login
+  contents: read
+  packages: write # push the image to GHCR
+
+env:
+  RESOURCE_GROUP: rss-container-rg
+  CONTAINER_APP: rss-reader-api
+  SWA_NAME: rss-reader-swa
+  IMAGE: ghcr.io/${{ github.repository_owner }}/rss-reader-api
+
+jobs:
+  # Catches a template ARM would refuse, before it reaches a deployment.
+  validate:
+    name: Validate template
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Validate
+        working-directory: infrastructure
+        run: az deployment group validate --resource-group "$RESOURCE_GROUP" --template-file main.bicep --parameters main.bicepparam --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" --query "properties.provisioningState" -o tsv
+      - name: What-if
+        working-directory: infrastructure
+        run: az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file main.bicep --parameters main.bicepparam --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}"
+
+  test:
+    name: Build + test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet test test/SerializerTests/SerializerTests.csproj --logger "console;verbosity=minimal"
+
+  backend:
+    name: Backend
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tagged with the commit sha as well as latest. The sha tag is what gets
+      # deployed, so every deploy is a distinct image reference -- which makes a
+      # rollback just a re-run pinned to an older tag.
+      - name: Build and push image
+        run: |
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" -f src/Server/Dockerfile .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # The template deploys the container app. Never `az containerapp update`,
+      # which drops the scale settings the template declares.
+      - name: Deploy template with the new image
+        working-directory: infrastructure
+        run: az deployment group create --resource-group "$RESOURCE_GROUP" --template-file main.bicep --parameters main.bicepparam --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" --parameters containerImage="$IMAGE:${{ github.sha }}" --query "properties.provisioningState" -o tsv
+
+      # ARM reporting Succeeded does not mean the app came up: a revision can
+      # fail activation and still hold all of the traffic. Ask the app itself.
+      - name: Verify the backend is serving
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "https://rss.brandonchastain.com/api/healthz" || true)
+            if [ "$code" = "200" ]; then echo "healthz OK on attempt $i"; exit 0; fi
+            echo "attempt $i: HTTP $code"
+            sleep 10
+          done
+          echo "backend did not become healthy"
+          exit 1
+
+      - name: Report active revision
+        if: always()
+        run: az containerapp revision list --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" --query "[?properties.active].{name:name,traffic:properties.trafficWeight,state:properties.runningState,health:properties.healthState}" -o table
+
+  frontend:
+    name: Frontend
+    needs: backend
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Publish the Blazor app
+        run: dotnet publish src/WasmApp/WasmApp.csproj -c Release -o publish
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Fetched with the deploy identity rather than stored as another repo
+      # secret -- one less long-lived credential to rotate or leak.
+      - name: Get the Static Web Apps deployment token
+        id: swa
+        run: |
+          token=$(az staticwebapp secrets list --name "$SWA_NAME" --resource-group "$RESOURCE_GROUP" --query "properties.apiKey" -o tsv)
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: upload
+          app_location: publish/wwwroot
+          api_location: api
+          output_location: ''
+          skip_app_build: true
+
+      - name: Verify the site is serving
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "https://rss.brandonchastain.com/" || true)
+          echo "site: HTTP $code"
+          [ "$code" = "200" ]
