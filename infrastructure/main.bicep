@@ -237,9 +237,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
                 path: '/api/healthz'
                 port: 8080
               }
-              periodSeconds: 10
+              // Probe often: the app finishes booting between probes, and at a 10s
+              // period that gap was dead time on every scale-from-zero cold start.
+              // failureThreshold is raised to keep the overall startup budget well
+              // above the observed ~40s cold start (2s * 150 = 300s).
+              periodSeconds: 2
               timeoutSeconds: 5
-              failureThreshold: 60
+              failureThreshold: 150
             }
           ]
         }
@@ -385,9 +389,13 @@ resource readerApp 'Microsoft.App/containerApps@2024-03-01' = if (enableReadRepl
                 path: '/api/healthz'
                 port: 8080
               }
-              periodSeconds: 10
+              // Probe often: the app finishes booting between probes, and at a 10s
+              // period that gap was dead time on every scale-from-zero cold start.
+              // failureThreshold is raised to keep the overall startup budget well
+              // above the observed ~40s cold start (2s * 150 = 300s).
+              periodSeconds: 2
               timeoutSeconds: 5
-              failureThreshold: 60
+              failureThreshold: 150
             }
           ]
         }
