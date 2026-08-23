@@ -127,14 +127,12 @@ else if (_showUpToDate)
     // never learns about them until a manual refresh or reload.
     // Kept short so the count climbs as the scheduler writes posts rather than
     // jumping once every minute-and-a-half; the request is a cheap COUNT probe.
-    private const int NewPostsPollIntervalMs = 30_000;
-    // Until the first probe lands, retry on a short interval instead. When the
-    // timeline is hydrated from cache the probe is the only thing that will
-    // surface new posts, and hydration completes after this component's first
-    // render -- a full interval of silence there would be the user staring at a
-    // stale list with no indication anything is coming.
-    private const int NewPostsFirstProbeRetryMs = 1_000;
-    private bool _hasProbedOnce;
+    private const int NewPostsPollIntervalMs = ProbePolling.IntervalMs;
+    // Delay before the next probe. Short to begin with so the toast appears
+    // promptly after cache hydration, then governed by ProbePolling: exponential
+    // backoff on failure, straight back to the interval on success. See that
+    // class for why a fixed short retry was wrong.
+    private int _probeDelayMs = ProbePolling.InitialDelayMs;
     private CancellationTokenSource _newPostsPollCts;
 
     // Headline-reading mode: speaks each post's title top-to-bottom, opening each
@@ -288,6 +286,13 @@ else if (_showUpToDate)
                         try { visible = await jsRuntime.InvokeAsync<bool>("isDocumentVisible"); }
                         catch { visible = true; }
 
+                        // Nothing to surface while the tab is backgrounded, and no
+                        // reason to keep waking on the short initial delay.
+                        if (!visible)
+                        {
+                            _probeDelayMs = ProbePolling.Steady();
+                        }
+
                         if (visible)
                         {
                             int count = -1;
@@ -306,7 +311,7 @@ else if (_showUpToDate)
                             // don't accumulate.
                             if (count >= 0)
                             {
-                                _hasProbedOnce = true;
+                                _probeDelayMs = ProbePolling.Steady();
 
                                 // A successful probe is proof the API is
                                 // reachable, which makes it the natural heartbeat
@@ -321,6 +326,10 @@ else if (_showUpToDate)
                                     logger.LogWarning(ex, "Pending write flush failed.");
                                 }
                             }
+                            else
+                            {
+                                _probeDelayMs = ProbePolling.Backoff(_probeDelayMs);
+                            }
 
                             if (count >= 0 && !_isBackgroundRefreshing && count != _newPostsCount)
                             {
@@ -332,8 +341,7 @@ else if (_showUpToDate)
                     }
                 }
 
-                await Task.Delay(
-                    _hasProbedOnce ? NewPostsPollIntervalMs : NewPostsFirstProbeRetryMs, token);
+                await Task.Delay(_probeDelayMs, token);
             }
         }
         catch (OperationCanceledException)
