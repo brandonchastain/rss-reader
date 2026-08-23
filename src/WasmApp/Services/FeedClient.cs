@@ -261,6 +261,52 @@ namespace WasmApp.Services
             }
         }
 
+        // Fills the cached timeline out to a full page. Without this the cache
+        // only ever grows as the user scrolls -- a cache hit skips the initial
+        // fetch, so nothing re-persists, and someone who reads the top few posts
+        // and leaves would stay capped at one page forever.
+        //
+        // Returns true when the cache is warm (including "already was"), false
+        // when the attempt failed and is worth retrying.
+        public async Task<bool> WarmTimelineCacheAsync()
+        {
+            try
+            {
+                var cached = await this.postCache.GetTimelineAsync();
+                if (cached != null && cached.Count >= PostCache.MaxTimelineItems)
+                {
+                    return true;
+                }
+
+                // Built unfiltered on purpose. The cache backs the default
+                // timeline, and reusing this client's current filter state would
+                // quietly store a tag or unread slice under the same key.
+                var url = $"{_config.ApiBaseUrl}api/item/timeline"
+                    + $"?isFilterUnread=False&isFilterSaved=False&filterTag="
+                    + $"&page=0&pageSize={PostCache.MaxTimelineItems}";
+
+                var items = await _httpClient.GetFromJsonAsync<List<NewsFeedItem>>(url);
+                if (items == null || items.Count == 0)
+                {
+                    return true;
+                }
+
+                // Changes the server hasn't accepted yet have to survive the warm,
+                // or it would overwrite the cache with staler flags than the ones
+                // already on screen.
+                PendingWrites.Apply(await this.postCache.GetPendingWritesAsync(), items);
+
+                await this.postCache.SetTimelineAsync(items);
+                await PrefetchContentAsync(items.Select(i => i.Id));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Timeline cache warm failed.");
+                return false;
+            }
+        }
+
         private static string TryDecodeContent(string base64)
         {
             if (string.IsNullOrWhiteSpace(base64))
