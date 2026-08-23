@@ -72,7 +72,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
-      - run: dotnet test test/SerializerTests/SerializerTests.csproj --logger "console;verbosity=minimal"
+      # Excludes tests that fetch live third-party feeds: they fail on whether
+      # someone else's server is up, which is not a signal worth blocking a
+      # deploy on. Run them deliberately with --filter TestCategory=Network.
+      - run: dotnet test test/SerializerTests/SerializerTests.csproj --filter "TestCategory!=Network" --logger "console;verbosity=minimal"
 
   backend:
     name: Backend

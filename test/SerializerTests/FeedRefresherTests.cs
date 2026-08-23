@@ -124,7 +124,15 @@ public sealed class FeedRefresherTests
         return (refresher, mockItemRepo);
     }
 
+    // Fetches every URL in allBrokenFeeds.txt over the real internet, so it
+    // passes or fails on whether third-party feeds happen to be reachable. That
+    // makes it a useful local diagnostic for feed-parsing regressions and a
+    // permanently flaky CI check -- it failed a GitHub runner on
+    // thetechbubble.substack.com while passing locally. Categorised so CI can
+    // exclude it; run it deliberately with:
+    //   dotnet test --filter TestCategory=Network
     [TestMethod]
+    [TestCategory("Network")]
     public async Task AddFeedAsync_Should_Add_Items_To_Store()
     {
         var (feedRefresher, mockItemRepo) = CreateRefresher();
