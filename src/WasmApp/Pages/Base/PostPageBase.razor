@@ -12,6 +12,7 @@
     private string _scrollAnchorPostId;
     private bool _needsScrollRestore;
     private int _restorePageSize;
+    private int _lastPrefetchedCount;
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
     public int Page { get; set; } = 0;
     public long? CursorPublishDateOrder { get; set; }
@@ -62,6 +63,7 @@
         Page = 0;
         CursorPublishDateOrder = null;
         CursorId = null;
+        _lastPrefetchedCount = 0;
     }
 
     protected void UpdateCursorFromItems(IEnumerable<NewsFeedItem> items)
@@ -112,13 +114,26 @@
             int pageSize = _restorePageSize > 0 ? _restorePageSize : 20;
             _restorePageSize = 0;
 
-            // True when this load starts from an empty list -- a first load or a
-            // reset -- so the resulting items are the newest, which is the only
-            // state worth persisting. Paging appends older items and must not
-            // overwrite the cached head.
-            bool isTopOfTimeline = Items.Count == 0;
+            List<NewsFeedItem> newPageRes;
+            try
+            {
+                newPageRes = await this.GetPostsAsync(pageSize);
+            }
+            catch (Exception ex)
+            {
+                // The API is unreachable or still waking. Keep whatever is on
+                // screen -- possibly a hydrated cache -- instead of tearing it
+                // down, and don't let the exception escape into the infinite
+                // scroll handler.
+                logger.LogWarning(ex, "Timeline fetch failed; keeping the current items.");
+                return;
+            }
 
-            var newPageRes = await this.GetPostsAsync(pageSize);
+            // Overlay changes the server hasn't accepted yet: a page fetched
+            // before the outbox drains would otherwise show the server's older
+            // flags and visibly revert what the user just did.
+            await ApplyPendingWritesAsync(newPageRes);
+
             // Deduplicate by Href before adding
             var existingHrefs = new HashSet<string>(Items.Select(i => i.Href), StringComparer.OrdinalIgnoreCase);
             var dedupedNewPosts = newPageRes.Where(i => !existingHrefs.Contains(i.Href)).ToList();
@@ -133,7 +148,11 @@
             // Sync loaded item count to JS for scroll-state save estimation
             try { await jsRuntime.InvokeVoidAsync("rssApp.setLoadedItemCount", Items.Count); } catch { }
 
-            if (isTopOfTimeline && Items.Count > 0)
+            // Persist after every load, not just the first. Items is ordered
+            // newest-first and paging only appends older posts, so the head stays
+            // the true newest -- and gating this on the first load alone capped
+            // the cache at one page.
+            if (Items.Count > 0)
             {
                 await PersistTimelineCacheAsync();
             }
@@ -206,6 +225,21 @@
         }
     }
 
+    // Applies queued read/saved changes to freshly fetched items. Safe to call
+    // for any view: with no cache identity the queue reads back empty.
+    private async Task ApplyPendingWritesAsync(IEnumerable<NewsFeedItem> items)
+    {
+        try
+        {
+            var pending = await this.postCache.GetPendingWritesAsync();
+            PendingWrites.Apply(pending, items);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not apply pending writes to fetched items.");
+        }
+    }
+
     // Fills Items from the browser cache so the timeline is readable while the
     // container wakes. Returns false (leaving Items untouched) on any miss.
     private async Task<bool> TryHydrateFromCacheAsync()
@@ -268,7 +302,14 @@
 
             var head = Items.Take(PostCache.MaxTimelineItems).ToList();
             await this.postCache.SetTimelineAsync(head);
-            _ = this.feedClient.PrefetchContentAsync(head.Select(i => i.Id));
+
+            // Only prefetch as the cached head grows, so paging through the
+            // timeline doesn't re-request bodies that are already stored.
+            if (head.Count > _lastPrefetchedCount)
+            {
+                _lastPrefetchedCount = head.Count;
+                _ = this.feedClient.PrefetchContentAsync(head.Select(i => i.Id));
+            }
         }
         catch (Exception ex)
         {

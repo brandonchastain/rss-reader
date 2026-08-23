@@ -307,6 +307,19 @@ else if (_showUpToDate)
                             if (count >= 0)
                             {
                                 _hasProbedOnce = true;
+
+                                // A successful probe is proof the API is
+                                // reachable, which makes it the natural heartbeat
+                                // for replaying anything the user did while it
+                                // wasn't.
+                                try
+                                {
+                                    await FeedClient.FlushPendingWritesAsync();
+                                }
+                                catch (Exception ex)
+                                {
+                                    logger.LogWarning(ex, "Pending write flush failed.");
+                                }
                             }
 
                             if (count >= 0 && !_isBackgroundRefreshing && count != _newPostsCount)
