@@ -58,6 +58,13 @@ namespace RssApp.Config
         // time has arrived.
         public TimeSpan SchedulerTickInterval { get; set; } = TimeSpan.FromMinutes(1);
 
+        // How long after startup to hold off the first scheduler tick. The replica
+        // runs on a fraction of a vCPU and scales from zero, so a cold start's first
+        // user request lands the moment the startup probe passes. Fanning out feed
+        // fetches before then contends for that CPU and slows the request that woke
+        // the container in the first place.
+        public TimeSpan SchedulerStartupDelay { get; set; } = TimeSpan.FromSeconds(45);
+
         // Polling interval used when a feed advertises no <ttl> / sy:updatePeriod.
         public TimeSpan FeedRefreshInterval { get; set; } = TimeSpan.FromMinutes(30);
 

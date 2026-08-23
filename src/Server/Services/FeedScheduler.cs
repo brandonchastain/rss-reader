@@ -38,8 +38,9 @@ public class FeedScheduler : BackgroundService
             this.config.SchedulerTickInterval, this.config.FeedRefreshInterval,
             this.config.FeedRefreshIntervalFloor, this.config.FeedRefreshIntervalMax);
 
-        // Let startup settle (DB restore, warmup) before the first tick.
-        if (!await DelayAsync(TimeSpan.FromSeconds(15), stoppingToken))
+        // Let startup settle (DB restore, warmup) before the first tick, and leave
+        // the cold-start window clear for the request that woke the container.
+        if (!await DelayAsync(this.config.SchedulerStartupDelay, stoppingToken))
         {
             return;
         }
