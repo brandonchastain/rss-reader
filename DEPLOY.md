@@ -82,6 +82,13 @@ docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
 
 ## Step 3: Infrastructure buildout
 
+> **Infrastructure now deploys from CI.** `.github/workflows/infra.yml` validates
+> the template on every PR touching `infrastructure/`, and deploys it on merge to
+> `main`. Prefer that over running the commands below by hand: deploying locally
+> is how the template drifted from production in the first place, and how it went
+> unnoticed that ARM had stopped accepting it. The steps here remain accurate for
+> first-time buildout of a new environment.
+
 ```bash
 # Navigate to infrastructure directory
 cd ..\infrastructure

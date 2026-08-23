@@ -126,7 +126,7 @@ resource storage 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
 }
 
 // Container App
-resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
   name: containerAppName
   location: location
   identity: {
@@ -251,6 +251,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       scale: {
         minReplicas: minReplicas
         maxReplicas: maxReplicas
+        // How long KEDA waits before scaling an idle replica away. It must stay
+        // comfortably above the app's boot time: during activation a new revision
+        // receives no traffic, so a short cooldown kills the replica mid-boot and
+        // the revision lands in ActivationFailed holding 100% of the traffic.
+        // NOTE: cooldownPeriod is not in the containerApps schema before
+        // 2025-01-01. Lowering the resource's apiVersion makes ARM preflight
+        // reject the whole template with ContainerAppInvalidSchema.
         cooldownPeriod: 900
         rules: [
           {
@@ -299,7 +306,7 @@ param enableReadReplica bool = false
 param maxReadReplicas int = 3
 
 // Reader Container App — internal ingress, no Azure Files mount
-resource readerApp 'Microsoft.App/containerApps@2024-03-01' = if (enableReadReplica) {
+resource readerApp 'Microsoft.App/containerApps@2025-01-01' = if (enableReadReplica) {
   name: '${containerAppName}-reader'
   location: location
   identity: {

@@ -1,0 +1,126 @@
+# Infrastructure CI/CD for the Container App, storage and Static Web App.
+#
+# Until this existed, main.bicep was deployed by hand from a laptop -- and had
+# silently stopped being deployable at all (an unsupported property for the
+# resource's apiVersion, rejected in ARM preflight). Nothing caught it, so every
+# change reached production through `az containerapp update` instead, which
+# replaces the scale block wholesale and quietly drops settings the template
+# declares. The validate job below exists to make that failure loud.
+#
+# Auth is OIDC: no stored Azure credential. Set these repo secrets/variables:
+#   AZURE_CLIENT_ID        app registration with a federated credential for this repo
+#   AZURE_TENANT_ID
+#   AZURE_SUBSCRIPTION_ID
+#   GATEWAY_SECRET_KEY     shared by the container app and the SWA proxy
+#   GHCR_PASSWORD          PAT with read:packages, so ACA can pull the image
+#                          (unnecessary if the GHCR package is made public)
+name: Infrastructure
+
+on:
+  pull_request:
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/infra.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infrastructure/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write      # required for OIDC federated login
+  contents: read
+  pull-requests: write
+
+env:
+  RESOURCE_GROUP: rss-container-rg
+
+jobs:
+  validate:
+    name: Validate + what-if
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Preflight only. This is the step that catches a template ARM will refuse,
+      # before it reaches a deployment.
+      - name: Validate template
+        working-directory: infrastructure
+        run: |
+          az deployment group validate \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file main.bicep \
+            --parameters main.bicepparam \
+            --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" \
+            --parameters ghcrUsername="${{ github.repository_owner }}" \
+            --parameters ghcrPassword="${{ secrets.GHCR_PASSWORD }}" \
+            --query "properties.provisioningState" -o tsv
+
+      # Surfaces the resource-level diff in the job log so a reviewer can see
+      # what a merge would actually change.
+      - name: What-if
+        working-directory: infrastructure
+        run: |
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file main.bicep \
+            --parameters main.bicepparam \
+            --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" \
+            --parameters ghcrUsername="${{ github.repository_owner }}" \
+            --parameters ghcrPassword="${{ secrets.GHCR_PASSWORD }}"
+
+  deploy:
+    name: Deploy
+    needs: validate
+    # Only from main, never from a pull request.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy template
+        working-directory: infrastructure
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file main.bicep \
+            --parameters main.bicepparam \
+            --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" \
+            --parameters ghcrUsername="${{ github.repository_owner }}" \
+            --parameters ghcrPassword="${{ secrets.GHCR_PASSWORD }}" \
+            --query "properties.provisioningState" -o tsv
+
+      # A deployment that reports Succeeded can still leave a revision that never
+      # became healthy, so check the app itself rather than trusting ARM.
+      - name: Verify the app is serving
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 \
+              https://rss.brandonchastain.com/api/healthz || true)
+            if [ "$code" = "200" ]; then echo "healthz OK"; exit 0; fi
+            echo "attempt $i: HTTP $code"
+            sleep 10
+          done
+          echo "backend did not become healthy"; exit 1
+
+      - name: Report active revision
+        run: |
+          az containerapp revision list \
+            --name rss-reader-api --resource-group "$RESOURCE_GROUP" \
+            --query "[?properties.active].{name:name,traffic:properties.trafficWeight,state:properties.runningState,health:properties.healthState}" \
+            -o table
