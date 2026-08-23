@@ -12,17 +12,19 @@ namespace WasmApp.Services
         private readonly HttpClient _httpClient;
         private readonly RssWasmConfig _config;
         private readonly IUserClient userClient;
+        private readonly IPostCache postCache;
         private readonly ILogger<FeedClient> _logger;
         public bool IsFilterUnread { get; set; }
         public string FilterTag { get; set; }
         public bool IsFilterSaved { get; set; }
         private bool _disposed;
 
-        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, IUserClient userClient, IHttpClientFactory httpClientFactory)
+        public FeedClient(RssWasmConfig config, ILogger<FeedClient> logger, IUserClient userClient, IPostCache postCache, IHttpClientFactory httpClientFactory)
         {
             _httpClient = httpClientFactory.CreateClient("ApiClient");
             _config = config;
             this.userClient = userClient;
+            this.postCache = postCache;
             _logger = logger;
         }
 
@@ -117,11 +119,27 @@ namespace WasmApp.Services
 
         public async Task<string> GetItemContentAsync(NewsFeedItem item)
         {
+            // Read through the browser cache first: a body stored on a previous
+            // visit renders immediately instead of waiting out a container wake.
+            var cached = await this.postCache.GetContentBase64Async(item.Id);
+            var fromCache = TryDecodeContent(cached);
+            if (fromCache != null)
+            {
+                return fromCache;
+            }
+
             try
             {
                 var content = await _httpClient.GetFromJsonAsync<string>($"{_config.ApiBaseUrl}api/item/content?itemId={item.Id}");
-                var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content));
-                return decoded;
+                var decoded = TryDecodeContent(content);
+                if (decoded != null)
+                {
+                    // Only successful fetches are cached. A 404 today can become
+                    // real content after a later refresh, so caching the failure
+                    // would pin it permanently.
+                    await this.postCache.MergeContentAsync(new Dictionary<string, string> { [item.Id] = content });
+                    return decoded;
+                }
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
@@ -129,6 +147,58 @@ namespace WasmApp.Services
             }
 
             return "[no content found]";
+        }
+
+        // Fetches the bodies for a page of items in a single request and stores
+        // them, so the next cold start can show full posts and not just titles.
+        // Best-effort: a failure here costs nothing but a cache miss later.
+        public async Task<int> PrefetchContentAsync(IEnumerable<string> itemIds)
+        {
+            var ids = (itemIds ?? Enumerable.Empty<string>())
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct()
+                .Take(PostCache.MaxTimelineItems)
+                .ToList();
+
+            if (ids.Count == 0)
+            {
+                return 0;
+            }
+
+            try
+            {
+                var url = $"{_config.ApiBaseUrl}api/item/contentBatch?itemIds={Uri.EscapeDataString(string.Join(",", ids))}";
+                var map = await _httpClient.GetFromJsonAsync<Dictionary<string, string>>(url);
+                if (map == null || map.Count == 0)
+                {
+                    return 0;
+                }
+
+                await this.postCache.MergeContentAsync(map);
+                return map.Count;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Content prefetch failed.");
+                return 0;
+            }
+        }
+
+        private static string TryDecodeContent(string base64)
+        {
+            if (string.IsNullOrWhiteSpace(base64))
+            {
+                return null;
+            }
+
+            try
+            {
+                return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
         }
 
         public async Task DeleteFeedAsync(string feedHref)

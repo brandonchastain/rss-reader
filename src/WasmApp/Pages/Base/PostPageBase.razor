@@ -33,6 +33,21 @@
     }
 
     protected virtual string GetBasePath() => "/timeline";
+
+    // Only the main timeline caches. Feed, search and tag views are narrower
+    // slices whose cached contents would be misleading to paint as the timeline,
+    // and they aren't what a cold start opens on.
+    protected virtual bool SupportsCache => false;
+
+    // Cached posts are a snapshot of state as of the last visit. Under the unread
+    // or saved filter that snapshot is structurally wrong -- everything read last
+    // session would reappear and then vanish as the server answer lands -- so the
+    // cache only ever backs the unfiltered view.
+    private bool CacheApplies =>
+        SupportsCache
+        && !this.feedClient.IsFilterUnread
+        && !this.feedClient.IsFilterSaved
+        && string.IsNullOrEmpty(this.feedClient.FilterTag);
     protected virtual Dictionary<string, string> GetExtraQueryParams() => new();
 
     protected virtual Task<List<NewsFeedItem>> GetPostsAsync(int pageSize = 20)
@@ -96,7 +111,13 @@
 
             int pageSize = _restorePageSize > 0 ? _restorePageSize : 20;
             _restorePageSize = 0;
-            
+
+            // True when this load starts from an empty list -- a first load or a
+            // reset -- so the resulting items are the newest, which is the only
+            // state worth persisting. Paging appends older items and must not
+            // overwrite the cached head.
+            bool isTopOfTimeline = Items.Count == 0;
+
             var newPageRes = await this.GetPostsAsync(pageSize);
             // Deduplicate by Href before adding
             var existingHrefs = new HashSet<string>(Items.Select(i => i.Href), StringComparer.OrdinalIgnoreCase);
@@ -111,7 +132,12 @@
 
             // Sync loaded item count to JS for scroll-state save estimation
             try { await jsRuntime.InvokeVoidAsync("rssApp.setLoadedItemCount", Items.Count); } catch { }
-            
+
+            if (isTopOfTimeline && Items.Count > 0)
+            {
+                await PersistTimelineCacheAsync();
+            }
+
             this.StateHasChanged();
         }
         finally
@@ -180,6 +206,76 @@
         }
     }
 
+    // Fills Items from the browser cache so the timeline is readable while the
+    // container wakes. Returns false (leaving Items untouched) on any miss.
+    private async Task<bool> TryHydrateFromCacheAsync()
+    {
+        if (!CacheApplies)
+        {
+            return false;
+        }
+
+        try
+        {
+            var username = await EnsureCacheIdentityAsync();
+            if (string.IsNullOrEmpty(username))
+            {
+                return false;
+            }
+
+            var cached = await this.postCache.GetTimelineAsync();
+            if (cached == null || cached.Count == 0)
+            {
+                return false;
+            }
+
+            Items.Clear();
+            Items.AddRange(cached);
+
+            // Seek from the oldest cached item so scrolling continues past the
+            // cached window instead of re-fetching it. The server ignores the
+            // page offset whenever a cursor is supplied.
+            UpdateCursorFromItems(cached);
+
+            _hasLoadedOnce = true;
+            this.StateHasChanged();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Timeline cache hydration failed; loading from the API.");
+            return false;
+        }
+    }
+
+    // Stores the newest page of items and prefetches their bodies in one request,
+    // so the next cold start opens on posts that can actually be read rather than
+    // a list of titles. Best-effort and never blocks the render.
+    private async Task PersistTimelineCacheAsync()
+    {
+        if (!CacheApplies)
+        {
+            return;
+        }
+
+        try
+        {
+            var username = await EnsureCacheIdentityAsync();
+            if (string.IsNullOrEmpty(username))
+            {
+                return;
+            }
+
+            var head = Items.Take(PostCache.MaxTimelineItems).ToList();
+            await this.postCache.SetTimelineAsync(head);
+            _ = this.feedClient.PrefetchContentAsync(head.Select(i => i.Id));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to persist the timeline cache.");
+        }
+    }
+
     private static bool QueryParamsEqual(Dictionary<string, string> a, Dictionary<string, string> b)
     {
         if (a.Count != b.Count) return false;
@@ -233,6 +329,18 @@
                 // sessionStorage may be unavailable
             }
 
+            // Paint the previous session's timeline before touching the API. A
+            // scroll restore is skipped deliberately: it only happens on
+            // in-session back-navigation, when the container is already warm, and
+            // its larger page size would fight the cached head.
+            if (!_needsScrollRestore)
+            {
+                await TryHydrateFromCacheAsync();
+            }
+
+            // Hydration leaves Items populated, which by design suppresses the
+            // initial fetch -- PostTable's existing new-posts poll probes the
+            // server instead and surfaces the toast when the container wakes.
             if (this.Items == null || !this.Items.Any())
             {
                 await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag, false));
