@@ -36,6 +36,9 @@ public interface IFeedClient : IDisposable
     // Replays read/saved changes that were queued while the API was unreachable.
     // Returns how many were accepted.
     Task<int> FlushPendingWritesAsync();
+    // Tops the cached timeline up to a full page so it doesn't depend on the
+    // user having scrolled. True when the cache is warm, false to retry later.
+    Task<bool> WarmTimelineCacheAsync();
     Task DeleteFeedAsync(string feedHref);
     Task<bool> ClearAllItemsAsync();
     Task ImportOpmlAsync(string opmlContent);

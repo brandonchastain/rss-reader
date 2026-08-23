@@ -104,6 +104,12 @@ else if (_showUpToDate)
     [Parameter]
     public IFeedClient FeedClient { get; set; }
 
+    // Set by the timeline only. Feed, tag and search views render through this
+    // same table but are narrower slices, and warming the default timeline cache
+    // from one of them would be surprising.
+    [Parameter]
+    public bool CacheEnabled { get; set; }
+
     public IEnumerable<string> userTags = null;
     public bool IsFilterUnread => FeedClient.IsFilterUnread;
     public bool IsFilterSaved => FeedClient.IsFilterSaved;
@@ -133,6 +139,7 @@ else if (_showUpToDate)
     // backoff on failure, straight back to the interval on success. See that
     // class for why a fixed short retry was wrong.
     private int _probeDelayMs = ProbePolling.InitialDelayMs;
+    private bool _cacheWarmed;
     private CancellationTokenSource _newPostsPollCts;
 
     // Headline-reading mode: speaks each post's title top-to-bottom, opening each
@@ -324,6 +331,14 @@ else if (_showUpToDate)
                                 catch (Exception ex)
                                 {
                                     logger.LogWarning(ex, "Pending write flush failed.");
+                                }
+
+                                // Same signal, same reason: the API is reachable,
+                                // so top the cache up to a full page. Retried on
+                                // later ticks only if the attempt failed.
+                                if (CacheEnabled && !_cacheWarmed)
+                                {
+                                    _cacheWarmed = await FeedClient.WarmTimelineCacheAsync();
                                 }
                             }
                             else
