@@ -207,7 +207,9 @@
         catch (Exception)
         {
             // Best-effort — don't crash the UI if the backend is busy (e.g. during refresh).
-            // The read state is already updated locally; it will sync on next page load.
+            // The read state is already updated locally, and FeedClient queues the
+            // change when the API doesn't accept it, so it reaches the server on
+            // the next successful probe rather than being lost.
         }
     }
 

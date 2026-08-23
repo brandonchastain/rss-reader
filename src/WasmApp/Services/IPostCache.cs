@@ -33,6 +33,21 @@ public interface IPostCache
     Task<string> GetContentBase64Async(string itemId);
     Task MergeContentAsync(IDictionary<string, string> base64ById);
 
+    /// <summary>
+    /// Read/saved changes that have not reached the server. Writes are attempted
+    /// immediately and only queued when the API rejects or cannot be reached, so
+    /// this is normally empty.
+    /// </summary>
+    Task<List<PendingWrite>> GetPendingWritesAsync();
+    Task SetPendingWritesAsync(IEnumerable<PendingWrite> writes);
+    Task EnqueuePendingWriteAsync(NewsFeedItem item, string kind, bool value);
+
+    /// <summary>
+    /// Updates one item's flags in the cached timeline so a reload reflects what
+    /// the user actually did, whether or not the server has heard about it yet.
+    /// </summary>
+    Task PatchTimelineItemAsync(string itemId, bool? isRead, bool? isSaved);
+
     /// <summary>Drops every slot for the current user (sign-out, account delete).</summary>
     Task ClearAsync();
 

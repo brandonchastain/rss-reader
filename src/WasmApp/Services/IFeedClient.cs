@@ -33,6 +33,9 @@ public interface IFeedClient : IDisposable
     Task MarkAsReadAsync(NewsFeedItem item, bool isRead);
     Task SavePostAsync(NewsFeedItem item);
     Task UnsavePostAsync(NewsFeedItem item);
+    // Replays read/saved changes that were queued while the API was unreachable.
+    // Returns how many were accepted.
+    Task<int> FlushPendingWritesAsync();
     Task DeleteFeedAsync(string feedHref);
     Task<bool> ClearAllItemsAsync();
     Task ImportOpmlAsync(string opmlContent);

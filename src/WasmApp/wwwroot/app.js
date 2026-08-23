@@ -268,6 +268,10 @@ window.rssApp = {
         getTags: function (user) { return window.rssApp.cache._get(user, 'tags'); },
         setTags: function (user, json) { return window.rssApp.cache._set(user, 'tags', json); },
 
+        // Write-behind outbox: read/saved changes the server hasn't accepted yet.
+        getOutbox: function (user) { return window.rssApp.cache._get(user, 'outbox'); },
+        setOutbox: function (user, json) { return window.rssApp.cache._set(user, 'outbox', json); },
+
         // Post bodies, newest-write-first so trimming drops the least recently
         // written. Stored as an array rather than an object because integer-like
         // object keys are ordered numerically by the JS engine, which would

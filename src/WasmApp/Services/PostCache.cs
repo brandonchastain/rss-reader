@@ -153,6 +153,68 @@ public class PostCache : IPostCache
         }
     }
 
+    public async Task<List<PendingWrite>> GetPendingWritesAsync()
+    {
+        var json = await GetSlotAsync("getOutbox");
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new List<PendingWrite>();
+        }
+
+        try
+        {
+            var writes = JsonSerializer.Deserialize<List<PendingWrite>>(json) ?? new List<PendingWrite>();
+            return PendingWrites.Prune(writes, NowMs());
+        }
+        catch (JsonException)
+        {
+            return new List<PendingWrite>();
+        }
+    }
+
+    public Task SetPendingWritesAsync(IEnumerable<PendingWrite> writes)
+        => SetSlotAsync("setOutbox", JsonSerializer.Serialize((writes ?? Enumerable.Empty<PendingWrite>()).ToList()));
+
+    public async Task EnqueuePendingWriteAsync(NewsFeedItem item, string kind, bool value)
+    {
+        if (string.IsNullOrEmpty(this.Username) || string.IsNullOrEmpty(item?.Id))
+        {
+            return;
+        }
+
+        var now = NowMs();
+        var existing = await GetPendingWritesAsync();
+        var collapsed = PendingWrites.Collapse(existing, PendingWrite.For(item, kind, value, now), now);
+        await SetPendingWritesAsync(collapsed);
+    }
+
+    public async Task PatchTimelineItemAsync(string itemId, bool? isRead, bool? isSaved)
+    {
+        if (string.IsNullOrEmpty(this.Username) || string.IsNullOrEmpty(itemId))
+        {
+            return;
+        }
+
+        var cached = await GetTimelineAsync();
+        if (cached == null || cached.Count == 0)
+        {
+            return;
+        }
+
+        var target = cached.FirstOrDefault(i => i.Id == itemId);
+        if (target == null)
+        {
+            return;
+        }
+
+        if (isRead.HasValue) target.IsRead = isRead.Value;
+        if (isSaved.HasValue) target.IsSaved = isSaved.Value;
+
+        await SetTimelineAsync(cached);
+    }
+
+    private static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
     public async Task ClearAsync()
     {
         try
