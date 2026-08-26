@@ -7,7 +7,12 @@
 
 @code {
     private bool _isRefreshing;
-    private bool _pendingForceReset;
+    // The most recent request that arrived while a fetch was in flight. Holding
+    // the whole request rather than a bool matters: filter toggles arrive with
+    // forceReset false, so the old flag discarded them outright and a filter
+    // click during a slow load did nothing at all -- leaving the toolbar looking
+    // dead with navigation as the only way out.
+    private (bool isFilterUnread, bool isFilterSaved, string filterTag, bool forceReset)? _pendingRequest;
     private bool _hasLoadedOnce;
     private string _scrollAnchorPostId;
     private bool _needsScrollRestore;
@@ -40,15 +45,15 @@
     // and they aren't what a cold start opens on.
     protected virtual bool SupportsCache => false;
 
-    // Cached posts are a snapshot of state as of the last visit. Under the unread
-    // or saved filter that snapshot is structurally wrong -- everything read last
-    // session would reappear and then vanish as the server answer lands -- so the
-    // cache only ever backs the unfiltered view.
-    private bool CacheApplies =>
-        SupportsCache
-        && !this.feedClient.IsFilterUnread
-        && !this.feedClient.IsFilterSaved
-        && string.IsNullOrEmpty(this.feedClient.FilterTag);
+    // Every filter view caches separately. Read/saved state stays consistent
+    // across slots because a mark-read patches all of them and the outbox
+    // overlays anything the server hasn't accepted yet -- without those, a cached
+    // 'unread' view would resurface posts already read.
+    private bool CacheApplies => SupportsCache;
+
+    // Cache slot for the filters currently in effect.
+    private string CacheSignature => PostCache.SignatureFor(
+        this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag);
     protected virtual Dictionary<string, string> GetExtraQueryParams() => new();
 
     protected virtual Task<List<NewsFeedItem>> GetPostsAsync(int pageSize = 20)
@@ -91,7 +96,9 @@
     {
         if (_isRefreshing)
         {
-            if (filters.forceReset) _pendingForceReset = true;
+            // Last request wins -- toggling twice should land on what the reader
+            // asked for last, not replay both.
+            _pendingRequest = filters;
             return;
         }
 
@@ -99,8 +106,7 @@
         {
             _isRefreshing = true;
 
-            bool forceReset = filters.forceReset || _pendingForceReset;
-            _pendingForceReset = false;
+            bool forceReset = filters.forceReset;
 
             bool filtersChanged = UpdateFilters(
                 (filters.isFilterUnread, filters.isFilterSaved, filters.filterTag));
@@ -114,7 +120,7 @@
             int pageSize = _restorePageSize > 0 ? _restorePageSize : 20;
             _restorePageSize = 0;
 
-            List<NewsFeedItem> newPageRes;
+            List<NewsFeedItem> newPageRes = null;
             try
             {
                 newPageRes = await this.GetPostsAsync(pageSize);
@@ -124,37 +130,41 @@
                 // The API is unreachable or still waking. Keep whatever is on
                 // screen -- possibly a hydrated cache -- instead of tearing it
                 // down, and don't let the exception escape into the infinite
-                // scroll handler.
+                // scroll handler. Deliberately not an early return: that would
+                // skip the pending-request drain below, stranding a filter click
+                // that arrived during the failed fetch.
                 logger.LogWarning(ex, "Timeline fetch failed; keeping the current items.");
-                return;
             }
 
-            // Overlay changes the server hasn't accepted yet: a page fetched
-            // before the outbox drains would otherwise show the server's older
-            // flags and visibly revert what the user just did.
-            await ApplyPendingWritesAsync(newPageRes);
-
-            // Deduplicate by Href before adding
-            var existingHrefs = new HashSet<string>(Items.Select(i => i.Href), StringComparer.OrdinalIgnoreCase);
-            var dedupedNewPosts = newPageRes.Where(i => !existingHrefs.Contains(i.Href)).ToList();
-            Items.AddRange(dedupedNewPosts);
-
-            // Update cursor from the new page results (not deduplicated — use original to get true last item)
-            if (newPageRes.Any())
+            if (newPageRes != null)
             {
-                UpdateCursorFromItems(newPageRes);
-            }
+                // Overlay changes the server hasn't accepted yet: a page fetched
+                // before the outbox drains would otherwise show the server's older
+                // flags and visibly revert what the user just did.
+                await ApplyPendingWritesAsync(newPageRes);
 
-            // Sync loaded item count to JS for scroll-state save estimation
-            try { await jsRuntime.InvokeVoidAsync("rssApp.setLoadedItemCount", Items.Count); } catch { }
+                // Deduplicate by Href before adding
+                var existingHrefs = new HashSet<string>(Items.Select(i => i.Href), StringComparer.OrdinalIgnoreCase);
+                var dedupedNewPosts = newPageRes.Where(i => !existingHrefs.Contains(i.Href)).ToList();
+                Items.AddRange(dedupedNewPosts);
 
-            // Persist after every load, not just the first. Items is ordered
-            // newest-first and paging only appends older posts, so the head stays
-            // the true newest -- and gating this on the first load alone capped
-            // the cache at one page.
-            if (Items.Count > 0)
-            {
-                await PersistTimelineCacheAsync();
+                // Update cursor from the new page results (not deduplicated — use original to get true last item)
+                if (newPageRes.Any())
+                {
+                    UpdateCursorFromItems(newPageRes);
+                }
+
+                // Sync loaded item count to JS for scroll-state save estimation
+                try { await jsRuntime.InvokeVoidAsync("rssApp.setLoadedItemCount", Items.Count); } catch { }
+
+                // Persist after every load, not just the first. Items is ordered
+                // newest-first and paging only appends older posts, so the head
+                // stays the true newest -- and gating this on the first load
+                // alone capped the cache at one page.
+                if (Items.Count > 0)
+                {
+                    await PersistTimelineCacheAsync();
+                }
             }
 
             this.StateHasChanged();
@@ -165,10 +175,12 @@
             _hasLoadedOnce = true;
         }
 
-        // If a forceReset arrived while we were fetching, run again now
-        if (_pendingForceReset)
+        // Apply whatever arrived while we were busy. Runs after a failed fetch
+        // too, so an unreachable API delays a filter change rather than losing it.
+        if (_pendingRequest is { } pending)
         {
-            await RefreshItems((feedClient.IsFilterUnread, feedClient.IsFilterSaved, feedClient.FilterTag, true));
+            _pendingRequest = null;
+            await RefreshItems(pending);
         }
     }
 
@@ -257,7 +269,7 @@
                 return false;
             }
 
-            var cached = await this.postCache.GetTimelineAsync();
+            var cached = await this.postCache.GetTimelineAsync(CacheSignature);
             if (cached == null || cached.Count == 0)
             {
                 return false;
@@ -301,7 +313,7 @@
             }
 
             var head = Items.Take(PostCache.MaxTimelineItems).ToList();
-            await this.postCache.SetTimelineAsync(head);
+            await this.postCache.SetTimelineAsync(CacheSignature, head);
 
             // Only prefetch as the cached head grows, so paging through the
             // timeline doesn't re-request bodies that are already stored.

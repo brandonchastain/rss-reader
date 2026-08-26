@@ -261,8 +261,72 @@ window.rssApp = {
             }
         },
 
-        getTimeline: function (user) { return window.rssApp.cache._get(user, 'timeline'); },
-        setTimeline: function (user, json) { return window.rssApp.cache._set(user, 'timeline', json); },
+        // One timeline slot per filter view -- 'all', 'unread', 'tag-tech' and so
+        // on -- so switching filters hydrates from the last time that view was
+        // open rather than waiting on the API. Slots are bounded by an LRU index:
+        // a reader with twenty tags would otherwise accumulate a slot per tag.
+        MAX_TIMELINE_SLOTS: 6,
+
+        _timelineSlot: function (sig) { return 'timeline.' + (sig || 'all'); },
+
+        getTimeline: function (user, sig) {
+            var v = window.rssApp.cache._get(user, window.rssApp.cache._timelineSlot(sig));
+            if (v) window.rssApp.cache._touchSlot(user, sig);
+            return v;
+        },
+        setTimeline: function (user, sig, json) {
+            var ok = window.rssApp.cache._set(user, window.rssApp.cache._timelineSlot(sig), json);
+            if (ok) window.rssApp.cache._touchSlot(user, sig);
+            return ok;
+        },
+
+        // Recency order of timeline slots, most recent first. Evicts the tail
+        // past MAX_TIMELINE_SLOTS, removing the slot itself as well as the entry.
+        _touchSlot: function (user, sig) {
+            sig = sig || 'all';
+            var order = window.rssApp.cache._slotOrder(user);
+            order = order.filter(function (s) { return s !== sig; });
+            order.unshift(sig);
+
+            var evicted = order.slice(window.rssApp.cache.MAX_TIMELINE_SLOTS);
+            order = order.slice(0, window.rssApp.cache.MAX_TIMELINE_SLOTS);
+            evicted.forEach(function (s) {
+                try { localStorage.removeItem(window.rssApp.cache._key(user, window.rssApp.cache._timelineSlot(s))); }
+                catch (e) { }
+            });
+
+            window.rssApp.cache._set(user, 'timeline.index', JSON.stringify(order));
+        },
+
+        _slotOrder: function (user) {
+            var raw = window.rssApp.cache._get(user, 'timeline.index');
+            if (!raw) return [];
+            try { return JSON.parse(raw) || []; } catch (e) { return []; }
+        },
+
+        // Applies a read/saved change to every cached slot holding the item. A
+        // post can appear in several views at once, and leaving stale copies
+        // behind is what would make an 'unread' slot resurface posts already
+        // read -- the reason filtered views were excluded from the cache before.
+        patchItem: function (user, itemId, isRead, isSaved) {
+            if (!user || !itemId) return;
+            window.rssApp.cache._slotOrder(user).forEach(function (sig) {
+                var slot = window.rssApp.cache._timelineSlot(sig);
+                var raw = window.rssApp.cache._get(user, slot);
+                if (!raw) return;
+                try {
+                    var items = JSON.parse(raw);
+                    var touched = false;
+                    for (var i = 0; i < items.length; i++) {
+                        if (items[i].Id !== itemId) continue;
+                        if (isRead !== null) { items[i].IsRead = isRead; touched = true; }
+                        if (isSaved !== null) { items[i].IsSaved = isSaved; touched = true; }
+                    }
+                    if (touched) window.rssApp.cache._set(user, slot, JSON.stringify(items));
+                } catch (e) { }
+            });
+        },
+
         getUser: function (user) { return window.rssApp.cache._get(user, 'user'); },
         setUser: function (user, json) { return window.rssApp.cache._set(user, 'user', json); },
         getTags: function (user) { return window.rssApp.cache._get(user, 'tags'); },

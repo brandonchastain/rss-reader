@@ -23,9 +23,31 @@ public class PostCache : IPostCache
 
     public string Username { get; set; }
 
-    public async Task<List<NewsFeedItem>> GetTimelineAsync()
+    /// <summary>
+    /// Cache key for a filter combination. Kept short and character-safe because
+    /// it becomes part of a localStorage key, and stable because a signature that
+    /// varied between visits would silently never hit.
+    /// </summary>
+    public static string SignatureFor(bool isFilterUnread, bool isFilterSaved, string filterTag)
     {
-        var json = await GetSlotAsync("getTimeline");
+        var parts = new List<string>();
+        if (isFilterUnread) parts.Add("unread");
+        if (isFilterSaved) parts.Add("saved");
+
+        if (!string.IsNullOrWhiteSpace(filterTag))
+        {
+            var safe = new string(filterTag.Where(char.IsLetterOrDigit).ToArray());
+            // A tag of only punctuation would collapse to an empty string and
+            // collide with the unfiltered slot, so fall back to its length.
+            parts.Add("tag-" + (safe.Length > 0 ? safe.ToLowerInvariant() : filterTag.Length.ToString()));
+        }
+
+        return parts.Count == 0 ? "all" : string.Join("+", parts);
+    }
+
+    public async Task<List<NewsFeedItem>> GetTimelineAsync(string signature)
+    {
+        var json = await InvokeSlotGetAsync("getTimeline", signature);
         if (string.IsNullOrWhiteSpace(json))
         {
             return null;
@@ -44,7 +66,7 @@ public class PostCache : IPostCache
         }
     }
 
-    public Task SetTimelineAsync(IEnumerable<NewsFeedItem> items)
+    public Task SetTimelineAsync(string signature, IEnumerable<NewsFeedItem> items)
     {
         if (items == null)
         {
@@ -73,7 +95,7 @@ public class PostCache : IPostCache
             })
             .ToList();
 
-        return SetSlotAsync("setTimeline", JsonSerializer.Serialize(trimmed));
+        return InvokeSlotSetAsync("setTimeline", signature, JsonSerializer.Serialize(trimmed));
     }
 
     public async Task<RssUser> GetUserAsync()
@@ -195,22 +217,19 @@ public class PostCache : IPostCache
             return;
         }
 
-        var cached = await GetTimelineAsync();
-        if (cached == null || cached.Count == 0)
+        try
         {
-            return;
+            // Patches every slot holding the item, not just the active view. A
+            // post appears in several filters at once, and a stale copy left in
+            // the 'unread' slot is exactly what would resurface posts already
+            // read -- the reason filtered views used to be excluded entirely.
+            await this.jsRuntime.InvokeVoidAsync(
+                "rssApp.cache.patchItem", this.Username, itemId, isRead, isSaved);
         }
-
-        var target = cached.FirstOrDefault(i => i.Id == itemId);
-        if (target == null)
+        catch (Exception ex)
         {
-            return;
+            this.logger.LogWarning(ex, "Failed to patch cached item state.");
         }
-
-        if (isRead.HasValue) target.IsRead = isRead.Value;
-        if (isSaved.HasValue) target.IsSaved = isSaved.Value;
-
-        await SetTimelineAsync(cached);
     }
 
     private static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -241,6 +260,42 @@ public class PostCache : IPostCache
         catch (Exception)
         {
             // best-effort
+        }
+    }
+
+    // Timeline slots take the filter signature as an extra argument; the other
+    // slots are single-valued.
+    private async Task<string> InvokeSlotGetAsync(string fn, string signature)
+    {
+        if (string.IsNullOrEmpty(this.Username))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await this.jsRuntime.InvokeAsync<string>($"rssApp.cache.{fn}", this.Username, signature);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private async Task InvokeSlotSetAsync(string fn, string signature, string json)
+    {
+        if (string.IsNullOrEmpty(this.Username))
+        {
+            return;
+        }
+
+        try
+        {
+            await this.jsRuntime.InvokeVoidAsync($"rssApp.cache.{fn}", this.Username, signature, json);
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogWarning(ex, "Failed to write cache slot {Slot}/{Signature}.", fn, signature);
         }
     }
 

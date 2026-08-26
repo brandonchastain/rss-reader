@@ -60,7 +60,7 @@ public class CacheWarmTests
         factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
         var cache = new Mock<IPostCache>();
-        cache.Setup(c => c.GetTimelineAsync()).ReturnsAsync(cached);
+        cache.Setup(c => c.GetTimelineAsync(It.IsAny<string>())).ReturnsAsync(cached);
         cache.Setup(c => c.GetPendingWritesAsync()).ReturnsAsync(new List<PendingWrite>());
 
         var config = new RssWasmConfig { ApiBaseUrl = "https://test.local/" };
@@ -79,7 +79,7 @@ public class CacheWarmTests
 
         Assert.IsTrue(warm);
         Assert.AreEqual(0, handler.CallCount, "a full cache should cost no request");
-        cache.Verify(c => c.SetTimelineAsync(It.IsAny<IEnumerable<NewsFeedItem>>()), Times.Never);
+        cache.Verify(c => c.SetTimelineAsync(It.IsAny<string>(), It.IsAny<IEnumerable<NewsFeedItem>>()), Times.Never);
     }
 
     [TestMethod]
@@ -90,7 +90,7 @@ public class CacheWarmTests
         var warm = await client.WarmTimelineCacheAsync();
 
         Assert.IsTrue(warm);
-        cache.Verify(c => c.SetTimelineAsync(It.Is<IEnumerable<NewsFeedItem>>(i => i.Count() == 50)), Times.Once);
+        cache.Verify(c => c.SetTimelineAsync(It.IsAny<string>(), It.Is<IEnumerable<NewsFeedItem>>(i => i.Count() == 50)), Times.Once);
     }
 
     [TestMethod]
@@ -136,8 +136,8 @@ public class CacheWarmTests
         });
 
         List<NewsFeedItem> persisted = null;
-        cache.Setup(c => c.SetTimelineAsync(It.IsAny<IEnumerable<NewsFeedItem>>()))
-            .Callback<IEnumerable<NewsFeedItem>>(i => persisted = i.ToList())
+        cache.Setup(c => c.SetTimelineAsync(It.IsAny<string>(), It.IsAny<IEnumerable<NewsFeedItem>>()))
+            .Callback<string, IEnumerable<NewsFeedItem>>((_, i) => persisted = i.ToList())
             .Returns(Task.CompletedTask);
 
         await client.WarmTimelineCacheAsync();
@@ -156,7 +156,7 @@ public class CacheWarmTests
         var warm = await client.WarmTimelineCacheAsync();
 
         Assert.IsFalse(warm);
-        cache.Verify(c => c.SetTimelineAsync(It.IsAny<IEnumerable<NewsFeedItem>>()), Times.Never);
+        cache.Verify(c => c.SetTimelineAsync(It.IsAny<string>(), It.IsAny<IEnumerable<NewsFeedItem>>()), Times.Never);
     }
 
     [TestMethod]
@@ -167,6 +167,6 @@ public class CacheWarmTests
         var (client, _, cache) = Create(new List<NewsFeedItem>(), "[]");
 
         Assert.IsTrue(await client.WarmTimelineCacheAsync());
-        cache.Verify(c => c.SetTimelineAsync(It.IsAny<IEnumerable<NewsFeedItem>>()), Times.Never);
+        cache.Verify(c => c.SetTimelineAsync(It.IsAny<string>(), It.IsAny<IEnumerable<NewsFeedItem>>()), Times.Never);
     }
 }
