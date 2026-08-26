@@ -595,7 +595,7 @@ public class FeedRefresher : IFeedRefresher
                         this.validatorStore.Set(url, newEtag?.ToString(), newLastModified);
                     }
 
-                    var items = this.deserializer.FromString(response, SchedulerUser).ToList();
+                    var items = this.deserializer.FromString(response, SchedulerUser, url).ToList();
                     foreach (var item in items)
                     {
                         item.FeedUrl = url;

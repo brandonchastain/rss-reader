@@ -19,7 +19,12 @@ public class RssDeserializer
         this.logger = logger;
     }
 
-    public IEnumerable<NewsFeedItem> FromString(string responseContent, RssUser user)
+    /// <summary>
+    /// Parses a feed document into items. <paramref name="feedUrl"/> is the URL the
+    /// document was fetched from; it is the last-resort base for resolving
+    /// site-relative item links when the feed declares no base of its own.
+    /// </summary>
+    public IEnumerable<NewsFeedItem> FromString(string responseContent, RssUser user, string feedUrl = null)
     {
         var now = FormatDateString(DateTime.UtcNow.ToString(IsoDateFormat));
         var defaultDate = DateTime.UtcNow - TimeSpan.FromDays(7); // Default to 7 days ago if no date is provided
@@ -37,15 +42,22 @@ public class RssDeserializer
                 XmlSerializer xs = new XmlSerializer(typeof(RdfFeed));
                 var reader = new StringReader(responseContent);
                 RdfFeed rdfFeedModel = (RdfFeed)xs.Deserialize(reader);
-                return rdfFeedModel.Items.Select(x =>
+                var rdfBase = ResolveBase(rdfFeedModel.Channel?.Link, feedUrl);
+                return MapItems(rdfFeedModel.Items, x =>
                 {
                     var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
+                    var href = ResolveHref(x.Link?.Href ?? x.Id, rdfBase);
+                    if (string.IsNullOrWhiteSpace(href))
+                    {
+                        return null;
+                    }
+
                     var item = new NewsFeedItem(
                         x.Id,
                         user.Id,
                         CleanTitle(x.Title),
-                        x.Link.Href,
-                        x.CommentsLink?.Href,
+                        href,
+                        ResolveHref(x.CommentsLink?.Href, rdfBase),
                         date,
                         x.Description,
                         thumbnailUrl: null);
@@ -58,9 +70,23 @@ public class RssDeserializer
                 XmlSerializer xs = new XmlSerializer(typeof(RssDocument));
                 var reader = new StringReader(responseContent);
                 RssDocument rssFeedModel = (RssDocument)xs.Deserialize(reader);
-                return rssFeedModel.Feed.Entries.Select(x =>
+                var rssChannel = rssFeedModel.Feed;
+                var rssBase = ResolveBase(
+                    rssChannel?.Link
+                        ?? rssChannel?.AtomLinks?.FirstOrDefault(l => l.Rel == "alternate")?.Href
+                        ?? rssChannel?.AtomLinks?.FirstOrDefault(l => l.Rel == "self")?.Href,
+                    feedUrl);
+                return MapItems(rssChannel?.Entries, x =>
                 {
                     var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
+
+                    // An item with no usable link can't be keyed or opened; fall back to
+                    // its guid before giving up so a link-less item is still surfaced.
+                    var href = ResolveHref(x.Link?.Href ?? x.Id, rssBase);
+                    if (string.IsNullOrWhiteSpace(href))
+                    {
+                        return null;
+                    }
 
                     // Prefer an explicit media image; the content <img> scrape in
                     // ThumbnailResolver is the fallback for items without one.
@@ -74,11 +100,11 @@ public class RssDeserializer
                         x.Id,
                         user.Id,
                         CleanTitle(x.Title),
-                        x.Link.Href,
-                        x.CommentsLink?.Href,
+                        href,
+                        ResolveHref(x.CommentsLink?.Href, rssBase),
                         date,
                         x.Description,
-                        media);
+                        ResolveHref(media, rssBase));
 
                     item.PublishDateOrder = item.ParsedDate?.Ticks ?? DateTime.UtcNow.Ticks;
                     return item;
@@ -89,14 +115,21 @@ public class RssDeserializer
                 XmlSerializer xs = new XmlSerializer(typeof(AtomFeed));
                 var reader = new StringReader(responseContent);
                 AtomFeed rssFeedModel = (AtomFeed)xs.Deserialize(reader);
-                return rssFeedModel.Entries.Select(x =>
+                var atomBase = ResolveBase(rssFeedModel.BaseHref, feedUrl);
+                return MapItems(rssFeedModel.Entries, x =>
                 {
                     var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
+                    var href = ResolveHref(x.AltLink?.Href ?? x.Links?.FirstOrDefault()?.Href ?? x.Id, atomBase);
+                    if (string.IsNullOrWhiteSpace(href))
+                    {
+                        return null;
+                    }
+
                     var item = new NewsFeedItem(
                         x.Id,
                         user.Id,
                         CleanTitle(x.Title),
-                        x.AltLink?.Href ?? x.Links.FirstOrDefault()?.Href,
+                        href,
                         commentsHref: null,
                         date,
                         x.Content?.ToString(),
@@ -115,6 +148,88 @@ public class RssDeserializer
             this.logger.LogError(ex, "rss entry deserialization exception");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Picks the base URL to resolve site-relative item links against: the base the
+    /// feed declares (channel &lt;link&gt;, atom rel="alternate"/"self"), falling back
+    /// to the URL the feed itself was fetched from. Returns null when neither is a
+    /// usable absolute URL, in which case relative links are left untouched.
+    /// </summary>
+    private static Uri ResolveBase(string declaredBase, string feedUrl)
+    {
+        foreach (var candidate in new[] { declaredBase, feedUrl })
+        {
+            if (!string.IsNullOrWhiteSpace(candidate) &&
+                Uri.TryCreate(candidate.Trim(), UriKind.Absolute, out var parsed) &&
+                (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Makes an item link absolute. Feeds like retronauts.com publish links as
+    /// "/article/123/slug"; stored that way they resolve against the reader's own
+    /// origin and 404 when opened. Absolute links, and anything we cannot resolve,
+    /// are returned unchanged.
+    /// </summary>
+    private static string ResolveHref(string href, Uri baseUri)
+    {
+        if (string.IsNullOrWhiteSpace(href))
+        {
+            return href;
+        }
+
+        var trimmed = href.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+        {
+            return trimmed;
+        }
+
+        if (baseUri == null)
+        {
+            return trimmed;
+        }
+
+        return Uri.TryCreate(baseUri, trimmed, out var absolute) ? absolute.ToString() : trimmed;
+    }
+
+    /// <summary>
+    /// Projects feed entries to <see cref="NewsFeedItem"/>s, isolating each entry so a
+    /// single malformed item (e.g. one missing a link) is skipped instead of throwing
+    /// out the entire feed. A mapper may also return null to deliberately skip an entry.
+    /// Materialized eagerly so any per-item exception is contained here, not surfaced
+    /// later when the caller enumerates the result.
+    /// </summary>
+    private List<NewsFeedItem> MapItems<TSource>(IEnumerable<TSource> entries, Func<TSource, NewsFeedItem> map)
+    {
+        var items = new List<NewsFeedItem>();
+        if (entries == null)
+        {
+            return items;
+        }
+
+        foreach (var entry in entries)
+        {
+            try
+            {
+                var item = map(entry);
+                if (item != null)
+                {
+                    items.Add(item);
+                }
+            }
+            catch (Exception ex)
+            {
+                this.logger.LogWarning(ex, "Skipping malformed feed item during deserialization");
+            }
+        }
+
+        return items;
     }
 
     public static string FormatDateString(string dateString)

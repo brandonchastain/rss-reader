@@ -12,6 +12,17 @@ public class AtomFeed
 
     [XmlElement("entry")]
     public List<AtomEntry> Entries { get; set; }
+
+    /// <summary>
+    /// Feed-level links. The rel="alternate" href (the site itself) is the base for
+    /// resolving relative entry links; rel="self" (the feed URL) is the fallback.
+    /// </summary>
+    [XmlElement("link")]
+    public List<AtomLink> Links { get; set; }
+
+    public string BaseHref =>
+        this.Links?.FirstOrDefault(l => l.Rel == "alternate")?.Href
+        ?? this.Links?.FirstOrDefault(l => l.Rel == "self")?.Href;
 }
 
 [XmlRoot("entry")]
