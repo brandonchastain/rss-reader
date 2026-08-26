@@ -24,10 +24,11 @@
 name: Deploy
 
 on:
+  # Every pull request, not just infrastructure ones. This used to be filtered to
+  # `infrastructure/**`, which meant a C#-only PR ran no checks at all and the test
+  # suite first saw the change only after it was already merged to main -- exactly
+  # how #108 merged clean and then broke main on a platform-specific test failure.
   pull_request:
-    paths:
-      - 'infrastructure/**'
-      - '.github/workflows/deploy.yml'
   push:
     branches: [main]
   workflow_dispatch:
@@ -63,9 +64,10 @@ jobs:
         working-directory: infrastructure
         run: az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file main.bicep --parameters main.bicepparam --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}"
 
+  # Runs on pull requests too, so a change is tested before it reaches main and
+  # not after. This is the gate for the deploy jobs below.
   test:
     name: Build + test
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
