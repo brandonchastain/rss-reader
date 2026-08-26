@@ -20,8 +20,14 @@ public interface IPostCache
     /// </summary>
     string Username { get; set; }
 
-    Task<List<NewsFeedItem>> GetTimelineAsync();
-    Task SetTimelineAsync(IEnumerable<NewsFeedItem> items);
+    /// <summary>
+    /// The cached view for one filter signature (see
+    /// <see cref="PostCache.SignatureFor"/>). Each filter -- unfiltered, unread,
+    /// saved, a tag -- gets its own slot, so switching filters hydrates from the
+    /// last time that view was open instead of waiting on the API.
+    /// </summary>
+    Task<List<NewsFeedItem>> GetTimelineAsync(string signature);
+    Task SetTimelineAsync(string signature, IEnumerable<NewsFeedItem> items);
 
     Task<RssUser> GetUserAsync();
     Task SetUserAsync(RssUser user);

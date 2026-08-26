@@ -261,6 +261,11 @@ namespace WasmApp.Services
             }
         }
 
+        // The warm only ever fills the default view. Filtered slots populate
+        // lazily when the reader actually opens that filter, which costs no extra
+        // requests and avoids storing tags they never look at.
+        private static readonly string UnfilteredSignature = PostCache.SignatureFor(false, false, null);
+
         // Fills the cached timeline out to a full page. Without this the cache
         // only ever grows as the user scrolls -- a cache hit skips the initial
         // fetch, so nothing re-persists, and someone who reads the top few posts
@@ -272,7 +277,7 @@ namespace WasmApp.Services
         {
             try
             {
-                var cached = await this.postCache.GetTimelineAsync();
+                var cached = await this.postCache.GetTimelineAsync(UnfilteredSignature);
                 if (cached != null && cached.Count >= PostCache.MaxTimelineItems)
                 {
                     return true;
@@ -296,7 +301,7 @@ namespace WasmApp.Services
                 // already on screen.
                 PendingWrites.Apply(await this.postCache.GetPendingWritesAsync(), items);
 
-                await this.postCache.SetTimelineAsync(items);
+                await this.postCache.SetTimelineAsync(UnfilteredSignature, items);
                 await PrefetchContentAsync(items.Select(i => i.Id));
                 return true;
             }
