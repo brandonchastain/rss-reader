@@ -151,6 +151,18 @@ public class RssDeserializer
     }
 
     /// <summary>
+    /// Matches a URI scheme prefix per RFC 3986 (ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"),
+    /// which is what makes an href absolute.
+    ///
+    /// Uri.TryCreate(..., UriKind.Absolute, ...) cannot be used for this test: on Unix it
+    /// parses a site-relative "/article/123/slug" as an absolute file:// URI, so relative
+    /// links were passed through unresolved on Linux while resolving correctly on Windows.
+    /// A protocol-relative "//host/path" has no scheme and is deliberately left to be
+    /// resolved against the base, which supplies the right one.
+    /// </summary>
+    private static readonly Regex HasUriScheme = new Regex(@"^[a-zA-Z][a-zA-Z0-9+.\-]*:", RegexOptions.Compiled);
+
+    /// <summary>
     /// Picks the base URL to resolve site-relative item links against: the base the
     /// feed declares (channel &lt;link&gt;, atom rel="alternate"/"self"), falling back
     /// to the URL the feed itself was fetched from. Returns null when neither is a
@@ -185,7 +197,7 @@ public class RssDeserializer
         }
 
         var trimmed = href.Trim();
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+        if (HasUriScheme.IsMatch(trimmed))
         {
             return trimmed;
         }

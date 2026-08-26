@@ -76,6 +76,37 @@ public sealed class RetronautsFeedTests
         Assert.AreEqual("/posts/hello", items.Single().Href);
     }
 
+    private const string SchemeEdgeCaseFeed = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Scheme Edge Cases</title>
+            <link>https://example.com/blog/</link>
+            <item><title>Protocol relative</title><link>//cdn.example.org/a</link></item>
+            <item><title>Dot relative</title><link>./nested/post</link></item>
+            <item><title>Unix looking</title><link>/posts/hello</link></item>
+          </channel>
+        </rss>
+        """;
+
+    // Guards the Linux/Windows split that broke CI: what counts as "already absolute"
+    // must be decided by the presence of a URI scheme, not by Uri.TryCreate with
+    // UriKind.Absolute -- on Unix that parses "/posts/hello" as an absolute file://
+    // URI, so site-relative links were silently left unresolved there.
+    [TestMethod]
+    public void Only_A_Uri_Scheme_Counts_As_Already_Absolute()
+    {
+        var serializer = new RssDeserializer(new NullLogger<RssDeserializer>());
+        var hrefs = serializer.FromString(SchemeEdgeCaseFeed, new RssUser("test", -99))
+            .Select(i => i.Href)
+            .ToList();
+
+        // Protocol-relative has no scheme, so the base supplies one.
+        Assert.AreEqual("https://cdn.example.org/a", hrefs[0]);
+        Assert.AreEqual("https://example.com/blog/nested/post", hrefs[1]);
+        Assert.AreEqual("https://example.com/posts/hello", hrefs[2]);
+    }
+
     private const string AbsoluteLinkFeed = """
         <?xml version="1.0" encoding="utf-8"?>
         <rss version="2.0">
