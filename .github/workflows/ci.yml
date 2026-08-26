@@ -1,0 +1,34 @@
+# Build + test on every pull request.
+#
+# This used to live only in deploy.yml, whose pull_request trigger was filtered
+# to `infrastructure/**` and whose test job was gated on
+# `event_name != 'pull_request'`. Together that meant a C#-only PR ran no checks
+# at all and the suite first saw a change only after it merged to main -- which
+# is how #108 merged clean and then broke main on a Linux-only test failure.
+#
+# Kept separate from deploy.yml on purpose: this workflow only ever builds and
+# tests, so it has no deploy jobs to guard and needs no cloud credentials.
+# deploy.yml still runs its own test job as the gate in front of a production
+# deploy, so tests are not skipped on the path that ships.
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      # Excludes tests that fetch live third-party feeds: they fail on whether
+      # someone else's server is up, which is not a signal worth blocking on.
+      # Run them deliberately with --filter TestCategory=Network.
+      - run: dotnet test test/SerializerTests/SerializerTests.csproj --filter "TestCategory!=Network" --logger "console;verbosity=minimal"
