@@ -119,6 +119,13 @@ else if (_showUpToDate)
     private List<TimelineEntry> _flatEntries = new();
     private int _lastPostsCount;
 
+    // Sentinel meaning "rebuild regardless". Zero cannot serve: a filter switch
+    // empties Posts, so _lastPostsCount == Posts.Count == 0 matched the skip
+    // guard and left the previous view's rows rendered -- which suppressed the
+    // loading spinner and showed "No posts found" while the fetch was still
+    // running.
+    private const int ForceRebuild = -1;
+
     // Background-refresh state. The refresh runs server-side; we poll for it
     // without blocking the UI and surface a non-disruptive toast when it lands.
     private bool _isBackgroundRefreshing;
@@ -428,19 +435,19 @@ else if (_showUpToDate)
 
     private async Task ToggleUnreadFilterAsync()
     {
-        _lastPostsCount = 0; // force rebuild on next parameter set
+        _lastPostsCount = ForceRebuild;
         await this.OnRefreshTriggered.InvokeAsync((!this.IsFilterUnread, this.IsFilterSaved, this.filterTag, false));
     }
 
     private async Task ToggleSavedFilterAsync()
     {
-        _lastPostsCount = 0;
+        _lastPostsCount = ForceRebuild;
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, !this.IsFilterSaved, this.filterTag, false));
     }
 
     private async Task FilterForTag(string tag)
     {
-        _lastPostsCount = 0;
+        _lastPostsCount = ForceRebuild;
         if (this.filterTag == tag)
         {
             tag = null;
@@ -479,7 +486,7 @@ else if (_showUpToDate)
 
     private async Task OnRefreshComplete()
     {
-        _lastPostsCount = 0;
+        _lastPostsCount = ForceRebuild;
         await this.OnRefreshTriggered.InvokeAsync((this.IsFilterUnread, this.IsFilterSaved, this.filterTag, true));
     }
 
