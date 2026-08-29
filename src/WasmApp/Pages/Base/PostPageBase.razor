@@ -117,13 +117,28 @@
                 if (filtersChanged) UpdateUrlFromFilters();
             }
 
+            // Switching filters is a fresh view, so it gets the same cache-first
+            // treatment as the initial load. Without this the slot was written
+            // but never read: hydration only ran on the component's first
+            // render, so every filter switch blocked on the API even when that
+            // exact view was sitting in the cache.
+            //
+            // A hit skips the fetch entirely, the same way the initial load
+            // does; the new-posts probe runs against the active filter and
+            // surfaces anything newer. Tracked as a flag rather than an early
+            // return so control still reaches the pending-request drain.
+            bool hydrated = filtersChanged && await TryHydrateFromCacheAsync();
+
             int pageSize = _restorePageSize > 0 ? _restorePageSize : 20;
             _restorePageSize = 0;
 
             List<NewsFeedItem> newPageRes = null;
             try
             {
-                newPageRes = await this.GetPostsAsync(pageSize);
+                if (!hydrated)
+                {
+                    newPageRes = await this.GetPostsAsync(pageSize);
+                }
             }
             catch (Exception ex)
             {
