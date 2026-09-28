@@ -1,19 +1,29 @@
 ---
 name: deploy
-description: Deploy the RSS Reader app to production. Use this when asked to deploy, push to production, or release the app. Builds and pushes the backend Docker image, updates the Azure Container App, then builds and deploys the SWA frontend. Does NOT run Bicep templates or change infrastructure.
+description: Deploy the RSS Reader app to production. Use this when asked to deploy, push to production, or release the app. Triggers the Deploy GitHub Actions workflow (which builds and pushes the backend image, deploys the Bicep template, and publishes the SWA frontend), waits for it, then validates the live site. Never deploys from the local machine.
 ---
 
 Deploy the RSS Reader app to production by following these steps in order.
 
+## How production is deployed
+
+Everything ships through `.github/workflows/deploy.yml`. On every push to `main` (and on
+`workflow_dispatch`) it runs the tests, builds the backend image and pushes it to the
+public GHCR package with the workflow's own `GITHUB_TOKEN`, deploys `infrastructure/main.bicep`
+with that image tag, and publishes the Blazor frontend + Functions API proxy to Static Web
+Apps. Azure auth is OIDC through a managed identity; no personal access token, registry
+password, or SWA deployment token lives on any laptop.
+
+**Never deploy by hand.** `docker push` + `az containerapp update` replaces the container
+app's scale block wholesale and drops settings the template declares; that drift caused a
+real outage (cooldownPeriod fell to 10s and KEDA killed every new revision mid-boot). The
+template is the only thing that writes container app config.
+
 ## ⛔ Security rules — NEVER violate these
 
-These rules apply to every step in this skill, without exception:
-
-1. **Never run `git credential fill`**, `git credential approve`, `cmdkey`, or any other command that reads credentials from the system credential store and prints them to stdout. These commands expose secrets in the conversation log.
-2. **Never print, log, echo, or `Write-Host` the value of any token, password, or secret.** If a command would output a secret (e.g. `gh auth token`), pipe it directly to the consuming command — do not capture it in a variable and do not display it.
-3. **Never pass secrets as inline command-line arguments** where they would appear in shell history or tool output. Use `--password-stdin` (stdin pipe) or environment variables already set by the user.
-4. **Never use `Invoke-RestMethod` or `curl` with a raw token value** extracted from the credential store. Use `gh` CLI or GitHub MCP tools (`github-mcp-server-*`) for all GitHub API operations — they handle auth internally without exposing tokens.
-5. If authentication is needed for any step and no safe method is available, **stop and ask the user** to run the auth command themselves, then continue.
+1. **Never run `git credential fill`**, `git credential approve`, `cmdkey`, or any other command that reads credentials from the system credential store and prints them to stdout.
+2. **Never print, log, echo, or `Write-Host` the value of any token, password, or secret.**
+3. Use the `gh` CLI for all GitHub operations; it handles auth internally. If `gh auth status` fails, **stop and ask the user** to run `gh auth login` themselves, then continue.
 
 ## Step 0: Pre-deploy checks
 
@@ -23,154 +33,69 @@ These rules apply to every step in this skill, without exception:
 
 Before doing anything else, use the `ask_user` tool to ask:
 
-> "Ready to deploy to production? This will push a new Docker image and update the live Azure Container App and SWA at https://rss.brandonchastain.com."
+> "Ready to deploy to production? This will run the Deploy workflow, which pushes a new backend image and updates the live Azure Container App and SWA at https://rss.brandonchastain.com."
 
 Wait for the user to confirm. If they say anything other than a clear yes, abort the deployment and report that it was cancelled.
 
 ### 0b: Ensure changes are merged to main
 
-**⛔ All code changes must be committed, pushed, and merged to `main` before deploying.**
-
-This is a hard prerequisite — production deploys always build from a clean `main` branch. The only exception is when the user has **explicitly** said they are experimenting with a specific branch (e.g., "deploy from feature-x to test something").
+**⛔ Production deploys build from `main` on GitHub.** Local, uncommitted, or unmerged changes are not deployed.
 
 1. Run `git --no-pager status` and `git --no-pager log --oneline -1` to check the current state.
 2. **If there are uncommitted changes** or the current branch is not `main`, stop and tell the user:
    > "There are uncommitted changes (or you're not on main). I need to commit these to a branch, push, create a PR, and merge before deploying. Want me to proceed?"
-   Wait for confirmation, then:
-   - Create a feature branch, commit, push, and create a PR using GitHub MCP tools.
-   - Merge the PR (squash merge preferred).
-   - Switch back to `main` and pull.
-3. **If `main` is clean**, pull the latest changes to ensure the local branch matches the remote:
+   Wait for confirmation, then create a feature branch, commit, push, open a PR with `gh pr create`, and squash-merge it. Merging to `main` triggers the deploy automatically; skip to Step 2.
+3. **If `main` is clean**, make sure the local branch matches the remote:
    ```powershell
-   git pull origin main
+   git fetch origin
+   git --no-pager log --oneline -1 origin/main
    ```
-   If the pull introduces merge conflicts or fails, stop and report the error.
 
-Only continue to Step 1 after `main` is clean, up to date, and contains all the changes to be deployed.
+## Step 1: Trigger the Deploy workflow
 
-## Step 1: Check prerequisites
-
-### Node version
-Initialize fnm and switch to Node 20 before running any other commands:
+If Step 0b merged a PR, the push to `main` already started a run; do not start a second one.
+Otherwise (re-deploying the current `main`, e.g. to pick up an infrastructure change or roll
+a fresh revision), dispatch it:
 
 ```powershell
-fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
-fnm use 20
+gh workflow run deploy.yml --ref main
 ```
 
-### GITHUB_USERNAME
-Resolve the GitHub username from the git remote URL (primary) or git config (fallback):
+## Step 2: Wait for the run
+
+Find the newest run on `main` and watch it to completion:
 
 ```powershell
-$remoteUrl = git remote get-url origin 2>$null
-if ($remoteUrl -match 'github\.com[:/]([^/]+)/') {
-    $ghUser = $Matches[1]
-} else {
-    $ghUser = git config github.user
-}
-if (-not $ghUser) {
-    Write-Error "Could not determine GitHub username. Set it with: git config --global github.user 'your-github-username'"
-    exit 1
-}
-Write-Host "Using GitHub username: $ghUser"
+$run = gh run list --workflow deploy.yml --branch main --limit 1 --json databaseId,headSha,status --jq '.[0]'
+$run
+gh run watch ($run | ConvertFrom-Json).databaseId --exit-status
 ```
 
-**Important:** Use the local `$ghUser` variable (not `$env:GITHUB_USERNAME`) within each command block, because env vars do not persist across separate tool calls. Every subsequent step that needs the username must resolve it in the same command invocation using the same pattern above.
+Confirm `headSha` is the commit you expect to deploy. If the run fails, show the failing
+job with `gh run view <databaseId> --log-failed`, report the error, and stop. Fix forward
+with a new PR; never patch production directly.
 
-### Docker
-Run `docker info` to check if Docker is running. If the command fails:
+## Step 3: Validate deployment
 
-1. Start Docker Desktop:
-   ```powershell
-   Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-   ```
-2. Poll `docker info` every 5 seconds for up to 60 seconds. Print a waiting message each poll. If Docker is not ready after 60 seconds, stop and report the error.
+### 3a: Backend health
 
-### Azure CLI
-Run `az version` to confirm `az` is installed. If it fails, stop and tell the user to install the Azure CLI.
-
-### SWA CLI
-Run `swa --version` to confirm `swa` is installed. If it fails, stop and tell the user to install the SWA CLI (`npm install -g @azure/static-web-apps-cli`).
-
-## Step 2: Build & push the backend Docker image
-
-Navigate to the repo root and build the image tagged for GHCR. Resolve `$ghUser` inline in the same command:
+Poll until healthy (the app scales to zero, so the first request may take ~15s):
 
 ```powershell
-$remoteUrl = git remote get-url origin 2>$null
-if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
-cd C:\Users\brand\dev\rssreader\rss-reader
-docker build -t "ghcr.io/$ghUser/rss-reader-api:latest" -f src/Server/Dockerfile .
+Invoke-WebRequest -UseBasicParsing https://rss.brandonchastain.com/api/healthz | Select-Object -ExpandProperty Content
 ```
 
-If the build fails, stop and report the error.
-
-Then push the image (resolve `$ghUser` inline again in the same command):
+Expect HTTP 200 with `writer.status = "healthy"`. Then confirm the new revision owns the traffic:
 
 ```powershell
-$remoteUrl = git remote get-url origin 2>$null
-if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
-docker push "ghcr.io/$ghUser/rss-reader-api:latest"
+az containerapp revision list --name rss-reader-api --resource-group rss-container-rg --query "[?properties.active].{name:name,traffic:properties.trafficWeight,state:properties.runningState,health:properties.healthState}" -o table
 ```
 
-If the push fails, it may mean the user is not logged in to GHCR. Remind them to run:
-```powershell
-$remoteUrl = git remote get-url origin 2>$null
-if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
-echo $env:GITHUB_PAT | docker login ghcr.io -u $ghUser --password-stdin
-```
+The single active revision should have traffic `100` and health `Healthy`. Optionally check
+Azure resource health with the Azure MCP tool `resourcehealth availability-status get`
+(resource group `rss-container-rg`, resource `rss-reader-api`); expect `Available`.
 
-## Step 3: Update the Azure Container App
-
-Update the running container app to use the new image (resolve `$ghUser` inline):
-
-```powershell
-$remoteUrl = git remote get-url origin 2>$null
-if ($remoteUrl -match 'github\.com[:/]([^/]+)/') { $ghUser = $Matches[1] } else { $ghUser = git config github.user }
-$suffix = "deploy$(Get-Date -Format 'yyyyMMddHHmm')"
-az containerapp update `
-  --name rss-reader-api `
-  --resource-group rss-container-rg `
-  --image "ghcr.io/$ghUser/rss-reader-api:latest" `
-  --revision-suffix $suffix
-```
-
-**Important:** Always use `--revision-suffix` with a unique value. Without it, Azure may reuse the cached `:latest` image and the container won't pick up your code changes.
-
-If this fails, check that the user is logged in to Azure (`az login`) and that the container app `rss-reader-api` exists in the `rss-container-rg` resource group.
-
-## Step 4: Build & deploy the frontend
-
-Navigate to the repository root and build the SWA frontend:
-
-```powershell
-cd C:\Users\brand\dev\rssreader\rss-reader
-swa build
-```
-
-Then deploy to production:
-
-```powershell
-swa deploy --env production
-```
-
-If `swa deploy` fails with an authentication error, the user may need to run `swa login` first.
-
-## Step 5: Validate deployment
-
-### 5a: Azure resource health checks (MCP)
-
-Check the Container App health status using the Azure MCP tool `resourcehealth availability-status get` with resource group `rss-container-rg` and resource name `rss-reader-api`. Report the availability state (should be `Available`).
-
-Also confirm the latest revision is active and receiving traffic:
-
-```powershell
-az containerapp revision list --name rss-reader-api --resource-group rss-container-rg --output table
-```
-
-The most recent revision should have `ACTIVE` state and a traffic weight of `100`.
-
-### 5b: Browser smoke test (Playwright)
+### 3b: Browser smoke test (Playwright)
 
 First, run the Firefox profile recovery procedure to clear any stale locks:
 
@@ -215,7 +140,7 @@ Then check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snaps
 5. Once logged in (or if already logged in), run these basic scenarios:
    - Navigate to `/feeds` — confirm the feeds list page loads without errors.
    - Navigate to `/timeline` — confirm the timeline page loads and shows content (or an empty state, not a crash).
-   - **Content display check**: Click a post thumbnail to expand it. Verify that article content text is visible in the expanded area (not just "Published on" date and action buttons). Empty content is a deployment bug — the backend LEFT JOIN may not have been deployed.
+   - **Content display check**: Click a post thumbnail to expand it. Verify that article content text is visible in the expanded area (not just "Published on" date and action buttons).
    - Take a screenshot: `browser_take_screenshot(type: "png")` for visual confirmation.
 
 6. Report what was observed: page titles, any visible errors or blank screens, HTTP failures in the console.
@@ -223,8 +148,7 @@ Then check whether Playwright MCP tools (e.g. `browser_navigate`, `browser_snaps
 ## Final summary
 
 Report to the user:
-- ✅ Backend image built and pushed: `ghcr.io/<username>/rss-reader-api:latest`
-- ✅ Azure Container App updated: `rss-reader-api`
-- ✅ Frontend deployed to SWA production environment
-- ✅ Azure resource health: `Available` (or report the actual status)
+- ✅ Deploy workflow run `<databaseId>` succeeded for commit `<headSha>` (link: `gh run view <databaseId> --web`)
+- ✅ `/api/healthz` returned 200 with the writer healthy; active revision `<name>` at 100% traffic
+- ✅ Frontend live at https://rss.brandonchastain.com
 - ✅ Browser smoke test passed (or describe any issues found)

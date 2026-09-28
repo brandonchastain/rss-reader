@@ -1,123 +1,70 @@
 # deploy.ps1
-# Deploys the RSS Reader app to production (no infrastructure/Bicep changes).
-# Usage: .\deploy.ps1
-# Requires: $env:GITHUB_USERNAME set, Docker running, az CLI, swa CLI
+# Deploys the RSS Reader app to production by running the Deploy GitHub Actions
+# workflow (.github/workflows/deploy.yml) and waiting for it. The workflow builds
+# and pushes the backend image, deploys the Bicep template, and publishes the SWA
+# frontend. Nothing is built or pushed from this machine, and no token is needed
+# beyond an authenticated `gh` CLI.
+#
+# Usage: .\deploy.ps1            # dispatch a new run of main and wait for it
+#        .\deploy.ps1 -Watch     # only wait for the newest run already in flight
+# Requires: gh CLI (gh auth login), az CLI for the post-deploy revision check.
+
+[CmdletBinding()]
+param(
+    [switch]$Watch
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$RepoRoot = "C:\Users\brand\dev\rssreader\rss-reader"
-$SrcDir   = Join-Path $RepoRoot "src"
+$Workflow = "deploy.yml"
+$Branch   = "main"
 
-# ── Step 1: Validate prerequisites ───────────────────────────────────────────
+# ── Step 1: Prerequisites ────────────────────────────────────────────────────
 
-Write-Host "Initializing fnm and switching to Node 20..." -ForegroundColor Cyan
-fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
-fnm use 20
-if ($LASTEXITCODE -ne 0) { Write-Error "Failed to switch to Node 20 via fnm."; exit 1 }
-Write-Host "Node version: $(node --version)" -ForegroundColor Green
-
-
-if (-not $env:GITHUB_USERNAME) {
-    $env:GITHUB_USERNAME = git config github.user
-}
-if (-not $env:GITHUB_USERNAME) {
-    $remoteUrl = git remote get-url origin 2>$null
-    if ($remoteUrl -match 'github\.com[:/]([^/]+)/') {
-        $env:GITHUB_USERNAME = $Matches[1]
-    }
-}
-if (-not $env:GITHUB_USERNAME) {
-    Write-Error "Could not determine GitHub username. Set it with: git config --global github.user 'your-github-username'"
+gh auth status *>$null 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "gh is not authenticated. Run 'gh auth login' and retry."
     exit 1
 }
-Write-Host "Using GitHub username: $env:GITHUB_USERNAME" -ForegroundColor Cyan
-$Image = "ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest"
 
-Write-Host "Checking Docker..." -ForegroundColor Cyan
-docker info *>$null 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Docker not running. Starting Docker Desktop..." -ForegroundColor Yellow
-    Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-    $timeout = 60
-    $elapsed = 0
-    $dockerReady = $false
-    while ($elapsed -lt $timeout) {
-        Start-Sleep -Seconds 5
-        $elapsed += 5
-        docker info *>$null 2>&1
-        if ($LASTEXITCODE -eq 0) { $dockerReady = $true; break }
-        Write-Host "  Waiting for Docker... ($elapsed/$timeout s)"
-    }
-    if (-not $dockerReady) {
-        Write-Error "Docker did not start within $timeout seconds."
-        exit 1
-    }
+# ── Step 2: Dispatch (unless only watching) ──────────────────────────────────
+
+if (-not $Watch) {
+    Write-Host "Dispatching $Workflow on $Branch..." -ForegroundColor Cyan
+    gh workflow run $Workflow --ref $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "gh workflow run failed."; exit 1 }
+    # The run takes a moment to appear in the list.
+    Start-Sleep -Seconds 5
 }
-Write-Host "Docker is ready." -ForegroundColor Green
+
+# ── Step 3: Wait for the newest run ──────────────────────────────────────────
+
+$runJson = gh run list --workflow $Workflow --branch $Branch --limit 1 --json databaseId,headSha,status,url --jq '.[0]'
+if ($LASTEXITCODE -ne 0 -or -not $runJson) { Write-Error "Could not find a $Workflow run on $Branch."; exit 1 }
+$run = $runJson | ConvertFrom-Json
+
+Write-Host "Watching run $($run.databaseId) for commit $($run.headSha.Substring(0,7))" -ForegroundColor Cyan
+Write-Host "  $($run.url)"
+gh run watch $run.databaseId --exit-status
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "`nDeploy run failed. Failing job output:" -ForegroundColor Red
+    gh run view $run.databaseId --log-failed
+    exit 1
+}
+
+# ── Step 4: Post-deploy check ────────────────────────────────────────────────
+
+Write-Host "`nChecking backend health..." -ForegroundColor Cyan
+$health = Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 https://rss.brandonchastain.com/api/healthz
+Write-Host "  /api/healthz -> HTTP $([int]$health.StatusCode): $($health.Content)"
 
 az version *>$null 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Azure CLI (az) not found. Install from https://aka.ms/installazurecliwindows"
-    exit 1
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "`nActive revision:" -ForegroundColor Cyan
+    az containerapp revision list --name rss-reader-api --resource-group rss-container-rg `
+        --query "[?properties.active].{name:name,traffic:properties.trafficWeight,state:properties.runningState,health:properties.healthState}" -o table
 }
 
-swa --version *>$null 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "SWA CLI not found. Install with: npm install -g @azure/static-web-apps-cli"
-    exit 1
-}
-
-# ── Step 2: Build & push backend Docker image ─────────────────────────────────
-
-Write-Host "`nBuilding backend Docker image: $Image" -ForegroundColor Cyan
-Push-Location $RepoRoot
-try {
-    docker build -t $Image -f src/Server/Dockerfile .
-    if ($LASTEXITCODE -ne 0) { Write-Error "docker build failed."; exit 1 }
-} finally {
-    Pop-Location
-}
-Write-Host "Image built successfully." -ForegroundColor Green
-
-Write-Host "`nPushing image to GHCR..." -ForegroundColor Cyan
-docker push $Image
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "docker push failed. You may need to log in to GHCR:" -ForegroundColor Red
-    Write-Host "  echo `$env:GITHUB_PAT | docker login ghcr.io -u `$env:GITHUB_USERNAME --password-stdin"
-    exit 1
-}
-Write-Host "Image pushed successfully." -ForegroundColor Green
-
-# ── Step 3: Update Azure Container App ───────────────────────────────────────
-
-Write-Host "`nUpdating Azure Container App..." -ForegroundColor Cyan
-az containerapp update `
-    --name rss-reader-api `
-    --resource-group rss-container-rg `
-    --image $Image
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "az containerapp update failed. Ensure you are logged in (az login) and the app exists." -ForegroundColor Red
-    exit 1
-}
-Write-Host "Container App updated." -ForegroundColor Green
-
-# ── Step 4: Build & deploy frontend ──────────────────────────────────────────
-
-Write-Host "`nBuilding SWA frontend..." -ForegroundColor Cyan
-Set-Location $RepoRoot
-swa build
-if ($LASTEXITCODE -ne 0) { Write-Error "swa build failed."; exit 1 }
-
-Write-Host "`nDeploying SWA frontend to production..." -ForegroundColor Cyan
-swa deploy --env production
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "swa deploy failed. You may need to run 'swa login' first." -ForegroundColor Red
-    exit 1
-}
-
-# ── Summary ───────────────────────────────────────────────────────────────────
-
-Write-Host "`n✅ Backend image built and pushed: $Image" -ForegroundColor Green
-Write-Host "✅ Azure Container App updated: rss-reader-api" -ForegroundColor Green
-Write-Host "✅ Frontend deployed to SWA production environment" -ForegroundColor Green
+Write-Host "`n✅ Deploy run $($run.databaseId) succeeded for $($run.headSha.Substring(0,7))" -ForegroundColor Green
+Write-Host "✅ https://rss.brandonchastain.com is serving the new build" -ForegroundColor Green

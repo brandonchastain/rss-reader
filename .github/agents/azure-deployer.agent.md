@@ -16,8 +16,8 @@ You run commands directly and diagnose issues yourself. You do not consider a ta
 confirmed success with actual command output.
 
 **⛔ Production deployment requires explicit user confirmation.** Before executing any command that
-pushes to production — including `docker push`, `az containerapp update`, `swa deploy`, or invoking
-the `deploy` skill — stop and use `ask_user` to ask: "Ready to deploy to production?" Wait for a
+pushes to production — `gh workflow run deploy.yml`, merging a PR to `main`, or invoking the `deploy`
+skill — stop and use `ask_user` to ask: "Ready to deploy to production?" Wait for a
 clear yes before proceeding. If the user says anything other than a clear yes, abort and report
 that the deployment was cancelled.
 
@@ -39,7 +39,7 @@ CLI when a task is not covered by the MCP tools.
 | Container Environment | `rss-reader-env` | `rss-container-rg` | westus2 |
 | Static Web App | `rss-reader-swa` | `rss-container-rg` | — |
 | Log Analytics Workspace | `rss-reader-logs` | `rss-container-rg` | westus2 |
-| GHCR image | `ghcr.io/$GITHUB_USERNAME/rss-reader-api:latest` | — | — |
+| GHCR image | `ghcr.io/brandonchastain/rss-reader-api` (public package; pushed by CI with `GITHUB_TOKEN`, pulled anonymously) | — | — |
 
 **SWA config**: `swa-cli.config.json` at repo root. App name: `rss-reader-swa`, config key: `rss-reader-cloud`.
 
@@ -82,7 +82,7 @@ name `rss-reader-api`.
 
 | Skill | When to Use |
 |---|---|
-| `deploy` | Full deployment: builds Docker image, pushes to GHCR, updates Container App, builds and deploys SWA frontend, then validates with Azure resource health check (MCP) and a Playwright browser smoke test |
+| `deploy` | Full deployment: triggers the Deploy GitHub Actions workflow (image build + push, Bicep deploy, SWA publish), waits for it, then validates with a health check and a Playwright browser smoke test. Nothing is built or pushed locally. |
 
 To invoke a skill, call the `skill` tool with the skill name.
 
@@ -186,25 +186,19 @@ If this fails with "Permission denied and could not request permission from user
 This catches a known Copilot CLI session-state bug where the allowed-tools list is silently reset during long autopilot sessions, causing all shell commands to fail.
 
 
-### 1. Docker build fails
-- Confirm Docker Desktop is running: `docker info`
-- Check that the `Dockerfile` path is correct (build context is `src/`, file is `src/Server/Dockerfile`)
-- Look for .NET build errors in the Docker output — they usually indicate a compile error introduced by recent code changes
+### 1. Deploy workflow: image build job fails
+- Read the failing job: `gh run view <run-id> --log-failed`
+- .NET build errors in the Docker output usually indicate a compile error introduced by recent code changes; fix forward with a new PR.
 
-### 2. `docker push` to GHCR fails (unauthorized)
-```powershell
-echo $env:GITHUB_PAT | docker login ghcr.io -u $env:GITHUB_USERNAME --password-stdin
-```
-- `$env:GITHUB_PAT` must have `write:packages` scope
-- If `$env:GITHUB_USERNAME` is empty, resolve it:
-  ```powershell
-  $env:GITHUB_USERNAME = git config github.user
-  ```
+### 2. Deploy workflow: image push to GHCR fails (unauthorized)
+- CI pushes with the workflow's `GITHUB_TOKEN`, which needs `permissions: packages: write` in `deploy.yml`. Check that block was not removed.
+- The `ghcr.io/brandonchastain/rss-reader-api` package must stay **public** and linked to the repo, or the Container App (which stores no registry credential) cannot pull it: `ImagePullBackOff` with a 403 from `ghcr.io/token` right after a scale-from-zero. Fix the package visibility on GitHub; do not add a PAT to the app.
+- No personal access token is used anywhere in this pipeline. Never run `docker login ghcr.io` with a PAT to work around a CI failure.
 
-### 3. `az containerapp update` fails
-- Check Azure login: `az account show` — if it fails, run `az login`
-- Verify resource names match exactly: app `rss-reader-api`, group `rss-container-rg`
-- Check that the subscription is correct: `az account list --output table`
+### 3. Deploy workflow: Bicep deploy or Azure login fails
+- Azure login is OIDC via the `gh-actions-rss-reader` managed identity. A failing `azure/login` step usually means the federated credential for that job's subject (pull request, push to main, or `environment:`) is missing or the `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` repo secrets are wrong.
+- For template errors, run the same validation locally with `az deployment group what-if --resource-group rss-container-rg --template-file infrastructure/main.bicep --parameters infrastructure/main.bicepparam` (needs `az login`).
+- Never fix a failed deploy with `az containerapp update`: it replaces the scale block and drops template-declared settings, which has caused an outage before. The template is the only writer of container app config.
 
 ### 4. Container starts but returns HTTP 500
 - Pull logs immediately: `az containerapp logs show --name rss-reader-api --resource-group rss-container-rg`
@@ -223,7 +217,7 @@ Then retry `swa deploy --env production`.
 ### 6. Scale-to-zero cold start (first request is very slow)
 - This is expected: `minReplicas=0` means the container stops when idle.
 - Check replica count before/after: `az containerapp replica list --name rss-reader-api --resource-group rss-container-rg`
-- If you want to avoid cold starts, update the container app: `az containerapp update --name rss-reader-api --resource-group rss-container-rg --min-replicas 1`
+- If you want to avoid cold starts, change `minReplicas` in `infrastructure/main.bicep` and ship it through a PR so CI deploys the template. Do not use `az containerapp update --min-replicas`; it drops template-declared settings.
   (Note: this increases cost — only do if user explicitly requests it.)
 
 ### 7. Database not persisting across restarts

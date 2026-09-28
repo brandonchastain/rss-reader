@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Take a change all the way to production for the rss-reader app via the full dev loop — git worktree, develop, build/test, PR, admin squash-merge, deploy, validate. Use when the user says "ship it", "run the dev loop", "do the full loop", "develop/test/merge/deploy/validate", or asks to implement-and-deploy a change to prod. Handles frontend-only (Azure Static Web Apps) and backend (Docker → GHCR → Azure Container Apps) deploys.
+description: Take a change all the way to production for the rss-reader app via the full dev loop — git worktree, develop, build/test, PR, admin squash-merge, deploy, validate. Use when the user says "ship it", "run the dev loop", "do the full loop", "develop/test/merge/deploy/validate", or asks to implement-and-deploy a change to prod. Deploys run in CI (the Deploy workflow builds the image, deploys the Bicep template, and publishes the SWA frontend on every merge to main).
 ---
 
 # Ship a change (rss-reader dev loop)
@@ -9,9 +9,10 @@ Take a change from idea to validated-in-production. Work one change per loop. Do
 skip steps; if a step can't complete, stop and report rather than faking success.
 
 ## ⛔ Security rules (never violate)
-- Never echo, log, print, or `Write-Host` a token/password/secret. Pipe secrets via
-  `--password-stdin` or use env vars the user already set (`$env:GITHUB_PAT`).
+- Never echo, log, print, or `Write-Host` a token/password/secret.
 - Use the `gh` CLI for all GitHub operations; never extract/print credentials.
+- No personal access token is involved anywhere in this loop. CI pushes the image with
+  its own `GITHUB_TOKEN` and logs in to Azure with OIDC; the GHCR package is public.
 - If auth is missing and no safe method exists, stop and ask the user to run it.
 
 ## Step 1 — Work on a git worktree (not the main checkout)
@@ -53,7 +54,7 @@ git commit -F - <<'EOF'
 
 <body explaining what and why>
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 EOF
 git push -u origin <type>/<slug>
 ```
@@ -82,35 +83,22 @@ git branch -D <type>/<slug>
 git worktree prune
 ```
 
-## Step 8 — Deploy to production
-Pick the smallest correct deploy for what changed. `ghUser` = `brandonchastain`
-(from the git remote). See `DEPLOY.md` and `.github/skills/deploy/` for canonical commands.
+## Step 8 — Deploy to production (CI does this)
+The squash-merge in Step 6 pushes to `main`, which triggers `.github/workflows/deploy.yml`.
+That workflow runs the tests, builds and pushes the backend image, deploys the Bicep
+template with the new image tag, and publishes the frontend + API proxy to SWA. Do NOT
+deploy from the laptop: `az containerapp update`, `docker push`, and `swa deploy` by hand
+are how the template drifted from production and caused an outage (see the header comment
+in `deploy.yml`).
 
-**Frontend-only** (only `src/WasmApp` changed) — SWA only:
-```powershell
-fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression; fnm use 20
-swa build
-swa deploy --env production
+Find the run for the merge commit and wait for it:
+```bash
+gh run list --workflow deploy.yml --branch main --limit 1 --json databaseId,headSha,status,conclusion
+gh run watch <databaseId> --exit-status
 ```
-
-**Backend changed** (`src/Server`/`src/Shared`) — Docker → GHCR → ACA (do frontend too only if it also changed):
-```powershell
-# GHCR login (token via stdin — never printed)
-$env:GITHUB_PAT | docker login ghcr.io -u brandonchastain --password-stdin
-docker build -t "ghcr.io/brandonchastain/rss-reader-api:latest" -f src/Server/Dockerfile .
-docker push "ghcr.io/brandonchastain/rss-reader-api:latest"
-az containerapp update --name rss-reader-api --resource-group rss-container-rg `
-  --image "ghcr.io/brandonchastain/rss-reader-api:latest" `
-  --revision-suffix "deploy$(Get-Date -Format 'yyyyMMddHHmm')"   # unique suffix forces pickup
-```
-If `docker info` fails (daemon down), the GUI must elevate to start the privileged
-`com.docker.service`. Launch it elevated so the user gets a UAC prompt, then poll:
-```powershell
-Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe" -Verb RunAs
-# poll `docker info` until exit code 0
-```
-(A stale `%LOCALAPPDATA%\Docker\run\dockerInference` socket from an unclean shutdown can
-make Docker show an Inference-manager error dialog; the core engine/BuildKit still work.)
+If the run fails, read the failing job with `gh run view <databaseId> --log-failed`, fix
+forward with a new loop (Steps 1–7), and never patch production directly. To re-run the
+deploy without a code change: `gh workflow run deploy.yml --ref main`.
 
 ## Step 9 — Validate
 - **Backend**: poll `https://rss.brandonchastain.com/api/healthz` until HTTP 200 with
