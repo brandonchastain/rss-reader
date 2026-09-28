@@ -1,38 +1,43 @@
 # Cheat Sheet
 
-## Step 1: Build & deploy the backend
-
-Make sure to start Docker first.
-
-```bash
-cd c:\dev\rssreader\rss-reader
-docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f src/Server/Dockerfile .
-docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
-
-az containerapp update `
-  --name rss-reader-api `
-  --resource-group rss-container-rg `
-  --image ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
-
-```
-
-
-## Step 2: Build & deploy the frontend
+Production deploys from CI. Merging to `main` runs `.github/workflows/deploy.yml`, which
+tests, builds and pushes the backend image, deploys `infrastructure/main.bicep` with that
+image tag, and publishes the frontend + API proxy to Static Web Apps.
 
 ```bash
-cd c:\dev\rssreader\rss-reader
-swa build
-swa deploy --env production
-
+# Re-deploy the current main without a code change, and wait for it
+gh workflow run deploy.yml --ref main
+gh run watch $(gh run list --workflow deploy.yml --branch main --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status
 ```
+
+Or run `.github/skills/deploy/deploy.ps1`, which does the same and then checks `/api/healthz`.
+
+**Do not deploy by hand** (`docker push`, `az containerapp update`, `swa deploy`).
+`az containerapp update` replaces the container app's scale block and drops settings the
+template declares; that drift caused an outage. The template is the only writer of
+container app config.
+
+## Credentials (there are none on your machine)
+
+- **GHCR:** the `ghcr.io/brandonchastain/rss-reader-api` package is public. CI pushes it
+  with the workflow's `GITHUB_TOKEN` (`permissions: packages: write`); the Container App
+  pulls it anonymously and stores no registry credential. No personal access token exists
+  for this project, and none should be created. If the package ever becomes private, the
+  app fails to pull on the next scale-from-zero (`ImagePullBackOff`, 403 from
+  `ghcr.io/token`); the fix is to make it public again, not to add a PAT.
+- **Azure:** CI logs in with OIDC through the `gh-actions-rss-reader` user-assigned
+  managed identity. Repo secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+  `AZURE_SUBSCRIPTION_ID` hold the identifiers; the one real secret is `GATEWAY_SECRET_KEY`.
+- **SWA:** the deployment token is read by CI from `az staticwebapp secrets list` at run
+  time and never stored.
 
 # Infrastructure buildout and backend deployment
 
 ## Prerequisites
 1. Azure CLI installed: `az --version`
-2. Docker installed
-3. Azure subscription
-4. Github account (or other container registry)
+2. Azure subscription
+3. GitHub account with the `gh` CLI authenticated (`gh auth login`)
+4. Docker, only if you want to build the image locally for testing
 
 ## Step 1: Setup Azure Resources
 
@@ -47,37 +52,27 @@ az account set --subscription "YOUR_SUBSCRIPTION_ID"
 az group create --name rss-container-rg --location westus2
 ```
 
-## Step 1b: Setup GitHub Container Registry
+## Step 1b: Publish the first image
 
-1. Create a GitHub Personal Access Token (PAT) with `read:packages` and `write:packages` scopes:
-   - Go to GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)
-   - Generate a new token with `read:packages` and `write:packages` scopes
-   - Save the token securely - you'll need it for pushing images and for Azure deployment
+The template references `ghcr.io/<user>/rss-reader-api`, so an image must exist before the
+first `az deployment group create`. Push one by running the Deploy workflow once it is
+configured (Step 3), or trigger just the build with `gh workflow run deploy.yml --ref main`.
 
-2. Login to GitHub Container Registry:
-```bash
-# Set your GitHub username and PAT
-$($env:GITHUB_USERNAME) = "YOUR_GITHUB_USERNAME"
-$($env:GITHUB_PAT) = "YOUR_GITHUB_PAT"
+After the first push, open the package on GitHub (Profile > Packages >
+`rss-reader-api` > Package settings), set **Visibility** to **Public**, and link it to the
+repository. The Container App pulls anonymously and has no registry credential, so a
+private package breaks every scale-from-zero.
 
-# Login to GHCR
-echo $($env:GITHUB_PAT) | docker login ghcr.io -u $($env:GITHUB_USERNAME) --password-stdin
-```
+If you must push a one-off image from a laptop (for example the very first one, before CI
+has Azure access), authenticate Docker with the `gh` CLI's token rather than creating a PAT.
+The token is piped straight into `docker login` and never printed:
 
-## Step 2: Build and Push Docker Image
-
-1. Launch Docker.
-2. Run these commands:
-
-```bash
-# Navigate to the repo root
-cd c:\dev\rssreader\rss-reader
-
-# Build the Docker image
-docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f src/Server/Dockerfile .
-
-# Push the image to GitHub Container Registry
-docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
+```powershell
+gh auth refresh --scopes write:packages
+gh auth token | docker login ghcr.io -u brandonchastain --password-stdin
+docker build -t ghcr.io/brandonchastain/rss-reader-api:latest -f src/Server/Dockerfile .
+docker push ghcr.io/brandonchastain/rss-reader-api:latest
+docker logout ghcr.io
 ```
 
 ## Step 3: Infrastructure buildout
@@ -101,34 +96,25 @@ $bytes = New-Object byte[] 64
 $base64 = [Convert]::ToBase64String($bytes)
 $GATEWAY_SECRET_KEY = $base64.Replace('+', '-').Replace('/', '_').TrimEnd('=')
 
-# Deploy the Bicep template with the gateway secret key and GHCR credentials
+# Deploy the Bicep template with the gateway secret key. The image is a public
+# GHCR package, so the template takes no registry credential.
 az deployment group create `
   --resource-group rss-container-rg `
   --template-file main.bicep `
   --parameters main.bicepparam `
-  --parameters containerImage="ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest" `
-  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY `
-  --parameters ghcrUsername=$($env:GITHUB_USERNAME) `
-  --parameters ghcrPassword=$($env:GITHUB_PAT)
+  --parameters containerImage="ghcr.io/brandonchastain/rss-reader-api:latest" `
+  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY
 
 ```
+
+Then store `GATEWAY_SECRET_KEY` as a repo secret (`gh secret set GATEWAY_SECRET_KEY`), set
+the `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` repo secrets for the
+OIDC identity, and let CI own every deploy from here on.
 
 ## Future Updates
 
-When you update your code:
-
-```bash
-# Rebuild and push new image
-cd c:\dev\rssreader\rss-reader\
-docker build -t ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest -f src/Server/Dockerfile .
-docker push ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
-
-az containerapp update `
-  --name rss-reader-api `
-  --resource-group rss-container-rg `
-  --image ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest
-
-```
+Merge to `main`. The Deploy workflow builds, pushes, and deploys; see the cheat sheet at
+the top of this file to re-run or watch it.
 
 ### Monitoring & Logs
 
@@ -177,11 +163,11 @@ az deployment group create \
   --parameters main.bicepparam \
   --parameters enableReadReplica=true \
   --parameters maxReadReplicas=3 \
-  --parameters containerImage="ghcr.io/$($env:GITHUB_USERNAME)/rss-reader-api:latest" \
-  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY \
-  --parameters ghcrUsername=$($env:GITHUB_USERNAME) \
-  --parameters ghcrPassword=$($env:GITHUB_PAT)
+  --parameters containerImage="ghcr.io/brandonchastain/rss-reader-api:latest" \
+  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY
 ```
+
+(Prefer setting `enableReadReplica` in `main.bicepparam` and merging, so CI applies it.)
 
 **How it works:**
 - The proxy (`ApiProxy.js`) routes GET requests for timeline, feeds, search, and content to the reader
@@ -201,19 +187,7 @@ Healthy reader logs show: `Starting in READER mode (read-only replica).`
 
 # Frontend deployment
 
-## Step 1: Install prerequisites
-
-* dotnet
-* Node.js and npm
-* azure swa cli
-
-## Step 2: Build & deploy the frontend
-
-Before running, double-check that swa-cli.config.json to points to your SWA.
-
-```bash
-cd c:\dev\rssreader\rss-reader
-swa build
-swa deploy --env production
-
-```
+The Deploy workflow publishes the frontend and the Functions API proxy on every merge to
+`main`, fetching the SWA deployment token from Azure at run time. There is nothing to run
+locally. `swa-cli.config.json` at the repo root is still used for `swa start` during local
+development.
