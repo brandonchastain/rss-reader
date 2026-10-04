@@ -71,7 +71,11 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
 resource fileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
   name: '${storageAccount.name}/default/rss-data'
   properties: {
-    shareQuota: 1  // 1 GB should be plenty for SQLite
+    // A backup cycle briefly holds the old backup AND the new copy on the share
+    // (plus the images folder), so the quota must exceed 2x the DB size. At 1 GB
+    // a ~530 MB DB crossed that line on 2026-10-02: the copy was truncated and
+    // the app refused to boot off it. Azure Files bills used bytes, not quota.
+    shareQuota: 5
   }
 }
 

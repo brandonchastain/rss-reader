@@ -162,6 +162,42 @@ public class DatabaseBackupToFileServiceTests
     }
 
     [TestMethod]
+    public void CopiedFileMatchesStage_RejectsTruncatedCopy()
+    {
+        // Models the 2026-10-02 outage: the share quota filled mid-copy, the SMB
+        // client dropped the write error, and a short file was renamed into place.
+        var stage = Path.Combine(_testDir, "stage.db");
+        var copy = Path.Combine(_testDir, "copy.db");
+        File.WriteAllBytes(stage, new byte[8192]);
+        File.WriteAllBytes(copy, new byte[8192 - 1]);
+
+        Assert.IsFalse(DatabaseBackupToFileService.CopiedFileMatchesStage(stage, copy, out var expected, out var actual));
+        Assert.AreEqual(8192, expected);
+        Assert.AreEqual(8191, actual);
+    }
+
+    [TestMethod]
+    public void CopiedFileMatchesStage_AcceptsFullCopy()
+    {
+        var stage = Path.Combine(_testDir, "stage.db");
+        var copy = Path.Combine(_testDir, "copy.db");
+        File.WriteAllBytes(stage, new byte[8192]);
+        File.Copy(stage, copy);
+
+        Assert.IsTrue(DatabaseBackupToFileService.CopiedFileMatchesStage(stage, copy, out _, out _));
+    }
+
+    [TestMethod]
+    public void CopiedFileMatchesStage_RejectsMissingCopy()
+    {
+        var stage = Path.Combine(_testDir, "stage.db");
+        File.WriteAllBytes(stage, new byte[8192]);
+
+        Assert.IsFalse(DatabaseBackupToFileService.CopiedFileMatchesStage(stage, Path.Combine(_testDir, "nope.db"), out _, out var actual));
+        Assert.AreEqual(-1, actual);
+    }
+
+    [TestMethod]
     public async Task RunBackup_RefusesWhenActiveDbMissing()
     {
         File.Delete(_activeDbPath);
