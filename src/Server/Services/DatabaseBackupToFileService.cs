@@ -177,6 +177,23 @@ namespace RssReader.Server.Services
                 using (var dst = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 {
                     await src.CopyToAsync(dst, cancellationToken);
+                    // Force the SMB client to push its write-back cache to the share before
+                    // we trust the file. On Linux CIFS a write-back failure (e.g. the share
+                    // quota filling mid-copy) can otherwise be dropped silently: Dispose
+                    // returns normally and the rename below publishes a truncated file.
+                    // That is exactly what took production down on 2026-10-02.
+                    dst.Flush(flushToDisk: true);
+                }
+
+                // Belt and braces for the same failure: never publish a copy whose
+                // on-share size differs from the validated stage file.
+                if (!CopiedFileMatchesStage(stagePath, tempPath, out var expectedSize, out var actualSize))
+                {
+                    _logger.LogError(
+                        "Share copy '{Temp}' is {Actual:N0} bytes but the staged backup is {Expected:N0} bytes — discarding. " +
+                        "Check the Azure Files share quota.",
+                        tempPath, actualSize, expectedSize);
+                    return false;
                 }
 
                 // Atomic rename within the same SMB directory. File.Move with overwrite=true
@@ -369,6 +386,19 @@ namespace RssReader.Server.Services
             {
                 return (false, null, ex.GetType().Name + ": " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// True when the copy on the share is byte-for-byte the same length as the
+        /// validated stage file. Exposed for tests.
+        /// </summary>
+        internal static bool CopiedFileMatchesStage(
+            string stagePath, string copyPath, out long expectedSize, out long actualSize)
+        {
+            expectedSize = new FileInfo(stagePath).Length;
+            var copy = new FileInfo(copyPath);
+            actualSize = copy.Exists ? copy.Length : -1;
+            return actualSize == expectedSize;
         }
 
         private static void SafeDelete(string path)
