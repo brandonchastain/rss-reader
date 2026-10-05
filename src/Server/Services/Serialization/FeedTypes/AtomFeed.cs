@@ -47,6 +47,21 @@ public class AtomEntry
 
     [XmlElement("content")]
     public AtomContent Content { get; set; }
+
+    /// <summary>
+    /// Media RSS tags also appear on Atom entries (YouTube wraps them in a
+    /// &lt;media:group&gt;; other publishers put a &lt;media:thumbnail&gt; directly
+    /// on the entry). Captured so Atom items get an article image without
+    /// relying on an &lt;img&gt; in the content.
+    /// </summary>
+    [XmlElement("content", Namespace = MediaContent.MediaRssNamespace)]
+    public List<MediaContent> MediaContents { get; set; }
+
+    [XmlElement("thumbnail", Namespace = MediaContent.MediaRssNamespace)]
+    public List<MediaContent> MediaThumbnails { get; set; }
+
+    [XmlElement("group", Namespace = MediaContent.MediaRssNamespace)]
+    public List<MediaGroup> MediaGroups { get; set; }
 }
 
 public class AtomContent

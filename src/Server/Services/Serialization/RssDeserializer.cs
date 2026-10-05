@@ -88,13 +88,10 @@ public class RssDeserializer
                         return null;
                     }
 
-                    // Prefer an explicit media image; the content <img> scrape in
-                    // ThumbnailResolver is the fallback for items without one.
-                    var media = x.MediaContents?.FirstOrDefault()?.Url
-                        ?? x.MediaThumbnails?.FirstOrDefault()?.Url
-                        ?? (x.Enclosure?.Type?.StartsWith("image", StringComparison.OrdinalIgnoreCase) == true
-                                ? x.Enclosure.Url
-                                : null);
+                    // Prefer an explicit media image, at the largest size the feed
+                    // offers; the content <img> scrape in ThumbnailResolver is the
+                    // fallback for items without one.
+                    var media = MediaImagePicker.PickBest(x.MediaContents, x.MediaThumbnails, x.MediaGroups, x.Enclosure);
 
                     var item = new NewsFeedItem(
                         x.Id,
@@ -125,6 +122,8 @@ public class RssDeserializer
                         return null;
                     }
 
+                    var media = MediaImagePicker.PickBest(x.MediaContents, x.MediaThumbnails, x.MediaGroups, enclosure: null);
+
                     var item = new NewsFeedItem(
                         x.Id,
                         user.Id,
@@ -133,7 +132,7 @@ public class RssDeserializer
                         commentsHref: null,
                         date,
                         x.Content?.ToString(),
-                        thumbnailUrl: null);
+                        ResolveHref(media, atomBase));
                     item.PublishDateOrder = item.ParsedDate?.Ticks ?? DateTime.UtcNow.Ticks;
                     return item;
                 });
