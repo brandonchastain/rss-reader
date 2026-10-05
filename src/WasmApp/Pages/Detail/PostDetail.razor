@@ -22,33 +22,39 @@
             var thumbnailUrl = Post.ThumbnailUrl;
             var faviconUrl = FaviconUrl(Post);
         }
+        <div class="thumb">
         @if (!String.IsNullOrWhiteSpace(thumbnailUrl))
         {
-            // Article image; if it fails, fall back to the site favicon, then a placeholder.
-            <img src="@thumbnailUrl" alt="Thumbnail" class="thumbnail"
-                 onerror="this.onerror=function(){this.onerror=null;this.src='/placeholder.jpg'};this.src='@faviconUrl'" />
+            // Article image, cropped to the frame. If it fails to load, show the
+            // site favicon small in the frame instead; if that fails too, the
+            // frame is left empty (the placeholder is hidden by CSS).
+            <img src="@thumbnailUrl" alt="" class="thumb-img" loading="lazy" decoding="async"
+                 onerror="this.onerror=function(){this.onerror=null;this.className='thumb-img thumb-placeholder';this.src='/placeholder.jpg'};this.className='thumb-img thumb-favicon';this.src='@faviconUrl'" />
         }
         else
         {
-            // No article image; use the site favicon, falling back to a placeholder.
-            <img src="@faviconUrl" alt="Thumbnail" class="thumbnail"
-                 onerror="this.onerror=null;this.src='/placeholder.jpg'" />
+            // No article image; the site favicon sits small in the frame.
+            <img src="@faviconUrl" alt="" class="thumb-img thumb-favicon" loading="lazy" decoding="async"
+                 onerror="this.onerror=null;this.className='thumb-img thumb-placeholder';this.src='/placeholder.jpg'" />
         }
+        </div>
     </div>
-    <div class="col">
+    <div class="col post-body">
         <p class="post-title">
             @foreach (var tag in Post.FeedTags)
             {
                 <span class="post-tag">@tag</span>
             }
-            <a tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" data-article-link data-post-id="@Post.Id" data-mark-read-url="/api/item/markAsRead?itemId=@Post.Id&isRead=true" @onclick:stopPropagation="true" @onclick="() => OnArticleLinkClick(Post)">@CleanTitle(Post.Title)</a><br/>
+            <a tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" data-article-link data-post-id="@Post.Id" data-mark-read-url="/api/item/markAsRead?itemId=@Post.Id&isRead=true" @onclick:stopPropagation="true" @onclick="() => OnArticleLinkClick(Post)">@CleanTitle(Post.Title)</a>
+        </p>
+        <div class="post-actions">
             <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await MarkAsReadAsync(Post, !Post.IsRead)">[mark @(!Post.IsRead ? "read" : "unread")]</button><button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)">[@(!Post.IsSaved ? "save" : "unsave")]</button>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
                 <a class="link" href="@Post.CommentsHref" data-article-link data-post-id="@Post.Id" @onclick:stopPropagation="true">[comments]</a>
             }
             <a class="post-domain" href="/posts?href=@System.Net.WebUtility.UrlEncode(Post.FeedUrl)" @onclick:stopPropagation="true">@Post.Href.GetRootDomain()</a>
-        </p>
+        </div>
     </div>
 </div>
 @if (Post.IsBeingPreviewed)
@@ -74,9 +80,9 @@
                     <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)"><i class="fa-solid fa-volume-high"></i> [speak this text]</button>
                 }
             </p>
-            @if (Post?.GetThumbnailUrl() != null && Post.Content?.TrimStart().IndexOf(Post.GetThumbnailUrl()) < 0)
+            @if (ShouldShowHero(Post))
             {
-                <p><img src="@Post.GetThumbnailUrl()" alt="Thumbnail" class="thumbnail" /></p>
+                <figure class="post-hero"><img src="@Post.GetThumbnailUrl()" alt="" loading="lazy" decoding="async" /></figure>
             }
             <p>
                 @((MarkupString)HtmlSanitizer.Sanitize(Post.Content ?? ""))
@@ -110,6 +116,27 @@
         if (string.IsNullOrEmpty(title)) return title;
         var cleaned = Regex.Replace(title, "<[^>]+>", string.Empty);
         return WebUtility.HtmlDecode(cleaned);
+    }
+
+    // Content that opens with an image (optionally wrapped in a link, paragraph
+    // or figure) already has its own lead image.
+    private static readonly Regex LeadsWithImage = new(
+        @"^(?:\s*<(?:p|div|figure|a|picture|span|center)\b[^>]*>)*\s*<img\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Show the article image above the body unless the body already carries it:
+    // either the same URL appears in the content, or the content leads with an
+    // image of its own (typically a smaller rendition of the same picture, now
+    // that the server stores the largest one the feed offers).
+    private static bool ShouldShowHero(NewsFeedItem post)
+    {
+        var url = post?.GetThumbnailUrl();
+        if (string.IsNullOrWhiteSpace(url) || post.Content == null) return false;
+
+        var content = post.Content.TrimStart();
+        if (content.IndexOf(url, StringComparison.OrdinalIgnoreCase) >= 0) return false;
+
+        return !LeadsWithImage.IsMatch(content);
     }
 
     // Per-domain favicon served from our own origin (GET /api/feed/icon). Resolve

@@ -55,11 +55,18 @@ public class RssItem
     [XmlElement("description")]
     public string Description { get; set; }
 
-    [XmlElement("content", Namespace = "http://search.yahoo.com/mrss/")]
+    [XmlElement("content", Namespace = MediaContent.MediaRssNamespace)]
     public List<MediaContent> MediaContents { get; set; }
 
-    [XmlElement("thumbnail", Namespace = "http://search.yahoo.com/mrss/")]
+    [XmlElement("thumbnail", Namespace = MediaContent.MediaRssNamespace)]
     public List<MediaContent> MediaThumbnails { get; set; }
+
+    /// <summary>
+    /// Some publishers (YouTube, many WordPress plugins) wrap their media tags in a
+    /// &lt;media:group&gt; instead of putting them directly on the item.
+    /// </summary>
+    [XmlElement("group", Namespace = MediaContent.MediaRssNamespace)]
+    public List<MediaGroup> MediaGroups { get; set; }
 
     [XmlElement("enclosure")]
     public RssEnclosure Enclosure { get; set; }
@@ -75,15 +82,44 @@ public class RssEnclosure
     public string Type { get; set; }
 }
 
-[XmlType(Namespace = "http://search.yahoo.com/mrss/")]
+/// <summary>
+/// A &lt;media:content&gt; or &lt;media:thumbnail&gt; element. Feeds commonly list
+/// several renditions of the same image at different widths; the deserializer
+/// uses the size attributes to pick the largest one (see MediaImagePicker).
+/// </summary>
+[XmlType(Namespace = MediaRssNamespace)]
 [XmlRoot("content")]
 public class MediaContent
 {
+    public const string MediaRssNamespace = "http://search.yahoo.com/mrss/";
+
     [XmlAttribute("url")]
     public string Url { get; set; }
-    
+
     [XmlAttribute("width")]
     public string Width { get; set; }
+
+    [XmlAttribute("height")]
+    public string Height { get; set; }
+
+    /// <summary>MIME type, e.g. "image/jpeg" or "video/mp4". Often omitted.</summary>
+    [XmlAttribute("type")]
+    public string Type { get; set; }
+
+    /// <summary>Media RSS "medium" hint: image, video, audio, document, executable.</summary>
+    [XmlAttribute("medium")]
+    public string Medium { get; set; }
+}
+
+[XmlType(Namespace = MediaContent.MediaRssNamespace)]
+[XmlRoot("group")]
+public class MediaGroup
+{
+    [XmlElement("content", Namespace = MediaContent.MediaRssNamespace)]
+    public List<MediaContent> Contents { get; set; }
+
+    [XmlElement("thumbnail", Namespace = MediaContent.MediaRssNamespace)]
+    public List<MediaContent> Thumbnails { get; set; }
 }
 
 [XmlRoot("link")]
