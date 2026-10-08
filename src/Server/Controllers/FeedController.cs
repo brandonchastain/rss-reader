@@ -5,6 +5,7 @@ using RssApp.Contracts;
 using RssApp.ComponentServices;
 using RssApp.Serialization;
 using RssReader.Server.Services;
+using RssApp.RssClient;
 using System.Runtime.InteropServices;
 
 namespace Server.Controllers
@@ -20,6 +21,7 @@ namespace Server.Controllers
         private readonly IItemRepository itemRepository;
         private readonly IUserResolver userResolver;
         private readonly FaviconService faviconService;
+        private readonly OutboundUrlGuard urlGuard;
         private readonly ILogger<UserController> logger;
 
         public FeedController(
@@ -29,8 +31,10 @@ namespace Server.Controllers
             IItemRepository itemRepository,
             IUserResolver userResolver,
             FaviconService faviconService,
+            OutboundUrlGuard urlGuard,
             ILogger<UserController> logger)
         {
+            this.urlGuard = urlGuard ?? throw new ArgumentNullException(nameof(urlGuard));
             this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
             this.feedRefresher = feedRefresher ?? throw new ArgumentNullException(nameof(feedRefresher));
@@ -312,6 +316,23 @@ namespace Server.Controllers
             if (feed.UserId != authenticatedUser.Id)
             {
                 return StatusCode(403, "You can only add feeds to your own account.");
+            }
+
+            // Reject non-public destinations before the feed is stored, so the
+            // user sees why instead of a feed that silently fails every refresh.
+            // The fetch pipeline re-checks every request (and redirect) anyway.
+            if (!Uri.TryCreate(feed.Href, UriKind.Absolute, out var feedUri))
+            {
+                return BadRequest("Feed URL must be an absolute http or https URL.");
+            }
+            try
+            {
+                await this.urlGuard.ValidateAsync(feedUri, HttpContext.RequestAborted);
+            }
+            catch (BlockedOutboundUrlException ex)
+            {
+                this.logger.LogWarning("Rejected feed URL {Href} for user {UserId}: {Reason}", feed.Href, feed.UserId, ex.Message);
+                return BadRequest(ex.Message);
             }
 
             try
