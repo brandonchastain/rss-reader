@@ -30,6 +30,9 @@ builder.Services.AddMemoryCache();
 // FaviconService resolve. The writer additionally configures the named
 // "RssClient" below; on readers CreateClient("RssClient") falls back to a default.
 builder.Services.AddHttpClient();
+// Outbound destination policy. Registered for every role: the feed controller
+// (present on readers too) validates a new feed's URL before storing it.
+builder.Services.AddSingleton<OutboundUrlGuard>();
 builder.Services.AddResponseCompression(options =>
 {
     options.EnableForHttps = true;
@@ -121,13 +124,21 @@ if (!config.IsReadOnly)
         .AddSingleton<IFeedRefresher, FeedRefresher>()
         .AddHostedService<FeedScheduler>()
         .AddTransient<RedirectDowngradeHandler>()
+        .AddTransient<OutboundUrlGuardHandler>()
         // Per-request timeout so a single slow/hung feed can't stall the whole
         // parallel refresh batch (the default HttpClient timeout is 100s).
         .AddHttpClient("RssClient", c => c.Timeout = TimeSpan.FromSeconds(20))
         .AddHttpMessageHandler<RedirectDowngradeHandler>()
-        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        // Inside the redirect handler on purpose: every hop it follows passes
+        // through the guard, so a public feed cannot 302 us to 169.254.169.254.
+        .AddHttpMessageHandler<OutboundUrlGuardHandler>()
+        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
         {
-            AllowAutoRedirect = false
+            AllowAutoRedirect = false,
+            // Resolves and filters at connect time, so a DNS answer that changes
+            // between the guard's check and the socket open still cannot reach
+            // a private address.
+            ConnectCallback = GuardedConnect.ConnectAsync
         });
 }
 else
