@@ -64,7 +64,10 @@ article {
     width: 100%;
     max-width: 100%;
     padding: 0 1rem;
-    overflow-x: hidden;
+    /* clip, not hidden: hidden makes overflow-y compute to auto, which turns
+       the article into a scroll container. Virtualize then measures the
+       viewport against the article's full height and renders every row. */
+    overflow-x: clip;
 }
 
 a {
@@ -269,7 +272,10 @@ a {
     background-color: var(--border);
 }
 
-.day-separator:first-child {
+/* Virtualize places a spacer div before the first separator, so :first-child
+   no longer matches it; the component marks the first one explicitly. */
+.day-separator:first-child,
+.day-separator-first {
     padding-top: 0.75rem;
 }
 
