@@ -150,7 +150,8 @@ window.rssApp = {
         window.rssApp._loadedItemCount = count;
     },
     saveScrollStateAndNavigate: function(postId, targetHref, markReadUrl) {
-        // Use Blazor-provided count (works with Virtualize) with DOM fallback
+        // Use the Blazor-provided count: with Virtualize the DOM only holds the
+        // rows near the viewport, so the DOM fallback undercounts.
         var itemCount = window.rssApp._loadedItemCount || document.querySelectorAll('[data-post-id]').length;
         var pageEstimate = Math.ceil(itemCount / 20);
         sessionStorage.setItem('rssApp.scrollAnchorPostId', postId);
@@ -206,10 +207,6 @@ window.rssApp = {
         sessionStorage.removeItem('rssApp.scrollAnchorPage');
         sessionStorage.removeItem('rssApp.scrollAnchorPath');
     },
-    scrollToEstimatedIndex: function(index, itemSize) {
-        var estimatedPosition = index * itemSize;
-        window.scrollTo(0, estimatedPosition);
-    },
     scrollToPost: function(postId) {
         var el = document.querySelector('[data-post-id="' + postId + '"]');
         if (el) {
@@ -217,6 +214,52 @@ window.rssApp = {
             return true;
         }
         return false;
+    },
+
+    // Average height of one virtualized timeline item: a post row plus the day
+    // separator it may carry. Hidden rows (filtered out) count at their real
+    // height of zero, since they are still items in the list and the spacers
+    // must account for them. Returns 0 when too few rows are rendered to trust.
+    _timelineItemSize: 96,
+    measureTimelineItemSize: function() {
+        var table = document.getElementById('post-table');
+        if (!table) return 0;
+        var total = 0, rows = 0;
+        var children = table.children;
+        for (var i = 0; i < children.length; i++) {
+            var el = children[i];
+            if (el.classList.contains('day-separator')) {
+                total += el.getBoundingClientRect().height;
+            } else if (el.hasAttribute('data-post-id')) {
+                total += el.getBoundingClientRect().height;
+                rows++;
+            }
+        }
+        if (rows < 5) return 0;
+        var avg = total / rows;
+        window.rssApp._timelineItemSize = avg;
+        return avg;
+    },
+
+    // Scroll-restore target for a virtualized list. Jumps to the item's estimated
+    // offset so Virtualize renders that region, then watches for the real element
+    // for up to ~1.5s and centers it. Resolves true if the element was found.
+    scrollToPostWhenRendered: function(postId, index) {
+        return new Promise(function(resolve) {
+            if (window.rssApp.scrollToPost(postId)) { resolve(true); return; }
+
+            var table = document.getElementById('post-table');
+            var top = (table ? table.getBoundingClientRect().top + window.scrollY : 0)
+                + index * window.rssApp._timelineItemSize;
+            window.scrollTo({ top: top, behavior: 'instant' });
+
+            var deadline = performance.now() + 1500;
+            (function poll() {
+                if (window.rssApp.scrollToPost(postId)) { resolve(true); return; }
+                if (performance.now() > deadline) { resolve(false); return; }
+                requestAnimationFrame(poll);
+            })();
+        });
     },
 
     // Cold-start cache. The API runs scale-to-zero, so waking the container costs

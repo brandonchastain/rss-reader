@@ -6,6 +6,7 @@
 @using System.Net
 @using System.Text.RegularExpressions
 @using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components.Web.Virtualization
 @using Sve.Blazor.InfiniteScroll.Components
 @using WasmApp.Pages.Detail
 
@@ -60,20 +61,22 @@ else if (_showUpToDate)
     }
     else
     {
-        @foreach (var entry in _flatEntries)
-        {
-            @if (entry.IsDayHeader)
+        @* One virtualized item per post. A post that opens a new day carries its
+           day separator inside the same item, so every item is "post, maybe with a
+           header" and ItemSize is a single average rather than a guess across two
+           very different row kinds -- which is what made the spacer math drift
+           under fast scroll the last time Virtualize was here (#76). The markup
+           emitted is identical to the old plain loop. *@
+        <Virtualize Items="@_flatEntries" Context="entry" ItemSize="@_itemSize" OverscanCount="@OverscanRows">
+            @if (entry.DayKey != null)
             {
-                <div @key="@entry.DayKey" class="day-separator @(entry.IsFirstHeader ? "day-separator-first" : "")">@GetDayLabel(entry.Date)</div>
+                <div @key="@entry.DayKey" class="day-separator @(entry.IsFirstHeader ? "day-separator-first" : "")">@GetDayLabel(entry.HeaderDate)</div>
             }
-            else
-            {
-                <PostDetail @key="entry.Post.Id"
-                    Post="@entry.Post"
-                    FilterTag="@this.filterTag"
-                    IsFilterUnread="@this.IsFilterUnread"/>
-            }
-        }
+            <PostDetail @key="entry.Post.Id"
+                Post="@entry.Post"
+                FilterTag="@this.filterTag"
+                IsFilterUnread="@this.IsFilterUnread"/>
+        </Virtualize>
 
         <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
             <div class="row">
@@ -115,9 +118,23 @@ else if (_showUpToDate)
     public bool IsFilterSaved => FeedClient.IsFilterSaved;
     private string filterTag => FeedClient.FilterTag;
 
-    // Pre-computed flat list for plain @foreach — rebuilt only when Posts changes
+    // Pre-computed flat list for Virtualize — rebuilt only when Posts changes
     private List<TimelineEntry> _flatEntries = new();
     private int _lastPostsCount;
+
+    // Rows rendered beyond each edge of the viewport. Generous enough that the
+    // headline reader's "next post" and a collapsing preview are always in the
+    // DOM, small enough that a page append diffs a few dozen rows, not hundreds.
+    private const int OverscanRows = 10;
+
+    // Average rendered height of one item (post row plus any day separator it
+    // carries). Virtualize sizes its off-screen spacers from this, so it is
+    // measured from real rows once enough are on screen rather than hard-coded:
+    // the row layout differs between phone and desktop widths, and a stale
+    // constant is exactly how the old fast-scroll bug started.
+    private const float DefaultItemSize = 96f;
+    private float _itemSize = DefaultItemSize;
+    private bool _itemSizeMeasured;
 
     // Sentinel meaning "rebuild regardless". Zero cannot serve: a filter switch
     // empties Posts, so _lastPostsCount == Posts.Count == 0 matched the skip
@@ -155,7 +172,9 @@ else if (_showUpToDate)
     private string _currentHeadlinePostId;
     private DotNetObjectReference<PostTable> _headlineRef;
 
-    private record TimelineEntry(bool IsDayHeader, DateTime Date, string DayKey, bool IsFirstHeader, NewsFeedItem Post);
+    // DayKey is non-null only on the first post of each day; that entry renders
+    // the day separator above its row.
+    private record TimelineEntry(NewsFeedItem Post, DateTime HeaderDate, string DayKey, bool IsFirstHeader);
 
     public void Dispose()
     {
@@ -254,6 +273,11 @@ else if (_showUpToDate)
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await base.OnAfterRenderAsync(firstRender);
+
+        // Not awaited: it polls for a few seconds and must not hold up the
+        // new-posts probe or the tag load below.
+        _ = MeasureItemSizeAsync();
+
         if (firstRender)
         {
             _headlineRef = DotNetObjectReference.Create(this);
@@ -413,7 +437,7 @@ else if (_showUpToDate)
             return;
 
         _lastPostsCount = Posts.Count;
-        var entries = new List<TimelineEntry>(Posts.Count + 50);
+        var entries = new List<TimelineEntry>(Posts.Count);
         bool isFirstGroup = true;
 
         foreach (var dayGroup in Posts
@@ -421,16 +445,66 @@ else if (_showUpToDate)
             .OrderByDescending(g => g.Key))
         {
             var dayKey = $"day-{dayGroup.Key:yyyy-MM-dd}";
-            entries.Add(new TimelineEntry(true, dayGroup.Key, dayKey, isFirstGroup, null));
-            isFirstGroup = false;
+            bool first = true;
 
             foreach (var post in dayGroup)
             {
-                entries.Add(new TimelineEntry(false, default, null, false, post));
+                entries.Add(first
+                    ? new TimelineEntry(post, dayGroup.Key, dayKey, isFirstGroup)
+                    : new TimelineEntry(post, default, null, false));
+                first = false;
             }
+
+            isFirstGroup = false;
         }
 
         _flatEntries = entries;
+    }
+
+    // Replaces the default item size with the measured average once real rows
+    // are on screen. One measurement is enough: the layout only changes with the
+    // viewport width, and Virtualize tolerates small error -- it was the large,
+    // systematic error of a wrong constant that broke fast scrolling before.
+    private bool _itemSizeMeasuring;
+
+    private async Task MeasureItemSizeAsync()
+    {
+        if (_itemSizeMeasured || _itemSizeMeasuring || _flatEntries.Count == 0) return;
+        _itemSizeMeasuring = true;
+
+        try
+        {
+            // Virtualize fills in its rows on its own render pass after this
+            // component's, so the first attempt usually sees nothing yet. Poll
+            // briefly rather than waiting for an unrelated re-render of this
+            // component that may never come.
+            // Patient on purpose: a timeline opened in a background tab has no
+            // rows to measure until the tab is shown, and each poll is one cheap
+            // DOM read.
+            for (int attempt = 0; attempt < 40 && !_itemSizeMeasured; attempt++)
+            {
+                float measured;
+                try { measured = await jsRuntime.InvokeAsync<float>("rssApp.measureTimelineItemSize"); }
+                catch { return; }
+
+                if (measured > 0)
+                {
+                    _itemSizeMeasured = true;
+                    if (Math.Abs(measured - _itemSize) / _itemSize > 0.05f)
+                    {
+                        _itemSize = measured;
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    return;
+                }
+
+                await Task.Delay(500);
+            }
+        }
+        finally
+        {
+            _itemSizeMeasuring = false;
+        }
     }
 
     private async Task ToggleUnreadFilterAsync()
@@ -500,7 +574,7 @@ else if (_showUpToDate)
 
     // The posts currently in the list, in display order (day-separators excluded).
     private List<NewsFeedItem> VisiblePosts()
-        => _flatEntries.Where(e => !e.IsDayHeader && e.Post != null).Select(e => e.Post).ToList();
+        => _flatEntries.Where(e => e.Post != null).Select(e => e.Post).ToList();
 
     private async Task ToggleReadHeadlinesAsync()
     {
