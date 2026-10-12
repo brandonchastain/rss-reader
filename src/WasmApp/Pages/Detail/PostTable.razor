@@ -5,8 +5,8 @@
 @attribute [Authorize]
 @using System.Net
 @using System.Text.RegularExpressions
+@using System.Globalization
 @using Microsoft.JSInterop
-@using Microsoft.AspNetCore.Components.Web.Virtualization
 @using Sve.Blazor.InfiniteScroll.Components
 @using WasmApp.Pages.Detail
 
@@ -61,13 +61,17 @@ else if (_showUpToDate)
     }
     else
     {
-        @* One virtualized item per post. A post that opens a new day carries its
-           day separator inside the same item, so every item is "post, maybe with a
-           header" and ItemSize is a single average rather than a guess across two
-           very different row kinds -- which is what made the spacer math drift
-           under fast scroll the last time Virtualize was here (#76). The markup
-           emitted is identical to the old plain loop. *@
-        <Virtualize Items="@_flatEntries" Context="entry" ItemSize="@_itemSize" OverscanCount="@OverscanRows">
+        @* Windowed list. Every loaded post from _windowStart on is rendered with
+           a stable key; posts the reader has scrolled well past are dropped from
+           the front and stand in as this spacer, sized from their measured
+           heights (see rssApp.listWindow in app.js). Appends only ever add rows
+           below, and the spacer only ever changes by the exact height of the rows
+           it swaps with, so nothing above the viewport moves by an estimate and
+           the reader's position holds. *@
+        <div id="post-table-top-spacer" style="height:@(_topSpacerHeight.ToString("0.###", CultureInfo.InvariantCulture))px"></div>
+        @for (int i = _windowStart; i < _flatEntries.Count; i++)
+        {
+            var entry = _flatEntries[i];
             @if (entry.DayKey != null)
             {
                 <div @key="@entry.DayKey" class="day-separator @(entry.IsFirstHeader ? "day-separator-first" : "")">@GetDayLabel(entry.HeaderDate)</div>
@@ -76,7 +80,7 @@ else if (_showUpToDate)
                 Post="@entry.Post"
                 FilterTag="@this.filterTag"
                 IsFilterUnread="@this.IsFilterUnread"/>
-        </Virtualize>
+        }
 
         <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
             <div class="row">
@@ -118,23 +122,24 @@ else if (_showUpToDate)
     public bool IsFilterSaved => FeedClient.IsFilterSaved;
     private string filterTag => FeedClient.FilterTag;
 
-    // Pre-computed flat list for Virtualize — rebuilt only when Posts changes
+    // Pre-computed flat list for the windowed loop — rebuilt only when Posts changes
     private List<TimelineEntry> _flatEntries = new();
     private int _lastPostsCount;
 
-    // Rows rendered beyond each edge of the viewport. Generous enough that the
-    // headline reader's "next post" and a collapsing preview are always in the
-    // DOM, small enough that a page append diffs a few dozen rows, not hundreds.
-    private const int OverscanRows = 10;
+    // Windowing state. Entries [0, _windowStart) are not in the DOM; the spacer
+    // above the list is exactly as tall as they were, with each one's measured
+    // height kept so it can be put back at the same size. This replaces
+    // Virtualize, whose spacers were sized from a running average and whose
+    // unkeyed window rebuilt every row on each shift -- together those moved the
+    // content under the reader on every page load, and the browser's scroll
+    // anchoring could not help because the anchored nodes no longer existed.
+    private int _windowStart;
+    private double _topSpacerHeight;
+    private readonly List<double> _trimmedHeights = new();
+    private bool _windowInitialized;
 
-    // Average rendered height of one item (post row plus any day separator it
-    // carries). Virtualize sizes its off-screen spacers from this, so it is
-    // measured from real rows once enough are on screen rather than hard-coded:
-    // the row layout differs between phone and desktop widths, and a stale
-    // constant is exactly how the old fast-scroll bug started.
-    private const float DefaultItemSize = 96f;
-    private float _itemSize = DefaultItemSize;
-    private bool _itemSizeMeasured;
+    // Rows put back per restore step as the reader scrolls up into the spacer.
+    private const int RestoreBatch = 20;
 
     // Sentinel meaning "rebuild regardless". Zero cannot serve: a filter switch
     // empties Posts, so _lastPostsCount == Posts.Count == 0 matched the skip
@@ -182,8 +187,8 @@ else if (_showUpToDate)
         _refreshPollCts?.Dispose();
         _newPostsPollCts?.Cancel();
         _newPostsPollCts?.Dispose();
+        try { _ = jsRuntime.InvokeVoidAsync("rssApp.listWindow.dispose"); } catch { }
         _headlineRef?.Dispose();
-        try { _ = jsRuntime.InvokeVoidAsync("rssApp.scrollAnchorGuard.stop"); } catch { }
     }
 
     private async Task StartBackgroundRefreshAsync()
@@ -275,19 +280,21 @@ else if (_showUpToDate)
     {
         await base.OnAfterRenderAsync(firstRender);
 
-        // Not awaited: it polls for a few seconds and must not hold up the
-        // new-posts probe or the tag load below.
-        _ = MeasureItemSizeAsync();
-
         if (firstRender)
         {
             _headlineRef = DotNetObjectReference.Create(this);
+        }
 
-            // Virtualize re-windows shift the content under the reader's scroll
-            // position; the guard holds the row they are on still. Started
-            // after the first render so #post-table exists; stopped in Dispose.
-            try { await jsRuntime.InvokeVoidAsync("rssApp.scrollAnchorGuard.start"); } catch { }
+        // The JS side needs the spacer element, which only exists once the list
+        // branch has rendered; hook it up on the first render that has rows.
+        if (!_windowInitialized && _flatEntries.Count > 0 && _headlineRef != null)
+        {
+            _windowInitialized = true;
+            try { await jsRuntime.InvokeVoidAsync("rssApp.listWindow.init", _headlineRef); } catch { }
+        }
 
+        if (firstRender)
+        {
             // Start probing before resolving tags. GetUserTagsAsync registers the
             // user against the writer, so on a cold start it blocks for the whole
             // container wake -- awaiting it first would hold the new-posts probe
@@ -442,6 +449,13 @@ else if (_showUpToDate)
         if (Posts == null || Posts.Count == _lastPostsCount)
             return;
 
+        // Anything other than more posts arriving at the end -- a filter switch,
+        // a reload from the top, a shrink -- invalidates the trimmed prefix.
+        if (_lastPostsCount == ForceRebuild || Posts.Count < _lastPostsCount)
+        {
+            ResetWindow();
+        }
+
         _lastPostsCount = Posts.Count;
         var entries = new List<TimelineEntry>(Posts.Count);
         bool isFirstGroup = true;
@@ -465,52 +479,74 @@ else if (_showUpToDate)
         }
 
         _flatEntries = entries;
+        if (_windowStart > _flatEntries.Count)
+        {
+            ResetWindow();
+        }
     }
 
-    // Replaces the default item size with the measured average once real rows
-    // are on screen. One measurement is enough: the layout only changes with the
-    // viewport width, and Virtualize tolerates small error -- it was the large,
-    // systematic error of a wrong constant that broke fast scrolling before.
-    private bool _itemSizeMeasuring;
-
-    private async Task MeasureItemSizeAsync()
+    private void ResetWindow()
     {
-        if (_itemSizeMeasured || _itemSizeMeasuring || _flatEntries.Count == 0) return;
-        _itemSizeMeasuring = true;
+        _windowStart = 0;
+        _topSpacerHeight = 0;
+        _trimmedHeights.Clear();
+    }
 
-        try
+    // Called from rssApp.listWindow when the viewport width changes: the
+    // recorded heights were measured at the old width and would put rows back
+    // at the wrong size, so render everything again and let trimming restart.
+    [JSInvokable]
+    public async Task RestoreAll()
+    {
+        if (_windowStart == 0) return;
+        ResetWindow();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Called from rssApp.listWindow once the page is idle with at least a page
+    // of rows more than a screen above the viewport. heights[i] is the measured
+    // height of entry (_windowStart + i) including its day separator and any
+    // expanded body, so the spacer grows by exactly what leaves the DOM.
+    [JSInvokable]
+    public async Task TrimTop(int count, double[] heights)
+    {
+        // Always leave at least one rendered row after the spacer: the restore
+        // sentinel measures against it.
+        var max = _flatEntries.Count - _windowStart - 1;
+        if (count <= 0 || heights == null || heights.Length < count || max <= 0) return;
+        count = Math.Min(count, max);
+
+        for (int i = 0; i < count; i++)
         {
-            // Virtualize fills in its rows on its own render pass after this
-            // component's, so the first attempt usually sees nothing yet. Poll
-            // briefly rather than waiting for an unrelated re-render of this
-            // component that may never come.
-            // Patient on purpose: a timeline opened in a background tab has no
-            // rows to measure until the tab is shown, and each poll is one cheap
-            // DOM read.
-            for (int attempt = 0; attempt < 40 && !_itemSizeMeasured; attempt++)
-            {
-                float measured;
-                try { measured = await jsRuntime.InvokeAsync<float>("rssApp.measureTimelineItemSize"); }
-                catch { return; }
-
-                if (measured > 0)
-                {
-                    _itemSizeMeasured = true;
-                    if (Math.Abs(measured - _itemSize) / _itemSize > 0.05f)
-                    {
-                        _itemSize = measured;
-                        await InvokeAsync(StateHasChanged);
-                    }
-                    return;
-                }
-
-                await Task.Delay(500);
-            }
+            _trimmedHeights.Add(heights[i]);
+            _topSpacerHeight += heights[i];
         }
-        finally
+        _windowStart += count;
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Called from rssApp.listWindow when the spacer comes within reach of the
+    // viewport. Puts the most recently trimmed rows back and shrinks the spacer
+    // by their recorded heights. Returns how many rows remain trimmed.
+    [JSInvokable]
+    public async Task<int> RestoreTop()
+    {
+        var k = Math.Min(RestoreBatch, _windowStart);
+        for (int i = 0; i < k; i++)
         {
-            _itemSizeMeasuring = false;
+            var h = _trimmedHeights[_trimmedHeights.Count - 1];
+            _trimmedHeights.RemoveAt(_trimmedHeights.Count - 1);
+            _topSpacerHeight -= h;
         }
+        _windowStart -= k;
+        if (_windowStart == 0)
+        {
+            _topSpacerHeight = 0;
+        }
+
+        await InvokeAsync(StateHasChanged);
+        return _windowStart;
     }
 
     private async Task ToggleUnreadFilterAsync()
