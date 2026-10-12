@@ -183,6 +183,7 @@ else if (_showUpToDate)
         _newPostsPollCts?.Cancel();
         _newPostsPollCts?.Dispose();
         _headlineRef?.Dispose();
+        try { _ = jsRuntime.InvokeVoidAsync("rssApp.scrollAnchorGuard.stop"); } catch { }
     }
 
     private async Task StartBackgroundRefreshAsync()
@@ -281,6 +282,11 @@ else if (_showUpToDate)
         if (firstRender)
         {
             _headlineRef = DotNetObjectReference.Create(this);
+
+            // Virtualize re-windows shift the content under the reader's scroll
+            // position; the guard holds the row they are on still. Started
+            // after the first render so #post-table exists; stopped in Dispose.
+            try { await jsRuntime.InvokeVoidAsync("rssApp.scrollAnchorGuard.start"); } catch { }
 
             // Start probing before resolving tags. GetUserTagsAsync registers the
             // user against the writer, so on a cold start it blocks for the whole
