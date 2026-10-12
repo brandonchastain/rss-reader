@@ -216,137 +216,153 @@ window.rssApp = {
         return false;
     },
 
-    // Keeps the row the reader is looking at where it is while the virtualized
-    // list re-windows underneath them.
+    // Windowing for the timeline (PostTable). Keeps the DOM bounded without ever
+    // moving the content under the reader:
     //
-    // Virtualize sizes its off-screen spacers from the average row height, not
-    // from the real rows they stand in for. Every time it changes which rows are
-    // rendered -- after a page append, and periodically during ordinary
-    // scrolling -- the content under a fixed scroll position shifts by that
-    // error (measured 8-47px). The browser's own scroll anchoring does not
-    // compensate. This guard does: it remembers the first visible row and its
-    // viewport offset after each scroll the reader makes, and whenever the
-    // table mutates it scrolls by exactly the amount that row moved.
-    scrollAnchorGuard: {
-        _active: null,
+    //  - Trim: once the page has been idle briefly and at least a page of rows
+    //    sits more than a screen above the viewport, measure those rows and hand
+    //    the count and per-row heights to .NET, which drops them from the DOM and
+    //    grows the spacer by exactly their sum. Net height above the viewport is
+    //    unchanged, so the scroll position needs no correction.
+    //  - Restore: when the spacer comes within 1.5 screens of the viewport, .NET
+    //    puts rows back a page at a time and shrinks the spacer by their recorded
+    //    heights, again net zero.
+    //
+    // A row's measured height runs from the start of its entry (its day
+    // separator if it has one, else the row) to the start of the next entry, so
+    // an expanded post body or a hidden (filtered) row is accounted for exactly.
+    listWindow: {
+        _state: null,
 
-        start: function() {
-            var guard = window.rssApp.scrollAnchorGuard;
-            guard.stop();
+        init: function(dotNetRef) {
+            var lw = window.rssApp.listWindow;
+            lw.dispose();
 
             var table = document.getElementById('post-table');
             if (!table) return;
 
-            var anchorId = null;
-            var anchorTop = 0;
-            var ownScroll = false;
-            var lastReaderScroll = 0;
-            // A correction issued mid-scroll cancels a smooth scroll (Home, End,
-            // keyboard paging) and is invisible anyway while the page is moving,
-            // so inside this window the guard adopts the new layout instead.
-            var SETTLE_MS = 150;
+            // Trim keeps more above the viewport than restore reaches for, so a
+            // trim never triggers the restore that would undo it.
+            var SCREENS_ABOVE = 2;    // rows kept rendered above the viewport
+            var MIN_TRIM = 20;        // don't trim fewer rows than this at once
+            var IDLE_MS = 200;        // reader must be still this long before a trim
+            var RESTORE_MARGIN = 1;   // screens of lead time for a restore
 
-            function capture() {
-                var rows = table.querySelectorAll('[data-post-id].row');
-                for (var i = 0; i < rows.length; i++) {
-                    var rect = rows[i].getBoundingClientRect();
-                    if (rect.bottom > 0) {
-                        anchorId = rows[i].getAttribute('data-post-id');
-                        anchorTop = rect.top;
-                        return;
-                    }
+            var idleTimer = null;
+            var busy = false;
+            var observed = null;
+
+            function spacer() { return document.getElementById('post-table-top-spacer'); }
+
+            // Top edge of entry i, given the row elements. A hidden row has no
+            // box of its own, so its entry starts where the next one does.
+            function entryStarts(rows, count) {
+                var starts = new Array(count + 1);
+                starts[count] = startOf(rows[count], null);
+                for (var i = count - 1; i >= 0; i--) {
+                    starts[i] = startOf(rows[i], starts[i + 1]);
                 }
-                anchorId = null;
+                return starts;
+            }
+            function startOf(row, nextStart) {
+                var prev = row.previousElementSibling;
+                if (prev && prev.classList.contains('day-separator')) return prev.getBoundingClientRect().top;
+                if (row.hidden && nextStart !== null) return nextStart;
+                return row.getBoundingClientRect().top;
             }
 
-            function onMutation() {
-                if (anchorId === null) { capture(); return; }
-                if (performance.now() - lastReaderScroll < SETTLE_MS) { capture(); return; }
-                var el = table.querySelector('[data-post-id="' + anchorId + '"].row');
-                if (!el) { capture(); return; }
-                var delta = el.getBoundingClientRect().top - anchorTop;
-                if (Math.abs(delta) < 1) return;
+            async function maybeTrim() {
+                if (busy) return;
+                var rows = table.querySelectorAll('[data-post-id].row');
+                var limit = -window.innerHeight * SCREENS_ABOVE;
+                var k = 0;
+                while (k < rows.length - 1 && (rows[k].hidden || rows[k].getBoundingClientRect().bottom < limit)) k++;
+                if (k < MIN_TRIM) return;
 
-                var before = window.scrollY;
-                ownScroll = true;
-                window.scrollBy({ top: delta, behavior: 'instant' });
-                // At the edge of the document the scroll can't move, so no
-                // scroll event will follow; don't leave the flag armed.
-                if (window.scrollY === before) ownScroll = false;
+                var starts = entryStarts(rows, k);
+                var heights = [];
+                for (var i = 0; i < k; i++) heights.push(Math.max(0, starts[i + 1] - starts[i]));
+
+                busy = true;
+                try { await dotNetRef.invokeMethodAsync('TrimTop', k, heights); }
+                catch (e) { }
+                finally { busy = false; }
+            }
+
+            async function restore() {
+                if (busy) return;
+                busy = true;
+                try {
+                    for (var guard = 0; guard < 50; guard++) {
+                        var sp = spacer();
+                        if (!sp) break;
+                        if (sp.getBoundingClientRect().bottom < -window.innerHeight * RESTORE_MARGIN) break;
+                        var remaining = await dotNetRef.invokeMethodAsync('RestoreTop');
+                        if (remaining <= 0) break;
+                        await new Promise(function(res) { requestAnimationFrame(res); });
+                    }
+                } catch (e) { }
+                finally { busy = false; }
+            }
+
+            var io = new IntersectionObserver(function(entries) {
+                for (var i = 0; i < entries.length; i++) {
+                    if (entries[i].isIntersecting) { restore(); return; }
+                }
+            }, { root: null, rootMargin: (RESTORE_MARGIN * 100) + '% 0px 0px 0px', threshold: 0 });
+
+            // The spacer element is recreated when the list branch re-renders
+            // (filter switch, reload), so re-point the observer when it changes.
+            function watchSpacer() {
+                var sp = spacer();
+                if (sp === observed) return;
+                if (observed) io.unobserve(observed);
+                observed = sp;
+                if (sp) io.observe(sp);
             }
 
             function onScroll() {
-                // Our own correction raises one scroll event and must not
-                // re-capture: the anchor is exactly where it should be. Any
-                // other scroll is the reader moving, so follow them.
-                if (ownScroll) { ownScroll = false; return; }
-                lastReaderScroll = performance.now();
-                capture();
+                watchSpacer();
+                clearTimeout(idleTimer);
+                idleTimer = setTimeout(maybeTrim, IDLE_MS);
             }
 
-            var observer = new MutationObserver(onMutation);
-            observer.observe(table, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
-            window.addEventListener('scroll', onScroll, { passive: true });
-            window.addEventListener('resize', capture);
-            capture();
+            // Recorded heights are only valid at the width they were measured
+            // at; a rotation or window resize invalidates them all.
+            var lastWidth = window.innerWidth;
+            var resizeTimer = null;
+            function onResize() {
+                if (window.innerWidth === lastWidth) return;
+                lastWidth = window.innerWidth;
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(async function() {
+                    if (busy) return;
+                    busy = true;
+                    try { await dotNetRef.invokeMethodAsync('RestoreAll'); }
+                    catch (e) { }
+                    finally { busy = false; }
+                }, 150);
+            }
 
-            guard._active = function() {
-                observer.disconnect();
-                window.removeEventListener('scroll', onScroll);
-                window.removeEventListener('resize', capture);
+            watchSpacer();
+            window.addEventListener('scroll', onScroll, { passive: true });
+            window.addEventListener('resize', onResize);
+
+            lw._state = {
+                dispose: function() {
+                    clearTimeout(idleTimer);
+                    clearTimeout(resizeTimer);
+                    io.disconnect();
+                    window.removeEventListener('scroll', onScroll);
+                    window.removeEventListener('resize', onResize);
+                }
             };
         },
 
-        stop: function() {
-            var guard = window.rssApp.scrollAnchorGuard;
-            if (guard._active) { guard._active(); guard._active = null; }
+        dispose: function() {
+            var lw = window.rssApp.listWindow;
+            if (lw._state) { lw._state.dispose(); lw._state = null; }
         }
-    },
-
-    // Average height of one virtualized timeline item: a post row plus the day
-    // separator it may carry. Hidden rows (filtered out) count at their real
-    // height of zero, since they are still items in the list and the spacers
-    // must account for them. Returns 0 when too few rows are rendered to trust.
-    _timelineItemSize: 96,
-    measureTimelineItemSize: function() {
-        var table = document.getElementById('post-table');
-        if (!table) return 0;
-        var total = 0, rows = 0;
-        var children = table.children;
-        for (var i = 0; i < children.length; i++) {
-            var el = children[i];
-            if (el.classList.contains('day-separator')) {
-                total += el.getBoundingClientRect().height;
-            } else if (el.hasAttribute('data-post-id')) {
-                total += el.getBoundingClientRect().height;
-                rows++;
-            }
-        }
-        if (rows < 5) return 0;
-        var avg = total / rows;
-        window.rssApp._timelineItemSize = avg;
-        return avg;
-    },
-
-    // Scroll-restore target for a virtualized list. Jumps to the item's estimated
-    // offset so Virtualize renders that region, then watches for the real element
-    // for up to ~1.5s and centers it. Resolves true if the element was found.
-    scrollToPostWhenRendered: function(postId, index) {
-        return new Promise(function(resolve) {
-            if (window.rssApp.scrollToPost(postId)) { resolve(true); return; }
-
-            var table = document.getElementById('post-table');
-            var top = (table ? table.getBoundingClientRect().top + window.scrollY : 0)
-                + index * window.rssApp._timelineItemSize;
-            window.scrollTo({ top: top, behavior: 'instant' });
-
-            var deadline = performance.now() + 1500;
-            (function poll() {
-                if (window.rssApp.scrollToPost(postId)) { resolve(true); return; }
-                if (performance.now() > deadline) { resolve(false); return; }
-                requestAnimationFrame(poll);
-            })();
-        });
     },
 
     // Cold-start cache. The API runs scale-to-zero, so waking the container costs

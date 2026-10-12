@@ -418,17 +418,14 @@
         {
             try
             {
-                // The list is virtualized, so the anchor post is usually not in
-                // the DOM yet even once it is loaded. The JS side jumps to the
-                // post's estimated offset, which makes Virtualize render that
-                // region, then snaps to the real element as soon as it appears.
-                var targetIndex = Items.FindIndex(i => i.Id == _scrollAnchorPostId);
-                if (targetIndex >= 0)
+                // Every loaded item is in the DOM right after a load (the list
+                // only trims rows the reader has scrolled past), so scrollToPost
+                // finds the element on the first attempt once items are loaded.
+                var scrolled = await jsRuntime.InvokeAsync<bool>("rssApp.scrollToPost", _scrollAnchorPostId);
+                if (scrolled || Items.Any(i => i.Id == _scrollAnchorPostId))
                 {
                     _needsScrollRestore = false;
-                    var anchorId = _scrollAnchorPostId;
                     _scrollAnchorPostId = null;
-                    await jsRuntime.InvokeVoidAsync("rssApp.scrollToPostWhenRendered", anchorId, targetIndex);
                 }
                 // else: items not yet loaded — try again next render cycle
             }
