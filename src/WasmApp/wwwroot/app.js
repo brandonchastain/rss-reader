@@ -216,6 +216,93 @@ window.rssApp = {
         return false;
     },
 
+    // Keeps the row the reader is looking at where it is while the virtualized
+    // list re-windows underneath them.
+    //
+    // Virtualize sizes its off-screen spacers from the average row height, not
+    // from the real rows they stand in for. Every time it changes which rows are
+    // rendered -- after a page append, and periodically during ordinary
+    // scrolling -- the content under a fixed scroll position shifts by that
+    // error (measured 8-47px). The browser's own scroll anchoring does not
+    // compensate. This guard does: it remembers the first visible row and its
+    // viewport offset after each scroll the reader makes, and whenever the
+    // table mutates it scrolls by exactly the amount that row moved.
+    scrollAnchorGuard: {
+        _active: null,
+
+        start: function() {
+            var guard = window.rssApp.scrollAnchorGuard;
+            guard.stop();
+
+            var table = document.getElementById('post-table');
+            if (!table) return;
+
+            var anchorId = null;
+            var anchorTop = 0;
+            var ownScroll = false;
+            var lastReaderScroll = 0;
+            // A correction issued mid-scroll cancels a smooth scroll (Home, End,
+            // keyboard paging) and is invisible anyway while the page is moving,
+            // so inside this window the guard adopts the new layout instead.
+            var SETTLE_MS = 150;
+
+            function capture() {
+                var rows = table.querySelectorAll('[data-post-id].row');
+                for (var i = 0; i < rows.length; i++) {
+                    var rect = rows[i].getBoundingClientRect();
+                    if (rect.bottom > 0) {
+                        anchorId = rows[i].getAttribute('data-post-id');
+                        anchorTop = rect.top;
+                        return;
+                    }
+                }
+                anchorId = null;
+            }
+
+            function onMutation() {
+                if (anchorId === null) { capture(); return; }
+                if (performance.now() - lastReaderScroll < SETTLE_MS) { capture(); return; }
+                var el = table.querySelector('[data-post-id="' + anchorId + '"].row');
+                if (!el) { capture(); return; }
+                var delta = el.getBoundingClientRect().top - anchorTop;
+                if (Math.abs(delta) < 1) return;
+
+                var before = window.scrollY;
+                ownScroll = true;
+                window.scrollBy({ top: delta, behavior: 'instant' });
+                // At the edge of the document the scroll can't move, so no
+                // scroll event will follow; don't leave the flag armed.
+                if (window.scrollY === before) ownScroll = false;
+            }
+
+            function onScroll() {
+                // Our own correction raises one scroll event and must not
+                // re-capture: the anchor is exactly where it should be. Any
+                // other scroll is the reader moving, so follow them.
+                if (ownScroll) { ownScroll = false; return; }
+                lastReaderScroll = performance.now();
+                capture();
+            }
+
+            var observer = new MutationObserver(onMutation);
+            observer.observe(table, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+            window.addEventListener('scroll', onScroll, { passive: true });
+            window.addEventListener('resize', capture);
+            capture();
+
+            guard._active = function() {
+                observer.disconnect();
+                window.removeEventListener('scroll', onScroll);
+                window.removeEventListener('resize', capture);
+            };
+        },
+
+        stop: function() {
+            var guard = window.rssApp.scrollAnchorGuard;
+            if (guard._active) { guard._active(); guard._active = null; }
+        }
+    },
+
     // Average height of one virtualized timeline item: a post row plus the day
     // separator it may carry. Hidden rows (filtered out) count at their real
     // height of zero, since they are still items in the list and the spacers
