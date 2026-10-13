@@ -62,19 +62,19 @@ namespace RssReader.Server.Services
             _serviceProvider = serviceProvider;
         }
 
-        public override async Task StartAsync(CancellationToken cancellationToken)
-        {
-            _logger.LogInformation("DatabaseBackupService starting (image sync + stats only)...");
-
-            // Restore cached images from the persistent /data mount on startup.
-            await RestoreFromBackupAsync(cancellationToken);
-
-            await base.StartAsync(cancellationToken);
-        }
-
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("DatabaseBackupService is running. Sync interval: {Interval} minutes", _syncInterval.TotalMinutes);
+
+            // Restore cached images from the persistent /data mount in the background.
+            // This used to run in StartAsync, which blocks Kestrel from listening: hosted
+            // services start before the web host, and copying ~900 files one at a time
+            // over the Azure Files SMB mount took most of the app's cold-start budget.
+            // Images are a best-effort cache (a miss re-fetches from the feed), so a
+            // request served before the copy finishes is fine. Task.Yield returns control
+            // to the host before the synchronous file copies begin.
+            await Task.Yield();
+            await RestoreFromBackupAsync(stoppingToken);
 
             while (!stoppingToken.IsCancellationRequested)
             {

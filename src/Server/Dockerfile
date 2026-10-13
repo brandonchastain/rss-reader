@@ -15,7 +15,10 @@ RUN dotnet build "Server.csproj" -c Release -o /app/build
 
 # Publish stage
 FROM build AS publish
-RUN dotnet publish "Server.csproj" -c Release -o /app/publish /p:UseAppHost=false
+# ReadyToRun precompiles the app and its dependencies to native code so the
+# single 0.5 vCPU replica spends less of every cold start in the JIT. A RID is
+# required for R2R; the image stays framework-dependent.
+RUN dotnet publish "Server.csproj" -c Release -r linux-x64 --self-contained false     -o /app/publish /p:UseAppHost=false /p:PublishReadyToRun=true
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final

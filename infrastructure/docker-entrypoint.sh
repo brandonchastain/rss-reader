@@ -97,15 +97,21 @@ if [ -f "$BACKUP_DB" ]; then
     SIZE=$(stat -c%s "$ACTIVE_DB" 2>/dev/null || echo "?")
     echo "Seeded $SIZE bytes from file-mount backup." >&2
 
-    # Cheap integrity check on the copied seed. FATAL on failure — refusing to start
-    # prevents the backup service from then overwriting /data with bad data.
-    QC_RESULT=$(sqlite3 "$ACTIVE_DB" "PRAGMA quick_check;" 2>&1 || echo "FAILED")
-    if [ "$QC_RESULT" != "ok" ]; then
-        echo "FATAL: PRAGMA quick_check failed on seeded DB: $QC_RESULT" >&2
-        echo "       Refusing to start; manual recovery required." >&2
-        exit 1
-    fi
-    echo "quick_check on seeded DB: ok." >&2
+    # Integrity check on the copied seed, run concurrently with app boot so its
+    # ~2s on the production DB is off the cold-start path. On failure it stops the
+    # app (PID 1 after the exec below) well before the backup service's first
+    # 5-minute cycle could overwrite /data with bad data. The check opens its own
+    # read connection, so it does not block the app's WAL-mode startup.
+    (
+        QC_RESULT=$(sqlite3 "$ACTIVE_DB" "PRAGMA quick_check;" 2>&1 || echo "FAILED")
+        if [ "$QC_RESULT" != "ok" ]; then
+            echo "FATAL: PRAGMA quick_check failed on seeded DB: $QC_RESULT" >&2
+            echo "       Stopping the app; manual recovery required." >&2
+            kill -TERM 1
+        else
+            echo "quick_check on seeded DB: ok." >&2
+        fi
+    ) &
 else
     # No file-mount backup yet. Try the one-shot Litestream bootstrap path
     # (existing prod system has a blob replica from the previous architecture).
