@@ -162,12 +162,8 @@ if (!builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-// Restore database from backup (writer mode only — readers use Litestream restore)
-if (!config.IsReadOnly)
-{
-    var backup = app.Services.GetRequiredService<DatabaseBackupService>();
-    await backup.RestoreFromBackupAsync(CancellationToken.None);
-}
+// Cached-image restore from /data runs inside DatabaseBackupService.ExecuteAsync,
+// after Kestrel is listening, so it no longer sits on the cold-start path.
 
 // Writer: instantiate repos to create database tables in order.
 // Reader: repos are still instantiated (singletons), but skip schema init

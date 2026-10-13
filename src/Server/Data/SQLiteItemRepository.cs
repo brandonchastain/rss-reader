@@ -78,6 +78,14 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 )";
             command.ExecuteNonQuery();
 
+            // Did the FTS table exist before this boot? Checked against sqlite_master
+            // rather than `SELECT count(*) FROM Items_fts`: counting an external-content
+            // FTS5 table walks the whole index, which took seconds on the production DB
+            // on every cold start. A table that was just created is empty by definition.
+            command = connection.CreateCommand();
+            command.CommandText = @"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='Items_fts';";
+            var ftsTableExisted = Convert.ToInt64(command.ExecuteScalar()) > 0;
+
             // FTS5 virtual table for full-text search
             command = connection.CreateCommand();
             command.CommandText = @"
@@ -93,16 +101,14 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 );";
             command.ExecuteNonQuery();
 
-            // Only rebuild FTS5 index when empty (fresh table or post-corruption recreation)
-            // or when explicitly requested via config (RssAppConfig__RebuildFtsOnStartup=true).
-            command = connection.CreateCommand();
-            command.CommandText = @"SELECT count(*) FROM Items_fts;";
-            var ftsRowCount = Convert.ToInt64(command.ExecuteScalar());
-            var needsRebuild = ftsRowCount == 0 || this.rebuildFtsOnStartup;
+            // Only rebuild FTS5 index when the table was just created (fresh DB or
+            // post-corruption recreation) or when explicitly requested via config
+            // (RssAppConfig__RebuildFtsOnStartup=true).
+            var needsRebuild = !ftsTableExisted || this.rebuildFtsOnStartup;
 
             if (needsRebuild)
             {
-                logger.LogInformation("FTS5 rebuild starting (rows={FtsRows}, forced={Forced})", ftsRowCount, this.rebuildFtsOnStartup);
+                logger.LogInformation("FTS5 rebuild starting (existed={Existed}, forced={Forced})", ftsTableExisted, this.rebuildFtsOnStartup);
                 try
                 {
                     command = connection.CreateCommand();
@@ -135,7 +141,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             }
             else
             {
-                logger.LogInformation("FTS5 index has {FtsRows} rows — skipping rebuild", ftsRowCount);
+                logger.LogInformation("FTS5 index already present — skipping rebuild");
             }
 
             // Trigger to keep the FTS table in sync with the main table
