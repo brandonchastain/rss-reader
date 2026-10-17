@@ -54,12 +54,12 @@ namespace RssApp.Config
         // Set false to fall back to purely user-triggered refreshes.
         public bool SchedulerEnabled { get; set; } = true;
 
-        // How often the scheduler wakes to look for feeds whose next-earliest-fetch
-        // time has arrived. Feeds are polled at 30 min or slower, so a 15 min tick
-        // adds modest latency while batching due feeds into one active burst and
-        // letting a warm replica sit in Container Apps' idle billing tier
-        // (≈1/8 the active vCPU rate) in between, instead of waking every minute.
-        public TimeSpan SchedulerTickInterval { get; set; } = TimeSpan.FromMinutes(15);
+        // Upper bound on how long the scheduler sleeps between passes. The scheduler
+        // normally sleeps exactly until the earliest feed is next due, so this only
+        // matters when nothing is scheduled or a pass fails. Kept at the feed
+        // interval floor so a bad schedule can never delay a feed by more than one
+        // extra cycle.
+        public TimeSpan SchedulerTickInterval { get; set; } = TimeSpan.FromMinutes(30);
 
         // How long after startup to hold off the first scheduler tick. The replica
         // runs on a fraction of a vCPU and scales from zero, so a cold start's first

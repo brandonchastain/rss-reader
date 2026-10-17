@@ -289,7 +289,7 @@ public class FeedRefresher : IFeedRefresher
         }
     }
 
-    public async Task RunSchedulerTickAsync(CancellationToken token)
+    public async Task<DateTimeOffset?> RunSchedulerTickAsync(CancellationToken token)
     {
         EnsureScheduleLoaded();
 
@@ -301,14 +301,14 @@ public class FeedRefresher : IFeedRefresher
         catch (Exception ex)
         {
             this.logger.LogError(ex, "Scheduler: failed to enumerate feed URLs.");
-            return;
+            return null;
         }
 
         var now = DateTimeOffset.UtcNow;
         var due = urls.Where(u => !nextEarliestByUrl.TryGetValue(u, out var next) || next <= now).ToList();
         if (due.Count == 0)
         {
-            return;
+            return EarliestNextFetch(urls);
         }
 
         this.logger.LogInformation("Scheduler: {due} of {total} distinct feeds due for refresh.", due.Count, urls.Count);
@@ -336,6 +336,22 @@ public class FeedRefresher : IFeedRefresher
         });
 
         await Task.WhenAll(tasks);
+        return EarliestNextFetch(urls);
+    }
+
+    /// <summary>
+    /// Earliest next-fetch time across the given URLs. A URL with no schedule entry
+    /// (e.g. its fetch failed before the schedule was written) is due now.
+    /// </summary>
+    private DateTimeOffset? EarliestNextFetch(IReadOnlyCollection<string> urls)
+    {
+        if (urls.Count == 0)
+        {
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        return urls.Min(u => nextEarliestByUrl.TryGetValue(u, out var next) ? next : now);
     }
 
     /// <summary>

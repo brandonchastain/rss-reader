@@ -19,11 +19,11 @@ public class FeedSchedulerTests
         public TaskCompletionSource FirstTick { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task RunSchedulerTickAsync(CancellationToken token)
+        public Task<DateTimeOffset?> RunSchedulerTickAsync(CancellationToken token)
         {
             Interlocked.Increment(ref this.tickCount);
             this.FirstTick.TrySetResult();
-            return Task.CompletedTask;
+            return Task.FromResult<DateTimeOffset?>(null);
         }
 
         public Task AddFeedAsync(NewsFeed feed) => Task.CompletedTask;
@@ -86,6 +86,19 @@ public class FeedSchedulerTests
         try { await scheduler.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
 
         Assert.AreSame(refresher.FirstTick.Task, completed, "Scheduler never ticked after the startup delay.");
+    }
+
+    [TestMethod]
+    public void SleepUntil_SleepsExactlyUntilNextDueFeed()
+    {
+        var now = new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+        var max = TimeSpan.FromMinutes(30);
+
+        Assert.AreEqual(TimeSpan.FromMinutes(7), FeedScheduler.SleepUntil(now.AddMinutes(7), now, max));
+        Assert.AreEqual(max, FeedScheduler.SleepUntil(now.AddHours(3), now, max), "capped at max sleep");
+        Assert.AreEqual(max, FeedScheduler.SleepUntil(null, now, max), "nothing scheduled: max sleep");
+        Assert.AreEqual(TimeSpan.FromSeconds(1), FeedScheduler.SleepUntil(now.AddMinutes(-5), now, max), "overdue: floor, never spin");
+        Assert.AreEqual(TimeSpan.FromMilliseconds(10), FeedScheduler.SleepUntil(null, now, TimeSpan.FromMilliseconds(10)), "floor never exceeds max");
     }
 
     [TestMethod]

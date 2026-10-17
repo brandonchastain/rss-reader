@@ -3,11 +3,17 @@ using RssApp.Config;
 namespace RssApp.ComponentServices;
 
 /// <summary>
-/// Drives the per-URL feed refresh cadence. On each tick it asks the refresher to
+/// Drives the per-URL feed refresh cadence. On each pass it asks the refresher to
 /// fetch every distinct feed URL whose next-earliest-fetch time has arrived (once
 /// per URL) and fan the new items out to all subscribers. This decouples fetching
 /// from user actions, so a feed shared by many users is fetched on a single schedule
 /// rather than once per user per refresh.
+///
+/// The loop is event-driven rather than polled: after each pass it sleeps until the
+/// earliest feed is next due, so an idle replica does no scheduler work at all
+/// between fetches. <see cref="RssAppConfig.SchedulerTickInterval"/> only caps the
+/// sleep as a safety net (a feed added by a user is fetched inline by AddFeedAsync,
+/// so the scheduler never has to notice new feeds quickly).
 /// </summary>
 public class FeedScheduler : BackgroundService
 {
@@ -34,7 +40,7 @@ public class FeedScheduler : BackgroundService
         }
 
         this.logger.LogInformation(
-            "Feed scheduler started: tick every {tick}, default interval {interval} (floor {floor}, max {max}).",
+            "Feed scheduler started: sleeps until next due feed (max {tick}), default interval {interval} (floor {floor}, max {max}).",
             this.config.SchedulerTickInterval, this.config.FeedRefreshInterval,
             this.config.FeedRefreshIntervalFloor, this.config.FeedRefreshIntervalMax);
 
@@ -47,9 +53,10 @@ public class FeedScheduler : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            DateTimeOffset? nextDue = null;
             try
             {
-                await this.refresher.RunSchedulerTickAsync(stoppingToken);
+                nextDue = await this.refresher.RunSchedulerTickAsync(stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -57,14 +64,39 @@ public class FeedScheduler : BackgroundService
             }
             catch (Exception ex)
             {
-                this.logger.LogError(ex, "Feed scheduler tick failed; will retry next tick.");
+                this.logger.LogError(ex, "Feed scheduler pass failed; will retry after the maximum sleep.");
             }
 
-            if (!await DelayAsync(this.config.SchedulerTickInterval, stoppingToken))
+            if (!await DelayAsync(SleepUntil(nextDue, DateTimeOffset.UtcNow, this.config.SchedulerTickInterval), stoppingToken))
             {
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// How long to sleep before the next pass: until <paramref name="nextDue"/>,
+    /// clamped to [1 s, <paramref name="maxSleep"/>]. The floor stops a feed that is
+    /// already overdue (or a clock skew) from spinning the loop; the cap bounds the
+    /// damage if the schedule is empty or wrong. Exposed for tests.
+    /// </summary>
+    internal static TimeSpan SleepUntil(DateTimeOffset? nextDue, DateTimeOffset now, TimeSpan maxSleep)
+    {
+        var floor = TimeSpan.FromSeconds(1);
+        if (maxSleep < floor)
+        {
+            floor = maxSleep;
+        }
+
+        if (nextDue is null)
+        {
+            return maxSleep;
+        }
+
+        var wait = nextDue.Value - now;
+        if (wait < floor) return floor;
+        if (wait > maxSleep) return maxSleep;
+        return wait;
     }
 
     private static async Task<bool> DelayAsync(TimeSpan delay, CancellationToken token)
