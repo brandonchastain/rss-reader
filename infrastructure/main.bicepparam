@@ -13,8 +13,6 @@ param memorySize = '1.0Gi'
 // returned 500. Idle-replica pricing at 0.5 vCPU / 1 GiB is a few dollars a month.
 param minReplicas = 1
 param maxReplicas = 1
-// The API's own hostname. The managed certificate was created once with
-// `az containerapp hostname bind` (see DEPLOY.md); the template owns the binding.
+// The API's own hostname; the template creates its managed certificate.
 param apiCustomDomain = 'api.rss.brandonchastain.com'
-param apiCertificateId = '/subscriptions/8924bf50-64f9-4f80-ac94-1e939f9df42e/resourceGroups/rss-container-rg/providers/Microsoft.App/managedEnvironments/rss-reader-env/managedCertificates/mc-rss-reader-env-api-rss-brandonc-1306'
 param gatewaySecretKey = ''  // specify at deployment time

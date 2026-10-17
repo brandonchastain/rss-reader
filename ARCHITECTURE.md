@@ -135,7 +135,6 @@ and `containerImage` are supplied by the workflow, not the param file.
 | `staticWebAppSku` | `Free` | — | SWA tier. |
 | `customDomain` | `rss.brandonchastain.com` | — | SWA custom domain. |
 | `apiCustomDomain` | `api.rss.brandonchastain.com` | — | The API's own hostname, so a session cookie can be shared with the frontend origin. Empty removes the binding. |
-| `apiCertificateId` | empty | set | Managed certificate for `apiCustomDomain`. Empty binds without TLS; see DEPLOY.md for enrolment. |
 | `shareQuota` (inline) | `5` GB | — | Azure Files share for `/data`. Must exceed 2× the DB size because a backup cycle briefly holds old and new copies. Billed by used bytes. |
 | `location`, `*Name` params | westus2, `rss-reader-*` | — | Resource naming and region. |
 

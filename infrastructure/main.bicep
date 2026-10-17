@@ -40,8 +40,6 @@ param customDomain string = 'rss.brandonchastain.com'
 @description('Custom domain for the API Container App. Empty disables the binding.')
 param apiCustomDomain string = 'api.rss.brandonchastain.com'
 
-@description('Resource id of the managed certificate for apiCustomDomain. Empty binds the hostname without TLS (first step of enrolment; see DEPLOY.md).')
-param apiCertificateId string = ''
 
 @description('Gateway secret key for API authentication')
 @secure()
@@ -114,6 +112,18 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   }
 }
 
+// Free managed certificate for the API hostname. Azure validates ownership
+// through the api.rss CNAME; renewal is automatic.
+resource apiCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (!empty(apiCustomDomain)) {
+  name: 'mc-rss-reader-env-api-rss-brandonc-1306'
+  parent: environment
+  location: location
+  properties: {
+    subjectName: apiCustomDomain
+    domainControlValidation: 'CNAME'
+  }
+}
+
 // Storage mount for Container App Environment
 resource storage 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
   name: 'rss-data-storage'
@@ -162,15 +172,12 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
           }
         ]
         // The API's own hostname, so the browser can carry a session cookie
-        // between the frontend origin and the API. Managed certificates are
-        // created once by hand (az containerapp hostname bind) because the
-        // certificate cannot be issued until the hostname is bound; the
-        // template then owns the binding so deploys do not drop it.
+        // between the frontend origin and the API.
         customDomains: empty(apiCustomDomain) ? [] : [
           {
             name: apiCustomDomain
-            bindingType: empty(apiCertificateId) ? 'Disabled' : 'SniEnabled'
-            certificateId: empty(apiCertificateId) ? null : apiCertificateId
+            bindingType: 'SniEnabled'
+            certificateId: apiCertificate.id
           }
         ]
       }

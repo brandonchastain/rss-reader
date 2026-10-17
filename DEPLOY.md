@@ -84,22 +84,14 @@ az containerapp exec --name rss-reader-api --resource-group rss-container-rg --c
 ## API custom domain
 
 The API answers at `api.rss.brandonchastain.com` as well as its Container Apps
-hostname. DNS (in the `brchasta` subscription, zone `brandonchastain.com`) holds a
-CNAME `api.rss` to the app's FQDN and a TXT `asuid.api.rss` with the app's
-`customDomainVerificationId`. The template owns the binding through
-`apiCustomDomain` and `apiCertificateId`.
+hostname, so the browser can share a session cookie between the frontend and the
+API. The template creates the free managed certificate and binds the hostname
+(`apiCustomDomain` in `main.bicepparam`).
 
-Managed certificates cannot be created by the template before the hostname is
-bound, so enrolling a new hostname is a one-time manual step:
-
-```bash
-az containerapp hostname add  -n rss-reader-api -g rss-container-rg --hostname <host>
-az containerapp hostname bind -n rss-reader-api -g rss-container-rg --hostname <host> -e rss-reader-env --validation-method CNAME
-az containerapp hostname list -n rss-reader-api -g rss-container-rg --query "[].certificateId" -o tsv
-```
-
-Put the certificate id into `main.bicepparam` and merge, so the next deploy keeps
-the binding instead of dropping it.
+DNS lives in the `brchasta` subscription, zone `brandonchastain.com`: a CNAME
+`api.rss` to the app's FQDN and a TXT `asuid.api.rss` holding the app's
+`customDomainVerificationId`. Both records must exist before a deploy that adds a
+new hostname, or certificate issuance fails.
 
 ## Read replicas (optional, off)
 
