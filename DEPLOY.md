@@ -151,7 +151,9 @@ DNS: `CNAME api.rss -> <container app FQDN>` and `TXT asuid.api.rss ->
    for the API host; the site itself still uses Easy Auth at this point, so expect to be
    asked to log in again there.
 6. **Point the frontend at the API** in one PR:
-   - `src/WasmApp/wwwroot/appsettings.json`: `ApiBaseUrl` = `https://api.rss.brandonchastain.com/`.
+   - `src/WasmApp/wwwroot/appsettings.json`: `ApiBaseUrl` = `https://api.rss.brandonchastain.com/`
+     and `UseStaticWebAppsAuth` = `false` (the frontend's migration flag; until then the
+     site keeps using Easy Auth even though the API login exists).
    - `src/WasmApp/staticwebapp.config.json`: drop the `/api/healthz` route and the
      `/.auth/*` navigation-fallback exclusion; nothing under `/.auth` is used any more.
    - Add any admin's `microsoft:<guid>` id to `AdminAadUserIds` next to the SWA id.
@@ -164,7 +166,8 @@ DNS: `CNAME api.rss -> <container app FQDN>` and `TXT asuid.api.rss ->
    `gateway-secret-key` secret in `main.bicep`, the `RSSREADER_*` SWA app settings, the
    `GATEWAY_SECRET_KEY` repo secret and the `AUTH_CUTOVER` variable (make static-only
    the only publish step); set `RssAppConfig__Auth__EnableStaticWebAppsHeaders` to
-   `false` and then remove `StaticWebAppsAuthenticationHandler`. Easy Auth itself needs
+   `false` and then remove `StaticWebAppsAuthenticationHandler`, `UseStaticWebAppsAuth`
+   with `AuthClient`'s legacy branch, and `signedout.html`. Easy Auth itself needs
    no switching off: with no `allowedRoles` routes and no `/.auth` links, SWA never
    challenges anyone.
 
