@@ -3,7 +3,6 @@
 @using RssApp.Contracts
 @using WasmApp.Services
 @attribute [Authorize]
-@implements IDisposable
 
 @inject IAdminClient adminClient
 @inject IUserClient userClient
@@ -104,7 +103,6 @@
     private List<SystemStatsSnapshot> history = new();
     private List<AdminUser> users = new();
     private string error;
-    private System.Threading.Timer _refreshTimer;
 
     protected override async Task OnInitializedAsync()
     {
@@ -129,16 +127,6 @@
         {
             loading = false;
         }
-
-        // Auto-refresh every 60 seconds
-        _refreshTimer = new System.Threading.Timer(async _ =>
-        {
-            await InvokeAsync(async () =>
-            {
-                await LoadDataAsync();
-                StateHasChanged();
-            });
-        }, null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -207,10 +195,5 @@
         if (bytes >= 1_048_576)     return $"{bytes / 1_048_576.0:F1} MB";
         if (bytes >= 1_024)         return $"{bytes / 1_024.0:F1} KB";
         return $"{bytes} B";
-    }
-
-    public void Dispose()
-    {
-        _refreshTimer?.Dispose();
     }
 }

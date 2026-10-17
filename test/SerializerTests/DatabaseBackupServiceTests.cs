@@ -1,3 +1,4 @@
+using Moq;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -99,68 +100,63 @@ public class DatabaseBackupServiceTests
         Assert.AreEqual("litestream_data", content);
     }
 
-    // ── Image Sync Tests ──────────────────────────────────────────────
+    // ── Favicon write-through (replaces the periodic image sync loop) ──────
 
     [TestMethod]
-    public async Task SyncImages_CopiesNewActiveImagesToBackup()
+    public async Task FaviconPersist_CopiesNewIconToBackupDir()
     {
-        // Arrange: a freshly cached image in wwwroot/images that hasn't been synced yet
         Directory.CreateDirectory(_activeImagesPath);
-        await File.WriteAllTextAsync(Path.Combine(_activeImagesPath, "feed-icon.png"), "bytes");
+        Directory.CreateDirectory(Path.GetDirectoryName(_backupImagesPath.TrimEnd('/', '\\')));
+        var local = Path.Combine(_activeImagesPath, "example.com.ico");
+        await File.WriteAllTextAsync(local, "icon-bytes");
 
-        // Act
-        await _service.SyncImagesAsync(CancellationToken.None);
+        var svc = new FaviconService(
+            new Mock<IHttpClientFactory>().Object,
+            NullLogger<FaviconService>.Instance,
+            new DatabaseBackupPaths(_activeDbPath, _activeImagesPath, _backupImagesPath));
 
-        // Assert
-        Assert.IsTrue(File.Exists(Path.Combine(_backupImagesPath, "feed-icon.png")),
-            "New images should be copied to /data on the periodic sync cycle");
+        await svc.PersistToBackupAsync(local, "example.com.ico");
+
+        Assert.AreEqual("icon-bytes", await File.ReadAllTextAsync(Path.Combine(_backupImagesPath, "example.com.ico")),
+            "A freshly cached favicon must be written through to /data immediately");
+        Assert.AreEqual(0, Directory.GetFiles(_backupImagesPath, "*.tmp").Length, "No temp files left behind");
     }
 
     [TestMethod]
-    public async Task SyncImages_DoesNotOverwriteExistingBackupFile()
+    public async Task FaviconPersist_DoesNotOverwriteExistingBackupFile()
     {
-        // Arrange: file with the same name already exists in backup with different content
         Directory.CreateDirectory(_activeImagesPath);
         Directory.CreateDirectory(_backupImagesPath);
-        await File.WriteAllTextAsync(Path.Combine(_activeImagesPath, "shared.png"), "active_version");
-        await File.WriteAllTextAsync(Path.Combine(_backupImagesPath, "shared.png"), "backup_version");
+        var local = Path.Combine(_activeImagesPath, "shared.ico");
+        await File.WriteAllTextAsync(local, "active_version");
+        await File.WriteAllTextAsync(Path.Combine(_backupImagesPath, "shared.ico"), "backup_version");
 
-        // Act
-        await _service.SyncImagesAsync(CancellationToken.None);
+        var svc = new FaviconService(
+            new Mock<IHttpClientFactory>().Object,
+            NullLogger<FaviconService>.Instance,
+            new DatabaseBackupPaths(_activeDbPath, _activeImagesPath, _backupImagesPath));
 
-        // Assert: backup file is preserved (sync skips files that already exist in destination)
-        var content = await File.ReadAllTextAsync(Path.Combine(_backupImagesPath, "shared.png"));
-        Assert.AreEqual("backup_version", content,
-            "Sync must NOT overwrite existing backup files");
+        await svc.PersistToBackupAsync(local, "shared.ico");
+
+        Assert.AreEqual("backup_version", await File.ReadAllTextAsync(Path.Combine(_backupImagesPath, "shared.ico")));
     }
 
     [TestMethod]
-    public async Task SyncImages_WhenNoActiveImages_DoesNothing()
+    public async Task FaviconPersist_WhenMountMissing_DoesNothing()
     {
-        // Arrange: no wwwroot/images directory
-
-        // Act + Assert: should not throw, should not create backup directory
-        await _service.SyncImagesAsync(CancellationToken.None);
-    }
-
-    [TestMethod]
-    public async Task SyncImages_DoesNotTouchActiveDatabase()
-    {
-        // Arrange: active DB exists. The image sync must never write to /tmp/storage.db
-        // because that would trigger Litestream LTX deltas.
-        CreateSqliteDb(_activeDbPath, "live_data");
         Directory.CreateDirectory(_activeImagesPath);
-        await File.WriteAllTextAsync(Path.Combine(_activeImagesPath, "icon.png"), "bytes");
-        var beforeWriteTime = File.GetLastWriteTimeUtc(_activeDbPath);
-        await Task.Delay(50);
+        var local = Path.Combine(_activeImagesPath, "x.ico");
+        await File.WriteAllTextAsync(local, "bytes");
+        var missingMount = Path.Combine(_testDir, "no-such-mount", "images") + Path.DirectorySeparatorChar;
 
-        // Act
-        await _service.SyncImagesAsync(CancellationToken.None);
+        var svc = new FaviconService(
+            new Mock<IHttpClientFactory>().Object,
+            NullLogger<FaviconService>.Instance,
+            new DatabaseBackupPaths(_activeDbPath, _activeImagesPath, missingMount));
 
-        // Assert: the DB file's mtime is unchanged
-        var afterWriteTime = File.GetLastWriteTimeUtc(_activeDbPath);
-        Assert.AreEqual(beforeWriteTime, afterWriteTime,
-            "Image sync must NEVER write to the active DB (Litestream replication contract)");
+        await svc.PersistToBackupAsync(local, "x.ico");
+
+        Assert.IsFalse(Directory.Exists(missingMount), "Must not create the mount directory when it is absent");
     }
 
     // ── Helpers ────────────────────────────────────────────────────────

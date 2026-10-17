@@ -84,16 +84,19 @@ builder.Services
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateUserRepository();
         return new CachingUserRepository(inner, sb.GetRequiredService<IMemoryCache>());
     })
+    .AddSingleton<ItemsChangeStamp>()
     .AddSingleton<IItemRepository>(sb =>
     {
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateItemRepository();
-        return new CachingItemRepository(inner, sb.GetRequiredService<IMemoryCache>());
+        return new CachingItemRepository(inner, sb.GetRequiredService<IMemoryCache>(), sb.GetRequiredService<ItemsChangeStamp>());
     })
     .AddSingleton<IUserResolver, UserResolver>()
+    .AddSingleton(new DatabaseBackupPaths())
     .AddSingleton<FaviconService>()
     .AddSingleton<ThumbnailResolver>()
     .AddSingleton<ISystemStatsRepository>(sb =>
-        new SQLiteSystemStatsRepository(dbConnections));
+        new SQLiteSystemStatsRepository(dbConnections))
+    .AddSingleton<SystemStatsCollector>();
 
 if (!config.IsReadOnly)
 {
@@ -104,7 +107,7 @@ if (!config.IsReadOnly)
         .AddSingleton<DatabaseBackupService>(sb =>
             new DatabaseBackupService(
                 sb.GetRequiredService<ILogger<DatabaseBackupService>>(),
-                new DatabaseBackupPaths(),
+                sb.GetRequiredService<DatabaseBackupPaths>(),
                 sb))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
         .AddSingleton<DatabaseBackupToFileService>(sb =>

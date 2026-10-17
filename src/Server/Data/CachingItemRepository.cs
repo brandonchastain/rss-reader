@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 using RssApp.Contracts;
+using RssReader.Server.Services;
 
 namespace RssApp.Data;
 
@@ -18,10 +19,13 @@ public sealed class CachingItemRepository : IItemRepository
     private static readonly TimeSpan ContentExpiration = TimeSpan.FromHours(1);
     private static readonly TimeSpan ItemExpiration    = TimeSpan.FromMinutes(5);
 
-    public CachingItemRepository(IItemRepository inner, IMemoryCache cache)
+    private readonly ItemsChangeStamp _stamp;
+
+    public CachingItemRepository(IItemRepository inner, IMemoryCache cache, ItemsChangeStamp stamp = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _stamp = stamp ?? new ItemsChangeStamp();
     }
 
     // -------------------------------------------------------------------------
@@ -138,6 +142,10 @@ public sealed class CachingItemRepository : IItemRepository
     {
         var itemList = items.ToList();
         var inserted = await _inner.AddItemsAsync(itemList);
+        if (inserted > 0)
+        {
+            _stamp.Bump();
+        }
 
         // Pre-warm: cache each item's content so reads during refresh don't hit SQLite.
         foreach (var item in itemList)
@@ -160,6 +168,7 @@ public sealed class CachingItemRepository : IItemRepository
     {
         EvictItem(user.Id, item);
         _inner.MarkAsRead(item, isRead, user);
+        _stamp.Bump();
     }
 
     /// <inheritdoc/>
@@ -167,6 +176,7 @@ public sealed class CachingItemRepository : IItemRepository
     {
         EvictItem(user.Id, item);
         _inner.SavePost(item, user);
+        _stamp.Bump();
     }
 
     /// <inheritdoc/>
@@ -174,6 +184,7 @@ public sealed class CachingItemRepository : IItemRepository
     {
         EvictItem(user.Id, item);
         _inner.UnsavePost(item, user);
+        _stamp.Bump();
     }
 
     /// <inheritdoc/>
@@ -182,12 +193,14 @@ public sealed class CachingItemRepository : IItemRepository
         // UpdateTags doesn't receive a RssUser, so we evict using item.UserId.
         EvictItem(item.UserId, item);
         _inner.UpdateTags(item, tags);
+        _stamp.Bump();
     }
 
     /// <inheritdoc/>
     public async Task DeleteAllItemsAsync(RssUser user)
     {
         await _inner.DeleteAllItemsAsync(user);
+        _stamp.Bump();
         // Bulk eviction — compact the entire cache since we can't enumerate keys.
         if (_cache is MemoryCache mc)
             mc.Compact(1.0);

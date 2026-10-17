@@ -15,11 +15,18 @@ public class FaviconService
     private readonly IHttpClientFactory httpClientFactory;
     private readonly ILogger<FaviconService> logger;
     private readonly string imagesDir = Path.Combine("wwwroot", "images");
+    private readonly string backupImagesDir;
 
     public FaviconService(IHttpClientFactory httpClientFactory, ILogger<FaviconService> logger)
+        : this(httpClientFactory, logger, null)
+    {
+    }
+
+    public FaviconService(IHttpClientFactory httpClientFactory, ILogger<FaviconService> logger, DatabaseBackupPaths backupPaths)
     {
         this.httpClientFactory = httpClientFactory;
         this.logger = logger;
+        this.backupImagesDir = backupPaths?.BackupImagesPath;
     }
 
     /// <summary>
@@ -63,12 +70,56 @@ public class FaviconService
             var tmp = Path.Combine(imagesDir, $"{safe}.{Guid.NewGuid():N}.tmp");
             await File.WriteAllBytesAsync(tmp, bytes);
             File.Move(tmp, filePath, overwrite: true);
+            await PersistToBackupAsync(filePath, $"{safe}.ico");
             return filePath;
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Favicon download failed for {Domain}", safe);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Write a freshly cached icon through to the persistent image directory so it
+    /// survives a container recycle. Event-driven: this replaced a 5-minute loop that
+    /// stat'ed every cached image on the SMB share looking for new ones. Best effort:
+    /// a miss after a recycle just re-downloads. Skipped when the persistent mount
+    /// is not present (local dev, reader replicas).
+    /// </summary>
+    internal async Task PersistToBackupAsync(string localPath, string fileName)
+    {
+        if (string.IsNullOrEmpty(backupImagesDir))
+        {
+            return;
+        }
+
+        try
+        {
+            var mountRoot = Path.GetDirectoryName(Path.GetFullPath(backupImagesDir.TrimEnd('/', '\\')));
+            if (string.IsNullOrEmpty(mountRoot) || !Directory.Exists(mountRoot))
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(backupImagesDir);
+            var dest = Path.Combine(backupImagesDir, fileName);
+            if (File.Exists(dest))
+            {
+                return;
+            }
+
+            var tmp = Path.Combine(backupImagesDir, $"{fileName}.{Guid.NewGuid():N}.tmp");
+            using (var src = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var dst = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                await src.CopyToAsync(dst, 1024 * 1024);
+            }
+            File.Move(tmp, dest, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not persist favicon {File} to {Dir}", fileName, backupImagesDir);
         }
     }
 

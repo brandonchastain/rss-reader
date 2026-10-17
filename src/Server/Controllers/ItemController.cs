@@ -4,6 +4,7 @@ using RssApp.Data;
 using RssApp.Contracts;
 using RssApp.ComponentServices;
 using RssApp.Config;
+using RssReader.Server.Services;
 using System.Text;
 using System.Threading.Tasks;
 using System.Security.Claims;
@@ -23,9 +24,15 @@ namespace Server.Controllers
         private readonly IFeedRefresher feedRefresher;
         private readonly RssAppConfig config;
         private readonly ILogger<ItemController> logger;
+        private readonly ItemsChangeStamp changeStamp;
 
         // Upper bound on ids honoured by the batch content endpoint.
         private const int MaxContentBatchSize = 50;
+
+        // How long the browser may reuse a newCount answer without asking. After
+        // this it revalidates with If-None-Match, which costs no SQL unless items
+        // actually changed (see ItemsChangeStamp).
+        private const int NewCountMaxAgeSeconds = 60;
 
         public ItemController(
             IItemRepository itemRepository,
@@ -34,9 +41,11 @@ namespace Server.Controllers
             IUserResolver userResolver,
             IFeedRefresher feedRefresher,
             RssAppConfig config,
-            ILogger<ItemController> logger
+            ILogger<ItemController> logger,
+            ItemsChangeStamp changeStamp = null
         )
         {
+            this.changeStamp = changeStamp ?? new ItemsChangeStamp();
             this.itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
             this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
@@ -97,6 +106,19 @@ namespace Server.Controllers
             if (user == null)
             {
                 return NotFound("Authenticated user not found.");
+            }
+
+            // The probe is polled by every open timeline tab. Let the browser cache
+            // the answer briefly, then answer revalidations from the in-memory change
+            // stamp: while no item has been written since the cached response, the
+            // count cannot have moved, so return 304 without touching the database.
+            var etag = $"\"{this.changeStamp.Current:x}\"";
+            Response.Headers.CacheControl = $"private, max-age={NewCountMaxAgeSeconds}";
+            Response.Headers.ETag = etag;
+            if (Request.Headers.IfNoneMatch.Count > 0
+                && Request.Headers.IfNoneMatch.Any(v => string.Equals(v?.Trim(), etag, StringComparison.Ordinal)))
+            {
+                return StatusCode(StatusCodes.Status304NotModified);
             }
 
             // When no explicit tag filter and not filtering saved items, exclude feeds with hidden tags
