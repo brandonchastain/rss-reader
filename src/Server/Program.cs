@@ -193,6 +193,13 @@ app.UseAuthorization();
 
 // Setup endpoints
 app.MapControllers();
+
+// One-box self-hosting: when the published frontend is mounted into wwwroot,
+// serve it and let the Blazor router own every path the API does not.
+if (File.Exists(Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "index.html")))
+{
+    app.MapFallbackToFile("index.html");
+}
 app.MapGet("/api/healthz", () => Results.Ok(new { status = "healthy", role = config.IsReadOnly ? "reader" : "writer" })).AllowAnonymous();
 app.MapAuthEndpoints(config.Auth);
 

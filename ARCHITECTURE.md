@@ -4,30 +4,23 @@
 +-----------------------------------------------------+
 |                RSS Reader                           |
 |  +----------------------------------------------+   |
-|  |  Frontend Web App - /src/WasmApp/            |   |
-|  |  (browser cache of the last timeline)        |   |
+|  |  Frontend - /src/WasmApp/  (static files)    |   |
+|  |  rss.example.com, browser cache of timeline  |   |
 |  +----------------------------------------------+   |
-|                 |   HTTP                            |
-|                 v                                   |
-|  +------------------------------------------+       |
-|  | Azure Function API Proxy - /api/         |       |
-|  | Routes reads → reader, writes → writer   |       |
-|  +------------------------------------------+       |
-|           |                         |               |
-|     WRITES (POST,etc)         READS (GET)           |
-|           v                         v               |
-|  +--------------------+  +--------------------+     |
-|  | Writer (min 1,     |  | Reader (0→N,       |     |
-|  |         max 1)     |  |  optional)         |     |
-|  | /src/Server/       |  | /src/Server/       |     |
-|  | DB copied to       |  | Read-only mode     |     |
-|  |  /data every 5 min |  | Litestream restore |     |
-|  |  (Azure Files)     |  |  (startup only)    |     |
-|  |  +-----------+     |  |  +-----------+     |     |
-|  |  |  SQLite   |     |  |  |  SQLite   |     |     |
-|  |  | (R/W)     |     |  |  | (R/O app) |     |     |
-|  |  +-----------+     |  |  +-----------+     |     |
-|  +--------------------+  +--------------------+     |
+|        |  fetch + session cookie    ^ login/logout   |
+|        v                            | redirects      |
+|  +----------------------------------------------+   |
+|  |  API - /src/Server/   api.rss.example.com    |   |
+|  |  /auth/*  cookie session; OIDC to            |   |
+|  |           Google / Microsoft / GitHub        |   |
+|  |  /api/*   feeds, items, users, admin         |   |
+|  |  Writer (min 1, max 1)                       |   |
+|  |  DB copied to /data every 5 min              |   |
+|  |  +-----------+                               |   |
+|  |  |  SQLite   |                               |   |
+|  |  +-----------+                               |   |
+|  +----------------------------------------------+   |
+|  (optional read replicas: see DEPLOY.md)            |
 +-----------------------------------------------------+
 ```
 
@@ -105,9 +98,7 @@ The backend supports an optional read replica mode controlled by `RssAppConfig.I
 - **Writer** (`APP_ROLE=writer`, default) — Single replica, all background services (feed scheduler, backups, image sync), handles reads and writes.
 - **Reader** (`APP_ROLE=reader`, `IsReadOnly=true`) — 0→N replicas, restores from the Litestream blob on startup, serves read-only traffic. No background services. Uses `NoOpFeedRefresher` so controllers still resolve.
 
-The Azure Functions proxy (`api/src/functions/ApiProxy.js`) routes GET requests for read-heavy endpoints (timeline, feed list, search, content) to the reader when `RSSREADER_READER_API_URL` is configured. All write endpoints and the `user` endpoint always go to the writer. If the reader is unavailable (5xx or network error), the proxy falls back to the writer.
-
-Enable via Bicep parameter: `enableReadReplica=true` (and turn on Litestream replication, above).
+Routing reads to the reader used to be the job of the Static Web Apps Functions proxy, which the login migration removed. Nothing routes to readers today: the frontend calls the writer's hostname directly. Turning `enableReadReplica=true` back on needs a router in front of both apps (or the frontend sending read-only GETs to a second base URL) that falls back to the writer on any error. Until that exists the parameter stays `false`.
 
 
 # Knobs
@@ -118,14 +109,14 @@ container's env block deploys; blank means the code default applies.
 
 ## Infrastructure (`infrastructure/main.bicep`, values in `main.bicepparam`)
 
-Deployed by the Deploy workflow on every merge to `main`. `gatewaySecretKey`
-and `containerImage` are supplied by the workflow, not the param file.
+Deployed by the Deploy workflow on every merge to `main`. `containerImage` and
+the provider secrets are supplied by the workflow, not the param file.
 
 | Parameter | Default | Prod | Effect |
 |---|---|---|---|
 | `cpuCore` | `1.0` | `0.5` | vCPU per writer replica. Billed per second, active or idle. |
 | `memorySize` | `1.0Gi` | `1.0Gi` | Memory per writer replica. Idle memory is the larger half of the always-on bill. |
-| `minReplicas` | `0` | `1` | `0` scales the writer to zero after `cooldownPeriod` (45s cold start, past the SWA proxy timeout). `1` keeps one warm (~$15/month idle at 0.5 vCPU / 1 GiB). |
+| `minReplicas` | `0` | `1` | `0` scales the writer to zero after `cooldownPeriod` (45s cold start). `1` keeps one warm (~$15/month idle at 0.5 vCPU / 1 GiB). |
 | `maxReplicas` | `1` | `1` | Must stay `1`: SQLite has one writer. |
 | `cooldownPeriod` (inline) | `900` s | — | How long KEDA waits before scaling an idle replica away. Keep above boot time or activation fails mid-boot. |
 | `http-rule concurrentRequests` (inline) | `10` | — | Concurrent requests per replica before KEDA scales out (moot while `maxReplicas` is 1). |
@@ -135,6 +126,7 @@ and `containerImage` are supplied by the workflow, not the param file.
 | `staticWebAppSku` | `Free` | — | SWA tier. |
 | `customDomain` | `rss.brandonchastain.com` | — | SWA custom domain. |
 | `apiCustomDomain` | `api.rss.brandonchastain.com` | — | The API's own hostname, so a session cookie can be shared with the frontend origin. Empty removes the binding. |
+| `googleClientId`/`Secret`, `microsoftClientId`/`Secret`, `githubClientId`/`Secret` | empty | from repo secrets | Login providers. A missing pair means that provider is not offered. |
 | `shareQuota` (inline) | `5` GB | — | Azure Files share for `/data`. Must exceed 2× the DB size because a backup cycle briefly holds old and new copies. Billed by used bytes. |
 | `location`, `*Name` params | westus2, `rss-reader-*` | — | Resource naming and region. |
 
@@ -146,7 +138,8 @@ and `containerImage` are supplied by the workflow, not the param file.
 | `RssAppConfig__BackupDbPath` | `/data/db/storage.db` | Where the DB copy lives. Empty disables backup entirely (local dev). Any `RssAppConfig__*` setting can be overridden the same way. |
 | `Logging__LogLevel__Default` | `Warning` | Log volume into Log Analytics. |
 | `APP_ROLE` | `writer` | `reader` selects the read-only boot path in `docker-entrypoint.sh`. |
-| `RSSREADER_API_KEY` | secret | Shared key the proxy must present. |
+| `RssAppConfig__Auth__DataProtectionKeysPath` | `/data/keys` | Session-cookie encryption keys, on the mount so deploys keep sessions. |
+| `RssAppConfig__Auth__Providers__<name>__ClientId` / `ClientSecret` | secrets | One pair per offered provider. |
 | `LITESTREAM_AZURE_ACCOUNT_NAME` | storage account | Blob account for Litestream. |
 
 ## Server (`RssAppConfig`, `src/Server/Config/RssAppConfig.cs`)
@@ -182,11 +175,28 @@ Bound from `appsettings.json` section `RssAppConfig` or env vars
 
 ### Identity and roles
 
+The API is the OpenID Connect relying party. `GET /auth/login/{provider}` sends the
+browser to the provider; the callback signs a session cookie; `GET /auth/me` returns
+`{ clientPrincipal: { identityProvider, userId, userDetails, userRoles } }` or
+`{ clientPrincipal: null }`; `GET /auth/logout` clears the cookie. `userId` is
+`provider:subject` (GitHub id, Google `sub`, Entra `oid`), and `Users.AadUserId`
+holds it. Rows that pre-date API login hold a Static Web Apps id there and their
+provider id in `Users.ProviderUserId`; the resolver looks in both.
+
+| Setting (`Auth:`) | Default | Effect |
+|---|---|---|
+| `Providers:<google|microsoft|github>:ClientId/ClientSecret/Authority` | empty | A provider is offered when both id and secret are set. `Authority` defaults to the public Google and Microsoft `common` endpoints. |
+| `AllowedFrontendOrigins` | empty | Origins allowed to call with credentials and to be a login/logout `returnUrl`. The first is the default return target. Required. |
+| `CookieName` / `CookieDomain` / `CookieSameSite` | `.rss.session` / empty / `None` | Session cookie. `None` implies `Secure`; Development uses `Lax`. |
+| `SessionLifetime` | 30 d | Sliding session expiry. |
+| `DataProtectionKeysPath` | empty | Directory for the cookie encryption keys; empty means in-container, which signs everyone out on restart. |
+| `EnableStaticWebAppsHeaders` | `true` | Migration only: also accept the Static Web Apps proxy's gateway header and principal. Set `false` after the cutover. |
+
 | Setting | Default | Effect |
 |---|---|---|
 | `IsReadOnly` | `false` | Reader mode: no background services, writes rejected. |
-| `IsTestUserEnabled` | `false` | Accept the local test identity instead of Easy Auth. |
-| `AdminAadUserIds` | empty | Comma-separated AAD object ids that may use `/admin`. |
+| `IsTestUserEnabled` | `false` | Every request is the test user; no provider needed (dev only). |
+| `AdminAadUserIds` | empty | Comma-separated user ids (either stored id) that may use `/admin`. |
 | `ServerHostName` | localhost | Public base URL the API reports for itself. |
 | `DbLocation` | — | Path of the live SQLite file (`/tmp/storage.db` in prod). |
 
@@ -203,22 +213,13 @@ Bound from `appsettings.json` section `RssAppConfig` or env vars
 | Page size ceiling | 500 | `FeedClient` clamps `pageSize` before calling feed / search endpoints |
 | Litestream `sync-interval` / `snapshot-interval` | 30 s / 1 h | `infrastructure/litestream.yml` (scaling mode only) |
 
-## API proxy (`api/`, Azure Functions)
-
-Set as SWA application settings in prod, `api/local.settings.json` locally.
-
-| Variable | Effect |
-|---|---|
-| `RSSREADER_API_URL` | Writer base URL. Required. |
-| `RSSREADER_READER_API_URL` | Reader base URL. When set, read-heavy GETs go here with fallback to the writer. |
-| `RSSREADER_API_KEY` | Key forwarded to the backend. Required. |
-| `IS_TEST_USER_ENABLED` | `true` injects the local test identity (dev only). |
-
 ## Frontend (`src/WasmApp`)
 
-`RssWasmConfig` in `wwwroot/appsettings.json`: `ApiBaseUrl`, `AuthApiBaseUrl`
-(empty in prod so calls stay same-origin through the SWA proxy),
-`EnableTestAuth`, `TestAuthUsername`.
+`RssWasmConfig` in `wwwroot/appsettings.json`: `ApiBaseUrl` (the API origin,
+`https://api.rss.brandonchastain.com/` in prod; empty means the page's own origin,
+for when the API serves the frontend), `EnableTestAuth`, `TestAuthUsername`. Login,
+logout and `/auth/me` all go to `{ApiBaseUrl}auth/*`; API calls send the session
+cookie.
 
 Hardcoded (for now):
 

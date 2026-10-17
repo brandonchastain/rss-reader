@@ -1,194 +1,137 @@
 # Self-hosting
 
-The app is three parts: a Blazor WebAssembly frontend (static files), a small
-Azure Functions proxy that adds the gateway key, and the ASP.NET Core API with
-its SQLite database. The API ships as one Docker image and is the only piece
-that needs to stay running. How it keeps data safe is described once, in
-[ARCHITECTURE.md](ARCHITECTURE.md#backup--replication); this guide does not
-restate it.
+The app is two parts: the ASP.NET Core API with its SQLite database, shipped as
+one Docker image, and a Blazor WebAssembly frontend, which is a folder of static
+files. The API does the logins itself (Google, Microsoft, GitHub) and is the only
+piece that needs to stay running. How it keeps data safe is described once, in
+[ARCHITECTURE.md](ARCHITECTURE.md#backup--replication).
 
 Two ways to host:
 
-- **Docker on a machine you own** — the simplest. One container, one volume.
-- **Azure** — what `rss.brandonchastain.com` runs on. Container Apps for the
-  API, Static Web Apps for the frontend and proxy, Azure Files for the data
-  volume. The Bicep template builds all of it.
+- **One box** — the API container serves the frontend too. One container, one
+  volume, one hostname.
+- **Split** — the API on a container host, the frontend on any static host
+  (what `rss.brandonchastain.com` does: Container Apps plus Static Web Apps).
 
-## Docker on your own host
+## 1. Register a login provider
 
-### 1. Get the image
+Pick at least one. Each gives you a client id and secret; the callback URL is
+`https://<api host>/auth/callback/<provider>` (add
+`http://localhost:8080/auth/callback/<provider>` while testing).
+
+- **GitHub:** Settings > Developer settings > OAuth Apps > New OAuth App.
+- **Google:** Cloud console > APIs & Services > OAuth consent screen (external),
+  then Credentials > OAuth client ID, type *Web application*.
+- **Microsoft:** Entra admin center > App registrations, account type *any org
+  directory and personal Microsoft accounts*, platform *Web*, then a client secret.
+
+## 2. Run the API
 
 ```bash
 docker pull ghcr.io/brandonchastain/rss-reader-api:latest
-```
 
-Or build it from a checkout:
-
-```bash
-docker build -f src/Server/Dockerfile -t rss-reader-api:local .
-```
-
-### 2. Run it with a data volume
-
-```bash
 docker run -d --name rss-reader \
   -p 8080:8080 \
   -v /srv/rss-reader/data:/data \
   -e RssAppConfig__BackupDbPath=/data/db/storage.db \
-  -e RSSREADER_API_KEY=change-me \
+  -e RssAppConfig__Auth__DataProtectionKeysPath=/data/keys \
+  -e RssAppConfig__Auth__AllowedFrontendOrigins__0=https://rss.example.com \
+  -e RssAppConfig__Auth__Providers__github__ClientId=... \
+  -e RssAppConfig__Auth__Providers__github__ClientSecret=... \
   ghcr.io/brandonchastain/rss-reader-api:latest
 ```
 
-What those do:
+(Build it yourself with `docker build -f src/Server/Dockerfile -t rss-reader-api .`.)
 
-- `/data` is the durability surface. The live database is `/tmp/storage.db`
-  inside the container; every `BackupInterval` (5 minutes by default) it is
-  copied to `BackupDbPath`, and every boot seeds `/tmp` from that copy. Cached
-  feed images live under `/data/images/`. Back up the `/data` directory and you
-  have everything.
-- Leaving `BackupDbPath` unset runs the container in local-dev mode: nothing is
-  copied to `/data` and the database is lost when the container is removed.
-- `RSSREADER_API_KEY` is the shared secret the proxy presents on every request.
-  Pick a long random value.
+- `/data` is the durability surface: the live database is `/tmp/storage.db`
+  inside the container, copied to `BackupDbPath` every 5 minutes and restored
+  from it at boot; cached feed images live under `/data/images/`; the session
+  cookie's encryption keys under `/data/keys/` so a restart does not sign
+  everyone out. Back up `/data` and you have everything. Leave `BackupDbPath`
+  unset and the container runs in throwaway mode.
+- `AllowedFrontendOrigins` is the list of origins the API accepts credentialed
+  calls from and will send a user back to after login. For a one-box setup it
+  is the API's own public origin. Index further origins as `__1`, `__2`.
+- Add `google` and `microsoft` provider pairs the same way. A provider with no
+  pair is simply not offered. `Authority` is optional (defaults to the public
+  Google and Microsoft `common` endpoints).
+- `RssAppConfig__AdminAadUserIds`: comma-separated user ids (as shown by
+  `/auth/me`, e.g. `github:12345`) that may open `/admin`.
+- For a single-user box with no login at all, `RssAppConfig__IsTestUserEnabled=true`
+  makes every request the test user. Only on a network you control.
 
-Check it is up:
+Every other setting is listed under [Knobs](ARCHITECTURE.md#knobs).
 
 ```bash
 curl http://localhost:8080/api/healthz
+curl http://localhost:8080/auth/providers     # ["github"]
 ```
 
-### 3. Identity
+## 3. Serve the frontend
 
-The API trusts the identity headers that Azure Static Web Apps' Easy Auth
-injects (`x-ms-client-principal`). Off Azure you have two options:
-
-- **Single user, no login:** set `RssAppConfig__IsTestUserEnabled=true` on the
-  container and `IS_TEST_USER_ENABLED=true` on the proxy. Every request is the
-  test user. Only do this on a network you control.
-- **Real logins:** put the proxy and frontend behind something that sets the
-  same principal header (the SWA CLI's auth emulator does this locally; a
-  reverse proxy with its own OIDC login can be made to). This is not packaged.
-
-### 4. Frontend and proxy
-
-The frontend is static output from `dotnet publish -c Release src/WasmApp`,
-and the proxy is the Node function in `api/`. The supported way to run both is
-the Static Web Apps CLI, which also emulates Easy Auth:
+Publish it once:
 
 ```bash
-npm install -g @azure/static-web-apps-cli
-dotnet publish -c Release src/WasmApp/WasmApp.csproj --output src/WasmApp/bin/release/net9.0/publish
-cd api && npm ci && cd ..
-RSSREADER_API_URL=http://localhost:8080 RSSREADER_API_KEY=change-me \
-  swa start src/WasmApp/bin/release/net9.0/publish/wwwroot --api-location api
+dotnet publish -c Release src/WasmApp/WasmApp.csproj -o publish
 ```
 
-The proxy reads `RSSREADER_API_URL`, `RSSREADER_API_KEY` and optionally
-`IS_TEST_USER_ENABLED` from its environment (locally from
-`api/local.settings.json`). Put the whole thing behind TLS before exposing it.
+`publish/wwwroot` is the whole site. Before publishing, set `ApiBaseUrl` in
+`src/WasmApp/wwwroot/appsettings.json` to the API's public origin with a
+trailing slash, or leave it empty when the API serves the frontend itself.
 
-### 5. Tuning
-
-Every setting the API and proxy read is listed under
-[Knobs](ARCHITECTURE.md#knobs). The ones worth a look on a small host:
-`BackupInterval` (how often the database file is copied), the scheduler
-intervals (how hard it polls feeds), and `cpuCore`/`memorySize` if you are
-sizing a VM.
-
-## Azure (first-time buildout)
-
-This is the one-time setup for a new environment. After it exists, every deploy
-runs from CI on merge to `main`; see [DEPLOY.md](DEPLOY.md). Running the
-template by hand after that is how production drifted once, so do not.
-
-### Prerequisites
-
-- Azure CLI (`az --version`) and a subscription
-- GitHub CLI authenticated (`gh auth login`), with a fork or this repo
-- Docker only if you need to push the very first image yourself
-
-### Step 1: Resource group
+**One box.** Mount the folder into the image's web root; the API serves it and
+routes unknown paths to `index.html`:
 
 ```bash
-az login
-az account set --subscription "YOUR_SUBSCRIPTION_ID"
-az group create --name rss-container-rg --location westus2
+docker run ... -v /srv/rss-reader/site:/app/wwwroot:ro ...
 ```
 
-### Step 2: First image
+**Any static host** (nginx, Caddy, S3, Pages, Static Web Apps, ...): upload
+`publish/wwwroot`, and make unknown paths fall back to `index.html` (the Blazor
+router handles `/timeline`, `/feeds` and so on). `staticwebapp.config.json` in
+that folder is the Static Web Apps form of those rules and sets the cache
+headers worth copying: `_framework/*` immutable except `blazor.boot.json`,
+`blazor.webassembly.js`, `dotnet.js` and `dotnet.native.wasm`, which are
+`no-cache`. The frontend origin must appear in the API's
+`AllowedFrontendOrigins`.
 
-The template references `ghcr.io/<user>/rss-reader-api`, so an image must
-exist before the first deployment. Easiest is to run the Deploy workflow once
-CI has Azure access (Step 4). To push one from a laptop first, use the `gh`
-token rather than creating a personal access token:
+## 4. TLS
 
-```powershell
-gh auth refresh --scopes write:packages
-gh auth token | docker login ghcr.io -u <user> --password-stdin
-docker build -t ghcr.io/<user>/rss-reader-api:latest -f src/Server/Dockerfile .
-docker push ghcr.io/<user>/rss-reader-api:latest
-docker logout ghcr.io
-```
+Put the API behind TLS (a reverse proxy such as Caddy or Traefik, or your
+cloud's ingress) and make sure it forwards `X-Forwarded-Proto` and
+`X-Forwarded-Host`; the API uses them to build the OAuth redirect URI and to
+mark its cookie `Secure`. The session cookie is `SameSite=None; Secure`, which
+browsers require for a frontend on another origin and accept on `http://localhost`
+for development only. For a split setup the API and the frontend should share a
+parent domain (`rss.example.com` and `api.rss.example.com`), which keeps some
+browsers' third-party-cookie rules out of the way.
 
-Then open the package on GitHub (Profile > Packages > `rss-reader-api` >
-Package settings), set **Visibility** to **Public** and link it to the repo. The
-Container App pulls anonymously; a private package fails every pull with
-`ImagePullBackOff`.
+## Azure (what production runs on)
 
-Do not skip the `docker logout ghcr.io` at the end. If Docker keeps a ghcr.io
-credential whose token lacks the packages scope, it sends that credential on
-every pull and the registry answers `error from registry: denied`, even for
-this public image. The fix is simply `docker logout ghcr.io`; no login is
-needed to pull a public package.
+`infrastructure/main.bicep` builds the Container Apps environment, the API app
+with its Azure Files volume, and the Static Web App. First-time steps:
 
-### Step 3: Deploy the template
+1. `az group create --name rss-container-rg --location westus2`.
+2. Get an image into `ghcr.io/<user>/rss-reader-api` (run the Deploy workflow
+   once CI has Azure access, or push one with `gh auth token | docker login
+   ghcr.io -u <user> --password-stdin`, then `docker logout ghcr.io`) and make the
+   package **public**: the Container App pulls anonymously. If a pull later answers
+   `error from registry: denied`, Docker is sending a stale ghcr.io credential whose
+   token lacks the packages scope; `docker logout ghcr.io` fixes it.
+3. `az deployment group create --resource-group rss-container-rg --template-file
+   main.bicep --parameters main.bicepparam containerImage=... githubClientId=...
+   githubClientSecret=...` from `infrastructure/`. Set `customDomain` and
+   `apiCustomDomain` to your own names, or empty them. The API hostname needs
+   its DNS records first (`CNAME` to the container app's FQDN and the `asuid`
+   `TXT` record with the environment's `customDomainVerificationId`); the
+   template then binds it and Azure issues the managed certificate.
+4. On a brand-new environment pre-create an empty database at
+   `/data/db/storage.db` on the file share (or copy one from a Docker run); the
+   entrypoint refuses to boot without one.
+5. Hand deploys to CI: `gh secret set` for `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+   `AZURE_SUBSCRIPTION_ID` (an OIDC-federated managed identity with deploy
+   rights on the resource group) and the `AUTH_*_CLIENT_ID/SECRET` pairs. From
+   here, merge to `main`; see [DEPLOY.md](DEPLOY.md).
 
-```powershell
-cd infrastructure
-
-# Random base64url gateway key
-$bytes = New-Object byte[] 64
-[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-$GATEWAY_SECRET_KEY = [Convert]::ToBase64String($bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=')
-
-az deployment group create `
-  --resource-group rss-container-rg `
-  --template-file main.bicep `
-  --parameters main.bicepparam `
-  --parameters containerImage="ghcr.io/<user>/rss-reader-api:latest" `
-  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY
-```
-
-`main.bicepparam` holds the sizing (0.5 vCPU, 1 GiB, one always-on replica)
-and names; every parameter is documented under
-[Knobs](ARCHITECTURE.md#infrastructure-infrastructuremainbicep-values-in-mainbicepparam).
-Set `customDomain` to your own domain or remove the custom-domain resource.
-
-On a brand-new environment there is no database on the share yet. The entrypoint
-looks for `/data/db/storage.db`, then for a Litestream blob replica to bootstrap
-from, and exits if it finds neither, so pre-create an empty database at that
-path on the file share before the first start (or copy one from a Docker run).
-
-### Step 4: Hand deploys to CI
-
-```bash
-gh secret set GATEWAY_SECRET_KEY
-gh secret set AZURE_CLIENT_ID        # the gh-actions-rss-reader managed identity
-gh secret set AZURE_TENANT_ID
-gh secret set AZURE_SUBSCRIPTION_ID
-```
-
-The workflow logs in with OIDC through a user-assigned managed identity
-(`gh-actions-rss-reader`, created outside the template) with deploy rights on
-the resource group, and reads the Static Web Apps deployment token from Azure
-at run time. Nothing else is stored. From here, merge to
-`main` and the Deploy workflow builds, pushes and deploys.
-
-### Optional: read replicas
-
-The template can deploy a read-only Container App that scales 0 to N and
-restores its own copy of the database from a Litestream blob replica. It needs
-`RSSREADER_ENABLE_LITESTREAM_REPLICATION=true` on the writer so that replica
-exists. Enable with `enableReadReplica=true` and `maxReadReplicas` in
-`main.bicepparam`, then merge. It is off in production; a single warm replica
-has been enough.
+Optional read replicas (`enableReadReplica`) are described in
+[DEPLOY.md](DEPLOY.md#read-replicas-optional-off).
