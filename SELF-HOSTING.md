@@ -120,12 +120,11 @@ with its Azure Files volume, and the Static Web App. First-time steps:
    token lacks the packages scope; `docker logout ghcr.io` fixes it.
 3. `az deployment group create --resource-group rss-container-rg --template-file
    main.bicep --parameters main.bicepparam containerImage=... githubClientId=...
-   githubClientSecret=...` from `infrastructure/`. Set `customDomain`,
-   `apiCustomDomain` and `apiManagedCertificateName` to your own names, or empty
-   them. Binding the API hostname is a two-step dance the template cannot do:
-   deploy once with `apiCustomDomain=''`, add the `CNAME` and `asuid` `TXT`
-   records, run `az containerapp hostname bind`, wait for the managed
-   certificate, then put its name in the parameter.
+   githubClientSecret=...` from `infrastructure/`. Set `customDomain` and
+   `apiCustomDomain` to your own names, or empty them. The API hostname needs
+   its DNS records first (`CNAME` to the container app's FQDN and the `asuid`
+   `TXT` record with the environment's `customDomainVerificationId`); the
+   template then binds it and Azure issues the managed certificate.
 4. On a brand-new environment pre-create an empty database at
    `/data/db/storage.db` on the file share (or copy one from a Docker run); the
    entrypoint refuses to boot without one.
