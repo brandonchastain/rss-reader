@@ -85,4 +85,44 @@ public class AdminController : ControllerBase
 
         return Ok(users);
     }
+
+    public sealed class LinkRequest
+    {
+        public string ProviderUserId { get; set; } = string.Empty;
+    }
+
+    // POST /api/admin/users/{id}/link  { "providerUserId": "microsoft:<oid>" }
+    //
+    // Migration safety net. Rows created under Static Web Apps carry an opaque
+    // SWA id; the API login identifies the same person as provider:subject. The
+    // SWA handler links the two automatically when the principal carries the
+    // Entra object id. When it does not, an admin writes the link here, through
+    // the repository (so the in-memory user cache is evicted), before the proxy
+    // goes away.
+    [HttpPost("users/{id:int}/link")]
+    public IActionResult LinkProviderUserId(int id, [FromBody] LinkRequest request)
+    {
+        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
+            return Forbid();
+
+        var providerUserId = request?.ProviderUserId?.Trim() ?? string.Empty;
+        var colon = providerUserId.IndexOf(':');
+        if (colon <= 0 || colon == providerUserId.Length - 1
+            || !Server.Authentication.UserIdentity.IsKnownProvider(providerUserId[..colon]))
+        {
+            return BadRequest(new { error = "providerUserId must be <google|microsoft|github>:<subject>" });
+        }
+        providerUserId = Server.Authentication.UserIdentity.BuildUserId(providerUserId[..colon], providerUserId[(colon + 1)..]);
+
+        var user = _userRepo.GetUserById(id);
+        if (user == null)
+            return NotFound();
+
+        var holder = _userRepo.GetUserByProviderUserId(providerUserId) ?? _userRepo.GetUserByAadId(providerUserId);
+        if (holder != null && holder.Id != id)
+            return Conflict(new { error = $"User {holder.Id} already holds {providerUserId}" });
+
+        _userRepo.SetProviderUserId(id, providerUserId);
+        return Ok(new { user.Id, user.Username, user.AadUserId, ProviderUserId = providerUserId });
+    }
 }
