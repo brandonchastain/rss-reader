@@ -99,6 +99,15 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
             {
                 identity.AddClaim(new Claim(UserIdentity.LinkedUserIdClaim, linked));
             }
+            else if (string.Equals(principal.IdentityProvider, "aad", StringComparison.OrdinalIgnoreCase))
+            {
+                // Migration diagnostic: which claims does SWA actually forward?
+                // Types only; values are never logged.
+                var types = principal.Claims == null
+                    ? "(no claims array)"
+                    : string.Join(", ", principal.Claims.Select(c => c.Typ));
+                Logger.LogWarning("SWA principal for aad carries no object id; claim types: {ClaimTypes}", types);
+            }
 
             var claimsPrincipal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(claimsPrincipal, AuthenticationScheme);
