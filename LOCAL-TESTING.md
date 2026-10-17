@@ -1,219 +1,132 @@
-# Testing (non-containerized)
-Just hit F5 in Visual Studio, it should launch the frontend and backend along with a browser window.
+# Local testing
 
-# Testing the local Web API containerized build (with docker)
+Three processes make up the local stack, the same shape as production:
 
-This guide shows how to build and test your RSS Reader API locally using Docker before deploying to Azure Container Apps.
+| Piece | Local | Port |
+|---|---|---|
+| API (`src/Server`) | Docker container or `dotnet run` | 8080 |
+| Blazor frontend (`src/WasmApp`) | `dotnet watch run` dev server | 8443 |
+| SWA CLI (static hosting, Easy Auth emulator, `/api` proxy via the Functions host) | `swa start rss-reader-local` | 4280 |
 
-## Build the Docker Image
+Open **http://localhost:4280**. Deep links such as `/timeline` do not work through
+the SWA proxy; load `/` and let the app route. Hard-refresh (Ctrl+Shift+R) after a
+rebuild, because the Blazor service worker caches aggressively.
+
+Authentication is bypassed locally: the API runs with
+`RssAppConfig__IsTestUserEnabled=true`, the proxy with `IS_TEST_USER_ENABLED=true`,
+and the Debug build of the frontend ships `appsettings.Development.json` with
+`EnableTestAuth: true`. **Never run the frontend from a Release publish locally**: that
+file is excluded from publish output, Easy Auth is then enforced, and every API call
+returns 401.
+
+## 1. Backend
+
+### Option A: Docker (matches production)
 
 ```powershell
-# Navigate to the repo root
-cd c:\dev\rssreader\rss-reader
-
-# Build the Docker image
 docker build -f src/Server/Dockerfile -t rss-reader-api:local .
-```
 
-## Run Locally with Persistent Storage
+New-Item -ItemType Directory -Path C:\dev\rssreader\docker-data -Force
 
-```powershell
-# Create a local directory for the SQLite database
-mkdir c:\dev\rssreader\docker-data -Force
-
-# Run the container with volume mount
-docker run -d `
-  --name rss-reader-test `
-  -p 8080:8080 `
-  -v c:\dev\rssreader\docker-data:/data `
+docker run -d --name rss-reader-test -p 8080:8080 `
+  -v C:\dev\rssreader\docker-data:/data `
   -e RssAppConfig__IsTestUserEnabled=true `
   rss-reader-api:local
 
-# View logs
 docker logs -f rss-reader-test
 ```
 
-## Test the API
+Without `RssAppConfig__BackupDbPath` the container runs in local-dev mode: the database
+is created fresh at `/tmp/storage.db` and is not copied to `/data`, so it is lost when
+the container is removed. Add
+`-e RssAppConfig__BackupDbPath=/data/db/storage.db` to exercise the production seed and
+backup path against the mounted folder.
+
+Rebuild after a code change with `docker rm -f rss-reader-test` and the same two
+commands. Everything else (`docker ps`, `docker exec -it rss-reader-test /bin/bash`,
+`docker stats`) is standard Docker.
+
+### Option B: dotnet run
 
 ```powershell
-# Test your endpoints
-curl http://localhost:8080/api/feed
-
-# Or open in browser
-start http://localhost:8080/api/feed
+$env:RSSREADER_API_KEY = "local-dev-key"
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+dotnet run --project src/Server/Server.csproj --no-launch-profile --urls http://localhost:8080
 ```
 
-## Useful Docker Commands
+Faster to iterate on and what `.claude/launch.json` uses. The database is wherever
+`RssAppConfig:DbLocation` points in `appsettings.Development.json`.
 
-### Container Management
-```powershell
-# View running containers
-docker ps
-
-# View all containers (including stopped)
-docker ps -a
-
-# Stop the container
-docker stop rss-reader-test
-
-# Start it again
-docker start rss-reader-test
-
-# Restart the container
-docker restart rss-reader-test
-
-# Remove the container
-docker rm -f rss-reader-test
-
-# View container logs
-docker logs rss-reader-test
-
-# Follow logs in real-time
-docker logs -f rss-reader-test
-
-# View last 50 lines of logs
-docker logs --tail 50 rss-reader-test
-```
-
-### Debugging
-```powershell
-# Interactive shell inside container
-docker exec -it rss-reader-test /bin/bash
-
-# Check if database file was created
-ls c:\dev\rssreader\docker-data
-
-# View container resource usage
-docker stats rss-reader-test
-
-# Inspect container configuration
-docker inspect rss-reader-test
-```
-
-### Image Management
-```powershell
-# List all images
-docker images
-
-# Remove old image
-docker rmi rss-reader-api:local
-
-# Remove all unused images
-docker image prune
-```
-
-## Rebuild After Code Changes
+Either way, confirm with:
 
 ```powershell
-# Stop and remove old container
-docker rm -f rss-reader-test
-
-# Rebuild image
-docker build -f src/Server/Dockerfile -t rss-reader-api:local .
-
-# Run new container
-docker run -d `
-  --name rss-reader-test `
-  -p 8080:8080 `
-  -v c:\dev\rssreader\docker-data:/data `
-  -e RssAppConfig__IsTestUserEnabled=true `
-  rss-reader-api:local
-
-# Check logs
-docker logs -f rss-reader-test
+Invoke-WebRequest http://localhost:8080/api/healthz -UseBasicParsing
 ```
 
-## Configuration Notes
+## 2. Proxy settings
 
-### Database Paths
-The `appsettings.json` uses absolute paths that work in Docker:
+The Functions host needs `api/local.settings.json`, which is gitignored. Create it once
+per checkout (and per worktree):
+
 ```json
-"DbLocation": "/tmp/storage.db",
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "RSSREADER_API_URL": "http://localhost:8080",
+    "RSSREADER_API_KEY": "local-dev-key",
+    "IS_TEST_USER_ENABLED": "true"
+  }
+}
 ```
 
-The active db from `/tmp/` will be copied to the container's `/data/` folder.
+Then `cd api && npm ci`.
 
-That `/data/` folder maps to `c:\dev\rssreader\docker-data\storage.db` on your host machine via the volume mount.
+## 3. Frontend
 
-### Volume Mount
-The `-v c:\dev\rssreader\docker-data:/data` flag mounts your local directory to `/data` inside the container. This means:
-- Database persists even when container is deleted
-- You can inspect/backup the database file directly on your machine
-- Multiple container rebuilds can reuse the same data
+```powershell
+dotnet build -c Debug src/WasmApp/WasmApp.csproj
+swa start rss-reader-local
+```
 
-### Port Mapping
-The `-p 8080:8080` flag maps port 8080 on your machine to port 8080 in the container. Access the API at `http://localhost:8080`.
+`swa start` reads `swa-cli.config.json`, launches `dotnet watch run` for the frontend on
+8443, starts the Functions host for `api/`, and serves the whole thing on 4280 with the
+Easy Auth emulator. Edits to `.razor` files hot-reload.
+
+### From a git worktree
+
+`swa-cli.config.json` resolves `appLocation` against the directory it is run from, so run
+`swa start` from inside the worktree. The `.claude/launch.json` entries in the main
+checkout start the four pieces separately (`rss-api`, `rss-func`, `rss-wasm`, `rss-swa`)
+and point at a worktree path; update that path when you switch worktrees. Stale
+`blazor-devserver` processes can hold 8443 and keep serving an old build; kill them
+before restarting.
+
+## 4. Tests
+
+```powershell
+dotnet test test/SerializerTests/SerializerTests.csproj
+```
+
+The load scenarios under `test/load/` run against a local stack; see
+[test/load/REPORT.md](test/load/REPORT.md) for what they measure.
+
+## Stopping
+
+```powershell
+docker rm -f rss-reader-test
+Get-Process -Name func, blazor-devserver, swa -ErrorAction SilentlyContinue | Stop-Process
+```
 
 ## Troubleshooting
 
-### Container won't start
-```powershell
-# Check logs for errors
-docker logs rss-reader-test
-
-# Verify image built successfully
-docker images | Select-String "rss-reader-api"
-```
-
-### Database errors
-```powershell
-# Check if /tmp/ directory contains the active db in container
-docker exec rss-reader-test ls -la /tmp/
-
-# Check permissions on host directory
-Get-Acl c:\dev\rssreader\docker-data
-```
-
-### Port already in use
-```powershell
-# Find what's using port 8080
-netstat -ano | Select-String ":8080"
-
-# Use a different port
-docker run -d --name rss-reader-test -p 9090:8080 `
-  -v c:\dev\rssreader\docker-data:/data `
-  -e RssAppConfig__IsTestUserEnabled=true `
-  rss-reader-api:local
-
-# Access at http://localhost:9090 instead
-```
-
-### Container stops immediately
-```powershell
-# Run in foreground to see errors
-docker run --rm `
-  --name rss-reader-test `
-  -p 8080:8080 `
-  -v c:\dev\rssreader\docker-data:/data `
-  -e RssAppConfig__IsTestUserEnabled=true `
-  rss-reader-api:local
-```
-
-## Clean Up
-
-### Remove everything
-```powershell
-# Stop and remove container
-docker rm -f rss-reader-test
-
-# Remove image
-docker rmi rss-reader-api:local
-
-# Remove database (optional - deletes all data!)
-Remove-Item -Recurse -Force c:\dev\rssreader\docker-data
-```
-
-### Keep database, clean up containers/images
-```powershell
-# Remove container
-docker rm -f rss-reader-test
-
-# Remove image
-docker rmi rss-reader-api:local
-
-# Database at c:\dev\rssreader\docker-data is preserved
-```
-
-## Next Steps
-
-Once local testing is complete, follow [deploy-container-app.md](deploy-container-app.md) to deploy to Azure Container Apps.
+- **Port 8080 in use:** `netstat -ano | Select-String ":8080"`, then stop that process or
+  run the container with `-p 9090:8080` and change `RSSREADER_API_URL` to match.
+- **Container stops immediately:** `docker logs rss-reader-test`.
+- **Proxy returns 500 "RSSREADER_API_URL not configured":** `api/local.settings.json` is
+  missing in this checkout.
+- **Every API call is 401:** the frontend is a Release build, or `IS_TEST_USER_ENABLED`
+  is not `true` in the proxy settings.
+- **Frontend shows an old build:** a leftover `blazor-devserver` on 8443; stop it and
+  rerun `swa start`.

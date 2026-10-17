@@ -72,24 +72,31 @@ services below.
 
 ##### Backup & Replication
 
-1. **DatabaseBackupToFileService** (sole DB durability in the default mode) —
-   Copies the live database to `RssAppConfig.BackupDbPath` on the Azure Files
-   mount (`/data/db/storage.db`) every `BackupInterval`, guarded by a lock file
-   so only one writer copies at a time. `docker-entrypoint.sh` seeds
+There is **one** durability path, plus a legacy bootstrap and an optional
+replication mode. This section is the only place that describes them; the other
+docs link here.
+
+1. **File-mount copy (the durability path).** `DatabaseBackupToFileService`
+   copies the live database to `RssAppConfig.BackupDbPath` on the Azure Files
+   mount (`/data/db/storage.db`) every `BackupInterval`, under a lock file so
+   only one writer copies at a time. `docker-entrypoint.sh` seeds
    `/tmp/storage.db` from that file on every boot and runs `PRAGMA quick_check`
-   on the copy concurrently with app startup. If the file is missing it falls
-   back to a one-shot `litestream restore` from the blob replica left by the
-   previous architecture.
+   on the copy concurrently with app startup, stopping the app if it fails.
+   `DatabaseBackupService` does the same for cached images (`wwwroot/images/`
+   to `/data/images/`, every 5 minutes) and records system-stats snapshots.
+   Backing up `/data` backs up everything.
 
-2. **DatabaseBackupService** (image cache + stats only) — Copies new cached
-   images from `wwwroot/images/` to `/data/images/` every 5 minutes and records
-   system-stats snapshots. On startup it restores cached images from `/data`.
+2. **Litestream bootstrap (legacy, read-only).** If `BackupDbPath` does not
+   exist at boot, the entrypoint tries a one-shot `litestream restore` from the
+   `litestream` blob container that the previous architecture replicated to,
+   validates it and publishes it as the first file-mount copy. Nothing writes to
+   that blob container in the default mode.
 
-3. **Litestream** (scaling mode only) — When
+3. **Litestream replication (scaling mode, off).** With
    `RSSREADER_ENABLE_LITESTREAM_REPLICATION=true` the writer runs under
-   `litestream replicate`, streaming WAL changes to the `litestream` blob
-   container so read replicas can restore from it. Off by default; required for
-   read replicas. Config: `infrastructure/litestream.yml`.
+   `litestream replicate`, streaming WAL changes to blob storage so read
+   replicas can restore from it. It is a feed for readers, not a second backup.
+   Config: `infrastructure/litestream.yml`.
 
 ##### Read Replicas (optional)
 
