@@ -40,7 +40,7 @@ public class AdminController : ControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats()
     {
-        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User))
+        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
             return Forbid();
 
         var snapshot = await _statsCollector.GetOrCaptureAsync();
@@ -51,7 +51,7 @@ public class AdminController : ControllerBase
     [HttpGet("stats/history")]
     public IActionResult GetStatsHistory()
     {
-        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User))
+        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
             return Forbid();
 
         var history = _statsRepo.GetHistory(30).ToList();
@@ -62,7 +62,7 @@ public class AdminController : ControllerBase
     [HttpGet("users")]
     public IActionResult GetUsers()
     {
-        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User))
+        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
             return Forbid();
 
         // Build per-user stats lookup once (one indexed query) and join in-memory.
