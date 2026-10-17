@@ -63,7 +63,7 @@
                 <a class="desktop-nav-link" href="@LogoutUrl">Logout</a>
             </Authorized>
             <NotAuthorized>
-                <a class="desktop-nav-link" href="/">Login</a>
+                <a class="desktop-nav-link" href="@LoginHref">Login</a>
             </NotAuthorized>
         </AuthorizeView>
     </div>
@@ -124,7 +124,7 @@
             </Authorized>
             <NotAuthorized>
                 <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="/">
+                    <NavLink class="nav-link" href="@LoginHref">
                         Login
                     </NavLink>
                 </div>
@@ -143,6 +143,14 @@
     // frontend root. The provider's own session is left alone: logging out of
     // this app should not log the user out of Google/GitHub/Microsoft.
     private string LogoutUrl => AuthClient.LogoutUrl(Navigation.BaseUri);
+
+    // One configured provider: the link goes straight to it, like the old
+    // /.auth/login/aad link did. Several (or not known yet): the home page
+    // shows the chooser.
+    private IReadOnlyList<string> _providers = Array.Empty<string>();
+    private string LoginHref => _providers.Count == 1
+        ? AuthClient.LoginUrl(_providers[0], Navigation.ToAbsoluteUri("/timeline").ToString())
+        : "/";
 
     private string username = null;
     private RssUser feedUser = null;
@@ -174,6 +182,7 @@
         if (authState.User?.Identity?.IsAuthenticated != true)
         {
             username = "Guest";
+            _providers = await AuthClient.GetProvidersAsync();
             return;
         }
 

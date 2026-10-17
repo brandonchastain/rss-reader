@@ -259,3 +259,35 @@ public sealed class ApiLoginTests
         CollectionAssert.AreEqual(new[] { "github" }, AuthEndpoints.ConfiguredProviders(auth).ToArray());
     }
 }
+
+[TestClass]
+public sealed class AdminControllerLinkedIdTests
+{
+    // The admin list holds the pre-migration SWA id. After cutover the login id
+    // is microsoft:<oid>, so the controller must consult the resolved row.
+    [TestMethod]
+    public async Task GetUsers_AdminByLinkedRow_IsAllowed()
+    {
+        var config = new RssAppConfig { AdminAadUserIds = "024d97a14bc74c58b9a83e88b919a92c" };
+        var repo = new FakeUserRepository();
+        repo.Users.Add(new RssUser("legacy", 7) { AadUserId = "024d97a14bc74c58b9a83e88b919a92c" });
+        repo.AadUserIds[7] = "024d97a14bc74c58b9a83e88b919a92c";
+        repo.SetProviderUserId(7, "microsoft:obj-1");
+        var resolver = new UserResolver(repo, NullLogger<UserResolver>.Instance);
+        var stats = new Moq.Mock<RssApp.Data.ISystemStatsRepository>().Object;
+        var controller = new Server.Controllers.AdminController(
+            stats, repo, config, resolver,
+            new RssReader.Server.Services.SystemStatsCollector(stats, config, NullLogger<RssReader.Server.Services.SystemStatsCollector>.Instance));
+        var identity = new ClaimsIdentity("cookie");
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "microsoft:obj-1"));
+        controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+        {
+            HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext { User = new ClaimsPrincipal(identity) }
+        };
+
+        var result = controller.GetUsers();
+
+        Assert.IsInstanceOfType(result, typeof(Microsoft.AspNetCore.Mvc.OkObjectResult));
+        await Task.CompletedTask;
+    }
+}
