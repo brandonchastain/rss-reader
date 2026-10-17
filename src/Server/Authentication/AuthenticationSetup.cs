@@ -169,6 +169,7 @@ public static class AuthenticationSetup
         var subject = UserIdentity.ResolveSubject(provider, principal)
             ?? throw new InvalidOperationException($"{provider} returned no stable subject claim");
         var name = UserIdentity.ResolveDisplayName(principal);
+        var microsoftEmail = provider == UserIdentity.ProviderMicrosoft ? UserIdentity.ResolveMicrosoftEmail(principal) : null;
 
         foreach (var claim in identity.FindAll(ClaimTypes.NameIdentifier).ToList()) identity.RemoveClaim(claim);
         foreach (var claim in identity.FindAll(ClaimTypes.Name).ToList()) identity.RemoveClaim(claim);
@@ -178,11 +179,14 @@ public static class AuthenticationSetup
         identity.AddClaim(new Claim(ClaimTypes.Name, name));
         identity.AddClaim(new Claim(ClaimTypes.Role, "authenticated"));
         identity.AddClaim(new Claim(UserIdentity.IdentityProviderClaim, provider));
+        if (microsoftEmail != null)
+            identity.AddClaim(new Claim(UserIdentity.EmailLinkClaim, UserIdentity.EmailLinkId(microsoftEmail)));
 
         // Keep the cookie small: drop everything else the provider sent.
         foreach (var claim in identity.Claims.ToList())
         {
-            if (claim.Type is ClaimTypes.NameIdentifier or ClaimTypes.Name or ClaimTypes.Role or UserIdentity.IdentityProviderClaim)
+            if (claim.Type is ClaimTypes.NameIdentifier or ClaimTypes.Name or ClaimTypes.Role
+                or UserIdentity.IdentityProviderClaim or UserIdentity.EmailLinkClaim)
                 continue;
             identity.RemoveClaim(claim);
         }
