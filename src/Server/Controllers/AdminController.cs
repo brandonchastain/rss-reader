@@ -34,7 +34,7 @@ public class AdminController : ControllerBase
     [HttpGet("stats")]
     public IActionResult GetStats()
     {
-        if (!IsAdmin(User))
+        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User))
             return Forbid();
 
         var snapshot = _statsRepo.GetLatestSnapshot();
@@ -48,7 +48,7 @@ public class AdminController : ControllerBase
     [HttpGet("stats/history")]
     public IActionResult GetStatsHistory()
     {
-        if (!IsAdmin(User))
+        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User))
             return Forbid();
 
         var history = _statsRepo.GetHistory(30).ToList();
@@ -59,7 +59,7 @@ public class AdminController : ControllerBase
     [HttpGet("users")]
     public IActionResult GetUsers()
     {
-        if (!IsAdmin(User))
+        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User))
             return Forbid();
 
         // Build per-user stats lookup once (one indexed query) and join in-memory.
@@ -81,20 +81,5 @@ public class AdminController : ControllerBase
             .ToList();
 
         return Ok(users);
-    }
-
-    private bool IsAdmin(ClaimsPrincipal principal)
-    {
-        if (_config.IsTestUserEnabled)
-            return true;
-
-        var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(userId))
-            return false;
-
-        var adminIds = _config.AdminAadUserIds
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        return adminIds.Contains(userId, StringComparer.OrdinalIgnoreCase);
     }
 }

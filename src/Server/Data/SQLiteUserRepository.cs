@@ -49,6 +49,23 @@ public class SQLiteUserRepository : IUserRepository
                 logger.LogInformation("Added AadUserId column to Users table");
             }
 
+            // ProviderUserId: provider:subject id linked during the login migration.
+            var providerCheck = connection.CreateCommand();
+            providerCheck.CommandText = @"
+                SELECT COUNT(*) FROM pragma_table_info('Users') WHERE name = 'ProviderUserId'";
+            if (Convert.ToInt64(providerCheck.ExecuteScalar()) == 0)
+            {
+                var addProvider = connection.CreateCommand();
+                addProvider.CommandText = "ALTER TABLE Users ADD COLUMN ProviderUserId TEXT";
+                addProvider.ExecuteNonQuery();
+                logger.LogInformation("Added ProviderUserId column to Users table");
+            }
+            var providerIndex = connection.CreateCommand();
+            providerIndex.CommandText = @"
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_ProviderUserId
+                ON Users(ProviderUserId) WHERE ProviderUserId IS NOT NULL";
+            providerIndex.ExecuteNonQuery();
+
             // Create index on AadUserId for fast lookups
             var indexCommand = connection.CreateCommand();
             indexCommand.CommandText = @"
@@ -116,6 +133,38 @@ public class SQLiteUserRepository : IUserRepository
 
                 return this.ReadItemFromResults(reader);
             }
+        }
+    }
+
+    public RssUser GetUserByProviderUserId(string providerUserId)
+    {
+        using (var connection = this.connections.OpenRead())
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT * FROM Users WHERE ProviderUserId = @providerUserId";
+            command.Parameters.AddWithValue("@providerUserId", providerUserId);
+
+            using (var reader = command.ExecuteReader())
+            {
+                if (!reader.Read())
+                {
+                    return null;
+                }
+
+                return this.ReadItemFromResults(reader);
+            }
+        }
+    }
+
+    public void SetProviderUserId(int userId, string providerUserId)
+    {
+        using (var connection = this.connections.OpenWrite())
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = "UPDATE Users SET ProviderUserId = @providerUserId WHERE Id = @userId";
+            command.Parameters.AddWithValue("@providerUserId", providerUserId);
+            command.Parameters.AddWithValue("@userId", userId);
+            command.ExecuteNonQuery();
         }
     }
 
@@ -201,6 +250,8 @@ public class SQLiteUserRepository : IUserRepository
         var username = reader.IsDBNull(reader.GetOrdinal("Username")) ? "" : reader.GetString(reader.GetOrdinal("Username"));
         var aadOrdinal = reader.GetOrdinal("AadUserId");
         var aadUserId = reader.IsDBNull(aadOrdinal) ? null : reader.GetString(aadOrdinal);
-        return new RssUser(username, id) { AadUserId = aadUserId };
+        var providerOrdinal = reader.GetOrdinal("ProviderUserId");
+        var providerUserId = reader.IsDBNull(providerOrdinal) ? null : reader.GetString(providerOrdinal);
+        return new RssUser(username, id) { AadUserId = aadUserId, ProviderUserId = providerUserId };
     }
 }

@@ -50,7 +50,7 @@ namespace Server.Controllers
                 return NotFound();
             }
 
-            user.IsAdmin = IsAdmin(User);
+            user.IsAdmin = Server.Authentication.AdminPolicy.IsAdmin(config, User, user);
             return Ok(user);
         }
 
@@ -71,12 +71,12 @@ namespace Server.Controllers
                 var existing = this.userResolver.ResolveUser(User);
                 if (existing != null)
                 {
-                    existing.IsAdmin = IsAdmin(User);
+                    existing.IsAdmin = Server.Authentication.AdminPolicy.IsAdmin(config, User, existing);
                     return Ok(existing);
                 }
 
                 var newUser = this.userResolver.ResolveOrCreateUser(User);
-                newUser.IsAdmin = IsAdmin(User);
+                newUser.IsAdmin = Server.Authentication.AdminPolicy.IsAdmin(config, User, newUser);
                 return Created(nameof(RegisterAsync), newUser);
             }
             finally
@@ -125,21 +125,6 @@ namespace Server.Controllers
 
             logger.LogWarning("User {UserId} deleted their account", user.Id);
             return NoContent();
-        }
-
-        private bool IsAdmin(ClaimsPrincipal principal)
-        {
-            if (config.IsTestUserEnabled)
-                return true;
-
-            var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId))
-                return false;
-
-            var adminIds = config.AdminAadUserIds
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-            return adminIds.Contains(userId, StringComparer.OrdinalIgnoreCase);
         }
     }
 }

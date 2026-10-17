@@ -13,6 +13,7 @@ internal sealed class FakeUserRepository : IUserRepository
     // Backing store — tests can pre-populate this to simulate existing data.
     public List<RssUser> Users { get; } = new();
     public Dictionary<int, string> AadUserIds { get; } = new();
+    public Dictionary<int, string> ProviderUserIds { get; } = new();
 
     // Call counters so tests can assert how many times each method was invoked.
     public int AddUserCallCount { get; private set; }
@@ -65,6 +66,19 @@ internal sealed class FakeUserRepository : IUserRepository
         if (ThrowOnSetAadUserId)
             throw new InvalidOperationException("Simulated DB constraint violation");
         AadUserIds[userId] = aadUserId;
+    }
+
+    public RssUser GetUserByProviderUserId(string providerUserId)
+    {
+        var userId = ProviderUserIds.FirstOrDefault(kvp => kvp.Value == providerUserId);
+        return userId.Value != null ? Users.FirstOrDefault(u => u.Id == userId.Key)! : null!;
+    }
+
+    public void SetProviderUserId(int userId, string providerUserId)
+    {
+        ProviderUserIds[userId] = providerUserId;
+        var user = Users.FirstOrDefault(u => u.Id == userId);
+        if (user != null) user.ProviderUserId = providerUserId;
     }
 
     public void UpdateUsername(int userId, string newUsername)
