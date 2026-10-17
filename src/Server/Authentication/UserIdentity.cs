@@ -28,6 +28,15 @@ public static class UserIdentity
     /// <summary>Claim carrying the provider key (google/microsoft/github/aad).</summary>
     public const string IdentityProviderClaim = "urn:rss:identity-provider";
 
+    /// <summary>
+    /// Claim carrying the email-hash link id of a Microsoft login
+    /// (<see cref="EmailLinkId"/>), used once to find a row that was
+    /// linked during the Static Web Apps migration window.
+    /// </summary>
+    public const string EmailLinkClaim = "urn:rss:email-link-id";
+
+    public const string EmailLinkPrefix = "microsoft-email:";
+
     public static readonly string[] KnownProviders = { ProviderGoogle, ProviderMicrosoft, ProviderGitHub };
 
     public static string BuildUserId(string provider, string subject)
@@ -35,6 +44,33 @@ public static class UserIdentity
         if (string.IsNullOrWhiteSpace(provider)) throw new ArgumentException("provider is required", nameof(provider));
         if (string.IsNullOrWhiteSpace(subject)) throw new ArgumentException("subject is required", nameof(subject));
         return $"{provider.Trim().ToLowerInvariant()}:{subject.Trim()}";
+    }
+
+    /// <summary>
+    /// Static Web Apps forwards no claims, only the opaque per-app user id and
+    /// the account's email as userDetails. The email is reported by Microsoft,
+    /// not typed by the user, and the same account's direct login carries the
+    /// same address in its id token, so a hash of it bridges the two. Only the
+    /// hash is stored, and it is replaced by the real provider id on the first
+    /// direct login.
+    /// </summary>
+    public static string EmailLinkId(string email)
+    {
+        var normalized = email.Trim().ToLowerInvariant();
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(normalized));
+        return EmailLinkPrefix + Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    public static bool LooksLikeEmail(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.IndexOf('@') > 0 && value.IndexOf('@') < value.Length - 1;
+
+    /// <summary>The verified email a Microsoft id token carries, if any.</summary>
+    public static string? ResolveMicrosoftEmail(ClaimsPrincipal principal)
+    {
+        var email = principal.FindFirst("email")?.Value ?? principal.FindFirst(ClaimTypes.Email)?.Value;
+        if (LooksLikeEmail(email)) return email;
+        var upn = principal.FindFirst("preferred_username")?.Value;
+        return LooksLikeEmail(upn) ? upn : null;
     }
 
     public static bool IsKnownProvider(string? provider) =>

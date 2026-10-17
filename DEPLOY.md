@@ -137,14 +137,14 @@ DNS: `CNAME api.rss -> <container app FQDN>` and `TXT asuid.api.rss ->
    `https://api.rss.brandonchastain.com/auth/providers` lists the providers and
    `https://api.rss.brandonchastain.com/auth/me` returns `{"clientPrincipal":null}`.
 4. **Link existing Microsoft accounts.** Rows created under Easy Auth carry an SWA user
-   id that a direct Microsoft login cannot reproduce. While the proxy is still in place
-   the API records each signed-in user's Entra object id on their row the next time they
-   load the app. Confirm it works with your own account: open the site once, then
-   `sqlite3 /data/db/storage.db "select Id, AadUserId, ProviderUserId from Users"` via
-   `az containerapp exec` should show a `microsoft:<guid>` next to your SWA id. If
-   `ProviderUserId` stays empty, SWA is not forwarding the principal's `claims`; stop
-   here and add the link another way before continuing, or those users get fresh,
-   empty accounts after step 6.
+   id that a direct Microsoft login cannot reproduce, and SWA forwards no other claim.
+   While the proxy is still in place the API records a hash of each signed-in user's
+   Microsoft-reported email on their row the next time they load the app; the first
+   direct Microsoft login after cutover finds the row by that hash and replaces it with
+   the real `microsoft:<object id>`. Confirm with your own account: open the site once,
+   then `sqlite3 /tmp/storage.db "select Id, AadUserId, ProviderUserId from Users"` via
+   `az containerapp exec` should show `microsoft-email:<hash>` next to your SWA id.
+   Users who never open the site before step 7 get fresh, empty accounts.
 5. **Test the new login against production** before pointing the site at it: visit
    `https://api.rss.brandonchastain.com/auth/login/github?returnUrl=https://rss.brandonchastain.com/`
    in a private window. It must come back to the site with a `.rss.session` cookie set

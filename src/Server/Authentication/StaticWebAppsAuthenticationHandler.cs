@@ -99,15 +99,6 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
             {
                 identity.AddClaim(new Claim(UserIdentity.LinkedUserIdClaim, linked));
             }
-            else if (string.Equals(principal.IdentityProvider, "aad", StringComparison.OrdinalIgnoreCase))
-            {
-                // Migration diagnostic: which claims does SWA actually forward?
-                // Types only; values are never logged.
-                var types = principal.Claims == null
-                    ? "(no claims array)"
-                    : string.Join(", ", principal.Claims.Select(c => c.Typ));
-                Logger.LogWarning("SWA principal for aad carries no object id; claim types: {ClaimTypes}", types);
-            }
 
             var claimsPrincipal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(claimsPrincipal, AuthenticationScheme);
@@ -121,6 +112,9 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
         }
     }
 
+    // SWA forwards no claims in practice (verified in production 2026-10-17),
+    // so the link is keyed on the email it reports as userDetails; an object
+    // id is used instead if one ever shows up.
     internal static string? LinkedProviderUserId(ClientPrincipal principal)
     {
         if (!string.Equals(principal.IdentityProvider, "aad", StringComparison.OrdinalIgnoreCase))
@@ -128,7 +122,10 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
 
         var oid = principal.Claims?.FirstOrDefault(c =>
                 c.Typ is "oid" or "http://schemas.microsoft.com/identity/claims/objectidentifier")?.Val;
-        return string.IsNullOrWhiteSpace(oid) ? null : UserIdentity.BuildUserId(UserIdentity.ProviderMicrosoft, oid);
+        if (!string.IsNullOrWhiteSpace(oid))
+            return UserIdentity.BuildUserId(UserIdentity.ProviderMicrosoft, oid);
+
+        return UserIdentity.LooksLikeEmail(principal.UserDetails) ? UserIdentity.EmailLinkId(principal.UserDetails) : null;
     }
 
     internal static ClientPrincipal? ParseClientPrincipal(string headerValue)

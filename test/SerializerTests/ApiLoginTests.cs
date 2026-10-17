@@ -61,7 +61,7 @@ public sealed class ApiLoginTests
         Assert.AreEqual("person@example.com", principal.FindFirst(ClaimTypes.Name)!.Value);
         Assert.AreEqual("authenticated", principal.FindFirst(ClaimTypes.Role)!.Value);
         Assert.AreEqual("microsoft", principal.FindFirst(UserIdentity.IdentityProviderClaim)!.Value);
-        Assert.AreEqual(4, identity.Claims.Count(), "provider claims must not bloat the cookie");
+        Assert.AreEqual(5, identity.Claims.Count(), "provider claims must not bloat the cookie (4 app claims + the email link)");
     }
 
     // ---------- migration link from the SWA principal ----------
@@ -92,19 +92,76 @@ public sealed class ApiLoginTests
     }
 
     [TestMethod]
-    public void SwaPrincipal_WithoutClaims_StillParses_NoLink()
+    public void SwaPrincipal_WithoutClaims_LinksByEmailHash()
     {
         var header = SwaHeader(new
         {
             identityProvider = "aad",
             userId = "abc",
-            userDetails = "x",
+            userDetails = "Person@Example.com",
             userRoles = new[] { "authenticated" },
         });
 
         var parsed = StaticWebAppsAuthenticationHandler.ParseClientPrincipal(header)!;
         Assert.AreEqual("abc", parsed.UserId);
-        Assert.IsNull(StaticWebAppsAuthenticationHandler.LinkedProviderUserId(parsed));
+        var link = StaticWebAppsAuthenticationHandler.LinkedProviderUserId(parsed)!;
+        StringAssert.StartsWith(link, "microsoft-email:");
+        Assert.AreEqual(UserIdentity.EmailLinkId("person@example.com"), link, "hash is case-insensitive and never the plaintext");
+        Assert.IsFalse(link.Contains("example.com"));
+    }
+
+    [TestMethod]
+    public void SwaPrincipal_NoEmailNoClaims_NoLink()
+    {
+        var header = SwaHeader(new { identityProvider = "aad", userId = "abc", userDetails = "x", userRoles = new[] { "authenticated" } });
+        Assert.IsNull(StaticWebAppsAuthenticationHandler.LinkedProviderUserId(StaticWebAppsAuthenticationHandler.ParseClientPrincipal(header)!));
+    }
+
+    [TestMethod]
+    public void UserResolver_EmailHashLink_ThenFirstDirectLogin_UpgradesToObjectId()
+    {
+        var fake = new FakeUserRepository();
+        fake.Users.Add(new RssUser("024d97", 7)); fake.AadUserIds[7] = "024d97";
+        var resolver = new UserResolver(fake, NullLogger<UserResolver>.Instance);
+        var emailLink = UserIdentity.EmailLinkId("person@example.com");
+
+        // Migration window: SWA visit records the email hash.
+        var swa = new ClaimsIdentity("aad");
+        swa.AddClaim(new Claim(ClaimTypes.NameIdentifier, "024d97"));
+        swa.AddClaim(new Claim(UserIdentity.LinkedUserIdClaim, emailLink));
+        Assert.AreEqual(7, resolver.ResolveUser(new ClaimsPrincipal(swa))!.Id);
+        Assert.AreEqual(emailLink, fake.ProviderUserIds[7]);
+
+        // After cutover: direct Microsoft login carries the object id and the email hash.
+        var oidc = new ClaimsIdentity("oidc");
+        oidc.AddClaim(new Claim("oid", "obj-1"));
+        oidc.AddClaim(new Claim("email", "PERSON@example.com"));
+        var principal = new ClaimsPrincipal(oidc);
+        AuthenticationSetup.NormalizeIdentity(principal, "microsoft");
+        Assert.AreEqual(emailLink, principal.FindFirst(UserIdentity.EmailLinkClaim)!.Value);
+
+        var user = resolver.ResolveOrCreateUser(principal);
+        Assert.AreEqual(7, user.Id, "must land on the pre-migration row");
+        Assert.AreEqual("microsoft:obj-1", fake.ProviderUserIds[7], "hash replaced by the real id");
+        Assert.AreEqual(0, fake.AddUserCallCount);
+
+        // A later SWA visit must not downgrade the real id back to the hash.
+        resolver.ResolveUser(new ClaimsPrincipal(swa));
+        Assert.AreEqual("microsoft:obj-1", fake.ProviderUserIds[7]);
+
+        // And the next direct login finds the row by the real id.
+        Assert.AreEqual(7, resolver.ResolveUser(principal)!.Id);
+    }
+
+    [TestMethod]
+    public void NormalizeIdentity_GitHub_HasNoEmailLink()
+    {
+        var identity = new ClaimsIdentity("oauth");
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "42"));
+        identity.AddClaim(new Claim(ClaimTypes.Email, "person@example.com"));
+        var principal = new ClaimsPrincipal(identity);
+        AuthenticationSetup.NormalizeIdentity(principal, "github");
+        Assert.IsNull(principal.FindFirst(UserIdentity.EmailLinkClaim));
     }
 
     [TestMethod]

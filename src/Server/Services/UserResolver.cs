@@ -59,15 +59,40 @@ public class UserResolver : IUserResolver
         // Not found by the id on the principal: the person may have signed up
         // through Static Web Apps and now logs in through the API, in which
         // case the row carries their provider:subject id in ProviderUserId.
-        return _userRepository.GetUserByProviderUserId(aadId);
+        user = _userRepository.GetUserByProviderUserId(aadId);
+        if (user != null)
+            return user;
+
+        // First direct login of an account linked by email hash during the
+        // migration window: find the row by the hash, then replace the hash
+        // with the real provider id so the email link is used exactly once.
+        var emailLink = principal.FindFirst(UserIdentity.EmailLinkClaim)?.Value;
+        if (!string.IsNullOrEmpty(emailLink))
+        {
+            user = _userRepository.GetUserByProviderUserId(emailLink);
+            if (user != null)
+            {
+                _userRepository.SetProviderUserId(user.Id, aadId);
+                user.ProviderUserId = aadId;
+                _logger.LogInformation("Upgraded email link to provider id for user {UserId}", user.Id);
+                return user;
+            }
+        }
+
+        return null;
     }
 
-    // During the migration the SWA principal carries the provider-stable id
-    // the API login will produce. Record it once so the row survives cutover.
+    // During the migration the SWA principal carries a link id (the Entra
+    // object id when available, otherwise a hash of the Microsoft-reported
+    // email). Record it on a row that has none yet so the row survives
+    // cutover; never overwrite a real provider id with a weaker link.
     private void LinkProviderUserId(ClaimsPrincipal principal, RssUser user)
     {
         var linked = principal.FindFirst(UserIdentity.LinkedUserIdClaim)?.Value;
         if (string.IsNullOrEmpty(linked) || user.ProviderUserId == linked)
+            return;
+        if (!string.IsNullOrEmpty(user.ProviderUserId)
+            && !user.ProviderUserId.StartsWith(UserIdentity.EmailLinkPrefix, StringComparison.Ordinal))
             return;
 
         try
