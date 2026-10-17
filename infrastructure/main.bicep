@@ -37,6 +37,12 @@ param staticWebAppSku string = 'Free'
 @description('Custom domain for the Static Web App')
 param customDomain string = 'rss.brandonchastain.com'
 
+@description('Custom domain for the API Container App. Empty disables the binding.')
+param apiCustomDomain string = 'api.rss.brandonchastain.com'
+
+@description('Resource id of the managed certificate for apiCustomDomain. Empty binds the hostname without TLS (first step of enrolment; see DEPLOY.md).')
+param apiCertificateId string = ''
+
 @description('Gateway secret key for API authentication')
 @secure()
 param gatewaySecretKey string
@@ -153,6 +159,18 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
           {
             latestRevision: true
             weight: 100
+          }
+        ]
+        // The API's own hostname, so the browser can carry a session cookie
+        // between the frontend origin and the API. Managed certificates are
+        // created once by hand (az containerapp hostname bind) because the
+        // certificate cannot be issued until the hostname is bound; the
+        // template then owns the binding so deploys do not drop it.
+        customDomains: empty(apiCustomDomain) ? [] : [
+          {
+            name: apiCustomDomain
+            bindingType: empty(apiCertificateId) ? 'Disabled' : 'SniEnabled'
+            certificateId: empty(apiCertificateId) ? null : apiCertificateId
           }
         ]
       }

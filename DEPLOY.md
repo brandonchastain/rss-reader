@@ -81,6 +81,26 @@ sets 5 GB; raise it in `main.bicep` before the database approaches 2.5 GB.
 az containerapp exec --name rss-reader-api --resource-group rss-container-rg --command "ls -la /data/db /data/images"
 ```
 
+## API custom domain
+
+The API answers at `api.rss.brandonchastain.com` as well as its Container Apps
+hostname. DNS (in the `brchasta` subscription, zone `brandonchastain.com`) holds a
+CNAME `api.rss` to the app's FQDN and a TXT `asuid.api.rss` with the app's
+`customDomainVerificationId`. The template owns the binding through
+`apiCustomDomain` and `apiCertificateId`.
+
+Managed certificates cannot be created by the template before the hostname is
+bound, so enrolling a new hostname is a one-time manual step:
+
+```bash
+az containerapp hostname add  -n rss-reader-api -g rss-container-rg --hostname <host>
+az containerapp hostname bind -n rss-reader-api -g rss-container-rg --hostname <host> -e rss-reader-env --validation-method CNAME
+az containerapp hostname list -n rss-reader-api -g rss-container-rg --query "[].certificateId" -o tsv
+```
+
+Put the certificate id into `main.bicepparam` and merge, so the next deploy keeps
+the binding instead of dropping it.
+
 ## Read replicas (optional, off)
 
 When `enableReadReplica=true`, a second Container App `rss-reader-api-reader` scales
