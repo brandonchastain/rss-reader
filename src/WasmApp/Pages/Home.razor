@@ -8,6 +8,7 @@
 @inject ILogger<Index> logger
 @inject IUserClient userClient
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IAuthClient AuthClient
 
 <PageTitle>RssReader | A simple browser-based RSS reader</PageTitle>
 
@@ -26,12 +27,34 @@
         <div class="shell-line"><span class="shell-prompt">&gt;</span> save posts for later</div>
         <AuthorizeView>
             <NotAuthorized>
-                @* Desktop: keyboard prompt *@
-                <div class="shell-line shell-cmd desktop-only" style="margin-top: 1.5rem;">$ press [ENTER] to continue<span class="shell-cursor">█</span></div>
-                @* Mobile: button *@
-                <div class="mobile-only" style="margin-top: 1.5rem;">
-                    <a href="@LoginUrl" class="btn btn-outline-success btn-sm" style="font-family: inherit; letter-spacing: 0.05em;">Login / Sign Up</a>
-                </div>
+                @if (_providers == null)
+                {
+                    <div class="shell-line" style="margin-top: 1.5rem;"><span class="shell-prompt">&gt;</span> Checking login providers...</div>
+                }
+                else if (_providers.Count == 0)
+                {
+                    <div class="shell-line" style="margin-top: 1.5rem;"><span class="shell-prompt">&gt;</span> No login provider is configured on the API.</div>
+                }
+                else if (!_showChooser && _providers.Count == 1)
+                {
+                    @* Desktop: keyboard prompt *@
+                    <div class="shell-line shell-cmd desktop-only" style="margin-top: 1.5rem;">$ press [ENTER] to continue<span class="shell-cursor">█</span></div>
+                    @* Mobile: button *@
+                    <div class="mobile-only" style="margin-top: 1.5rem;">
+                        <a href="@LoginUrl(_providers[0])" class="btn btn-outline-success btn-sm" style="font-family: inherit; letter-spacing: 0.05em;">Login / Sign Up</a>
+                    </div>
+                }
+                else
+                {
+                    <div class="shell-line shell-cmd desktop-only" style="margin-top: 1.5rem;">$ rssreader --login<span class="shell-cursor">█</span></div>
+                    <div class="shell-line" style="margin-top: 0.5rem;"><span class="shell-prompt">&gt;</span> sign in with</div>
+                    <div class="login-providers">
+                        @foreach (var provider in _providers)
+                        {
+                            <a href="@LoginUrl(provider)" class="btn btn-outline-success btn-sm" style="font-family: inherit; letter-spacing: 0.05em;">@ProviderLabel(provider)</a>
+                        }
+                    </div>
+                }
             </NotAuthorized>
         </AuthorizeView>
     </div>
@@ -42,10 +65,26 @@
     private ElementReference _terminalRef;
     private string _returnUrl;
 
-    private string LoginUrl =>
-        string.IsNullOrEmpty(_returnUrl)
-            ? "/.auth/login/aad?prompt=select_account"
-            : $"/.auth/login/aad?post_login_redirect_uri={_returnUrl}&prompt=select_account";
+    private IReadOnlyList<string> _providers;
+    private bool _showChooser;
+
+    // The API validates returnUrl against its allowed frontend origins, so an
+    // absolute URL on this origin is what it expects. Default: the timeline.
+    private string LoginUrl(string provider)
+    {
+        var returnUrl = string.IsNullOrEmpty(_returnUrl)
+            ? NavigationManager.ToAbsoluteUri("/timeline").ToString()
+            : NavigationManager.ToAbsoluteUri(_returnUrl).ToString();
+        return AuthClient.LoginUrl(provider, returnUrl);
+    }
+
+    private static string ProviderLabel(string provider) => provider switch
+    {
+        "google" => "Google",
+        "microsoft" => "Microsoft",
+        "github" => "GitHub",
+        _ => provider,
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -65,15 +104,23 @@
             _returnUrl = query["returnUrl"];
 
             await _terminalRef.FocusAsync();
+            _providers = await AuthClient.GetProvidersAsync();
             StateHasChanged();
         }
     }
 
     private void HandleKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
+        if (e.Key != "Enter" || _providers == null || _providers.Count == 0)
+            return;
+
+        if (_providers.Count == 1)
         {
-            NavigationManager.NavigateTo(LoginUrl, forceLoad: true);
+            NavigationManager.NavigateTo(LoginUrl(_providers[0]), forceLoad: true);
+        }
+        else
+        {
+            _showChooser = true;
         }
     }
 }
