@@ -2,7 +2,7 @@
 
 Production deploys from CI. Merging to `main` runs `.github/workflows/deploy.yml`, which
 tests, builds and pushes the backend image, deploys `infrastructure/main.bicep` with that
-image tag, and publishes the frontend + API proxy to Static Web Apps. PRs that touch
+image tag, and publishes the frontend to Static Web Apps. PRs that touch
 `infrastructure/` get a template validate and what-if.
 
 First-time environment buildout lives in [SELF-HOSTING.md](SELF-HOSTING.md#azure-first-time-buildout).
@@ -33,7 +33,10 @@ container app config.
   to make it public again, not to add a PAT.
 - **Azure:** CI logs in with OIDC through the `gh-actions-rss-reader` user-assigned
   managed identity. Repo secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
-  `AZURE_SUBSCRIPTION_ID` hold the identifiers; the one real secret is `GATEWAY_SECRET_KEY`.
+  `AZURE_SUBSCRIPTION_ID` hold the identifiers.
+- **Login providers:** `AUTH_{GOOGLE,MICROSOFT,GITHUB}_CLIENT_{ID,SECRET}` repo secrets,
+  passed to the template and stored as container app secrets. Rotate one by updating the
+  repo secret and re-running the deploy.
 - **SWA:** the deployment token is read by CI from `az staticwebapp secrets list` at run
   time and never stored.
 
@@ -97,8 +100,10 @@ new hostname, or certificate issuance fails.
 ## Read replicas (optional, off)
 
 When `enableReadReplica=true`, a second Container App `rss-reader-api-reader` scales
-0 to N and serves the read-heavy GETs (timeline, feeds, search, content) that the proxy
-routes to it, falling back to the writer on any error. Readers restore their database from
+0 to N and can serve the read-heavy GETs (timeline, feeds, search, content). Nothing
+routes traffic to it since the Functions proxy went away (see
+[ARCHITECTURE.md](ARCHITECTURE.md#backend-web-api)), so leave it off until a router
+exists. Readers restore their database from
 the Litestream blob replica at startup, so the writer must run with
 `RSSREADER_ENABLE_LITESTREAM_REPLICATION=true`. Enable both in `main.bicepparam` and merge.
 
@@ -181,6 +186,6 @@ step 7, so no data changes are needed either way.
 
 ## Frontend
 
-The Deploy workflow publishes the frontend (and, until the login cutover above, the
-Functions API proxy) on every merge to `main`. There is nothing to run locally. `swa-cli.config.json` at the repo root is used
-only by `swa start` during local development; see [LOCAL-TESTING.md](LOCAL-TESTING.md).
+The Deploy workflow publishes `dotnet publish` output of `src/WasmApp` to Static Web Apps
+on every merge to `main`; `wwwroot/appsettings.json` carries the API origin. There is
+nothing to run locally; see [LOCAL-TESTING.md](LOCAL-TESTING.md) for the dev loop.
