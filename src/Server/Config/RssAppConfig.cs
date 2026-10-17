@@ -55,11 +55,11 @@ namespace RssApp.Config
         public bool SchedulerEnabled { get; set; } = true;
 
         // How often the scheduler wakes to look for feeds whose next-earliest-fetch
-        // time has arrived. Feeds are polled at 15 min or slower, so a 5 min tick
-        // adds at most a few minutes of latency while letting a warm replica sit
-        // in Container Apps' idle billing tier (≈1/8 the active vCPU rate)
-        // between fetches instead of waking every minute.
-        public TimeSpan SchedulerTickInterval { get; set; } = TimeSpan.FromMinutes(5);
+        // time has arrived. Feeds are polled at 30 min or slower, so a 15 min tick
+        // adds modest latency while batching due feeds into one active burst and
+        // letting a warm replica sit in Container Apps' idle billing tier
+        // (≈1/8 the active vCPU rate) in between, instead of waking every minute.
+        public TimeSpan SchedulerTickInterval { get; set; } = TimeSpan.FromMinutes(15);
 
         // How long after startup to hold off the first scheduler tick. The replica
         // runs on a fraction of a vCPU and scales from zero, so a cold start's first
@@ -69,11 +69,13 @@ namespace RssApp.Config
         public TimeSpan SchedulerStartupDelay { get; set; } = TimeSpan.FromSeconds(45);
 
         // Polling interval used when a feed advertises no <ttl> / sy:updatePeriod.
-        public TimeSpan FeedRefreshInterval { get; set; } = TimeSpan.FromMinutes(30);
+        // Hourly is what most hosted readers do; fetch work is the replica's main
+        // active-time cost, so this is the biggest single lever on the bill.
+        public TimeSpan FeedRefreshInterval { get; set; } = TimeSpan.FromHours(1);
 
         // Clamp for feed-advertised intervals: never poll more often than the floor
         // (politeness) nor wait longer than the max (freshness).
-        public TimeSpan FeedRefreshIntervalFloor { get; set; } = TimeSpan.FromMinutes(15);
+        public TimeSpan FeedRefreshIntervalFloor { get; set; } = TimeSpan.FromMinutes(30);
         public TimeSpan FeedRefreshIntervalMax { get; set; } = TimeSpan.FromHours(6);
 
         public bool RebuildFtsOnStartup { get; set; }
