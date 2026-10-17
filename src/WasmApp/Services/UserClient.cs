@@ -13,15 +13,15 @@ public class UserClient : IUserClient
         ["https://www.theguardian.com/us-news/rss", "news"]
     ];
 
-    private readonly HttpClient _httpClient;
     private readonly HttpClient _apiClient;
     private readonly RssWasmConfig _config;
+    private readonly IAuthClient _authClient;
 
-    public UserClient(RssWasmConfig config, ILogger<UserClient> logger, IHttpClientFactory httpClientFactory)
+    public UserClient(RssWasmConfig config, ILogger<UserClient> logger, IHttpClientFactory httpClientFactory, IAuthClient authClient)
     {
-        _httpClient = new HttpClient(); // For /.auth/me calls
-        _apiClient = httpClientFactory.CreateClient("ApiClient"); // For API calls with auth header
+        _apiClient = httpClientFactory.CreateClient("ApiClient"); // sends the session cookie
         _config = config;
+        _authClient = authClient;
         logger.LogInformation(_config.ApiBaseUrl);
     }
 
@@ -32,9 +32,8 @@ public class UserClient : IUserClient
             return string.IsNullOrWhiteSpace(_config.TestAuthUsername) ? "testuser" : _config.TestAuthUsername;
         }
 
-        var url = $"{_config.AuthApiBaseUrl}.auth/me";
-        var user = await _httpClient.GetFromJsonAsync<AadUser>(url);
-        return user?.ClientPrincipal?.UserDetails ?? "Guest";
+        var principal = await _authClient.GetMeAsync();
+        return principal?.UserDetails ?? "Guest";
     }
 
     public async Task<RssUser> GetFeedUserAsync()
@@ -81,7 +80,6 @@ public class UserClient : IUserClient
 
     public void Dispose()
     {
-        _httpClient.Dispose();
         _apiClient.Dispose();
     }
 }

@@ -36,8 +36,8 @@ public sealed class AuthenticationHeaderHandlerTests
         Assert.IsNotNull(_navManager.NavigatedTo, "Should navigate on 401");
         StringAssert.StartsWith(_navManager.NavigatedTo, "/?returnUrl=",
             "Anonymous user should be sent home, not to AAD");
-        Assert.IsFalse(_navManager.NavigatedTo!.Contains("/.auth/login/aad"),
-            "Should NOT redirect anonymous user to AAD login");
+        Assert.IsFalse(_navManager.NavigatedTo!.Contains("/auth/login/"),
+            "Should NOT redirect anonymous user to a provider login");
         Assert.IsTrue(_navManager.ForceLoad, "Should use forceLoad=true");
     }
 
@@ -50,8 +50,8 @@ public sealed class AuthenticationHeaderHandlerTests
         await client.GetAsync("/api/something");
 
         Assert.IsNotNull(_navManager.NavigatedTo, "Should navigate on 401");
-        StringAssert.StartsWith(_navManager.NavigatedTo, "/.auth/login/aad?post_login_redirect_uri=",
-            "Session-expired authenticated user should be silently re-authed via AAD");
+        StringAssert.StartsWith(_navManager.NavigatedTo, "https://api.localhost/auth/login/github?returnUrl=",
+            "Session-expired authenticated user should be sent back through the same provider's API login");
         Assert.IsTrue(_navManager.ForceLoad, "Should use forceLoad=true");
     }
 
@@ -106,7 +106,8 @@ public sealed class AuthenticationHeaderHandlerTests
     {
         var handler = new AuthenticationHeaderHandler(
             new FakeAuthStateProvider(isAuthenticated),
-            _navManager)
+            _navManager,
+            new AuthClient(new RssApp.Config.RssWasmConfig { ApiBaseUrl = "https://api.localhost/" }))
         {
             InnerHandler = new FakeHttpMessageHandler(responseStatus)
         };
@@ -130,7 +131,7 @@ public sealed class AuthenticationHeaderHandlerTests
         public override Task<AuthenticationState> GetAuthenticationStateAsync()
         {
             var identity = _isAuthenticated
-                ? new ClaimsIdentity([new Claim(ClaimTypes.Name, "testuser")], "Test")
+                ? new ClaimsIdentity([new Claim(ClaimTypes.Name, "testuser")], "github")
                 : new ClaimsIdentity();
             return Task.FromResult(new AuthenticationState(new ClaimsPrincipal(identity)));
         }
