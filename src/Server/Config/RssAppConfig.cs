@@ -13,7 +13,11 @@ namespace RssApp.Config
         // The parent directory must exist and be writable; otherwise the writer
         // entrypoint and the BackgroundService will fail fast.
         public string BackupDbPath { get; set; } = string.Empty;
-        public TimeSpan BackupInterval { get; set; } = TimeSpan.FromMinutes(5);
+        // The backup only runs when the DB changed since the last one, so with hourly
+        // feed polling this is mostly the cap on how often an active reading session
+        // (every mark-read bumps the DB) triggers a full VACUUM INTO + copy to the
+        // share. 15 min keeps that work down; read-state is all a crash can lose.
+        public TimeSpan BackupInterval { get; set; } = TimeSpan.FromMinutes(15);
 
         public TimeSpan CacheReloadInterval { get; set; } = TimeSpan.FromMinutes(5);
         public TimeSpan CacheReloadStartupDelay { get; set; } = TimeSpan.FromSeconds(0);
