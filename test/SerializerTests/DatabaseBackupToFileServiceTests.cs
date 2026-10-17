@@ -235,6 +235,26 @@ public class DatabaseBackupToFileServiceTests
     }
 
     [TestMethod]
+    public async Task RunBackup_SkipsWhenActiveDbUnchanged()
+    {
+        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
+        var firstWrite = File.GetLastWriteTimeUtc(_backupDbPath);
+        var firstSuccess = _service.LastSuccessAtUtc;
+
+        // No writes to the active DB: second cycle must not touch the share.
+        var ok = await _service.RunBackupCycleAsync(CancellationToken.None);
+        Assert.IsFalse(ok, "Unchanged DB should be skipped");
+        Assert.AreEqual(firstWrite, File.GetLastWriteTimeUtc(_backupDbPath));
+        Assert.AreEqual(firstSuccess, _service.LastSuccessAtUtc);
+
+        // Mutate, and the next cycle backs up again.
+        SqliteConnection.ClearAllPools();
+        AddRow(_activeDbPath, "gamma", 3);
+        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
+        Assert.AreEqual(3, ReadAllRows(_backupDbPath).Count);
+    }
+
+    [TestMethod]
     public async Task RunBackup_OverwritesPreviousBackupFile()
     {
         // First cycle.
