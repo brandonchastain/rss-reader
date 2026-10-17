@@ -125,6 +125,12 @@ else if (_showUpToDate)
     // Pre-computed flat list for the windowed loop — rebuilt only when Posts changes
     private List<TimelineEntry> _flatEntries = new();
     private int _lastPostsCount;
+    private List<NewsFeedItem> _lastPosts;
+    // Newest loaded (PublishDateOrder, Id) the current toast count was probed
+    // against. When the head moves past it the count is for a list that is
+    // gone, so the toast is dropped rather than left promising posts already
+    // on screen.
+    private (long order, long id)? _toastCursor;
 
     // Windowing state. Entries [0, _windowStart) are not in the DOM; the spacer
     // above the list is exactly as tall as they were, with each one's measured
@@ -393,6 +399,7 @@ else if (_showUpToDate)
                             if (count >= 0 && !_isBackgroundRefreshing && count != _newPostsCount)
                             {
                                 _newPostsCount = count;
+                                _toastCursor = cursor;
                                 _showUpToDate = false;
                                 await InvokeAsync(StateHasChanged);
                             }
@@ -440,7 +447,31 @@ else if (_showUpToDate)
         base.OnParametersSet();
         if (Posts != null)
         {
+            // A new list instance is a reload from the top (the reconcile over a
+            // hydrated cache), which may hold exactly as many rows as before.
+            if (!ReferenceEquals(Posts, _lastPosts))
+            {
+                _lastPosts = Posts;
+                _lastPostsCount = ForceRebuild;
+            }
+
             RebuildFlatEntries();
+            DropStaleToast();
+        }
+    }
+
+    private void DropStaleToast()
+    {
+        if (_newPostsCount == 0 || _toastCursor == null)
+        {
+            return;
+        }
+
+        var newest = GetNewestLoadedCursor();
+        if (newest != null && newest != _toastCursor)
+        {
+            _newPostsCount = 0;
+            _toastCursor = null;
         }
     }
 
