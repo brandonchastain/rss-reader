@@ -150,6 +150,16 @@ public static class AuthenticationSetup
                             NormalizeIdentity(ctx.Principal!, provider.ToLowerInvariant());
                             return Task.CompletedTask;
                         };
+
+                        // Always show the account picker: people with several
+                        // Microsoft or Google accounts signed in must get to
+                        // choose, instead of being logged in as whichever one
+                        // the provider's session happens to hold.
+                        options.Events.OnRedirectToIdentityProvider = ctx =>
+                        {
+                            ctx.ProtocolMessage.Prompt = "select_account";
+                            return Task.CompletedTask;
+                        };
                     });
                     break;
             }
