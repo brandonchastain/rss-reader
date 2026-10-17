@@ -171,6 +171,10 @@ DNS: `CNAME api.rss -> <container app FQDN>` and `TXT asuid.api.rss ->
    no switching off: with no `allowedRoles` routes and no `/.auth` links, SWA never
    challenges anyone.
 
+**Status:** steps 1 to 6 were done on 2026-10-17 (Microsoft only; registration "RSS
+Reader", appId `747a7699-5c86-4614-bd6b-71c44c4012d5`, in the user's Entra tenant). Step 7 is
+still open.
+
 **Rollback** before step 7: revert the step 6 PR and set `AUTH_CUTOVER` back to `false`;
 the next deploy restores the proxy and the old login. The API keeps both schemes until
 step 7, so no data changes are needed either way.
