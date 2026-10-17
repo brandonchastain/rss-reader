@@ -4,9 +4,9 @@ namespace WasmApp.Services;
 /// Delay policy for the timeline's "are there new posts?" probe.
 ///
 /// The first delay is deliberately short: when the timeline is hydrated from
-/// cache, the probe is the only thing that will surface new posts, and hydration
-/// finishes after the post table's first render -- waiting a full interval there
-/// would leave the reader on a stale list with no sign anything is coming.
+/// cache and the reconcile fetch behind it fails, the probe is the only thing
+/// that will surface new posts once the API is back -- waiting a full interval
+/// there would leave the reader on a stale list with no sign anything is coming.
 ///
 /// That short delay must not survive a failing API. An unreachable backend fails
 /// fast (Container Apps' ingress answers 404 in ~25ms when no revision is

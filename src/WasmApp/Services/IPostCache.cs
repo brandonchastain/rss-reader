@@ -4,9 +4,10 @@ namespace WasmApp.Services;
 
 /// <summary>
 /// Browser-local cache of the last-seen timeline, the user record, the tag list,
-/// and post bodies. The API scales to zero, so waking it costs ~20s of platform
-/// time no request can avoid; this lets the app paint from the previous session
-/// immediately and reconcile with the server in the background.
+/// and post bodies. The app paints from the previous session immediately, then
+/// fetches the newest page and replaces the cached rows with it; the cache is
+/// what stays on screen when that fetch fails, so an API outage degrades to a
+/// readable (if stale) timeline rather than a spinner.
 ///
 /// All members no-op (returning null/empty) until <see cref="Username"/> is set,
 /// and every operation swallows storage failures -- a browser with storage

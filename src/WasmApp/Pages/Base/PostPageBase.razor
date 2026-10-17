@@ -18,6 +18,10 @@
     private bool _needsScrollRestore;
     private int _restorePageSize;
     private int _lastPrefetchedCount;
+    // Set by hydration and cleared by the first fetch that follows it. While it
+    // is set, that fetch is a reconcile: it asks for the newest page and replaces
+    // the cached rows instead of paging past them.
+    private bool _reconcilePending;
     public List<NewsFeedItem> Items { get; set; } = new List<NewsFeedItem>();
     public int Page { get; set; } = 0;
     public long? CursorPublishDateOrder { get; set; }
@@ -118,37 +122,57 @@
             }
 
             // Switching filters is a fresh view, so it gets the same cache-first
-            // treatment as the initial load. Without this the slot was written
-            // but never read: hydration only ran on the component's first
-            // render, so every filter switch blocked on the API even when that
-            // exact view was sitting in the cache.
-            //
-            // A hit skips the fetch entirely, the same way the initial load
-            // does; the new-posts probe runs against the active filter and
-            // surfaces anything newer. Tracked as a flag rather than an early
-            // return so control still reaches the pending-request drain.
-            bool hydrated = filtersChanged && await TryHydrateFromCacheAsync();
+            // treatment as the initial load: the slot for that view paints at
+            // once so the toolbar never looks dead. The cache is only the first
+            // paint, though -- the live fetch below always runs and replaces it.
+            if (filtersChanged)
+            {
+                await TryHydrateFromCacheAsync();
+            }
 
             int pageSize = _restorePageSize > 0 ? _restorePageSize : 20;
             _restorePageSize = 0;
 
+            // A reconcile is a network-first load of the newest page over a
+            // hydrated cache. The API is always warm now, so the cached rows are
+            // a placeholder for a few hundred milliseconds rather than the whole
+            // session -- waiting for the reader to tap a "new posts" toast or
+            // reload the page just to see what the scheduler wrote overnight was
+            // the cache working against them. The cache is still what is shown
+            // when the fetch fails, so an outage degrades to the old behaviour.
+            //
+            // Fetched from the top (not from the cached cursor) and sized to the
+            // cached rows so the replacement never shrinks under the reader.
+            bool reconcile = _reconcilePending;
+            _reconcilePending = false;
+            if (reconcile)
+            {
+                Page = 0;
+                CursorPublishDateOrder = null;
+                CursorId = null;
+                pageSize = Math.Clamp(Items.Count, pageSize, PostCache.MaxTimelineItems);
+            }
+
             List<NewsFeedItem> newPageRes = null;
             try
             {
-                if (!hydrated)
-                {
-                    newPageRes = await this.GetPostsAsync(pageSize);
-                }
+                newPageRes = await this.GetPostsAsync(pageSize);
             }
             catch (Exception ex)
             {
-                // The API is unreachable or still waking. Keep whatever is on
-                // screen -- possibly a hydrated cache -- instead of tearing it
-                // down, and don't let the exception escape into the infinite
-                // scroll handler. Deliberately not an early return: that would
-                // skip the pending-request drain below, stranding a filter click
-                // that arrived during the failed fetch.
+                // The API is unreachable. Keep whatever is on screen -- possibly
+                // a hydrated cache -- instead of tearing it down, and don't let
+                // the exception escape into the infinite scroll handler.
+                // Deliberately not an early return: that would skip the
+                // pending-request drain below, stranding a filter click that
+                // arrived during the failed fetch.
                 logger.LogWarning(ex, "Timeline fetch failed; keeping the current items.");
+
+                if (reconcile)
+                {
+                    // The cached rows stay, so paging must continue past them.
+                    UpdateCursorFromItems(Items);
+                }
             }
 
             if (newPageRes != null)
@@ -157,6 +181,15 @@
                 // before the outbox drains would otherwise show the server's older
                 // flags and visibly revert what the user just did.
                 await ApplyPendingWritesAsync(newPageRes);
+
+                if (reconcile)
+                {
+                    // Swap in a new list rather than mutating the hydrated one:
+                    // PostTable only rebuilds its rows when the list changes, and
+                    // a fresh page can match the cached one row for row while
+                    // still carrying newer flags.
+                    Items = new List<NewsFeedItem>();
+                }
 
                 // Deduplicate by Href before adding
                 var existingHrefs = new HashSet<string>(Items.Select(i => i.Href), StringComparer.OrdinalIgnoreCase);
@@ -267,8 +300,9 @@
         }
     }
 
-    // Fills Items from the browser cache so the timeline is readable while the
-    // container wakes. Returns false (leaving Items untouched) on any miss.
+    // Fills Items from the browser cache so the timeline paints before the
+    // first response arrives, and flags the next fetch as a reconcile that
+    // replaces these rows. Returns false (leaving Items untouched) on any miss.
     private async Task<bool> TryHydrateFromCacheAsync()
     {
         if (!CacheApplies)
@@ -297,6 +331,7 @@
             // cached window instead of re-fetching it. The server ignores the
             // page offset whenever a cursor is supplied.
             UpdateCursorFromItems(cached);
+            _reconcilePending = true;
 
             _hasLoadedOnce = true;
             this.StateHasChanged();
@@ -399,20 +434,17 @@
 
             // Paint the previous session's timeline before touching the API. A
             // scroll restore is skipped deliberately: it only happens on
-            // in-session back-navigation, when the container is already warm, and
-            // its larger page size would fight the cached head.
+            // in-session back-navigation, when nothing has gone stale, and its
+            // larger page size would fight the cached head.
             if (!_needsScrollRestore)
             {
                 await TryHydrateFromCacheAsync();
             }
 
-            // Hydration leaves Items populated, which by design suppresses the
-            // initial fetch -- PostTable's existing new-posts poll probes the
-            // server instead and surfaces the toast when the container wakes.
-            if (this.Items == null || !this.Items.Any())
-            {
-                await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag, false));
-            }
+            // Always fetch. With a hydrated cache this is the reconcile that
+            // swaps the stale rows for the server's newest page; without one it
+            // is the ordinary first load.
+            await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag, false));
         }
         else if (_needsScrollRestore && !string.IsNullOrEmpty(_scrollAnchorPostId))
         {
