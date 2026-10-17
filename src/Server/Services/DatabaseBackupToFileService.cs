@@ -53,6 +53,20 @@ namespace RssReader.Server.Services
 
         public DateTimeOffset? LastSuccessAtUtc { get; private set; }
 
+        /// <summary>
+        /// Fingerprint of the active DB (main file + WAL size and mtime) at the start of
+        /// the last successful backup. When it has not moved, the DB has not been written
+        /// since and the cycle is skipped: every copy is ~1 500 SMB write operations on
+        /// Azure Files, which was the single largest line on the bill with a warm replica.
+        /// </summary>
+        private (long MainLen, long MainMtime, long WalLen, long WalMtime)? _lastBackedUpFingerprint;
+
+        /// <summary>
+        /// Copy buffer for the stage → share copy. SMB coalesces up to ~1 MB per write
+        /// request, so the default 80 KB buffer cost ~13× the write operations it needed.
+        /// </summary>
+        private const int ShareCopyBufferBytes = 1024 * 1024;
+
         public bool Enabled => !string.IsNullOrEmpty(_paths.BackupDbPath);
 
         public DatabaseBackupToFileService(
@@ -158,6 +172,15 @@ namespace RssReader.Server.Services
                     return false;
                 }
 
+                // Snapshot the fingerprint BEFORE the backup so any write that lands while
+                // VACUUM INTO runs is picked up by the next cycle rather than lost.
+                var fingerprint = FingerprintActiveDb();
+                if (fingerprint == _lastBackedUpFingerprint && File.Exists(_paths.BackupDbPath))
+                {
+                    _logger.LogDebug("Active DB unchanged since last backup — skipping this cycle.");
+                    return false;
+                }
+
                 await BackupSqliteAsync(_paths.ActiveDbPath, stagePath, cancellationToken);
 
                 var stageExists = File.Exists(stagePath);
@@ -176,7 +199,7 @@ namespace RssReader.Server.Services
                 using (var src = new FileStream(stagePath, FileMode.Open, FileAccess.Read, FileShare.Read))
                 using (var dst = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 {
-                    await src.CopyToAsync(dst, cancellationToken);
+                    await src.CopyToAsync(dst, ShareCopyBufferBytes, cancellationToken);
                     // Force the SMB client to push its write-back cache to the share before
                     // we trust the file. On Linux CIFS a write-back failure (e.g. the share
                     // quota filling mid-copy) can otherwise be dropped silently: Dispose
@@ -201,6 +224,7 @@ namespace RssReader.Server.Services
                 File.Move(tempPath, _paths.BackupDbPath, overwrite: true);
 
                 LastSuccessAtUtc = DateTimeOffset.UtcNow;
+                _lastBackedUpFingerprint = fingerprint;
                 var size = new FileInfo(_paths.BackupDbPath).Length;
                 _logger.LogInformation(
                     "DB backup OK: {Bytes:N0} bytes in {Ms} ms (host={Host} pid={Pid}).",
@@ -330,6 +354,22 @@ namespace RssReader.Server.Services
             {
                 _logger.LogWarning(ex, "Failed to release backup lock");
             }
+        }
+
+        /// <summary>
+        /// Cheap change detector for a WAL-mode SQLite file: a commit appends to the -wal
+        /// (size and mtime move); a checkpoint rewrites the main file (mtime moves) and
+        /// resets the WAL. Either way at least one of the four values changes.
+        /// </summary>
+        private (long MainLen, long MainMtime, long WalLen, long WalMtime) FingerprintActiveDb()
+        {
+            var main = new FileInfo(_paths.ActiveDbPath);
+            var wal = new FileInfo(_paths.ActiveDbPath + "-wal");
+            return (
+                main.Exists ? main.Length : -1,
+                main.Exists ? main.LastWriteTimeUtc.Ticks : 0,
+                wal.Exists ? wal.Length : -1,
+                wal.Exists ? wal.LastWriteTimeUtc.Ticks : 0);
         }
 
         private static async Task BackupSqliteAsync(

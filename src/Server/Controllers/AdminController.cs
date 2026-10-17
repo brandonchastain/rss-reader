@@ -4,6 +4,7 @@ using RssApp.ComponentServices;
 using RssApp.Config;
 using RssApp.Contracts;
 using RssApp.Data;
+using RssReader.Server.Services;
 using System.Security.Claims;
 
 namespace Server.Controllers;
@@ -17,30 +18,32 @@ public class AdminController : ControllerBase
     private readonly IUserRepository _userRepo;
     private readonly RssAppConfig _config;
     private readonly IUserResolver _userResolver;
+    private readonly SystemStatsCollector _statsCollector;
 
     public AdminController(
         ISystemStatsRepository statsRepo,
         IUserRepository userRepo,
         RssAppConfig config,
-        IUserResolver userResolver)
+        IUserResolver userResolver,
+        SystemStatsCollector statsCollector)
     {
-        _statsRepo    = statsRepo    ?? throw new ArgumentNullException(nameof(statsRepo));
-        _userRepo     = userRepo     ?? throw new ArgumentNullException(nameof(userRepo));
-        _config       = config       ?? throw new ArgumentNullException(nameof(config));
-        _userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
+        _statsRepo      = statsRepo      ?? throw new ArgumentNullException(nameof(statsRepo));
+        _userRepo       = userRepo       ?? throw new ArgumentNullException(nameof(userRepo));
+        _config         = config         ?? throw new ArgumentNullException(nameof(config));
+        _userResolver   = userResolver   ?? throw new ArgumentNullException(nameof(userResolver));
+        _statsCollector = statsCollector ?? throw new ArgumentNullException(nameof(statsCollector));
     }
 
     // GET /api/admin/stats
+    // Captures a fresh snapshot (at most hourly) only when the dashboard is opened;
+    // nothing runs these COUNT(*) queries in the background any more.
     [HttpGet("stats")]
-    public IActionResult GetStats()
+    public async Task<IActionResult> GetStats()
     {
         if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User))
             return Forbid();
 
-        var snapshot = _statsRepo.GetLatestSnapshot();
-        if (snapshot == null)
-            snapshot = new SystemStatsSnapshot { Timestamp = DateTime.UtcNow };
-
+        var snapshot = await _statsCollector.GetOrCaptureAsync();
         return Ok(snapshot);
     }
 

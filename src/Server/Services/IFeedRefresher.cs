@@ -13,7 +13,9 @@ namespace RssApp.ComponentServices
         /// Runs one pass of the background scheduler: fetches every distinct feed
         /// URL whose next-earliest-fetch time has arrived (once per URL) and fans
         /// the new items out to all subscribers. No-op in read-only mode.
+        /// Returns the earliest time any feed is next due, so the caller can sleep
+        /// until there is work instead of polling; null when nothing is scheduled.
         /// </summary>
-        Task RunSchedulerTickAsync(CancellationToken token);
+        Task<DateTimeOffset?> RunSchedulerTickAsync(CancellationToken token);
     }
 }

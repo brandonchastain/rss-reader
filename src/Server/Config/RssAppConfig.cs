@@ -13,7 +13,11 @@ namespace RssApp.Config
         // The parent directory must exist and be writable; otherwise the writer
         // entrypoint and the BackgroundService will fail fast.
         public string BackupDbPath { get; set; } = string.Empty;
-        public TimeSpan BackupInterval { get; set; } = TimeSpan.FromMinutes(5);
+        // The backup only runs when the DB changed since the last one, so with hourly
+        // feed polling this is mostly the cap on how often an active reading session
+        // (every mark-read bumps the DB) triggers a full VACUUM INTO + copy to the
+        // share. 15 min keeps that work down; read-state is all a crash can lose.
+        public TimeSpan BackupInterval { get; set; } = TimeSpan.FromMinutes(15);
 
         public TimeSpan CacheReloadInterval { get; set; } = TimeSpan.FromMinutes(5);
         public TimeSpan CacheReloadStartupDelay { get; set; } = TimeSpan.FromSeconds(0);
@@ -54,9 +58,12 @@ namespace RssApp.Config
         // Set false to fall back to purely user-triggered refreshes.
         public bool SchedulerEnabled { get; set; } = true;
 
-        // How often the scheduler wakes to look for feeds whose next-earliest-fetch
-        // time has arrived.
-        public TimeSpan SchedulerTickInterval { get; set; } = TimeSpan.FromMinutes(1);
+        // Upper bound on how long the scheduler sleeps between passes. The scheduler
+        // normally sleeps exactly until the earliest feed is next due, so this only
+        // matters when nothing is scheduled or a pass fails. Kept at the feed
+        // interval floor so a bad schedule can never delay a feed by more than one
+        // extra cycle.
+        public TimeSpan SchedulerTickInterval { get; set; } = TimeSpan.FromMinutes(30);
 
         // How long after startup to hold off the first scheduler tick. The replica
         // runs on a fraction of a vCPU and scales from zero, so a cold start's first
@@ -66,11 +73,13 @@ namespace RssApp.Config
         public TimeSpan SchedulerStartupDelay { get; set; } = TimeSpan.FromSeconds(45);
 
         // Polling interval used when a feed advertises no <ttl> / sy:updatePeriod.
-        public TimeSpan FeedRefreshInterval { get; set; } = TimeSpan.FromMinutes(30);
+        // Hourly is what most hosted readers do; fetch work is the replica's main
+        // active-time cost, so this is the biggest single lever on the bill.
+        public TimeSpan FeedRefreshInterval { get; set; } = TimeSpan.FromHours(1);
 
         // Clamp for feed-advertised intervals: never poll more often than the floor
         // (politeness) nor wait longer than the max (freshness).
-        public TimeSpan FeedRefreshIntervalFloor { get; set; } = TimeSpan.FromMinutes(15);
+        public TimeSpan FeedRefreshIntervalFloor { get; set; } = TimeSpan.FromMinutes(30);
         public TimeSpan FeedRefreshIntervalMax { get; set; } = TimeSpan.FromHours(6);
 
         public bool RebuildFtsOnStartup { get; set; }
