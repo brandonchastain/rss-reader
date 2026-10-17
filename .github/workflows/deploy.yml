@@ -120,7 +120,7 @@ jobs:
       - name: Verify the backend is serving
         run: |
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "https://rss.brandonchastain.com/api/healthz" || true)
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "https://api.rss.brandonchastain.com/api/healthz" || true)
             if [ "$code" = "200" ]; then echo "healthz OK on attempt $i"; exit 0; fi
             echo "attempt $i: HTTP $code"
             sleep 10
