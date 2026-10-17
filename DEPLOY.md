@@ -1,8 +1,14 @@
-# Cheat Sheet
+# Deploying to production
 
 Production deploys from CI. Merging to `main` runs `.github/workflows/deploy.yml`, which
 tests, builds and pushes the backend image, deploys `infrastructure/main.bicep` with that
-image tag, and publishes the frontend + API proxy to Static Web Apps.
+image tag, and publishes the frontend + API proxy to Static Web Apps. PRs that touch
+`infrastructure/` get a template validate and what-if.
+
+First-time environment buildout lives in [SELF-HOSTING.md](SELF-HOSTING.md#azure-first-time-buildout).
+How the app keeps its data is in [ARCHITECTURE.md](ARCHITECTURE.md#backup--replication).
+
+## Cheat sheet
 
 ```bash
 # Re-deploy the current main without a code change, and wait for it
@@ -23,171 +29,75 @@ container app config.
   with the workflow's `GITHUB_TOKEN` (`permissions: packages: write`); the Container App
   pulls it anonymously and stores no registry credential. No personal access token exists
   for this project, and none should be created. If the package ever becomes private, the
-  app fails to pull on the next scale-from-zero (`ImagePullBackOff`, 403 from
-  `ghcr.io/token`); the fix is to make it public again, not to add a PAT.
+  next revision fails to pull (`ImagePullBackOff`, 403 from `ghcr.io/token`); the fix is
+  to make it public again, not to add a PAT.
 - **Azure:** CI logs in with OIDC through the `gh-actions-rss-reader` user-assigned
   managed identity. Repo secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
   `AZURE_SUBSCRIPTION_ID` hold the identifiers; the one real secret is `GATEWAY_SECRET_KEY`.
 - **SWA:** the deployment token is read by CI from `az staticwebapp secrets list` at run
   time and never stored.
 
-# Infrastructure buildout and backend deployment
+## Changing infrastructure
 
-## Prerequisites
-1. Azure CLI installed: `az --version`
-2. Azure subscription
-3. GitHub account with the `gh` CLI authenticated (`gh auth login`)
-4. Docker, only if you want to build the image locally for testing
+Edit `infrastructure/main.bicepparam` (sizing, replica counts, read replicas) or
+`main.bicep` and merge. Every parameter and env var is listed under
+[Knobs](ARCHITECTURE.md#knobs). Cost consequences are noted there too; the always-on
+replica and the 5-minute backup copy are the two lines that show up on the bill.
 
-## Step 1: Setup Azure Resources
-
-```bash
-# Login to Azure
-az login
-
-# Set your subscription
-az account set --subscription "YOUR_SUBSCRIPTION_ID"
-
-# Create resource group
-az group create --name rss-container-rg --location westus2
-```
-
-## Step 1b: Publish the first image
-
-The template references `ghcr.io/<user>/rss-reader-api`, so an image must exist before the
-first `az deployment group create`. Push one by running the Deploy workflow once it is
-configured (Step 3), or trigger just the build with `gh workflow run deploy.yml --ref main`.
-
-After the first push, open the package on GitHub (Profile > Packages >
-`rss-reader-api` > Package settings), set **Visibility** to **Public**, and link it to the
-repository. The Container App pulls anonymously and has no registry credential, so a
-private package breaks every scale-from-zero.
-
-If you must push a one-off image from a laptop (for example the very first one, before CI
-has Azure access), authenticate Docker with the `gh` CLI's token rather than creating a PAT.
-The token is piped straight into `docker login` and never printed:
-
-```powershell
-gh auth refresh --scopes write:packages
-gh auth token | docker login ghcr.io -u brandonchastain --password-stdin
-docker build -t ghcr.io/brandonchastain/rss-reader-api:latest -f src/Server/Dockerfile .
-docker push ghcr.io/brandonchastain/rss-reader-api:latest
-docker logout ghcr.io
-```
-
-## Step 3: Infrastructure buildout
-
-> **Everything deploys from CI.** `.github/workflows/deploy.yml` validates the
-> template on PRs touching `infrastructure/`, and on merge to `main` runs the
-> tests, builds and pushes the backend image, deploys the ARM template with that
-> image, then publishes the frontend and API proxy to Static Web Apps. Prefer it
-> over running anything below by hand: deploying locally is how the template
-> drifted from production in the first place, and how it went unnoticed that ARM
-> had stopped accepting the template at all. The steps here remain accurate for
-> first-time buildout of a new environment.
+## Monitoring
 
 ```bash
-# Navigate to infrastructure directory
-cd ..\infrastructure
-
-# Generate a random base64url-encoded secret key
-$bytes = New-Object byte[] 64
-[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-$base64 = [Convert]::ToBase64String($bytes)
-$GATEWAY_SECRET_KEY = $base64.Replace('+', '-').Replace('/', '_').TrimEnd('=')
-
-# Deploy the Bicep template with the gateway secret key. The image is a public
-# GHCR package, so the template takes no registry credential.
-az deployment group create `
-  --resource-group rss-container-rg `
-  --template-file main.bicep `
-  --parameters main.bicepparam `
-  --parameters containerImage="ghcr.io/brandonchastain/rss-reader-api:latest" `
-  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY
-
-```
-
-Then store `GATEWAY_SECRET_KEY` as a repo secret (`gh secret set GATEWAY_SECRET_KEY`), set
-the `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` repo secrets for the
-OIDC identity, and let CI own every deploy from here on.
-
-## Future Updates
-
-Merge to `main`. The Deploy workflow builds, pushes, and deploys; see the cheat sheet at
-the top of this file to re-run or watch it.
-
-### Monitoring & Logs
-
-```bash
-# View container app logs
-az containerapp logs show   --name rss-reader-api   --resource-group rss-container-rg   --follow
-
-# Check current replica count (should be 0 when idle)
-az containerapp replica list   --name rss-reader-api   --resource-group rss-container-rg
-
-```
-
-### Troubleshooting
-
-### Check container logs
-```bash
+# Follow container logs
 az containerapp logs show --name rss-reader-api --resource-group rss-container-rg --follow
-```
 
-### Verify storage mount
-The Azure Files mount at `/data/` persists cached feed images at `/data/images/`. The SQLite database is **not** backed up to Azure Files — it lives at `/tmp/storage.db` and is replicated to Azure Blob Storage by Litestream.
+# Replica count (expect exactly 1: minReplicas is 1 and SQLite allows one writer)
+az containerapp replica list --name rss-reader-api --resource-group rss-container-rg
 
-### Litestream Notes
-The Docker image includes [Litestream](https://litestream.io/) for continuous SQLite replication to Azure Blob Storage. **Litestream is the sole DB backup path**: the entrypoint runs `litestream restore -if-replica-exists` before starting the app and exits with a fatal error if restore fails (to avoid orphaning the replica with a fresh empty-DB generation). The app then runs under `litestream replicate` supervision, which streams WAL changes to the `litestream` blob container. `DatabaseBackupService` runs alongside but only handles image cache sync and system-stats snapshots — it does not touch the DB file.
-
-On first deployment the blob container is empty, so `litestream restore -if-replica-exists` succeeds silently and the app starts with a brand-new DB; `litestream replicate` then begins seeding the blob.
-
-**Required environment variables** (set via Bicep):
-- `LITESTREAM_AZURE_ACCOUNT_NAME` — storage account name
-- Authentication uses the Container App's **system-assigned managed identity** (granted `Storage Blob Data Contributor` on the storage account). No account key is needed.
-
-### Check replica status
-```bash
+# Running status
 az containerapp show --name rss-reader-api --resource-group rss-container-rg --query properties.runningStatus
 ```
 
-### Read Replicas (optional)
+Logs land in the `rss-reader-logs` Log Analytics workspace at Warning and above.
 
-The app supports optional read replicas that scale 0→N to handle read-heavy traffic. Readers restore from the Litestream blob on startup and serve read-only API requests.
+## Troubleshooting
 
-**Enable read replicas:**
+**App refuses to boot after a deploy.** The entrypoint seeds `/tmp/storage.db` from
+`/data/db/storage.db` and runs `PRAGMA quick_check` on it; a failed check stops the app
+rather than let the backup service overwrite the share with bad data. Logs show
+`FATAL: PRAGMA quick_check failed`. Restore a known-good copy to the share and redeploy.
+
+**`FATAL: Parent of backup directory '/data' does not exist`.** The Azure Files volume
+mount is missing from the revision. Check the template's `volumeMounts`; this is the
+symptom of a hand-run `az containerapp update`.
+
+**Share quota.** A backup cycle briefly holds the old copy and the new one, so the
+`rss-data` share quota must exceed twice the database size. At 1 GB a 530 MB database
+crossed that line on 2026-10-02 and the truncated copy was refused at boot. The template
+sets 5 GB; raise it in `main.bicep` before the database approaches 2.5 GB.
+
+**Verify the mount.**
+
 ```bash
-az deployment group create \
-  --resource-group rss-container-rg \
-  --template-file main.bicep \
-  --parameters main.bicepparam \
-  --parameters enableReadReplica=true \
-  --parameters maxReadReplicas=3 \
-  --parameters containerImage="ghcr.io/brandonchastain/rss-reader-api:latest" \
-  --parameters gatewaySecretKey=$GATEWAY_SECRET_KEY
+az containerapp exec --name rss-reader-api --resource-group rss-container-rg --command "ls -la /data/db /data/images"
 ```
 
-(Prefer setting `enableReadReplica` in `main.bicepparam` and merging, so CI applies it.)
+## Read replicas (optional, off)
 
-**How it works:**
-- The proxy (`ApiProxy.js`) routes GET requests for timeline, feeds, search, and content to the reader
-- All writes (mark-as-read, save, add feed, refresh) always go to the writer
-- If the reader is down, the proxy automatically falls back to the writer
-- Readers are eventually consistent (data is as fresh as their last startup)
-- ACA scales readers to zero when idle, each new reader gets a fresh Litestream restore
+When `enableReadReplica=true`, a second Container App `rss-reader-api-reader` scales
+0 to N and serves the read-heavy GETs (timeline, feeds, search, content) that the proxy
+routes to it, falling back to the writer on any error. Readers restore their database from
+the Litestream blob replica at startup, so the writer must run with
+`RSSREADER_ENABLE_LITESTREAM_REPLICATION=true`. Enable both in `main.bicepparam` and merge.
 
-**Verify reader is running:**
 ```bash
 az containerapp show --name rss-reader-api-reader --resource-group rss-container-rg --query properties.runningStatus
 az containerapp logs show --name rss-reader-api-reader --resource-group rss-container-rg --type console --tail 20
 ```
 
-Healthy reader logs show: `Starting in READER mode (read-only replica).`
+A healthy reader logs `Starting in READER mode (read-only replica with follow-mode restore).`
 
-
-# Frontend deployment
+## Frontend
 
 The Deploy workflow publishes the frontend and the Functions API proxy on every merge to
-`main`, fetching the SWA deployment token from Azure at run time. There is nothing to run
-locally. `swa-cli.config.json` at the repo root is still used for `swa start` during local
-development.
+`main`. There is nothing to run locally. `swa-cli.config.json` at the repo root is used
+only by `swa start` during local development; see [LOCAL-TESTING.md](LOCAL-TESTING.md).
