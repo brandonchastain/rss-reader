@@ -142,19 +142,9 @@ DNS: `CNAME api.rss -> <container app FQDN>` and `TXT asuid.api.rss ->
    load the app. Confirm it works with your own account: open the site once, then
    `sqlite3 /data/db/storage.db "select Id, AadUserId, ProviderUserId from Users"` via
    `az containerapp exec` should show a `microsoft:<guid>` next to your SWA id. If
-   `ProviderUserId` stays empty, SWA is not forwarding the principal's `claims`. Link
-   your own row by hand while still signed in through the site (the admin check passes
-   on the SWA id). From the browser console on rss.brandonchastain.com, with your row
-   id from the Admin page and the object id your Microsoft login produced locally:
-
-   ```js
-   fetch('/api/admin/users/<row id>/link', { method: 'POST',
-     headers: { 'content-type': 'application/json' },
-     body: JSON.stringify({ providerUserId: 'microsoft:<object id>' }) }).then(r => r.json()).then(console.log)
-   ```
-
-   Other existing users cannot be linked this way without their object id; they get
-   fresh, empty accounts after step 6.
+   `ProviderUserId` stays empty, SWA is not forwarding the principal's `claims`; stop
+   here and add the link another way before continuing, or those users get fresh,
+   empty accounts after step 6.
 5. **Test the new login against production** before pointing the site at it: visit
    `https://api.rss.brandonchastain.com/auth/login/github?returnUrl=https://rss.brandonchastain.com/`
    in a private window. It must come back to the site with a `.rss.session` cookie set
