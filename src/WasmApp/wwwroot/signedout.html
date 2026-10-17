@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Signing out…</title>
+  <meta name="robots" content="noindex">
+  <meta http-equiv="cache-control" content="no-store">
+  <script>
+    // Static bounce page hit by SWA after /.auth/logout clears the SWA cookie.
+    // We then redirect to AAD's RP-initiated logout endpoint to terminate the
+    // IdP/MSA session. AAD will display its "You're signed out" page (it ignores
+    // post_logout_redirect_uri unless it matches the registered logout URI list,
+    // which we cannot edit on the SWA preconfigured AAD app).
+    window.location.replace('https://login.microsoftonline.com/common/oauth2/v2.0/logout');
+  </script>
+</head>
+<body>
+  <p>Signing you out…</p>
+  <p>If you are not redirected, <a href="https://login.microsoftonline.com/common/oauth2/v2.0/logout">click here to finish signing out</a>.</p>
+</body>
+</html>
