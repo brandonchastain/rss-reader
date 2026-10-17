@@ -109,8 +109,74 @@ az containerapp logs show --name rss-reader-api-reader --resource-group rss-cont
 
 A healthy reader logs `Starting in READER mode (read-only replica with follow-mode restore).`
 
+## Login cutover (Static Web Apps Easy Auth -> API login)
+
+The API can already log users in itself (Google, Microsoft, GitHub; see
+[ARCHITECTURE.md](ARCHITECTURE.md#identity-and-roles)) and the frontend can talk to it
+directly, but production still runs through SWA Easy Auth and the Functions proxy until
+the steps below are done, in order. Nothing before step 6 is visible to users.
+
+**What exists already.** `api.rss.brandonchastain.com` is bound to the API container app
+with an Azure managed certificate, both declared in the template (`apiCustomDomain`;
+DNS: `CNAME api.rss -> <container app FQDN>` and `TXT asuid.api.rss ->
+<customDomainVerificationId>`).
+
+1. **Register the provider apps.** Each needs the production callback
+   `https://api.rss.brandonchastain.com/auth/callback/<provider>`; add
+   `http://localhost:8080/auth/callback/<provider>` for local testing.
+   - Google: Cloud console, OAuth consent screen (external), then an OAuth client of
+     type Web application.
+   - Microsoft: Entra app registration, account type *any org directory and personal
+     Microsoft accounts*, platform Web, plus a client secret.
+   - GitHub: Settings > Developer settings > OAuth Apps.
+2. **Set the repo secrets** `AUTH_GOOGLE_CLIENT_ID`, `AUTH_GOOGLE_CLIENT_SECRET`,
+   `AUTH_MICROSOFT_CLIENT_ID`, `AUTH_MICROSOFT_CLIENT_SECRET`, `AUTH_GITHUB_CLIENT_ID`,
+   `AUTH_GITHUB_CLIENT_SECRET` (`gh secret set NAME`). A missing pair disables that
+   provider.
+3. **Deploy** (merge, or `gh workflow run deploy.yml --ref main`). Check
+   `https://api.rss.brandonchastain.com/auth/providers` lists the providers and
+   `https://api.rss.brandonchastain.com/auth/me` returns `{"clientPrincipal":null}`.
+4. **Link existing Microsoft accounts.** Rows created under Easy Auth carry an SWA user
+   id that a direct Microsoft login cannot reproduce. While the proxy is still in place
+   the API records each signed-in user's Entra object id on their row the next time they
+   load the app. Confirm it works with your own account: open the site once, then
+   `sqlite3 /data/db/storage.db "select Id, AadUserId, ProviderUserId from Users"` via
+   `az containerapp exec` should show a `microsoft:<guid>` next to your SWA id. If
+   `ProviderUserId` stays empty, SWA is not forwarding the principal's `claims`; stop
+   here and add the link another way before continuing, or those users get fresh,
+   empty accounts after step 6.
+5. **Test the new login against production** before pointing the site at it: visit
+   `https://api.rss.brandonchastain.com/auth/login/github?returnUrl=https://rss.brandonchastain.com/`
+   in a private window. It must come back to the site with a `.rss.session` cookie set
+   for the API host; the site itself still uses Easy Auth at this point, so expect to be
+   asked to log in again there.
+6. **Point the frontend at the API** in one PR:
+   - `src/WasmApp/wwwroot/appsettings.json`: `ApiBaseUrl` = `https://api.rss.brandonchastain.com/`
+     and `UseStaticWebAppsAuth` = `false` (the frontend's migration flag; until then the
+     site keeps using Easy Auth even though the API login exists).
+   - `src/WasmApp/staticwebapp.config.json`: drop the `/api/healthz` route and the
+     `/.auth/*` navigation-fallback exclusion; nothing under `/.auth` is used any more.
+   - Add any admin's `microsoft:<guid>` id to `AdminAadUserIds` next to the SWA id.
+   - Set the repo variable `gh variable set AUTH_CUTOVER --body true` so the Deploy
+     workflow publishes the frontend without the Functions proxy.
+   - Merge. Verify: login through each provider, timeline loads, logout returns to the
+     site logged out, an existing account sees its feeds.
+7. **Retire the proxy** in a final PR once step 6 has held for a few days: delete `api/`,
+   `swa-cli.config.json`'s `apiLocation`, the `gatewaySecretKey` parameter and
+   `gateway-secret-key` secret in `main.bicep`, the `RSSREADER_*` SWA app settings, the
+   `GATEWAY_SECRET_KEY` repo secret and the `AUTH_CUTOVER` variable (make static-only
+   the only publish step); set `RssAppConfig__Auth__EnableStaticWebAppsHeaders` to
+   `false` and then remove `StaticWebAppsAuthenticationHandler`, `UseStaticWebAppsAuth`
+   with `AuthClient`'s legacy branch, and `signedout.html`. Easy Auth itself needs
+   no switching off: with no `allowedRoles` routes and no `/.auth` links, SWA never
+   challenges anyone.
+
+**Rollback** before step 7: revert the step 6 PR and set `AUTH_CUTOVER` back to `false`;
+the next deploy restores the proxy and the old login. The API keeps both schemes until
+step 7, so no data changes are needed either way.
+
 ## Frontend
 
-The Deploy workflow publishes the frontend and the Functions API proxy on every merge to
-`main`. There is nothing to run locally. `swa-cli.config.json` at the repo root is used
+The Deploy workflow publishes the frontend (and, until the login cutover above, the
+Functions API proxy) on every merge to `main`. There is nothing to run locally. `swa-cli.config.json` at the repo root is used
 only by `swa start` during local development; see [LOCAL-TESTING.md](LOCAL-TESTING.md).
