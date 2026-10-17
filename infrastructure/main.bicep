@@ -37,6 +37,10 @@ param staticWebAppSku string = 'Free'
 @description('Custom domain for the Static Web App')
 param customDomain string = 'rss.brandonchastain.com'
 
+@description('Custom domain for the API Container App. Empty disables the binding.')
+param apiCustomDomain string = 'api.rss.brandonchastain.com'
+
+
 @description('Gateway secret key for API authentication')
 @secure()
 param gatewaySecretKey string
@@ -153,6 +157,15 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
           {
             latestRevision: true
             weight: 100
+          }
+        ]
+        // The API's own hostname, so the browser can carry a session cookie
+        // between the frontend origin and the API.
+        customDomains: empty(apiCustomDomain) ? [] : [
+          {
+            name: apiCustomDomain
+            // Auto: Azure issues and renews a free managed certificate.
+            bindingType: 'Auto'
           }
         ]
       }

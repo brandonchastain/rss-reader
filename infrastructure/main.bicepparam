@@ -13,4 +13,6 @@ param memorySize = '1.0Gi'
 // returned 500. Idle-replica pricing at 0.5 vCPU / 1 GiB is a few dollars a month.
 param minReplicas = 1
 param maxReplicas = 1
+// The API's own hostname; the template creates its managed certificate.
+param apiCustomDomain = 'api.rss.brandonchastain.com'
 param gatewaySecretKey = ''  // specify at deployment time

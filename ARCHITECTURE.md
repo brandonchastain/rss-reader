@@ -134,6 +134,7 @@ and `containerImage` are supplied by the workflow, not the param file.
 | `maxReadReplicas` | `3` | — | Reader scale ceiling (reader is 0.25 vCPU / 0.5 GiB, min 0). |
 | `staticWebAppSku` | `Free` | — | SWA tier. |
 | `customDomain` | `rss.brandonchastain.com` | — | SWA custom domain. |
+| `apiCustomDomain` | `api.rss.brandonchastain.com` | — | The API's own hostname, so a session cookie can be shared with the frontend origin. Empty removes the binding. |
 | `shareQuota` (inline) | `5` GB | — | Azure Files share for `/data`. Must exceed 2× the DB size because a backup cycle briefly holds old and new copies. Billed by used bytes. |
 | `location`, `*Name` params | westus2, `rss-reader-*` | — | Resource naming and region. |
 
