@@ -15,5 +15,9 @@ public class RssUser
 
     public string? AadUserId { get; set; }
 
+    // provider:subject id learned from the Static Web Apps principal during the
+    // login migration, so a direct provider login finds the same row.
+    public string? ProviderUserId { get; set; }
+
     public bool IsAdmin { get; set; }
 }

@@ -28,6 +28,7 @@ public sealed class CachingUserRepository : IUserRepository
     private static string UserNameKey(string username) => $"user:name:{username}";
     private static string UserIdKey(int userId) => $"user:id:{userId}";
     private static string UserAadIdKey(string aadId) => $"user:aad:{aadId}";
+    private static string UserProviderIdKey(string providerId) => $"user:provider:{providerId}";
     private const string AllUsersKey = "users:all";
 
     // --- Read methods (cache-aside) ---
@@ -76,6 +77,20 @@ public sealed class CachingUserRepository : IUserRepository
         return user!;
     }
 
+    public RssUser GetUserByProviderUserId(string providerUserId)
+    {
+        var key = UserProviderIdKey(providerUserId);
+        if (_cache.TryGetValue(key, out RssUser cached))
+            return cached!;
+
+        var user = _inner.GetUserByProviderUserId(providerUserId);
+
+        if (user is not null)
+            SetWithEvictionToken(key, user);
+
+        return user!;
+    }
+
     public IEnumerable<RssUser> GetAllUsers()
     {
         if (_cache.TryGetValue(AllUsersKey, out List<RssUser> cached))
@@ -108,6 +123,12 @@ public sealed class CachingUserRepository : IUserRepository
     public void SetAadUserId(int userId, string aadUserId)
     {
         _inner.SetAadUserId(userId, aadUserId);
+        EvictAll();
+    }
+
+    public void SetProviderUserId(int userId, string providerUserId)
+    {
+        _inner.SetProviderUserId(userId, providerUserId);
         EvictAll();
     }
 

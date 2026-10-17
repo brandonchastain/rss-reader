@@ -88,6 +88,17 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
             {
                 identity.AddClaim(new Claim(ClaimTypes.Role, role));
             }
+            identity.AddClaim(new Claim(UserIdentity.IdentityProviderClaim, principal.IdentityProvider));
+
+            // Migration link: SWA's id is an opaque per-app hash, but the
+            // principal's claims carry the Entra object id. Surface it as the
+            // provider:subject id the API login will produce for the same
+            // person, so the resolver can store it next to the SWA id.
+            var linked = LinkedProviderUserId(principal);
+            if (linked != null)
+            {
+                identity.AddClaim(new Claim(UserIdentity.LinkedUserIdClaim, linked));
+            }
 
             var claimsPrincipal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(claimsPrincipal, AuthenticationScheme);
@@ -101,7 +112,17 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
         }
     }
 
-    private ClientPrincipal? ParseClientPrincipal(string headerValue)
+    internal static string? LinkedProviderUserId(ClientPrincipal principal)
+    {
+        if (!string.Equals(principal.IdentityProvider, "aad", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var oid = principal.Claims?.FirstOrDefault(c =>
+                c.Typ is "oid" or "http://schemas.microsoft.com/identity/claims/objectidentifier")?.Val;
+        return string.IsNullOrWhiteSpace(oid) ? null : UserIdentity.BuildUserId(UserIdentity.ProviderMicrosoft, oid);
+    }
+
+    internal static ClientPrincipal? ParseClientPrincipal(string headerValue)
     {
         try
         {
@@ -120,11 +141,18 @@ public class StaticWebAppsAuthenticationHandler : AuthenticationHandler<StaticWe
         }
     }
 
-    private class ClientPrincipal
+    internal class ClientPrincipal
     {
         public string IdentityProvider { get; set; } = string.Empty;
         public string UserId { get; set; } = string.Empty;
         public string UserDetails { get; set; } = string.Empty;
         public IEnumerable<string> UserRoles { get; set; } = Array.Empty<string>();
+        public IEnumerable<ClientPrincipalClaim>? Claims { get; set; }
+    }
+
+    internal class ClientPrincipalClaim
+    {
+        public string Typ { get; set; } = string.Empty;
+        public string Val { get; set; } = string.Empty;
     }
 }

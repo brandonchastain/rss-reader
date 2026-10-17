@@ -86,6 +86,9 @@ namespace RssApp.Config
 
         public string AdminAadUserIds { get; set; } = string.Empty;
 
+        // Login: providers, session cookie, allowed frontend origins. See AuthConfig.
+        public AuthConfig Auth { get; set; } = new AuthConfig();
+
         public static RssAppConfig LoadFromAppSettings(IConfiguration configuration)
         {
             var config = new RssAppConfig();

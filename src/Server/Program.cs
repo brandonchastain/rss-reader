@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Memory;
 using RssApp.ComponentServices;
@@ -46,26 +47,31 @@ builder.Services.AddLogging(loggingBuilder =>
     loggingBuilder.AddDebug();
 });
 
+// The frontend is a different origin and sends the session cookie, so the
+// allowed origins are explicit and credentials are allowed.
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("LocalFrontend", policy =>
+    options.AddPolicy("Frontend", policy =>
     {
-        policy.WithOrigins("http://localhost:8443", "https://localhost:8443")
+        policy.WithOrigins(config.Auth.AllowedFrontendOrigins.Select(ReturnUrlValidator.NormalizeOrigin).ToArray())
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
-// Add authn and authz
-builder.Services
-    .AddAuthorization()
-    .AddAuthentication(StaticWebAppsAuthenticationHandler.AuthenticationScheme)
-    .AddScheme<StaticWebAppsAuthenticationOptions, StaticWebAppsAuthenticationHandler>(
-        StaticWebAppsAuthenticationHandler.AuthenticationScheme,
-        options =>
-        {
-            options.IsTestUserEnabled = config.IsTestUserEnabled;
-        });
+// Behind Container Apps ingress the app sees plain http; the OIDC redirect_uri
+// and the Secure cookie need the original scheme and host.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+// Add authn and authz: session cookie + one scheme per configured provider,
+// plus the Static Web Apps header scheme during the migration window.
+builder.Services.AddRssAuthentication(config);
 
 // Register services for DI
 // Repositories: SQLite implementations wrapped with caching decorators.
@@ -177,16 +183,18 @@ var c = app.Services.GetRequiredService<IItemRepository>();
 var d = app.Services.GetRequiredService<ISystemStatsRepository>();
 
 // Enable middleware 
+app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 app.UseResponseCompression();
 app.UseStaticFiles();
-app.UseCors("LocalFrontend");
+app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
 // Setup endpoints
 app.MapControllers();
 app.MapGet("/api/healthz", () => Results.Ok(new { status = "healthy", role = config.IsReadOnly ? "reader" : "writer" })).AllowAnonymous();
+app.MapAuthEndpoints(config.Auth);
 
 if (config.IsTestUserEnabled)
 {
