@@ -17,9 +17,17 @@ namespace RssReader.Server.Services
         string ActiveDbPath,
         string BackupDbPath,
         TimeSpan Interval,
-        TimeSpan LockStaleThreshold)
+        TimeSpan LockStaleThreshold,
+        TimeSpan? LockHeartbeatInterval = null,
+        TimeSpan? ShutdownBackupTimeout = null)
     {
         public string LockPath => BackupDbPath + ".lock";
+
+        /// <summary>How often the held lock's mtime is refreshed. Keep well under <see cref="LockStaleThreshold"/>.</summary>
+        public TimeSpan HeartbeatInterval => LockHeartbeatInterval ?? TimeSpan.FromSeconds(30);
+
+        /// <summary>Upper bound for the final backup on shutdown. Must fit inside the container's termination grace period.</summary>
+        public TimeSpan FinalBackupTimeout => ShutdownBackupTimeout ?? TimeSpan.FromSeconds(90);
 
         /// <summary>Glob-friendly prefix for per-writer temp files.</summary>
         public string TempPrefix => Path.GetFileName(BackupDbPath) + ".tmp.";
@@ -39,7 +47,11 @@ namespace RssReader.Server.Services
     ///     directly to the share fails with <c>SQLITE_BUSY</c>. After staging we plain-file-copy
     ///     to a unique temp on the share and atomically rename to <c>BackupDbPath</c>.
     ///   - Runs <c>PRAGMA quick_check</c> on the staged file before publishing.
-    ///   - Holds a lock file on the share to prevent two writer revisions racing.
+    ///   - Holds the <see cref="ShareWriterLock"/> for the process lifetime so two writer
+    ///     revisions never copy at once, and so a booting revision can wait for this one's
+    ///     final copy (issue #136).
+    ///   - On host shutdown (SIGTERM from a deploy or restart) <see cref="StopAsync"/> runs one
+    ///     last copy, ignoring the unchanged-DB skip, before releasing the lock.
     ///   - This is SEPARATE from <see cref="DatabaseBackupService"/>, which still owns image
     ///     sync and stats and must NEVER write the DB.
     /// </summary>
@@ -47,11 +59,17 @@ namespace RssReader.Server.Services
     {
         private readonly ILogger<DatabaseBackupToFileService> _logger;
         private readonly DatabaseBackupToFilePaths _paths;
+        private readonly ShareWriterLock _lock;
         private readonly string _hostName;
         private readonly int _processId;
-        private readonly string _ownerToken;
 
         public DateTimeOffset? LastSuccessAtUtc { get; private set; }
+
+        /// <summary>Set when the final backup in <see cref="StopAsync"/> succeeded.</summary>
+        public DateTimeOffset? FinalBackupAtUtc { get; private set; }
+
+        /// <summary>The share lock this writer holds. Exposed for tests and the startup gate.</summary>
+        public ShareWriterLock Lock => _lock;
 
         /// <summary>
         /// Fingerprint of the active DB (main file + WAL size and mtime) at the start of
@@ -71,13 +89,15 @@ namespace RssReader.Server.Services
 
         public DatabaseBackupToFileService(
             ILogger<DatabaseBackupToFileService> logger,
-            DatabaseBackupToFilePaths paths)
+            DatabaseBackupToFilePaths paths,
+            ShareWriterLock? writerLock = null)
         {
             _logger = logger;
             _paths = paths;
+            _lock = writerLock ?? new ShareWriterLock(
+                paths.LockPath, paths.LockStaleThreshold, paths.HeartbeatInterval, logger);
             _hostName = Environment.MachineName;
             _processId = Environment.ProcessId;
-            _ownerToken = Guid.NewGuid().ToString("N");
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -102,6 +122,14 @@ namespace RssReader.Server.Services
             _logger.LogInformation(
                 "DatabaseBackupToFileService running. Active={Active}, Backup={Backup}, Interval={Interval}",
                 _paths.ActiveDbPath, _paths.BackupDbPath, _paths.Interval);
+
+            // Normally the startup gate already took the lock before seeding /tmp; if
+            // not (gate skipped), wait for it here so we never copy over another writer.
+            if (!_lock.IsHeld)
+            {
+                try { await _lock.AcquireAsync(stoppingToken); }
+                catch (OperationCanceledException) { return; }
+            }
 
             // Run an initial cycle quickly so a fresh container has a backup before
             // crashing or being recycled (rather than waiting one full interval).
@@ -136,17 +164,75 @@ namespace RssReader.Server.Services
         }
 
         /// <summary>
+        /// Host shutdown: the periodic loop stops, then one final copy goes to the share so
+        /// a deploy loses nothing written since the last cycle. Only after that is the lock
+        /// released, which is what lets the next revision seed from this copy. Bounded by
+        /// <see cref="DatabaseBackupToFilePaths.FinalBackupTimeout"/> (and the host's
+        /// shutdown timeout); on timeout the lock is released anyway so a dying replica
+        /// cannot hold the new one up for the stale period.
+        /// </summary>
+        public override async Task StopAsync(CancellationToken cancellationToken)
+        {
+            await base.StopAsync(cancellationToken);
+            if (!Enabled) return;
+
+            try
+            {
+                if (!_lock.IsHeld)
+                {
+                    _logger.LogWarning("Shutdown: writer lock not held — skipping final DB backup.");
+                    return;
+                }
+
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(_paths.FinalBackupTimeout);
+                _logger.LogInformation("Shutdown: running final DB backup to the share.");
+                var ok = await RunBackupCycleAsync(force: true, timeout.Token);
+                if (ok)
+                {
+                    FinalBackupAtUtc = DateTimeOffset.UtcNow;
+                    _logger.LogInformation("Shutdown: final DB backup OK.");
+                }
+                else
+                {
+                    _logger.LogError("Shutdown: final DB backup did not run — writes since the last cycle may be lost.");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogError(
+                    "Shutdown: final DB backup timed out after {Timeout} — writes since the last cycle may be lost.",
+                    _paths.FinalBackupTimeout);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Shutdown: final DB backup failed");
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        /// <summary>
         /// Run one backup cycle. Returns true if a backup was successfully written;
-        /// false if it was skipped (e.g. another writer holds the lock).
+        /// false if it was skipped (e.g. another writer holds the lock, or nothing changed).
         /// Exposed for tests.
         /// </summary>
-        internal async Task<bool> RunBackupCycleAsync(CancellationToken cancellationToken)
+        internal Task<bool> RunBackupCycleAsync(CancellationToken cancellationToken)
+            => RunBackupCycleAsync(force: false, cancellationToken);
+
+        /// <param name="force">Copy even when the active DB's fingerprint has not moved
+        /// since the last successful backup (used by the final flush on shutdown).</param>
+        internal async Task<bool> RunBackupCycleAsync(bool force, CancellationToken cancellationToken)
         {
             if (!Enabled) return false;
 
             CleanupStaleTempFiles();
 
-            if (!TryAcquireLock(out var lockFs))
+            // The lock is held for the process lifetime; a cycle only needs to take it
+            // when the service is driven directly (tests, or the gate was skipped).
+            if (!_lock.IsHeld && !_lock.TryAcquire())
             {
                 _logger.LogInformation(
                     "Another writer holds the backup lock — skipping this cycle.");
@@ -175,7 +261,7 @@ namespace RssReader.Server.Services
                 // Snapshot the fingerprint BEFORE the backup so any write that lands while
                 // VACUUM INTO runs is picked up by the next cycle rather than lost.
                 var fingerprint = FingerprintActiveDb();
-                if (fingerprint == _lastBackedUpFingerprint && File.Exists(_paths.BackupDbPath))
+                if (!force && fingerprint == _lastBackedUpFingerprint && File.Exists(_paths.BackupDbPath))
                 {
                     _logger.LogDebug("Active DB unchanged since last backup — skipping this cycle.");
                     return false;
@@ -219,6 +305,15 @@ namespace RssReader.Server.Services
                     return false;
                 }
 
+                // If our heartbeat stalled long enough for another writer to take the
+                // lock over, that writer now owns the share copy: do not publish.
+                if (!_lock.StillOwned())
+                {
+                    _logger.LogError(
+                        "Writer lock no longer ours at publish time — discarding this copy.");
+                    return false;
+                }
+
                 // Atomic rename within the same SMB directory. File.Move with overwrite=true
                 // uses rename(2) on Linux and is atomic on Azure Files SMB.
                 File.Move(tempPath, _paths.BackupDbPath, overwrite: true);
@@ -242,7 +337,6 @@ namespace RssReader.Server.Services
                 SafeDelete(tempPath);
                 SafeDelete(tempPath + "-wal");
                 SafeDelete(tempPath + "-shm");
-                ReleaseLock(lockFs);
             }
         }
 
@@ -277,82 +371,6 @@ namespace RssReader.Server.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Stale temp cleanup failed");
-            }
-        }
-
-        private bool TryAcquireLock(out FileStream? lockFs)
-        {
-            lockFs = null;
-
-            try
-            {
-                if (File.Exists(_paths.LockPath))
-                {
-                    var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(_paths.LockPath);
-                    if (age < _paths.LockStaleThreshold)
-                    {
-                        return false;
-                    }
-                    _logger.LogWarning(
-                        "Stale backup lock found (age={Age}) — taking over.", age);
-                    SafeDelete(_paths.LockPath);
-                }
-
-                lockFs = new FileStream(
-                    _paths.LockPath,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.Read);
-
-                using var writer = new StreamWriter(lockFs, leaveOpen: true);
-                // First line is the owner token; readers compare on release to
-                // avoid an old writer deleting a newer writer's lock.
-                writer.WriteLine(_ownerToken);
-                writer.WriteLine($"{_hostName}:{_processId}:{DateTimeOffset.UtcNow:O}");
-                writer.Flush();
-                return true;
-            }
-            catch (IOException)
-            {
-                // Lost the race — another container created the lock between our check and our create.
-                lockFs?.Dispose();
-                lockFs = null;
-                return false;
-            }
-        }
-
-        private void ReleaseLock(FileStream? lockFs)
-        {
-            try
-            {
-                lockFs?.Dispose();
-
-                // Only delete if we still own it. An old/stalled writer must not
-                // delete a fresh lock that a newer writer took over.
-                if (File.Exists(_paths.LockPath))
-                {
-                    string? firstLine = null;
-                    try
-                    {
-                        using var reader = new StreamReader(_paths.LockPath);
-                        firstLine = reader.ReadLine();
-                    }
-                    catch (IOException) { }
-
-                    if (firstLine == _ownerToken)
-                    {
-                        SafeDelete(_paths.LockPath);
-                    }
-                    else
-                    {
-                        _logger.LogWarning(
-                            "Lock token mismatch on release — leaving lock for the current owner.");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to release backup lock");
             }
         }
 
@@ -409,7 +427,7 @@ namespace RssReader.Server.Services
             return QuickCheckDiagnostic(path).Ok;
         }
 
-        private static (bool Ok, string? Result, string? Error) QuickCheckDiagnostic(string path)
+        internal static (bool Ok, string? Result, string? Error) QuickCheckDiagnostic(string path)
         {
             try
             {

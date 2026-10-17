@@ -224,6 +224,12 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
       }
     }
     template: {
+      // Deploy handover (issue #136): on SIGTERM the old revision copies the live
+      // SQLite file to the share one last time before it exits, and the new
+      // revision waits for that copy before it seeds /tmp. The app's own budget is
+      // HostOptions.ShutdownTimeout 110 s (ShutdownBackupTimeout 90 s inside it);
+      // this must stay above both or the platform kills the copy mid-write.
+      terminationGracePeriodSeconds: 120
       containers: [
         {
           name: 'rss-reader-api'
@@ -259,8 +265,9 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
             }
             {
               // Persistent SQLite backup file on the Azure Files mount.
-              // The DatabaseBackupToFileService writes here every 5 min;
-              // the entrypoint seeds /tmp/storage.db from this on cold start.
+              // The DatabaseBackupToFileService writes here every BackupInterval
+              // and once more on SIGTERM; the app seeds /tmp/storage.db from this
+              // on cold start, after the previous revision's final copy lands.
               //
               // NOTE: Path is intentionally inside a NEW subdirectory `/data/db/`
               // so that any pre-existing `/data/storage.db` (left over from a
