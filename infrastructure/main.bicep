@@ -45,6 +45,46 @@ param apiCustomDomain string = 'api.rss.brandonchastain.com'
 @secure()
 param gatewaySecretKey string
 
+// ---------------------------------------------------------------------------
+// Login providers. Each pair lands in the container app's secrets and is
+// handed to the API as RssAppConfig__Auth__Providers__<name>__ClientId/Secret.
+// Empty means the provider is not offered. The frontend origin the API trusts
+// (CORS and returnUrl) is RssAppConfig:Auth:AllowedFrontendOrigins in
+// appsettings.json; override it with the env var of the same name if the
+// site moves.
+// ---------------------------------------------------------------------------
+@secure()
+param googleClientId string = ''
+@secure()
+param googleClientSecret string = ''
+@secure()
+param microsoftClientId string = ''
+@secure()
+param microsoftClientSecret string = ''
+@secure()
+param githubClientId string = ''
+@secure()
+param githubClientSecret string = ''
+
+var loginProviders = [
+  { name: 'google', clientId: googleClientId, clientSecret: googleClientSecret }
+  { name: 'microsoft', clientId: microsoftClientId, clientSecret: microsoftClientSecret }
+  { name: 'github', clientId: githubClientId, clientSecret: githubClientSecret }
+]
+var configuredLoginProviders = filter(loginProviders, p => !empty(p.clientId) && !empty(p.clientSecret))
+
+// Container app secrets: an entry per configured provider secret. The client
+// id is not sensitive but travels the same way so one list drives both.
+var loginProviderSecrets = flatten(map(configuredLoginProviders, p => [
+  { name: 'auth-${p.name}-client-id', value: p.clientId }
+  { name: 'auth-${p.name}-client-secret', value: p.clientSecret }
+]))
+
+var loginProviderEnv = flatten(map(configuredLoginProviders, p => [
+  { name: 'RssAppConfig__Auth__Providers__${p.name}__ClientId', secretRef: 'auth-${p.name}-client-id' }
+  { name: 'RssAppConfig__Auth__Providers__${p.name}__ClientSecret', secretRef: 'auth-${p.name}-client-secret' }
+]))
+
 // Log Analytics Workspace
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsName
@@ -156,12 +196,12 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
       // No registries block: the ghcr.io/brandonchastain/rss-reader-api package
       // is public, so ACA pulls anonymously and no registry credential exists to
       // expire, leak, or be forgotten during a rotation.
-      secrets: [
+      secrets: concat([
         {
           name: 'gateway-secret-key'
           value: gatewaySecretKey
         }
-      ]
+      ], loginProviderSecrets)
       ingress: {
         external: true
         targetPort: 8080
@@ -192,7 +232,7 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
             cpu: json(cpuCore)
             memory: memorySize
           }
-          env: [
+          env: concat([
             {
               name: 'ASPNETCORE_ENVIRONMENT'
               value: 'Production'
@@ -228,7 +268,19 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               name: 'RssAppConfig__BackupDbPath'
               value: '/data/db/storage.db'
             }
-          ]
+            {
+              // Session-cookie encryption keys. On the mount so a deploy or a
+              // restart does not sign every user out.
+              name: 'RssAppConfig__Auth__DataProtectionKeysPath'
+              value: '/data/keys'
+            }
+            {
+              // Migration window: keep accepting the Static Web Apps proxy's
+              // gateway header. Flip to 'false' in the cutover's final PR.
+              name: 'RssAppConfig__Auth__EnableStaticWebAppsHeaders'
+              value: 'true'
+            }
+          ], loginProviderEnv)
           volumeMounts: [
             {
               volumeName: 'rss-data-volume'
