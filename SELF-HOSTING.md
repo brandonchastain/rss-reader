@@ -135,6 +135,12 @@ Package settings), set **Visibility** to **Public** and link it to the repo. The
 Container App pulls anonymously; a private package fails every pull with
 `ImagePullBackOff`.
 
+Do not skip the `docker logout ghcr.io` at the end. If Docker keeps a ghcr.io
+credential whose token lacks the packages scope, it sends that credential on
+every pull and the registry answers `error from registry: denied`, even for
+this public image. The fix is simply `docker logout ghcr.io`; no login is
+needed to pull a public package.
+
 ### Step 3: Deploy the template
 
 ```powershell
