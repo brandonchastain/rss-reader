@@ -86,8 +86,8 @@ az containerapp exec --name rss-reader-api --resource-group rss-container-rg --c
 The API answers at `api.rss.brandonchastain.com` as well as its Container Apps
 hostname, so the browser can share a session cookie between the frontend and the
 API. The template binds the hostname (`apiCustomDomain` in `main.bicepparam`)
-with an `Auto` binding, so Azure issues and renews the free managed certificate
-itself.
+and declares its free managed certificate, which Azure issues against the DNS
+records and renews itself.
 
 DNS lives in the `brchasta` subscription, zone `brandonchastain.com`: a CNAME
 `api.rss` to the app's FQDN and a TXT `asuid.api.rss` holding the app's
