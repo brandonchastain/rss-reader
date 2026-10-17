@@ -13,10 +13,18 @@ Before starting, invoke the **stop-local** skill to clean up any previously runn
 
 Run `docker info` to check if Docker is running. If the command fails or returns an error:
 
-1. Start Docker Desktop:
+1. Start Docker Desktop **through the Windows shell, not as a child of the agent's
+   shell**. A `Start-Process` launch from an agent tool makes Docker Desktop inherit
+   that process, and it then fails during startup with "The file cannot be accessed
+   by the system" on its Unix socket files (`dockerInference`, `engine.sock`),
+   showing an error dialog repeatedly. Launching via `explorer.exe` detaches it
+   exactly like clicking it in the Start menu. If the tool runs sandboxed, disable
+   the sandbox for this one command.
    ```powershell
-   Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+   explorer.exe "C:\Program Files\Docker\Docker\Docker Desktop.exe"
    ```
+   If a previous failed launch left Docker Desktop open on that error dialog,
+   stop it first: `Get-Process 'Docker Desktop','com.docker.backend' -ErrorAction SilentlyContinue | Stop-Process -Force`.
 2. Wait for the Docker daemon to become ready by polling `docker info` every 5 seconds, up to 60 seconds total. Print a waiting message each poll. If Docker is not ready after 60 seconds, stop and report the error.
 
 ## Step 3: Build the Docker image
