@@ -190,7 +190,7 @@ Bound from `appsettings.json` section `RssAppConfig` or env vars
 | `ServerHostName` | localhost | Public base URL the API reports for itself. |
 | `DbLocation` | — | Path of the live SQLite file (`/tmp/storage.db` in prod). |
 
-### Fixed in code (change needs a PR)
+### Hardcoded (for now)
 
 | Constant | Value | Where |
 |---|---|---|
@@ -220,7 +220,7 @@ Set as SWA application settings in prod, `api/local.settings.json` locally.
 (empty in prod so calls stay same-origin through the SWA proxy),
 `EnableTestAuth`, `TestAuthUsername`.
 
-Fixed in code:
+Hardcoded (for now):
 
 | Constant | Value | Where | Effect |
 |---|---|---|---|
