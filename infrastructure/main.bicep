@@ -112,6 +112,19 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   }
 }
 
+// Free managed certificate for the API hostname. Azure validates ownership
+// through the api.rss CNAME and renews it automatically. (bindingType 'Auto'
+// is rejected by the resource provider at preflight on this API version.)
+resource apiCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (!empty(apiCustomDomain)) {
+  name: 'mc-rss-reader-env-api-rss-brandonc-1306'
+  parent: environment
+  location: location
+  properties: {
+    subjectName: apiCustomDomain
+    domainControlValidation: 'CNAME'
+  }
+}
+
 // Storage mount for Container App Environment
 resource storage 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
   name: 'rss-data-storage'
@@ -164,8 +177,8 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
         customDomains: empty(apiCustomDomain) ? [] : [
           {
             name: apiCustomDomain
-            // Auto: Azure issues and renews a free managed certificate.
-            bindingType: 'Auto'
+            bindingType: 'SniEnabled'
+            certificateId: apiCertificate.id
           }
         ]
       }
