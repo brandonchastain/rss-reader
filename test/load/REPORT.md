@@ -175,7 +175,7 @@ the optimizations target the _ceiling_, not the _floor_:
 | `src/Server/Config/RssAppConfig.cs` | BackgroundWorkerCount: 3 → 1 |
 | `infrastructure/main.bicep` | cpuCore: 0.25 → 1.0, memorySize: 0.5Gi → 2.0Gi |
 | `infrastructure/main.bicepparam` | Same param updates |
-| `test/SerializerTests/BackgroundWorkerTests.cs` | Updated assertion: 3 → 1 |
+| `test/RssReaderTests/BackgroundWorkerTests.cs` | Updated assertion: 3 → 1 |
 
 ## Recommendations
 

@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="SerializerTests" />
+    <InternalsVisibleTo Include="RssReaderTests" />
   </ItemGroup>
 
   <ItemGroup>

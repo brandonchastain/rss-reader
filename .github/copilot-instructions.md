@@ -21,7 +21,7 @@ Browser → Azure Static Web Apps (Easy Auth)
 - **`src/Server/`** — ASP.NET Core Web API backend with SQLite
 - **`src/Shared/`** — Shared DTOs/contracts used by both frontend and backend
 - **`api/`** — Azure Functions v4 (Node.js) API proxy
-- **`test/SerializerTests/`** — MSTest unit tests (net9.0)
+- **`test/RssReaderTests/`** — MSTest unit tests (net9.0)
 - **`infrastructure/`** — Bicep templates for Azure Container Apps + SWA
 
 ## Build & Test
@@ -34,7 +34,7 @@ dotnet build rss-reader.sln
 dotnet test rss-reader.sln
 
 # Run a single test class
-dotnet test test/SerializerTests --filter "ClassName=SerializerTests.SerializerTests"
+dotnet test test/RssReaderTests --filter "ClassName=RssReaderTests.SerializerTests"
 
 # Build Docker image for the backend (run from repo root)
 docker build -f src/Server/Dockerfile -t rss-reader-api:local .

@@ -77,7 +77,7 @@ jobs:
       # Excludes tests that fetch live third-party feeds: they fail on whether
       # someone else's server is up, which is not a signal worth blocking a
       # deploy on. Run them deliberately with --filter TestCategory=Network.
-      - run: dotnet test test/SerializerTests/SerializerTests.csproj --filter "TestCategory!=Network" --logger "console;verbosity=minimal"
+      - run: dotnet test test/RssReaderTests/RssReaderTests.csproj --filter "TestCategory!=Network" --logger "console;verbosity=minimal"
 
   backend:
     name: Backend
