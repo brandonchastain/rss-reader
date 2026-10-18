@@ -52,6 +52,7 @@ public class FeedRefresher : IFeedRefresher
     // every fetch. Both the scheduler and manual refreshes consult it to decide whether
     // a URL is due, which is what dedups a feed shared by many users down to one fetch.
     private readonly ConcurrentDictionary<string, DateTimeOffset> nextEarliestByUrl = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> lastFetchedByUrl = new();
     private volatile bool scheduleLoaded;
     private readonly object scheduleLoadLock = new();
 
@@ -261,7 +262,12 @@ public class FeedRefresher : IFeedRefresher
                         // Route through the shared per-URL coordinator: fetches are
                         // coalesced + deduped, items fan out to every subscriber, and
                         // we take this user's new-item count for the refresh status.
-                        var counts = await FetchAndFanOutAsync(feed.Href, force: false, token);
+                        // A manual refresh asks "is it stale?" rather than "is it due?":
+                        // a feed not attempted within the politeness floor is fetched
+                        // even if the scheduler would have waited for its full interval.
+                        // One fetched moments ago is left alone, and a feed in failure
+                        // backoff is still skipped inside the fetch itself.
+                        var counts = await FetchAndFanOutAsync(feed.Href, force: IsStale(feed.Href), token);
                         counts.TryGetValue(user.Id, out added);
                     }
                     catch (OperationCanceledException)
@@ -442,6 +448,10 @@ public class FeedRefresher : IFeedRefresher
                 {
                     nextEarliestByUrl[kv.Key] = kv.Value;
                 }
+                foreach (var kv in this.scheduleStore.GetLastFetched())
+                {
+                    lastFetchedByUrl[kv.Key] = kv.Value;
+                }
             }
             catch (Exception ex)
             {
@@ -455,6 +465,17 @@ public class FeedRefresher : IFeedRefresher
     {
         EnsureScheduleLoaded();
         return !nextEarliestByUrl.TryGetValue(url, out var next) || next <= DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// True when the URL has not been fetched (or attempted) within
+    /// <see cref="RssAppConfig.FeedRefreshIntervalFloor"/>. Never fetched counts as stale.
+    /// </summary>
+    internal bool IsStale(string url)
+    {
+        EnsureScheduleLoaded();
+        return !lastFetchedByUrl.TryGetValue(url, out var last)
+            || last + this.config.FeedRefreshIntervalFloor <= DateTimeOffset.UtcNow;
     }
 
     private void UpdateSchedule(string url, FeedFetchResult result)
@@ -477,6 +498,7 @@ public class FeedRefresher : IFeedRefresher
         }
 
         nextEarliestByUrl[url] = nextEarliest;
+        lastFetchedByUrl[url] = now;
         this.scheduleStore.Record(url, now, nextEarliest, interval);
     }
 

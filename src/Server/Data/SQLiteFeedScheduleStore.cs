@@ -58,6 +58,27 @@ public class SQLiteFeedScheduleStore : IFeedScheduleStore
         return schedule;
     }
 
+    public IReadOnlyDictionary<string, DateTimeOffset> GetLastFetched()
+    {
+        var map = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        using var connection = this.connections.OpenRead();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT Url, LastFetchedUtc FROM FeedFetchState WHERE LastFetchedUtc IS NOT NULL";
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var url = reader.GetString(0);
+            if (reader.IsDBNull(1)) continue;
+            if (DateTimeOffset.TryParse(reader.GetString(1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var last))
+            {
+                map[url] = last;
+            }
+        }
+
+        return map;
+    }
+
     public void Record(string url, DateTimeOffset lastFetchedUtc, DateTimeOffset nextEarliestFetchUtc, TimeSpan interval)
     {
         try

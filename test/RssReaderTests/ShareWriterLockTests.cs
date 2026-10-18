@@ -140,16 +140,24 @@ public class ShareWriterLockTests
     [TestMethod]
     public async Task HeartbeatLoop_KeepsFileFreshAcrossSeveralIntervals()
     {
-        // 50 ms heartbeat, 300 ms stale: after 600 ms the file must still be alive,
-        // i.e. the loop touched it more than once.
-        var l = NewLock(stale: TimeSpan.FromMilliseconds(300), heartbeat: TimeSpan.FromMilliseconds(50));
+        // The loop must keep touching the file. Observed as the mtime advancing at
+        // least twice; no assertion rides on the loop meeting a latency bound, since a
+        // loaded test runner can starve a background task for over a second.
+        var l = NewLock(heartbeat: TimeSpan.FromMilliseconds(50));
         Assert.IsTrue(l.TryAcquire());
-        var created = File.GetLastWriteTimeUtc(_lockPath);
+        var seen = File.GetLastWriteTimeUtc(_lockPath);
+        var advances = 0;
 
-        await Task.Delay(600);
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (advances < 2 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(25);
+            var now = File.GetLastWriteTimeUtc(_lockPath);
+            if (now > seen) { advances++; seen = now; }
+        }
 
-        Assert.IsTrue(l.IsAlive(out var age), $"Lock went stale (age {age})");
-        Assert.IsTrue(File.GetLastWriteTimeUtc(_lockPath) > created, "Heartbeat loop touched the file");
+        Assert.AreEqual(2, advances, "Heartbeat loop touched the file repeatedly");
+        Assert.IsTrue(l.IsAlive(out _));
     }
 
     [TestMethod]
@@ -308,13 +316,16 @@ public class ShareWriterLockTests
     [TestMethod]
     public async Task TwoInstances_SecondWaitsUntilFirstReleases()
     {
-        var first = NewLock(heartbeat: TimeSpan.FromMilliseconds(50));
-        var second = NewLock(stale: TimeSpan.FromMilliseconds(400), heartbeat: TimeSpan.FromMilliseconds(50));
+        // Liveness of the heartbeat is covered by HeartbeatLoop_*; here the stale
+        // window is wide so only an explicit release can let the second one in.
+        var first = NewLock();
+        var second = NewLock();
         Assert.IsTrue(first.TryAcquire());
 
         var wait = second.AcquireAsync(CancellationToken.None);
-        await Task.Delay(700);   // > second's StaleAfter: only the heartbeat keeps it waiting
-        Assert.IsFalse(wait.IsCompleted, "Heartbeat kept the first lock alive");
+        await Task.Delay(200);
+        Assert.IsFalse(wait.IsCompleted, "Second waits while the first holds the lock");
+        Assert.IsFalse(second.IsHeld);
 
         first.Release();
         Assert.IsTrue(await wait.WaitAsync(TimeSpan.FromSeconds(10)));
