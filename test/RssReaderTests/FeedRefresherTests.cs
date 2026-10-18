@@ -70,15 +70,34 @@ public sealed class FeedRefresherTests
     private sealed class InMemoryScheduleStore : IFeedScheduleStore
     {
         private readonly ConcurrentDictionary<string, DateTimeOffset> map = new();
+        private readonly ConcurrentDictionary<string, DateTimeOffset> last = new();
 
         public IReadOnlyDictionary<string, DateTimeOffset> GetSchedule()
             => new Dictionary<string, DateTimeOffset>(this.map);
 
+        public IReadOnlyDictionary<string, DateTimeOffset> GetLastFetched()
+            => new Dictionary<string, DateTimeOffset>(this.last);
+
         public void Record(string url, DateTimeOffset lastFetchedUtc, DateTimeOffset nextEarliestFetchUtc, TimeSpan interval)
-            => this.map[url] = nextEarliestFetchUtc;
+        {
+            this.map[url] = nextEarliestFetchUtc;
+            this.last[url] = lastFetchedUtc;
+        }
     }
 
     private static (FeedRefresher refresher, Mock<IItemRepository> itemRepo) CreateRefresher(
+        Mock<IFeedRepository> feedRepo = null,
+        Mock<IUserRepository> userRepo = null,
+        RssAppConfig config = null,
+        HttpMessageHandler primaryHandler = null,
+        IFeedValidatorStore validatorStore = null,
+        IFeedScheduleStore scheduleStore = null)
+    {
+        var (refresher, itemRepo, _) = CreateRefresherWithProvider(feedRepo, userRepo, config, primaryHandler, validatorStore, scheduleStore);
+        return (refresher, itemRepo);
+    }
+
+    private static (FeedRefresher refresher, Mock<IItemRepository> itemRepo, ServiceProvider provider) CreateRefresherWithProvider(
         Mock<IFeedRepository> feedRepo = null,
         Mock<IUserRepository> userRepo = null,
         RssAppConfig config = null,
@@ -121,7 +140,16 @@ public sealed class FeedRefresherTests
 
         var provider = serviceCollection.BuildServiceProvider();
         var refresher = (FeedRefresher)provider.GetRequiredService<IFeedRefresher>();
-        return (refresher, mockItemRepo);
+        return (refresher, mockItemRepo, provider);
+    }
+
+    /// <summary>Runs the one job a manual refresh queues (the worker is not started here).</summary>
+    private static async Task RunQueuedRefreshAsync(ServiceProvider provider)
+    {
+        var queue = provider.GetRequiredService<BackgroundWorkQueue>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var job = await queue.DequeueAsync(cts.Token);
+        await job(cts.Token);
     }
 
     // Fetches every URL in allBrokenFeeds.txt over the real internet, so it
@@ -379,6 +407,83 @@ public sealed class FeedRefresherTests
         Assert.AreEqual(1, handler.CallCount, "A feed shared by N users must be fetched once, not N times.");
         CollectionAssert.AreEquivalent(new[] { 1, 2, 3 }, fannedOutUserIds,
             "Items should be fanned out to every subscriber, each with their own UserId.");
+    }
+
+    [TestMethod]
+    public async Task ManualRefresh_FetchesStaleFeed_EvenWhenSchedulerWouldWait()
+    {
+        // Scheduled 15 minutes out, but last attempted 45 minutes ago (past the
+        // 30-minute floor): the button must fetch it.
+        var url = "https://stale.example.com/feed";
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<rss/>") });
+        var user = new RssUser("u", 1);
+        var feedRepo = new Mock<IFeedRepository>();
+        feedRepo.Setup(r => r.GetFeeds(user)).Returns(new[] { new NewsFeed(url, 1) });
+        feedRepo.Setup(r => r.GetFeedsByUrl(url)).Returns(new[] { new NewsFeed(url, 1) });
+
+        var schedule = new InMemoryScheduleStore();
+        schedule.Record(url, DateTimeOffset.UtcNow.AddMinutes(-45), DateTimeOffset.UtcNow.AddMinutes(15), TimeSpan.FromHours(1));
+
+        var (refresher, _, provider) = CreateRefresherWithProvider(feedRepo: feedRepo, primaryHandler: handler, scheduleStore: schedule);
+        Assert.IsTrue(refresher.IsStale(url));
+
+        await refresher.RefreshAsync(user);
+        await RunQueuedRefreshAsync(provider);
+
+        Assert.AreEqual(1, handler.CallCount, "A stale feed must be fetched by a manual refresh.");
+        Assert.IsFalse(refresher.IsStale(url), "A fetch attempt resets staleness.");
+    }
+
+    [TestMethod]
+    public async Task ManualRefresh_LeavesRecentlyFetchedFeedAlone()
+    {
+        // Attempted 5 minutes ago: inside the floor, so the button must not re-fetch.
+        var url = "https://fresh.example.com/feed";
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<rss/>") });
+        var user = new RssUser("u", 1);
+        var feedRepo = new Mock<IFeedRepository>();
+        feedRepo.Setup(r => r.GetFeeds(user)).Returns(new[] { new NewsFeed(url, 1) });
+        feedRepo.Setup(r => r.GetFeedsByUrl(url)).Returns(new[] { new NewsFeed(url, 1) });
+
+        var schedule = new InMemoryScheduleStore();
+        schedule.Record(url, DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddMinutes(55), TimeSpan.FromHours(1));
+
+        var (refresher, _, provider) = CreateRefresherWithProvider(feedRepo: feedRepo, primaryHandler: handler, scheduleStore: schedule);
+        Assert.IsFalse(refresher.IsStale(url));
+
+        await refresher.RefreshAsync(user);
+        await RunQueuedRefreshAsync(provider);
+
+        Assert.AreEqual(0, handler.CallCount, "A feed fetched within the floor must not be re-fetched by a manual refresh.");
+    }
+
+    [TestMethod]
+    public async Task ManualRefresh_StaleButBackedOffFeed_IsStillLeftAlone()
+    {
+        // Stale by the clock, but the origin answered 429 on the previous attempt in
+        // this process: the politeness backoff inside the fetch wins over staleness.
+        var url = "https://backoff.example.com/feed";
+        var calls = 0;
+        var handler = new StubHandler(_ =>
+        {
+            calls++;
+            return new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        });
+        var user = new RssUser("u", 1);
+        var feedRepo = new Mock<IFeedRepository>();
+        feedRepo.Setup(r => r.GetFeeds(user)).Returns(new[] { new NewsFeed(url, 1) });
+        feedRepo.Setup(r => r.GetFeedsByUrl(url)).Returns(new[] { new NewsFeed(url, 1) });
+
+        var config = new RssAppConfig { CacheReloadInterval = TimeSpan.Zero, FeedRefreshIntervalFloor = TimeSpan.Zero };
+        var (refresher, _, provider) = CreateRefresherWithProvider(feedRepo: feedRepo, config: config, primaryHandler: handler);
+
+        await refresher.RefreshAsync(user);
+        await RunQueuedRefreshAsync(provider);
+        Assert.AreEqual(1, calls, "first attempt reaches the origin and is told to back off");
+
+        await refresher.RefreshAsync(user);
+        await RunQueuedRefreshAsync(provider);
+        Assert.AreEqual(1, calls, "a backed-off feed is not hammered by another manual refresh");
     }
 
     [TestMethod]

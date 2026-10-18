@@ -14,6 +14,13 @@ public interface IFeedScheduleStore
     /// </summary>
     IReadOnlyDictionary<string, DateTimeOffset> GetSchedule();
 
+    /// <summary>
+    /// Snapshot of <c>url → last fetch attempt (UTC)</c>. A URL absent from the map
+    /// has never been fetched. Used by the manual refresh to tell stale feeds (not
+    /// attempted within the politeness floor) from ones fetched a moment ago.
+    /// </summary>
+    IReadOnlyDictionary<string, DateTimeOffset> GetLastFetched();
+
     /// <summary>Upserts the schedule for a URL after a fetch attempt.</summary>
     void Record(string url, DateTimeOffset lastFetchedUtc, DateTimeOffset nextEarliestFetchUtc, TimeSpan interval);
 }
