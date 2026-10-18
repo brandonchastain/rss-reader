@@ -225,11 +225,22 @@ public class DatabaseBackupToFileServiceTests
         watcher.Renamed += (_, e) => { lock (events) events.Add("renamed:" + e.Name); };
 
         await _service.StopAsync(CancellationToken.None);
-        await Task.Delay(300);   // let the watcher drain
 
-        string[] snapshot; lock (events) snapshot = events.ToArray();
-        var publish = Array.FindIndex(snapshot, e => e == "renamed:" + Path.GetFileName(_backupDbPath));
-        var release = Array.FindIndex(snapshot, e => e == "deleted:" + Path.GetFileName(_paths.LockPath));
+        // Watcher events arrive asynchronously; wait for both rather than for a
+        // fixed time, bounded so a broken ordering still fails instead of hanging.
+        var publishName = "renamed:" + Path.GetFileName(_backupDbPath);
+        var releaseName = "deleted:" + Path.GetFileName(_paths.LockPath);
+        string[] snapshot;
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        do
+        {
+            await Task.Delay(25);
+            lock (events) snapshot = events.ToArray();
+        }
+        while ((Array.IndexOf(snapshot, publishName) < 0 || Array.IndexOf(snapshot, releaseName) < 0) && DateTime.UtcNow < deadline);
+
+        var publish = Array.IndexOf(snapshot, publishName);
+        var release = Array.IndexOf(snapshot, releaseName);
         Assert.IsTrue(publish >= 0, "Final copy published: " + string.Join(",", snapshot));
         Assert.IsTrue(release > publish, "Lock deleted after the publish: " + string.Join(",", snapshot));
     }

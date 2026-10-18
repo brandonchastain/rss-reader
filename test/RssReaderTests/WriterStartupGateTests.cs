@@ -163,11 +163,32 @@ public class WriterStartupGateTests
     {
         File.WriteAllText(_paths.LockPath, "old-revision");
         var port = FreePort();
-        using var cts = new CancellationTokenSource(400);
+        using var cts = new CancellationTokenSource();
 
-        await Assert.ThrowsExceptionAsync<TaskCanceledException>(() => WriterStartupGate.RunAsync(
+        var run = WriterStartupGate.RunAsync(
             Array.Empty<string>(), _paths, _lock, Origins, NullLoggerFactory.Instance,
-            $"http://127.0.0.1:{port}", cts.Token));
+            $"http://127.0.0.1:{port}", cts.Token);
+
+        // Cancel only once the gate is observably listening (i.e. it is in the
+        // wait-for-lock phase), not on a wall-clock timer that can fire while the
+        // listener is still starting under a loaded test runner.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!PortAccepts(port) && !run.IsCompleted && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+        Assert.IsTrue(PortAccepts(port), "gate should be listening before it is cancelled");
+        cts.Cancel();
+
+        try
+        {
+            await run;
+            Assert.Fail("RunAsync should surface the cancellation");
+        }
+        catch (OperationCanceledException)
+        {
+            // TaskCanceledException or its base: either is the documented outcome.
+        }
 
         Assert.IsFalse(_lock.IsHeld);
         Assert.IsTrue(File.Exists(_paths.LockPath), "Foreign lock untouched");
