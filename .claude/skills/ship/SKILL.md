@@ -30,7 +30,7 @@ Read files before editing. Reference `file:line` in notes.
 Detect scope from what you changed:
 - **Backend** (`src/Server`, `src/Shared`):
   `dotnet build src/Server/Server.csproj -c Debug`
-  `dotnet test test/SerializerTests/SerializerTests.csproj`  (all tests must pass)
+  `dotnet test test/RssReaderTests/RssReaderTests.csproj`  (all tests must pass)
   Add focused tests for new logic. The test project uses MSTest + Moq; inject a stub
   `HttpMessageHandler` to test feed-fetch behavior deterministically offline.
 - **Frontend** (`src/WasmApp`):

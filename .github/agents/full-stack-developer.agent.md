@@ -45,7 +45,7 @@ Browser → Azure SWA (Easy Auth / AAD)
 | `src/Server/` | ASP.NET Core Web API backend (.NET 9) |
 | `src/Shared/Contracts/` | Shared DTOs used by both frontend and backend |
 | `api/src/functions/ApiProxy.js` | Azure Functions v4 Node.js proxy |
-| `test/SerializerTests/` | MSTest unit + integration tests (net9.0) |
+| `test/RssReaderTests/` | MSTest unit + integration tests (net9.0) |
 | `infrastructure/` | Bicep templates (do not modify unless asked) |
 
 ---
@@ -124,10 +124,10 @@ Browser → Azure SWA (Easy Auth / AAD)
 ## Testing Conventions
 
 ### Unit tests (backend + database)
-- **Location**: `test/SerializerTests/` — MSTest project, net9.0
+- **Location**: `test/RssReaderTests/` — MSTest project, net9.0
 - **Always add tests** for new backend logic: services, serializers, repository queries, business rules
 - Use in-memory SQLite (`Data Source=:memory:`) for repository tests — see `ItemRepoTests.cs` for the pattern
-- Run tests with: `dotnet test test/SerializerTests`
+- Run tests with: `dotnet test test/RssReaderTests`
 - A task is not complete until all tests pass
 
 ### Frontend validation (Playwright)
@@ -191,8 +191,8 @@ This catches a known Copilot CLI session-state bug where the allowed-tools list 
 - Parameterize all SQL. Add indexes for any new columns used in queries.
 
 ### Step 5: Write unit tests
-- Add or update MSTest tests in `test/SerializerTests/` for any new backend or database logic.
-- Run `dotnet test test/SerializerTests` and confirm all tests pass before continuing.
+- Add or update MSTest tests in `test/RssReaderTests/` for any new backend or database logic.
+- Run `dotnet test test/RssReaderTests` and confirm all tests pass before continuing.
 
 ### Step 6: Validate the frontend (if applicable)
 - Navigate to the affected pages in Playwright.

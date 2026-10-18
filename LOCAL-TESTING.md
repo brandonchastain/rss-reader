@@ -78,7 +78,7 @@ build; kill them before restarting.
 ## 3. Tests
 
 ```powershell
-dotnet test test/SerializerTests/SerializerTests.csproj
+dotnet test test/RssReaderTests/RssReaderTests.csproj
 ```
 
 Tests that fetch live third-party feeds are tagged `Network` and excluded in CI; run
