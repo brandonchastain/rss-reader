@@ -18,6 +18,15 @@ namespace RssApp.Config
         // (every mark-read bumps the DB) triggers a full VACUUM INTO + copy to the
         // share. 15 min keeps that work down; read-state is all a crash can lose.
         public TimeSpan BackupInterval { get; set; } = TimeSpan.FromMinutes(15);
+        // The writer holds a lock file next to BackupDbPath for its whole lifetime and
+        // refreshes its mtime every 30 s. A booting revision waits for that lock so it
+        // seeds from the old revision's final copy; a lock older than this belongs to a
+        // replica that died without releasing it and is taken over. Keep it a small
+        // multiple of the heartbeat: it is the worst-case boot delay after a crash.
+        public TimeSpan BackupLockStaleAfter { get; set; } = TimeSpan.FromMinutes(3);
+        // Upper bound for the final copy to the share on SIGTERM. Must fit, with the
+        // host's shutdown timeout, inside terminationGracePeriodSeconds in main.bicep.
+        public TimeSpan ShutdownBackupTimeout { get; set; } = TimeSpan.FromSeconds(90);
 
         public TimeSpan CacheReloadInterval { get; set; } = TimeSpan.FromMinutes(5);
         public TimeSpan CacheReloadStartupDelay { get; set; } = TimeSpan.FromSeconds(0);

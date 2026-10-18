@@ -4,18 +4,23 @@
 #
 # Default mode (RSSREADER_ENABLE_LITESTREAM_REPLICATION != "true"):
 #   Durability comes from the periodic file-mount backup service writing
-#   /tmp/storage.db to /data/storage.db (Azure Files). On boot we just `cp`
-#   /data → /tmp and exec dotnet. Cold start ≈ 5-15 sec regardless of DB size.
+#   /tmp/storage.db to /data/db/storage.db (Azure Files). The app itself seeds
+#   /tmp from /data at boot (WriterStartupGate in Program.cs): it has to answer
+#   the startup probe first, because Container Apps only sends the previous
+#   revision SIGTERM — and so its final backup — once this one is "ready", and
+#   the seed must wait for that final copy (issue #136). This script only checks
+#   the mount and handles the no-copy-yet bootstrap, then execs dotnet.
 #
 #   The migration path from the previous Litestream-only world is automatic:
-#   if /data/storage.db is missing AND a Litestream blob replica exists, we
-#   do a one-shot litestream restore and the backup service immediately
-#   persists it to /data on its first cycle.
+#   if /data/db/storage.db is missing AND a Litestream blob replica exists, we
+#   do a one-shot litestream restore and publish it as the first share copy.
 #
 # Scaling mode (RSSREADER_ENABLE_LITESTREAM_REPLICATION == "true"):
-#   Same /data seeding, but `litestream replicate` runs as the supervisor so
-#   readers can stream WAL from blob. Each writer cold start mints a fresh
-#   Litestream generation; readers must re-restore on generation change.
+#   `litestream replicate` runs as the supervisor so readers can stream WAL
+#   from blob. Litestream must not see the DB file replaced underneath it, so
+#   in this mode the seed still happens here, before exec, without the deploy
+#   handover above. Each writer cold start mints a fresh Litestream
+#   generation; readers must re-restore on generation change.
 #
 # See plan in session-state for full design.
 
@@ -91,27 +96,19 @@ fi
 mkdir -p "$BACKUP_DIR"
 
 if [ -f "$BACKUP_DB" ]; then
-    # Fast path: copy the file-mount backup into local /tmp.
-    echo "Seeding $ACTIVE_DB from $BACKUP_DB..." >&2
-    cp "$BACKUP_DB" "$ACTIVE_DB"
-    SIZE=$(stat -c%s "$ACTIVE_DB" 2>/dev/null || echo "?")
-    echo "Seeded $SIZE bytes from file-mount backup." >&2
-
-    # Integrity check on the copied seed, run concurrently with app boot so its
-    # ~2s on the production DB is off the cold-start path. On failure it stops the
-    # app (PID 1 after the exec below) well before the backup service's first
-    # 5-minute cycle could overwrite /data with bad data. The check opens its own
-    # read connection, so it does not block the app's WAL-mode startup.
-    (
+    if [ "$LITESTREAM_ENABLED" = "true" ]; then
+        # Scaling mode only: seed here, before Litestream opens the file. No
+        # deploy handover in this mode (see header).
+        echo "Seeding $ACTIVE_DB from $BACKUP_DB (scaling mode)..." >&2
+        cp "$BACKUP_DB" "$ACTIVE_DB"
         QC_RESULT=$(sqlite3 "$ACTIVE_DB" "PRAGMA quick_check;" 2>&1 || echo "FAILED")
         if [ "$QC_RESULT" != "ok" ]; then
             echo "FATAL: PRAGMA quick_check failed on seeded DB: $QC_RESULT" >&2
-            echo "       Stopping the app; manual recovery required." >&2
-            kill -TERM 1
-        else
-            echo "quick_check on seeded DB: ok." >&2
+            exit 1
         fi
-    ) &
+    else
+        echo "$BACKUP_DB present; the app seeds $ACTIVE_DB after the previous revision's final backup." >&2
+    fi
 else
     # No file-mount backup yet. Try the one-shot Litestream bootstrap path
     # (existing prod system has a blob replica from the previous architecture).
@@ -151,6 +148,8 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$LITESTREAM_ENABLED" != "true" ]; then
     echo "Starting in DEFAULT mode (file-mount backup; Litestream replication OFF)." >&2
+    # exec: dotnet becomes PID 1 and receives the platform's SIGTERM directly,
+    # which is what triggers the final backup before exit.
     exec dotnet Server.dll
 fi
 

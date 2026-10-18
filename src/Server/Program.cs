@@ -19,6 +19,41 @@ builder.Configuration
 var config = RssAppConfig.LoadFromAppSettings(builder.Configuration);
 var dbConnections = new SqliteDbConnections(config.DbLocation, config.IsReadOnly);
 
+// Writer durability: the live DB is seeded from the share copy and the backup
+// service copies it back. The lock on the share is held for the whole process
+// lifetime (taken here, released after the final backup on shutdown).
+var backupPaths = new DatabaseBackupToFilePaths(
+    ActiveDbPath: config.DbLocation,
+    BackupDbPath: config.BackupDbPath ?? string.Empty,
+    Interval: config.BackupInterval,
+    LockStaleThreshold: config.BackupLockStaleAfter,
+    ShutdownBackupTimeout: config.ShutdownBackupTimeout);
+var startupLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole().SetMinimumLevel(LogLevel.Information));
+var writerLock = new ShareWriterLock(
+    backupPaths.LockPath, backupPaths.LockStaleThreshold, backupPaths.HeartbeatInterval,
+    startupLoggerFactory.CreateLogger<ShareWriterLock>());
+
+// Under `litestream replicate` the entrypoint still seeds /tmp before exec, because
+// Litestream must not see the file replaced underneath it (scaling mode, off).
+var litestreamSupervised = string.Equals(
+    Environment.GetEnvironmentVariable("RSSREADER_ENABLE_LITESTREAM_REPLICATION"), "true", StringComparison.OrdinalIgnoreCase);
+if (!config.IsReadOnly && !string.IsNullOrEmpty(backupPaths.BackupDbPath) && !litestreamSupervised)
+{
+    // Before the repositories below open the live DB: answer the startup probe,
+    // wait for the previous revision's final copy, take the lock, seed /tmp.
+    try
+    {
+        await WriterStartupGate.RunAsync(
+            args, backupPaths, writerLock,
+            config.Auth.AllowedFrontendOrigins.Select(ReturnUrlValidator.NormalizeOrigin).ToArray(),
+            startupLoggerFactory);
+    }
+    catch (OperationCanceledException)
+    {
+        return;
+    }
+}
+
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     serverOptions.Limits.MaxConcurrentConnections = 500;
@@ -116,14 +151,12 @@ if (!config.IsReadOnly)
                 sb.GetRequiredService<DatabaseBackupPaths>(),
                 sb))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
+        .AddSingleton(writerLock)
         .AddSingleton<DatabaseBackupToFileService>(sb =>
             new DatabaseBackupToFileService(
                 sb.GetRequiredService<ILogger<DatabaseBackupToFileService>>(),
-                new DatabaseBackupToFilePaths(
-                    ActiveDbPath: config.DbLocation,
-                    BackupDbPath: config.BackupDbPath ?? string.Empty,
-                    Interval: config.BackupInterval,
-                    LockStaleThreshold: TimeSpan.FromMinutes(15))))
+                backupPaths,
+                writerLock))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupToFileService>())
         .AddHostedService<BackgroundWorker>()
         .AddSingleton<IFeedValidatorStore>(sb =>
@@ -155,6 +188,11 @@ else
     // Read-only mode: register no-op IFeedRefresher so controllers can still resolve it
     builder.Services.AddSingleton<IFeedRefresher, NoOpFeedRefresher>();
 }
+
+// Shutdown budget: Kestrel drains, the feed scheduler and worker stop, then the
+// backup service's final copy runs (ShutdownBackupTimeout). The default 30 s is
+// not enough for the copy; terminationGracePeriodSeconds in main.bicep is 120.
+builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(110));
 
 builder.Services.AddControllers(options =>
 {

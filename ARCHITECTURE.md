@@ -71,13 +71,40 @@ docs link here.
 
 1. **File-mount copy (the durability path).** `DatabaseBackupToFileService`
    copies the live database to `RssAppConfig.BackupDbPath` on the Azure Files
-   mount (`/data/db/storage.db`) every `BackupInterval`, under a lock file so
-   only one writer copies at a time. `docker-entrypoint.sh` seeds
-   `/tmp/storage.db` from that file on every boot and runs `PRAGMA quick_check`
-   on the copy concurrently with app startup, stopping the app if it fails.
+   mount (`/data/db/storage.db`) every `BackupInterval` (skipped when the DB
+   has not changed), and once more on shutdown. The writer holds a lock file
+   next to the copy (`storage.db.lock`) for its whole lifetime, refreshing its
+   mtime every 30 s; only the lock holder copies. On boot the app (not the
+   entrypoint) seeds `/tmp/storage.db` from the share copy, after validating it
+   with `PRAGMA quick_check`; a failed check stops the app.
    `DatabaseBackupService` does the same for cached images (`wwwroot/images/`
    to `/data/images/`, every 5 minutes) and records system-stats snapshots.
    Backing up `/data` backs up everything.
+
+   **Deploy handover.** A deploy overlaps the old and new revision even in
+   `Single` revision mode, and anything written since the last periodic copy
+   exists only in the old replica's `/tmp`. The sequence that keeps it:
+
+   1. The new revision starts a throwaway listener (`WriterStartupGate`) that
+      answers `/api/healthz` with 200 and everything else with 503, and waits
+      while the old revision's lock is alive.
+   2. The startup probe passes, so Container Apps moves traffic to the new
+      revision and sends the old one SIGTERM.
+   3. The old revision stops Kestrel and the feed scheduler, then
+      `DatabaseBackupToFileService.StopAsync` runs one final copy (ignoring the
+      unchanged-DB skip, bounded by `ShutdownBackupTimeout`) and releases the
+      lock. `terminationGracePeriodSeconds` (120) covers this.
+   4. The new revision sees the lock gone, takes it, seeds `/tmp` from the
+      fresh copy, stops the gate listener and builds the real app. API requests
+      get 503 (then a few seconds of refused connections while the app boots)
+      between steps 2 and 4.
+
+   A lock whose heartbeat is older than `BackupLockStaleAfter` (3 min) belongs
+   to a replica that died without releasing it and is taken over, so a crash
+   delays the next boot by at most that long. Before publishing a copy the
+   holder re-reads the lock's owner token and discards the copy if another
+   writer took over. Scaling mode (below) still seeds in the entrypoint and has
+   no handover.
 
 2. **Litestream bootstrap (legacy, read-only).** If `BackupDbPath` does not
    exist at boot, the entrypoint tries a one-shot `litestream restore` from the
@@ -128,6 +155,7 @@ the provider secrets are supplied by the workflow, not the param file.
 | `apiCustomDomain` | `api.rss.brandonchastain.com` | — | The API's own hostname, so a session cookie can be shared with the frontend origin. Empty removes the binding. |
 | `googleClientId`/`Secret`, `microsoftClientId`/`Secret`, `githubClientId`/`Secret` | empty | from repo secrets | Login providers. A missing pair means that provider is not offered. |
 | `shareQuota` (inline) | `5` GB | — | Azure Files share for `/data`. Must exceed 2× the DB size because a backup cycle briefly holds old and new copies. Billed by used bytes. |
+| `terminationGracePeriodSeconds` (inline) | `120` s | — | How long a stopping replica gets before it is killed. Must exceed the app's shutdown budget (`HostOptions.ShutdownTimeout` 110 s, which contains `ShutdownBackupTimeout`) or the final DB copy on deploy is cut off. |
 | `location`, `*Name` params | westus2, `rss-reader-*` | — | Resource naming and region. |
 
 ### Container environment (writer env block in `main.bicep`)
@@ -168,7 +196,9 @@ Bound from `appsettings.json` section `RssAppConfig` or env vars
 | Setting | Default | Effect |
 |---|---|---|
 | `BackupDbPath` | empty | DB copy target. Empty disables `DatabaseBackupToFileService`. |
-| `BackupInterval` | 5 min | How often the whole DB file is copied to the share. Each copy is ~1 Azure Files write op per MB, all day long when the replica is always on. |
+| `BackupInterval` | 15 min | How often the whole DB file is copied to the share when it changed. Each copy is ~1 Azure Files write op per MB. A final copy also runs on shutdown, so this is the crash-loss window, not the deploy-loss window. |
+| `BackupLockStaleAfter` | 3 min | A writer lock whose heartbeat (every 30 s) is older than this is taken over. Worst-case boot delay after a crashed replica; keep a small multiple of the heartbeat and above any SMB hiccup. Self-hosting: the lock is a plain file; if it cannot be created the app warns after `ShareWriterLock.GiveUpAfter` (10 s) and runs without it. With `BackupDbPath` empty neither lock, gate nor shutdown copy runs. |
+| `ShutdownBackupTimeout` | 90 s | Upper bound for the final DB copy on SIGTERM. Must fit inside `HostOptions.ShutdownTimeout` (110 s) and `terminationGracePeriodSeconds`. |
 | `CacheReloadInterval` | 5 min | Cooldown between one user's manual refreshes; inside it the refresh endpoint reports "up to date" without fetching. |
 | `CacheReloadStartupDelay` | 0 s | Grace period after boot during which user refreshes are served from cache. |
 | `RebuildFtsOnStartup` | `false` | Rebuild the full-text index at boot (slow; use after a schema change). |
@@ -205,7 +235,9 @@ provider id in `Users.ProviderUserId`; the resolver looks in both.
 | Constant | Value | Where |
 |---|---|---|
 | Image cache sync interval | 5 min | `DatabaseBackupService._syncInterval` |
-| Backup lock stale threshold | 15 min | `Program.cs` (`DatabaseBackupToFilePaths`) |
+| Backup lock heartbeat | 30 s | `DatabaseBackupToFilePaths.HeartbeatInterval` |
+| Lock wait poll interval | 2 s | `ShareWriterLock.PollInterval` |
+| Host shutdown timeout | 110 s | `Program.cs` (`HostOptions.ShutdownTimeout`) |
 | Outbound feed HTTP timeout | 20 s | `Program.cs` (`RssClient`) |
 | In-memory feed/item cache | 5 min sliding | `CachingFeedRepository`, `CachingItemRepository` |
 | In-memory post body cache | 1 h absolute | `CachingItemRepository.ContentExpiration` |

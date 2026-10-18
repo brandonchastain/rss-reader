@@ -64,10 +64,16 @@ Logs land in the `rss-reader-logs` Log Analytics workspace at Warning and above.
 
 ## Troubleshooting
 
-**App refuses to boot after a deploy.** The entrypoint seeds `/tmp/storage.db` from
+**App refuses to boot after a deploy.** The app seeds `/tmp/storage.db` from
 `/data/db/storage.db` and runs `PRAGMA quick_check` on it; a failed check stops the app
 rather than let the backup service overwrite the share with bad data. Logs show
-`FATAL: PRAGMA quick_check failed`. Restore a known-good copy to the share and redeploy.
+`PRAGMA quick_check failed on the seeded database`. Restore a known-good copy to the share and redeploy.
+
+**New revision sits at "waiting for it to release" and the API answers 503.** The new
+revision is waiting for the previous one's lock on the share (`/data/db/storage.db.lock`)
+while that one writes its final DB copy on SIGTERM. Normal for up to a minute or two.
+If the old replica died without releasing, the lock is taken over once its heartbeat
+is older than `BackupLockStaleAfter` (3 min); nothing to do but wait.
 
 **`FATAL: Parent of backup directory '/data' does not exist`.** The Azure Files volume
 mount is missing from the revision. Check the template's `volumeMounts`; this is the
