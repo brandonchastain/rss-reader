@@ -21,7 +21,35 @@ public class PostCache : IPostCache
         this.logger = logger;
     }
 
-    public string Username { get; set; }
+    private string username;
+
+    // Mirrored into JS (rssApp.cache.setActiveUser) so the capture-phase link
+    // handler in app.js can patch the cache and outbox for this user without a
+    // round trip into .NET -- the page is about to unload, so there is no time
+    // for one.
+    public string Username
+    {
+        get => this.username;
+        set
+        {
+            this.username = value;
+            try
+            {
+                if (this.jsRuntime is IJSInProcessRuntime inProcess)
+                {
+                    inProcess.InvokeVoid("rssApp.cache.setActiveUser", value);
+                }
+                else
+                {
+                    _ = this.jsRuntime.InvokeVoidAsync("rssApp.cache.setActiveUser", value);
+                }
+            }
+            catch (Exception)
+            {
+                // best-effort: the .NET paths still patch the cache themselves
+            }
+        }
+    }
 
     /// <summary>
     /// Which cached rows may paint before the first response. The cache patches

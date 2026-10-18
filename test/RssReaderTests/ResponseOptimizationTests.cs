@@ -20,33 +20,45 @@ public sealed class ResponseOptimizationTests
     }
 
     [TestMethod]
-    public void Timeline_Should_NOT_Have_ResponseCache_Attribute()
+    public void Timeline_Should_Send_NoStore()
     {
+        // Carries per-user read/saved flags: a back-navigation must never be
+        // answered from the browser's HTTP cache with a pre-click copy.
         var method = typeof(ItemController).GetMethod("TimelineAsync");
         Assert.IsNotNull(method, "TimelineAsync method should exist on ItemController");
 
         var attr = method.GetCustomAttribute<ResponseCacheAttribute>();
-        Assert.IsNull(attr, "TimelineAsync should NOT have [ResponseCache] — affected by read/save state");
+        Assert.IsNotNull(attr, "TimelineAsync should have [ResponseCache(NoStore = true)] — affected by read/save state");
+        Assert.IsTrue(attr.NoStore, "TimelineAsync must send Cache-Control: no-store");
+        Assert.AreEqual(ResponseCacheLocation.None, attr.Location);
     }
 
     [TestMethod]
-    public void FeedAsync_Should_NOT_Have_ResponseCache_Attribute()
+    public void FeedAsync_Should_Send_NoStore()
     {
+        // Carries per-user read/saved flags: a back-navigation must never be
+        // answered from the browser's HTTP cache with a pre-click copy.
         var method = typeof(ItemController).GetMethod("FeedAsync");
         Assert.IsNotNull(method, "FeedAsync method should exist on ItemController");
 
         var attr = method.GetCustomAttribute<ResponseCacheAttribute>();
-        Assert.IsNull(attr, "FeedAsync should NOT have [ResponseCache] — affected by read/save state");
+        Assert.IsNotNull(attr, "FeedAsync should have [ResponseCache(NoStore = true)] — affected by read/save state");
+        Assert.IsTrue(attr.NoStore, "FeedAsync must send Cache-Control: no-store");
+        Assert.AreEqual(ResponseCacheLocation.None, attr.Location);
     }
 
     [TestMethod]
-    public void SearchAsync_Should_NOT_Have_ResponseCache_Attribute()
+    public void SearchAsync_Should_Send_NoStore()
     {
+        // Carries per-user read/saved flags: a back-navigation must never be
+        // answered from the browser's HTTP cache with a pre-click copy.
         var method = typeof(ItemController).GetMethod("SearchAsync");
         Assert.IsNotNull(method, "SearchAsync method should exist on ItemController");
 
         var attr = method.GetCustomAttribute<ResponseCacheAttribute>();
-        Assert.IsNull(attr, "SearchAsync should NOT have [ResponseCache] — affected by read/save state");
+        Assert.IsNotNull(attr, "SearchAsync should have [ResponseCache(NoStore = true)] — affected by read/save state");
+        Assert.IsTrue(attr.NoStore, "SearchAsync must send Cache-Control: no-store");
+        Assert.AreEqual(ResponseCacheLocation.None, attr.Location);
     }
 
     [TestMethod]

@@ -74,6 +74,16 @@ public sealed class ItemRepoTests
 
         item = itemRepo.GetItem(user, item.Href);
         Assert.IsTrue(item.IsRead);
+
+        // Idempotent: the outbox may replay a mark-read the keepalive request
+        // already delivered, and the second call must leave the row as it is.
+        itemRepo.MarkAsRead(item, true, user);
+        item = itemRepo.GetItem(user, item.Href);
+        Assert.IsTrue(item.IsRead);
+
+        itemRepo.MarkAsRead(item, false, user);
+        item = itemRepo.GetItem(user, item.Href);
+        Assert.IsFalse(item.IsRead);
     }
 
     [TestMethod]

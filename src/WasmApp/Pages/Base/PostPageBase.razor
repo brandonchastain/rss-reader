@@ -37,9 +37,34 @@
         public string Path { get; set; }
     }
 
+    private DotNetObjectReference<PostPageBase> _pageRestoredRef;
+
     public void Dispose()
     {
         this.Items.Clear();
+        _pageRestoredRef?.Dispose();
+    }
+
+    // Called from app.js on a back/forward-cache restore (pageshow with
+    // persisted = true). The page was frozen mid-session rather than reloaded,
+    // so the flags on screen are whatever the reader last did; make sure the
+    // server has them too, then overlay anything still queued. There is no
+    // per-item read-state endpoint to re-fetch, and a full reconcile would
+    // shrink a deep-scrolled list to one page under the reader.
+    [JSInvokable]
+    public async Task OnPageRestoredAsync()
+    {
+        try
+        {
+            await this.feedClient.FlushPendingWritesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Pending write flush after page restore failed.");
+        }
+
+        await ApplyPendingWritesAsync(Items);
+        await InvokeAsync(StateHasChanged);
     }
 
     protected virtual string GetBasePath() => "/timeline";
@@ -285,12 +310,32 @@
         }
     }
 
+    private async Task FlushPendingWritesAfterLoadAsync()
+    {
+        try
+        {
+            await EnsureCacheIdentityAsync();
+            await this.feedClient.FlushPendingWritesAsync();
+        }
+        catch (Exception ex)
+        {
+            // Entries stay queued for the next probe.
+            logger.LogWarning(ex, "Pending write flush after load failed.");
+        }
+    }
+
     // Applies queued read/saved changes to freshly fetched items. Safe to call
     // for any view: with no cache identity the queue reads back empty.
+    //
+    // The identity is resolved here rather than assumed: a back-navigation
+    // skips cache hydration (the only other place that resolves it before the
+    // first fetch), and without it the outbox would read back empty on exactly
+    // the load that most needs the overlay -- the return from an outbound link.
     private async Task ApplyPendingWritesAsync(IEnumerable<NewsFeedItem> items)
     {
         try
         {
+            await EnsureCacheIdentityAsync();
             var pending = await this.postCache.GetPendingWritesAsync();
             PendingWrites.Apply(pending, items);
         }
@@ -424,6 +469,16 @@
             // Apply filter state from URL query parameters
             ApplyFiltersFromUrl();
 
+            try
+            {
+                _pageRestoredRef = DotNetObjectReference.Create(this);
+                await jsRuntime.InvokeVoidAsync("rssApp.onPageRestored", _pageRestoredRef);
+            }
+            catch (Exception)
+            {
+                // No bfcache hook; a restore then behaves like before.
+            }
+
             // Check for scroll restoration from sessionStorage
             try
             {
@@ -454,6 +509,13 @@
             // swaps the stale rows for the server's newest page; without one it
             // is the ordinary first load.
             await this.RefreshItems((this.feedClient.IsFilterUnread, this.feedClient.IsFilterSaved, this.feedClient.FilterTag, false));
+
+            // Replay the outbox now rather than on the next probe tick. The
+            // common case is a return from an outbound link whose keepalive
+            // mark-read never landed; the reader is looking at the row the
+            // overlay just flipped, and the server should agree before they
+            // navigate on or open the app elsewhere.
+            _ = FlushPendingWritesAfterLoadAsync();
         }
         else if (_needsScrollRestore && !string.IsNullOrEmpty(_scrollAnchorPostId))
         {

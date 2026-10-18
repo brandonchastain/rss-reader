@@ -86,7 +86,7 @@ namespace WasmApp.Services
         public async Task MarkAsReadAsync(NewsFeedItem item, bool isRead)
         {
             var delivered = await TrySendAsync(
-                () => _httpClient.GetAsync($"{_config.ApiBaseUrl}api/item/markAsRead?itemId={item.Id}&isRead={isRead}"));
+                () => _httpClient.PostAsync(MarkReadRequest.Url(_config.ApiBaseUrl, item.Id, MarkReadRequest.StateOf(isRead)), null));
 
             if (!delivered)
             {
@@ -152,7 +152,7 @@ namespace WasmApp.Services
                 bool delivered = write.Kind switch
                 {
                     PendingWrite.ReadKind => await TrySendAsync(
-                        () => _httpClient.GetAsync($"{_config.ApiBaseUrl}api/item/markAsRead?itemId={write.ItemId}&isRead={write.Value}")),
+                        () => _httpClient.PostAsync(MarkReadRequest.Url(_config.ApiBaseUrl, write.ItemId, MarkReadRequest.StateOf(write.Value)), null)),
                     PendingWrite.SavedKind => await TrySendAsync(
                         () => _httpClient.PostAsJsonAsync(
                             $"{_config.ApiBaseUrl}api/item/{(write.Value ? "save" : "unsave")}", write.ToItem())),

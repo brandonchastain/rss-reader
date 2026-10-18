@@ -157,10 +157,7 @@ window.rssApp = {
         sessionStorage.setItem('rssApp.scrollAnchorPostId', postId);
         sessionStorage.setItem('rssApp.scrollAnchorPage', pageEstimate.toString());
         sessionStorage.setItem('rssApp.scrollAnchorPath', window.location.pathname);
-        // Fire mark-as-read with keepalive so it completes even after navigation
-        if (markReadUrl) {
-            fetch(markReadUrl, { method: 'GET', keepalive: true }).catch(function() {});
-        }
+        window.rssApp.markReadBeforeNavigate(postId, markReadUrl);
         window.location.href = targetHref;
     },
     saveScrollStateForLink: function(postId, markReadUrl) {
@@ -174,26 +171,60 @@ window.rssApp = {
             sessionStorage.setItem('rssApp.scrollAnchorPage', pageEstimate.toString());
             sessionStorage.setItem('rssApp.scrollAnchorPath', window.location.pathname);
         }
-        if (markReadUrl) {
-            // sendBeacon is specifically designed to fire reliably during
-            // page unload (cross-origin navigation). It's the most robust
-            // way to ensure the markAsRead request reaches the server.
-            // The endpoint accepts both GET and POST.
-            var sent = false;
-            try {
-                if (navigator.sendBeacon) {
-                    sent = navigator.sendBeacon(markReadUrl);
-                }
-            } catch (e) { sent = false; }
-            if (!sent) {
-                // Fallback for older browsers or when sendBeacon refuses
-                // (e.g., quota exceeded). keepalive lets the request outlive
-                // the document on best-effort basis.
-                try {
-                    fetch(markReadUrl, { method: 'POST', keepalive: true, credentials: 'same-origin' }).catch(function() {});
-                } catch (e) {}
+        window.rssApp.markReadBeforeNavigate(postId, markReadUrl);
+    },
+
+    // Marks a post read in a way that survives the page unloading a moment
+    // later for an outbound link. Everything here is synchronous except the
+    // request itself, and it runs in the capture phase of the click, before
+    // Blazor's own handler and before the browser starts navigating.
+    //
+    //  1. The cached timeline slots and the write-behind outbox are patched
+    //     first, in localStorage. If the request below never lands (the tab
+    //     unloads first, the API is asleep, read-only during a deploy), the
+    //     outbox replays it on the load after Back -- the same path an
+    //     offline mark-read already takes.
+    //  2. The row is flipped to read in the DOM so a back/forward-cache
+    //     snapshot of this page already shows the post read.
+    //  3. The request goes out as fetch keepalive with credentials: the API
+    //     is a different origin and the session cookie lives there, which is
+    //     why the old sendBeacon to a frontend-origin path never authenticated.
+    //     POST rather than GET so the browser's HTTP cache can never answer it.
+    markReadBeforeNavigate: function(postId, markReadUrl) {
+        var cache = window.rssApp.cache;
+        var user = cache._activeUser;
+        var ts = Date.now();
+        if (postId && user) {
+            cache.patchItem(user, postId, true, null);
+            cache.enqueueOutbox(user, postId, 'read', true, ts);
+        }
+        if (postId) {
+            var row = document.querySelector('[data-post-id="' + postId + '"].row');
+            if (row) {
+                row.classList.remove('post-unread');
+                row.classList.add('post-read');
             }
         }
+        if (!markReadUrl) return;
+        try {
+            fetch(markReadUrl, { method: 'POST', keepalive: true, credentials: 'include' })
+                .then(function(response) {
+                    // Only reached if this page is still alive; otherwise the
+                    // outbox entry stays and replays harmlessly (idempotent).
+                    if (response.ok && postId && user) {
+                        cache.removeOutbox(user, postId, 'read', ts);
+                    }
+                })
+                .catch(function() {});
+        } catch (e) {}
+    },
+
+    // A page restored from the back/forward cache never re-ran its load, so
+    // let the timeline component replay the outbox and re-apply it to the
+    // rows it is showing.
+    _pageRestoredRef: null,
+    onPageRestored: function(dotNetRef) {
+        window.rssApp._pageRestoredRef = dotNetRef;
     },
     getScrollState: function() {
         var postId = sessionStorage.getItem('rssApp.scrollAnchorPostId');
@@ -482,6 +513,42 @@ window.rssApp = {
         getOutbox: function (user) { return window.rssApp.cache._get(user, 'outbox'); },
         setOutbox: function (user, json) { return window.rssApp.cache._set(user, 'outbox', json); },
 
+        // The user whose slots the synchronous link handler patches; set from
+        // PostCache.Username so the two sides always agree on the partition.
+        _activeUser: null,
+        setActiveUser: function (user) { window.rssApp.cache._activeUser = user || null; },
+
+        _outboxEntries: function (user) {
+            var raw = window.rssApp.cache.getOutbox(user);
+            if (!raw) return [];
+            try { return JSON.parse(raw) || []; } catch (e) { return []; }
+        },
+
+        // Mirrors PendingWrites.Collapse: one entry per (item, kind), holding
+        // the latest value. Property names are PascalCase because PostCache
+        // deserializes this JSON into the PendingWrite record.
+        enqueueOutbox: function (user, itemId, kind, value, ts) {
+            if (!user || !itemId) return;
+            var entries = window.rssApp.cache._outboxEntries(user).filter(function (e) {
+                return !(e && e.ItemId === itemId && e.Kind === kind);
+            });
+            entries.push({ ItemId: itemId, Kind: kind, Value: value, Ts: ts });
+            window.rssApp.cache.setOutbox(user, JSON.stringify(entries));
+        },
+
+        // Drops the entry enqueued at `ts` once the server accepted it. A later
+        // write for the same item (different Ts) is left alone.
+        removeOutbox: function (user, itemId, kind, ts) {
+            if (!user || !itemId) return;
+            var entries = window.rssApp.cache._outboxEntries(user);
+            var kept = entries.filter(function (e) {
+                return !(e && e.ItemId === itemId && e.Kind === kind && e.Ts === ts);
+            });
+            if (kept.length !== entries.length) {
+                window.rssApp.cache.setOutbox(user, JSON.stringify(kept));
+            }
+        },
+
         // Post bodies, newest-write-first so trimming drops the least recently
         // written. Stored as an array rather than an object because integer-like
         // object keys are ordered numerically by the JS engine, which would
@@ -591,3 +658,13 @@ function articleLinkActivated(e) {
 }
 document.addEventListener('click', articleLinkActivated, true);
 document.addEventListener('auxclick', articleLinkActivated, true);
+
+// Back/forward-cache restore: the page comes back exactly as it was frozen,
+// without reloading, so nothing would otherwise replay the outbox or refresh
+// the read flags on the rows.
+window.addEventListener('pageshow', function(e) {
+    if (!e.persisted) return;
+    var ref = window.rssApp._pageRestoredRef;
+    if (!ref) return;
+    try { ref.invokeMethodAsync('OnPageRestoredAsync').catch(function() {}); } catch (err) {}
+});
