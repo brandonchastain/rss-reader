@@ -17,22 +17,24 @@ namespace RssReader.Server.Services
     /// one's lock is alive, which is what guarantees it seeds from the old revision's
     /// final copy rather than a copy up to <c>BackupInterval</c> old (issue #136).
     ///
-    /// Liveness is the file's mtime: the holder rewrites the file every
+    /// Liveness is the file's mtime: the holder touches the file every
     /// <see cref="HeartbeatInterval"/>, and a lock whose mtime is older than
     /// <see cref="StaleAfter"/> belongs to a replica that died without releasing it and
-    /// is taken over. The first line is a per-process token so a holder can check that it
-    /// still owns the file before publishing a copy, and never deletes a newer holder's lock.
+    /// is taken over. That is the whole mechanism. A holder that stalls for longer than
+    /// <see cref="StaleAfter"/> and then resumes could delete or write over a newer
+    /// holder's lock; with a 3-minute threshold against a 30-second heartbeat that needs
+    /// a live process to lose the share for minutes, which is accepted rather than
+    /// guarded against with owner tokens.
+    ///
+    /// Self-hosting: the lock is plain file operations, so it works on any directory.
+    /// If the directory cannot be written at all, <see cref="AcquireAsync"/> gives up
+    /// after <see cref="GiveUpAfter"/> with a warning instead of failing boot.
     /// </summary>
     public sealed class ShareWriterLock : IDisposable
     {
         private readonly ILogger _logger;
-        private readonly string _ownerToken;
-        private readonly string _hostName;
-        private readonly int _processId;
         private readonly object _gate = new();
-        private FileStream? _fs;
         private CancellationTokenSource? _heartbeatCts;
-        private Task? _heartbeatTask;
 
         public string LockPath { get; }
         public TimeSpan StaleAfter { get; }
@@ -41,7 +43,14 @@ namespace RssReader.Server.Services
         /// <summary>How often <see cref="AcquireAsync"/> re-checks a foreign lock.</summary>
         public TimeSpan PollInterval { get; init; } = TimeSpan.FromSeconds(2);
 
-        public bool IsHeld => _fs != null;
+        /// <summary>
+        /// How long <see cref="AcquireAsync"/> keeps retrying when the lock file cannot be
+        /// created for a reason other than another holder (unwritable or missing
+        /// directory). Contention never times out: a live foreign lock is waited for.
+        /// </summary>
+        public TimeSpan GiveUpAfter { get; init; } = TimeSpan.FromSeconds(10);
+
+        public bool IsHeld { get; private set; }
 
         public ShareWriterLock(string lockPath, TimeSpan staleAfter, TimeSpan heartbeatInterval, ILogger logger)
         {
@@ -49,9 +58,6 @@ namespace RssReader.Server.Services
             StaleAfter = staleAfter;
             HeartbeatInterval = heartbeatInterval;
             _logger = logger;
-            _ownerToken = Guid.NewGuid().ToString("N");
-            _hostName = Environment.MachineName;
-            _processId = Environment.ProcessId;
         }
 
         /// <summary>
@@ -68,10 +74,12 @@ namespace RssReader.Server.Services
 
         /// <summary>
         /// Take the lock without waiting. Returns false when another writer holds a live
-        /// lock. A stale lock is taken over.
+        /// lock, or when the file cannot be created (see <paramref name="error"/>).
+        /// A stale lock is taken over.
         /// </summary>
-        public bool TryAcquire()
+        public bool TryAcquire(out Exception? error)
         {
+            error = null;
             lock (_gate)
             {
                 if (IsHeld) return true;
@@ -81,122 +89,116 @@ namespace RssReader.Server.Services
                     if (File.Exists(LockPath))
                     {
                         if (IsAlive(out var age)) return false;
-                        _logger.LogWarning(
-                            "Stale writer lock found (age={Age}) — taking over.", age);
-                        SafeDelete(LockPath);
+                        _logger.LogWarning("Stale writer lock found (age={Age}) — taking over.", age);
+                        File.Delete(LockPath);
                     }
 
-                    var fs = new FileStream(LockPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
-                    try
+                    // CreateNew is the atomic claim: of two writers racing for a missing
+                    // or stale lock, exactly one creates the file.
+                    using (var fs = new FileStream(LockPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+                    using (var writer = new StreamWriter(fs))
                     {
-                        WriteContents(fs);
+                        writer.WriteLine($"{Environment.MachineName}:{Environment.ProcessId}:{DateTimeOffset.UtcNow:O}");
                     }
-                    catch
-                    {
-                        fs.Dispose();
-                        SafeDelete(LockPath);
-                        throw;
-                    }
-                    _fs = fs;
+
+                    IsHeld = true;
                     StartHeartbeat();
                     return true;
                 }
-                catch (IOException)
+                catch (IOException ex)
                 {
-                    // Lost the race: another container created the lock between our
-                    // check and our create.
+                    // Lost the race when the file now exists (another container created
+                    // it between our check and our create); otherwise the directory
+                    // itself is the problem.
+                    if (!File.Exists(LockPath)) error = ex;
                     return false;
                 }
-                catch (UnauthorizedAccessException)
+                catch (UnauthorizedAccessException ex)
                 {
+                    error = ex;
                     return false;
                 }
             }
         }
 
+        public bool TryAcquire() => TryAcquire(out _);
+
         /// <summary>
         /// Wait until the lock can be taken: polls while another writer's lock is alive,
-        /// takes over a stale one. Cancelling the token gives up (lock not held).
+        /// takes over a stale one. Returns false, with a warning logged, when the lock
+        /// file cannot be created for <see cref="GiveUpAfter"/> (unwritable directory):
+        /// the caller then carries on without a lock. Cancelling the token throws.
         /// </summary>
-        public async Task AcquireAsync(CancellationToken cancellationToken)
+        public async Task<bool> AcquireAsync(CancellationToken cancellationToken)
         {
             var loggedWait = false;
+            DateTime? failingSince = null;
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (TryAcquire())
+                if (TryAcquire(out var error))
                 {
                     if (loggedWait) _logger.LogInformation("Writer lock acquired after waiting.");
-                    return;
+                    return true;
                 }
 
-                if (!loggedWait)
+                if (error != null)
                 {
-                    IsAlive(out var age);
-                    _logger.LogInformation(
-                        "Another writer holds {Lock} (heartbeat age {Age}); waiting for it to release " +
-                        "(stale after {Stale}).", LockPath, age, StaleAfter);
-                    loggedWait = true;
+                    failingSince ??= DateTime.UtcNow;
+                    if (DateTime.UtcNow - failingSince >= GiveUpAfter)
+                    {
+                        _logger.LogWarning(error,
+                            "Could not create the writer lock {Lock} for {Wait}; continuing without it. " +
+                            "Check that the backup directory is writable.", LockPath, GiveUpAfter);
+                        return false;
+                    }
+                }
+                else
+                {
+                    failingSince = null;
+                    if (!loggedWait)
+                    {
+                        IsAlive(out var age);
+                        _logger.LogInformation(
+                            "Another writer holds {Lock} (heartbeat age {Age}); waiting for it to release " +
+                            "(stale after {Stale}).", LockPath, age, StaleAfter);
+                        loggedWait = true;
+                    }
                 }
                 await Task.Delay(PollInterval, cancellationToken);
             }
         }
 
-        /// <summary>
-        /// True when the lock file on the share still carries this process's token. A
-        /// holder whose heartbeat stalled long enough for another writer to take over
-        /// must not publish a copy.
-        /// </summary>
-        public bool StillOwned()
-        {
-            if (!IsHeld) return false;
-            return ReadFirstLine(LockPath) == _ownerToken;
-        }
-
-        /// <summary>Rewrite the lock file so its mtime moves. Exposed for tests.</summary>
+        /// <summary>Touch the lock file so its mtime moves. Exposed for tests.</summary>
         public void Heartbeat()
         {
             lock (_gate)
             {
-                if (_fs == null) return;
-                WriteContents(_fs);
+                if (!IsHeld) return;
+                // Set the time explicitly rather than relying on a write: NTFS and some
+                // SMB clients only refresh the directory entry's mtime on handle close.
+                if (!File.Exists(LockPath)) File.WriteAllText(LockPath, string.Empty);
+                File.SetLastWriteTimeUtc(LockPath, DateTime.UtcNow);
             }
         }
 
-        /// <summary>
-        /// Release the lock. Deletes the file only if this process still owns it, so a
-        /// stalled old writer never deletes the lock a newer writer took over.
-        /// </summary>
+        /// <summary>Release the lock: stop the heartbeat and delete the file. Idempotent.</summary>
         public void Release()
         {
             lock (_gate)
             {
-                if (_fs == null) return;
+                if (!IsHeld) return;
+                IsHeld = false;
                 try
                 {
                     _heartbeatCts?.Cancel();
-                    _fs.Dispose();
-                    _fs = null;
-
-                    if (ReadFirstLine(LockPath) == _ownerToken)
-                    {
-                        SafeDelete(LockPath);
-                    }
-                    else if (File.Exists(LockPath))
-                    {
-                        _logger.LogWarning(
-                            "Lock token mismatch on release — leaving lock for the current owner.");
-                    }
+                    _heartbeatCts?.Dispose();
+                    _heartbeatCts = null;
+                    if (File.Exists(LockPath)) File.Delete(LockPath);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to release writer lock");
-                }
-                finally
-                {
-                    _heartbeatCts?.Dispose();
-                    _heartbeatCts = null;
-                    _heartbeatTask = null;
                 }
             }
         }
@@ -205,9 +207,10 @@ namespace RssReader.Server.Services
 
         private void StartHeartbeat()
         {
-            _heartbeatCts = new CancellationTokenSource();
-            var token = _heartbeatCts.Token;
-            _heartbeatTask = Task.Run(async () =>
+            var cts = new CancellationTokenSource();
+            _heartbeatCts = cts;
+            var token = cts.Token;
+            _ = Task.Run(async () =>
             {
                 while (!token.IsCancellationRequested)
                 {
@@ -223,41 +226,6 @@ namespace RssReader.Server.Services
                     }
                 }
             }, CancellationToken.None);
-        }
-
-        private void WriteContents(FileStream fs)
-        {
-            fs.Seek(0, SeekOrigin.Begin);
-            fs.SetLength(0);
-            using var writer = new StreamWriter(fs, leaveOpen: true);
-            // First line is the owner token; readers compare on release to avoid an
-            // old writer deleting a newer writer's lock. Second line is diagnostics.
-            writer.WriteLine(_ownerToken);
-            writer.WriteLine($"{_hostName}:{_processId}:{DateTimeOffset.UtcNow:O}");
-            writer.Flush();
-            fs.Flush(flushToDisk: true);
-            // Waiters read the mtime through the directory entry, which NTFS (and some
-            // SMB clients) only refresh from an open handle on close. Set it explicitly.
-            try { File.SetLastWriteTimeUtc(LockPath, DateTime.UtcNow); } catch (IOException) { }
-        }
-
-        /// <summary>Read the owner token of a lock file, tolerating a holder's open handle.</summary>
-        internal static string? ReadFirstLine(string path)
-        {
-            try
-            {
-                using var fs = new FileStream(
-                    path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                using var reader = new StreamReader(fs);
-                return reader.ReadLine();
-            }
-            catch (IOException) { return null; }
-            catch (UnauthorizedAccessException) { return null; }
-        }
-
-        private static void SafeDelete(string path)
-        {
-            try { if (File.Exists(path)) File.Delete(path); } catch { }
         }
     }
 }

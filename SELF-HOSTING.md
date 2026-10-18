@@ -49,6 +49,13 @@ docker run -d --name rss-reader \
   cookie's encryption keys under `/data/keys/` so a restart does not sign
   everyone out. Back up `/data` and you have everything. Leave `BackupDbPath`
   unset and the container runs in throwaway mode.
+- The deploy handover that production uses (a lock file next to the copy, a
+  final copy on SIGTERM, a boot that waits for the previous container's lock)
+  is plain file operations and needs nothing from Azure. On a single Docker
+  host it costs one local copy at boot and one at `docker stop`; with
+  `BackupDbPath` unset none of it runs. If the lock file cannot be created
+  (directory missing or read-only) the app logs a warning after about ten
+  seconds and starts without it. See ARCHITECTURE.md "Backup & Replication".
 - `AllowedFrontendOrigins` is the list of origins the API accepts credentialed
   calls from and will send a user back to after login. For a one-box setup it
   is the API's own public origin. Index further origins as `__1`, `__2`.

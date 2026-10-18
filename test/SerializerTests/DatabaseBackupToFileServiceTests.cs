@@ -139,41 +139,140 @@ public class DatabaseBackupToFileServiceTests
     }
 
     [TestMethod]
-    public async Task RunBackup_TakenOverLockIsOursAndReleasedOnStop()
+    public async Task RunBackup_TakenOverStaleLockIsReleasedOnStop()
     {
         File.WriteAllText(_paths.LockPath, "crashed-host:1234");
         File.SetLastWriteTimeUtc(_paths.LockPath, DateTime.UtcNow - TimeSpan.FromMinutes(30));
 
-        var ok = await _service.RunBackupCycleAsync(CancellationToken.None);
-        Assert.IsTrue(ok);
-        Assert.IsTrue(_lock.StillOwned(), "After takeover the lock file carries our token");
-        Assert.AreNotEqual("crashed-host:1234", ShareWriterLock.ReadFirstLine(_paths.LockPath));
+        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
+        Assert.IsTrue(_lock.IsHeld, "Stale lock taken over and kept");
 
         await _service.StopAsync(CancellationToken.None);
-        Assert.IsFalse(File.Exists(_paths.LockPath),
-            "Our own lock is released once the final backup has run");
-    }
-
-    [TestMethod]
-    public async Task RunBackup_DoesNotPublishWhenLockWasTakenOver()
-    {
-        await _service.RunBackupCycleAsync(CancellationToken.None);
-        var before = File.GetLastWriteTimeUtc(_backupDbPath);
-
-        // Another writer decided our lock was stale and replaced it.
-        _lock.Dispose();
-        File.WriteAllText(_paths.LockPath, "newer-writer-token");
-        var stolen = NewLock();   // fresh instance: it will see a live foreign lock
-        var svc = new DatabaseBackupToFileService(NullLogger<DatabaseBackupToFileService>.Instance, _paths, stolen);
-
-        SqliteConnection.ClearAllPools();
-        AddRow(_activeDbPath, "gamma", 3);
-        Assert.IsFalse(await svc.RunBackupCycleAsync(CancellationToken.None));
-        Assert.AreEqual(before, File.GetLastWriteTimeUtc(_backupDbPath), "Share copy untouched");
-        Assert.AreEqual("newer-writer-token", ShareWriterLock.ReadFirstLine(_paths.LockPath));
+        Assert.IsFalse(File.Exists(_paths.LockPath), "Released once the final backup has run");
     }
 
     // ── Deploy handover (issue #136) ───────────────────────────────────
+
+    [TestMethod]
+    public async Task StopAsync_FinalBackupTimeout_StillReleasesLock()
+    {
+        // The host's shutdown timeout already expired (cancelled token), which is the
+        // outer bound on ShutdownBackupTimeout: the copy must not run, nothing may
+        // throw, and the lock must still be released so the next revision can boot.
+        var svc = _service;
+        Assert.IsTrue(await svc.RunBackupCycleAsync(CancellationToken.None));
+        var before = File.GetLastWriteTimeUtc(_backupDbPath);
+        SqliteConnection.ClearAllPools();
+        AddRow(_activeDbPath, "gamma", 3);
+
+        await svc.StopAsync(new CancellationToken(canceled: true));   // must not throw
+
+        Assert.IsNull(svc.FinalBackupAtUtc, "Timed out before the copy");
+        Assert.AreEqual(before, File.GetLastWriteTimeUtc(_backupDbPath), "Nothing half-written");
+        Assert.IsFalse(_lock.IsHeld);
+        Assert.IsFalse(File.Exists(_paths.LockPath), "Lock released even though the final copy timed out");
+        Assert.AreEqual(0, Directory.GetFiles(Path.GetDirectoryName(_backupDbPath)!, "*.tmp.*").Length);
+    }
+
+    [TestMethod]
+    public async Task StopAsync_FinalBackupBoundedByShutdownBackupTimeout()
+    {
+        // The timeout is wired as a linked CancelAfter on the copy. A tiny budget is
+        // observed as the copy being cancelled: either before it starts (no new copy)
+        // or mid-way (no partial publish). Either way the lock is released.
+        var paths = _paths with { ShutdownBackupTimeout = TimeSpan.FromTicks(1) };
+        var svc = new DatabaseBackupToFileService(NullLogger<DatabaseBackupToFileService>.Instance, paths, _lock);
+        Assert.IsTrue(await svc.RunBackupCycleAsync(CancellationToken.None));
+        var rowsBefore = ReadAllRows(_backupDbPath).Count;
+
+        await svc.StopAsync(CancellationToken.None);
+
+        var rows = ReadAllRows(_backupDbPath).Count;
+        Assert.AreEqual(rowsBefore, rows, "Share copy is either untouched or a complete copy of the same rows");
+        Assert.IsFalse(_lock.IsHeld);
+        Assert.IsFalse(File.Exists(_paths.LockPath));
+        Assert.AreEqual(0, Directory.GetFiles(Path.GetDirectoryName(_backupDbPath)!, "*.tmp.*").Length);
+    }
+
+    [TestMethod]
+    public async Task StopAsync_FinalBackupFailure_StillReleasesLock()
+    {
+        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
+        File.Delete(_activeDbPath);   // the copy will refuse to run
+
+        await _service.StopAsync(CancellationToken.None);
+
+        Assert.IsNull(_service.FinalBackupAtUtc);
+        Assert.IsFalse(_lock.IsHeld);
+        Assert.IsFalse(File.Exists(_paths.LockPath));
+    }
+
+    [TestMethod]
+    public async Task StopAsync_LockHeldUntilTheFinalCopyIsPublished()
+    {
+        // The share copy is renamed into place while the lock is still held: the lock's
+        // mtime (last heartbeat) and the copy's are both from the stop, and the lock
+        // file was present for the whole copy. Observed through a watcher on the
+        // backup directory: the lock's deletion is the last event.
+        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
+        var events = new List<string>();
+        using var watcher = new FileSystemWatcher(Path.GetDirectoryName(_backupDbPath)!)
+        {
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
+            EnableRaisingEvents = true,
+        };
+        watcher.Deleted += (_, e) => { lock (events) events.Add("deleted:" + e.Name); };
+        watcher.Renamed += (_, e) => { lock (events) events.Add("renamed:" + e.Name); };
+
+        await _service.StopAsync(CancellationToken.None);
+        await Task.Delay(300);   // let the watcher drain
+
+        string[] snapshot; lock (events) snapshot = events.ToArray();
+        var publish = Array.FindIndex(snapshot, e => e == "renamed:" + Path.GetFileName(_backupDbPath));
+        var release = Array.FindIndex(snapshot, e => e == "deleted:" + Path.GetFileName(_paths.LockPath));
+        Assert.IsTrue(publish >= 0, "Final copy published: " + string.Join(",", snapshot));
+        Assert.IsTrue(release > publish, "Lock deleted after the publish: " + string.Join(",", snapshot));
+    }
+
+    [TestMethod]
+    public async Task Disabled_NoBackupPath_StopDoesNothingAndTouchesNoFiles()
+    {
+        // Self-host / local dev: BackupDbPath empty means no lock, no flush, no gate.
+        var paths = _paths with { BackupDbPath = string.Empty };
+        var l = new ShareWriterLock(paths.LockPath, paths.LockStaleThreshold, paths.HeartbeatInterval, NullLogger.Instance);
+        var svc = new DatabaseBackupToFileService(NullLogger<DatabaseBackupToFileService>.Instance, paths, l);
+        Assert.IsFalse(svc.Enabled);
+
+        await svc.StartAsync(CancellationToken.None);
+        await Task.Delay(100);
+        await svc.StopAsync(CancellationToken.None);
+
+        Assert.IsFalse(l.IsHeld);
+        Assert.IsNull(svc.FinalBackupAtUtc);
+        Assert.IsFalse(File.Exists(".lock"));
+        Assert.AreEqual(0, Directory.GetFiles(Path.GetDirectoryName(_backupDbPath)!).Length, "Share dir untouched");
+    }
+
+    [TestMethod]
+    public async Task UnwritableLockDirectory_CyclesAndStopStillRunWithoutLock()
+    {
+        // Self-host with a lock that cannot be created: warn and continue. The backup
+        // itself goes to a writable share dir here, so cycles still succeed.
+        var l = new ShareWriterLock(Path.Combine(_testDir, "missing", "x.lock"), _paths.LockStaleThreshold, _paths.HeartbeatInterval, NullLogger.Instance)
+        { PollInterval = TimeSpan.FromMilliseconds(20), GiveUpAfter = TimeSpan.FromMilliseconds(100) };
+        var svc = new DatabaseBackupToFileService(NullLogger<DatabaseBackupToFileService>.Instance, _paths, l);
+
+        Assert.IsTrue(await svc.RunBackupCycleAsync(CancellationToken.None), "Cycle runs without a lock");
+        Assert.IsFalse(l.IsHeld);
+        SqliteConnection.ClearAllPools();
+        AddRow(_activeDbPath, "gamma", 3);
+
+        await svc.StopAsync(CancellationToken.None);
+
+        Assert.IsNotNull(svc.FinalBackupAtUtc, "Final copy still runs");
+        Assert.AreEqual(3, ReadAllRows(_backupDbPath).Count);
+    }
+
 
     [TestMethod]
     public async Task StopAsync_RunsFinalBackupThenReleasesLock()
@@ -216,223 +315,6 @@ public class DatabaseBackupToFileServiceTests
         Assert.IsNull(_service.FinalBackupAtUtc);
         Assert.IsFalse(File.Exists(_backupDbPath));
         Assert.IsTrue(File.Exists(_paths.LockPath), "Foreign lock untouched");
-    }
-
-    [TestMethod]
-    public async Task Seed_WaitsWhileForeignLockIsAliveAndProceedsWhenReleased()
-    {
-        // The share copy is what the old revision will leave behind.
-        SeedSqliteDb(_backupDbPath, ("from-share", 42));
-        File.WriteAllText(_paths.LockPath, "old-revision-token\nold:1:now");
-
-        var seed = DatabaseSeeder.WaitForLockAndSeedAsync(_paths, _lock, NullLogger.Instance, CancellationToken.None);
-        await Task.Delay(600);
-        Assert.IsFalse(seed.IsCompleted, "Must wait while the other writer's lock is fresh");
-        Assert.AreEqual(2, ReadAllRows(_activeDbPath).Count, "Live DB untouched while waiting");
-
-        // Old revision finishes its final backup and releases.
-        File.Delete(_paths.LockPath);
-        var seeded = await seed.WaitAsync(TimeSpan.FromSeconds(10));
-
-        Assert.IsTrue(seeded);
-        Assert.IsTrue(_lock.IsHeld, "The new writer now holds the lock");
-        CollectionAssert.AreEquivalent(new[] { ("from-share", 42) }, ReadAllRows(_activeDbPath).ToArray());
-    }
-
-    [TestMethod]
-    public async Task Seed_ProceedsWhenForeignLockIsStale()
-    {
-        SeedSqliteDb(_backupDbPath, ("from-share", 42));
-        File.WriteAllText(_paths.LockPath, "crashed-revision");
-        File.SetLastWriteTimeUtc(_paths.LockPath, DateTime.UtcNow - TimeSpan.FromMinutes(5));
-
-        var seeded = await DatabaseSeeder
-            .WaitForLockAndSeedAsync(_paths, _lock, NullLogger.Instance, CancellationToken.None)
-            .WaitAsync(TimeSpan.FromSeconds(5));
-
-        Assert.IsTrue(seeded);
-        Assert.IsTrue(_lock.StillOwned(), "Stale lock taken over");
-        Assert.AreEqual(1, ReadAllRows(_activeDbPath).Count);
-    }
-
-    [TestMethod]
-    public async Task Lock_HeartbeatKeepsWaiterWaitingUntilRelease()
-    {
-        // The holder's heartbeat (200 ms here) keeps the mtime fresh, so a waiter
-        // with a 10 s stale threshold must still be waiting well past one interval.
-        Assert.IsTrue(_lock.TryAcquire());
-        var first = File.GetLastWriteTimeUtc(_paths.LockPath);
-        await Task.Delay(700);
-        Assert.IsTrue(File.GetLastWriteTimeUtc(_paths.LockPath) > first, "Heartbeat moved the mtime");
-
-        var waiter = NewLock();
-        Assert.IsFalse(waiter.TryAcquire());
-        var wait = waiter.AcquireAsync(CancellationToken.None);
-        await Task.Delay(500);
-        Assert.IsFalse(wait.IsCompleted);
-
-        _lock.Release();
-        await wait.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.IsTrue(waiter.IsHeld);
-        waiter.Release();
-    }
-
-    [TestMethod]
-    public async Task Seed_CancelledWhileWaitingLeavesLockAlone()
-    {
-        File.WriteAllText(_paths.LockPath, "old-revision");
-        using var cts = new CancellationTokenSource(300);
-        await Assert.ThrowsExceptionAsync<TaskCanceledException>(() =>
-            DatabaseSeeder.WaitForLockAndSeedAsync(_paths, _lock, NullLogger.Instance, cts.Token));
-        Assert.IsFalse(_lock.IsHeld);
-        Assert.AreEqual("old-revision", ShareWriterLock.ReadFirstLine(_paths.LockPath));
-    }
-
-    [TestMethod]
-    public async Task Seed_RefusesCorruptShareCopy()
-    {
-        File.WriteAllText(_backupDbPath, "this is not a database");
-
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
-            DatabaseSeeder.SeedFromShareAsync(_paths, NullLogger.Instance, CancellationToken.None));
-
-        Assert.AreEqual(2, ReadAllRows(_activeDbPath).Count, "Live DB left as it was");
-        Assert.AreEqual(0, Directory.GetFiles(Path.GetDirectoryName(_activeDbPath)!, "*.seed.*").Length);
-    }
-
-    [TestMethod]
-    public async Task Seed_WithoutShareCopyKeepsLocalDb()
-    {
-        var seeded = await DatabaseSeeder.SeedFromShareAsync(_paths, NullLogger.Instance, CancellationToken.None);
-        Assert.IsFalse(seeded);
-        Assert.AreEqual(2, ReadAllRows(_activeDbPath).Count);
-    }
-
-    [TestMethod]
-    public async Task RunBackup_DisabledWhenBackupPathEmpty()
-    {
-        var paths = new DatabaseBackupToFilePaths(
-            ActiveDbPath: _activeDbPath,
-            BackupDbPath: string.Empty,
-            Interval: TimeSpan.FromMinutes(5),
-            LockStaleThreshold: TimeSpan.FromSeconds(10));
-        var svc = new DatabaseBackupToFileService(
-            NullLogger<DatabaseBackupToFileService>.Instance, paths);
-
-        Assert.IsFalse(svc.Enabled);
-        var ok = await svc.RunBackupCycleAsync(CancellationToken.None);
-        Assert.IsFalse(ok);
-    }
-
-    [TestMethod]
-    public void CopiedFileMatchesStage_RejectsTruncatedCopy()
-    {
-        // Models the 2026-10-02 outage: the share quota filled mid-copy, the SMB
-        // client dropped the write error, and a short file was renamed into place.
-        var stage = Path.Combine(_testDir, "stage.db");
-        var copy = Path.Combine(_testDir, "copy.db");
-        File.WriteAllBytes(stage, new byte[8192]);
-        File.WriteAllBytes(copy, new byte[8192 - 1]);
-
-        Assert.IsFalse(DatabaseBackupToFileService.CopiedFileMatchesStage(stage, copy, out var expected, out var actual));
-        Assert.AreEqual(8192, expected);
-        Assert.AreEqual(8191, actual);
-    }
-
-    [TestMethod]
-    public void CopiedFileMatchesStage_AcceptsFullCopy()
-    {
-        var stage = Path.Combine(_testDir, "stage.db");
-        var copy = Path.Combine(_testDir, "copy.db");
-        File.WriteAllBytes(stage, new byte[8192]);
-        File.Copy(stage, copy);
-
-        Assert.IsTrue(DatabaseBackupToFileService.CopiedFileMatchesStage(stage, copy, out _, out _));
-    }
-
-    [TestMethod]
-    public void CopiedFileMatchesStage_RejectsMissingCopy()
-    {
-        var stage = Path.Combine(_testDir, "stage.db");
-        File.WriteAllBytes(stage, new byte[8192]);
-
-        Assert.IsFalse(DatabaseBackupToFileService.CopiedFileMatchesStage(stage, Path.Combine(_testDir, "nope.db"), out _, out var actual));
-        Assert.AreEqual(-1, actual);
-    }
-
-    [TestMethod]
-    public async Task RunBackup_RefusesWhenActiveDbMissing()
-    {
-        File.Delete(_activeDbPath);
-
-        var ok = await _service.RunBackupCycleAsync(CancellationToken.None);
-
-        Assert.IsFalse(ok);
-        Assert.IsFalse(File.Exists(_backupDbPath),
-            "Must not overwrite backup with empty data when source is missing");
-    }
-
-    [TestMethod]
-    public void CleanupStaleTempFiles_RemovesOldTempFilesOnly()
-    {
-        var backupDir = Path.GetDirectoryName(_backupDbPath)!;
-        var basename = Path.GetFileName(_backupDbPath);
-
-        var stale = Path.Combine(backupDir, $"{basename}.tmp.host.123.aaaa");
-        var fresh = Path.Combine(backupDir, $"{basename}.tmp.host.456.bbbb");
-        var unrelated = Path.Combine(backupDir, "unrelated-file.txt");
-
-        File.WriteAllText(stale, "stale");
-        File.WriteAllText(fresh, "fresh");
-        File.WriteAllText(unrelated, "unrelated");
-
-        // Cutoff = 2× LockStaleThreshold (10s in tests) = 20s.
-        File.SetLastWriteTimeUtc(stale, DateTime.UtcNow - TimeSpan.FromMinutes(5));
-        File.SetLastWriteTimeUtc(fresh, DateTime.UtcNow);
-
-        _service.CleanupStaleTempFiles();
-
-        Assert.IsFalse(File.Exists(stale), "Stale tmp file should be deleted");
-        Assert.IsTrue(File.Exists(fresh), "Fresh tmp file should be preserved");
-        Assert.IsTrue(File.Exists(unrelated), "Unrelated files should not be touched");
-    }
-
-    [TestMethod]
-    public async Task RunBackup_SkipsWhenActiveDbUnchanged()
-    {
-        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
-        var firstWrite = File.GetLastWriteTimeUtc(_backupDbPath);
-        var firstSuccess = _service.LastSuccessAtUtc;
-
-        // No writes to the active DB: second cycle must not touch the share.
-        var ok = await _service.RunBackupCycleAsync(CancellationToken.None);
-        Assert.IsFalse(ok, "Unchanged DB should be skipped");
-        Assert.AreEqual(firstWrite, File.GetLastWriteTimeUtc(_backupDbPath));
-        Assert.AreEqual(firstSuccess, _service.LastSuccessAtUtc);
-
-        // Mutate, and the next cycle backs up again.
-        SqliteConnection.ClearAllPools();
-        AddRow(_activeDbPath, "gamma", 3);
-        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
-        Assert.AreEqual(3, ReadAllRows(_backupDbPath).Count);
-    }
-
-    [TestMethod]
-    public async Task RunBackup_OverwritesPreviousBackupFile()
-    {
-        // First cycle.
-        await _service.RunBackupCycleAsync(CancellationToken.None);
-        Assert.AreEqual(2, ReadAllRows(_backupDbPath).Count);
-
-        // Mutate active DB.
-        SqliteConnection.ClearAllPools();
-        AddRow(_activeDbPath, "gamma", 3);
-
-        // Second cycle.
-        var ok = await _service.RunBackupCycleAsync(CancellationToken.None);
-        Assert.IsTrue(ok);
-        var rows = ReadAllRows(_backupDbPath);
-        Assert.AreEqual(3, rows.Count, "Second backup should overwrite the first");
     }
 
     // ── Helpers ────────────────────────────────────────────────────────

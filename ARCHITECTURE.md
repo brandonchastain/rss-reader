@@ -197,7 +197,7 @@ Bound from `appsettings.json` section `RssAppConfig` or env vars
 |---|---|---|
 | `BackupDbPath` | empty | DB copy target. Empty disables `DatabaseBackupToFileService`. |
 | `BackupInterval` | 15 min | How often the whole DB file is copied to the share when it changed. Each copy is ~1 Azure Files write op per MB. A final copy also runs on shutdown, so this is the crash-loss window, not the deploy-loss window. |
-| `BackupLockStaleAfter` | 3 min | A writer lock whose heartbeat (every 30 s) is older than this is taken over. Worst-case boot delay after a crashed replica; keep a small multiple of the heartbeat and above any SMB hiccup. |
+| `BackupLockStaleAfter` | 3 min | A writer lock whose heartbeat (every 30 s) is older than this is taken over. Worst-case boot delay after a crashed replica; keep a small multiple of the heartbeat and above any SMB hiccup. Self-hosting: the lock is a plain file; if it cannot be created the app warns after `ShareWriterLock.GiveUpAfter` (10 s) and runs without it. With `BackupDbPath` empty neither lock, gate nor shutdown copy runs. |
 | `ShutdownBackupTimeout` | 90 s | Upper bound for the final DB copy on SIGTERM. Must fit inside `HostOptions.ShutdownTimeout` (110 s) and `terminationGracePeriodSeconds`. |
 | `CacheReloadInterval` | 5 min | Cooldown between one user's manual refreshes; inside it the refresh endpoint reports "up to date" without fetching. |
 | `CacheReloadStartupDelay` | 0 s | Grace period after boot during which user refreshes are served from cache. |

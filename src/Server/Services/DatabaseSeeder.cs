@@ -28,6 +28,8 @@ namespace RssReader.Server.Services
             ILogger logger,
             CancellationToken cancellationToken)
         {
+            // False means the lock directory is unwritable (self-host misconfiguration):
+            // already logged; seed anyway rather than refuse to boot.
             await writerLock.AcquireAsync(cancellationToken);
             return await SeedFromShareAsync(paths, logger, cancellationToken);
         }

@@ -125,6 +125,8 @@ namespace RssReader.Server.Services
 
             // Normally the startup gate already took the lock before seeding /tmp; if
             // not (gate skipped), wait for it here so we never copy over another writer.
+            // AcquireAsync gives up (false) on an unwritable directory; cycles then
+            // retry a non-blocking TryAcquire each time.
             if (!_lock.IsHeld)
             {
                 try { await _lock.AcquireAsync(stoppingToken); }
@@ -178,9 +180,9 @@ namespace RssReader.Server.Services
 
             try
             {
-                if (!_lock.IsHeld)
+                if (!EnsureLockOrProceedUnlocked())
                 {
-                    _logger.LogWarning("Shutdown: writer lock not held — skipping final DB backup.");
+                    _logger.LogWarning("Shutdown: another writer holds the lock — skipping final DB backup.");
                     return;
                 }
 
@@ -230,9 +232,11 @@ namespace RssReader.Server.Services
 
             CleanupStaleTempFiles();
 
+            cancellationToken.ThrowIfCancellationRequested();
+
             // The lock is held for the process lifetime; a cycle only needs to take it
             // when the service is driven directly (tests, or the gate was skipped).
-            if (!_lock.IsHeld && !_lock.TryAcquire())
+            if (!EnsureLockOrProceedUnlocked())
             {
                 _logger.LogInformation(
                     "Another writer holds the backup lock — skipping this cycle.");
@@ -305,15 +309,6 @@ namespace RssReader.Server.Services
                     return false;
                 }
 
-                // If our heartbeat stalled long enough for another writer to take the
-                // lock over, that writer now owns the share copy: do not publish.
-                if (!_lock.StillOwned())
-                {
-                    _logger.LogError(
-                        "Writer lock no longer ours at publish time — discarding this copy.");
-                    return false;
-                }
-
                 // Atomic rename within the same SMB directory. File.Move with overwrite=true
                 // uses rename(2) on Linux and is atomic on Azure Files SMB.
                 File.Move(tempPath, _paths.BackupDbPath, overwrite: true);
@@ -338,6 +333,27 @@ namespace RssReader.Server.Services
                 SafeDelete(tempPath + "-wal");
                 SafeDelete(tempPath + "-shm");
             }
+        }
+
+        private bool _warnedUnlocked;
+
+        /// <summary>
+        /// True when this writer may copy: it holds the lock, just took it, or the lock
+        /// file cannot be created at all (self-host with an unwritable backup directory:
+        /// warn once and carry on, there is no other writer to race). False only on
+        /// contention, i.e. another writer's live lock.
+        /// </summary>
+        private bool EnsureLockOrProceedUnlocked()
+        {
+            if (_lock.IsHeld || _lock.TryAcquire(out var error)) return true;
+            if (error == null) return false;
+            if (!_warnedUnlocked)
+            {
+                _warnedUnlocked = true;
+                _logger.LogWarning(error,
+                    "Cannot create the writer lock {Lock}; running backups without it.", _lock.LockPath);
+            }
+            return true;
         }
 
         /// <summary>
