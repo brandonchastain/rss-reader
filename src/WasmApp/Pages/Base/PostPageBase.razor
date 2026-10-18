@@ -239,13 +239,19 @@
                     await PersistTimelineCacheAsync();
                 }
             }
-
-            this.StateHasChanged();
         }
         finally
         {
             _isRefreshing = false;
             _hasLoadedOnce = true;
+
+            // Render after the flags flip, not before. IsLoading cascades to
+            // PostTable, and the first load runs from OnAfterRenderAsync, whose
+            // completion triggers no render of its own -- so a render taken while
+            // _isRefreshing was still true left the table seeing IsLoading = true
+            // until some unrelated event re-rendered the page, and its new-posts
+            // probe skipped every tick in the meantime.
+            this.StateHasChanged();
         }
 
         // Apply whatever arrived while we were busy. Runs after a failed fetch
