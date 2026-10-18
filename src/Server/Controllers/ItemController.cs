@@ -56,6 +56,10 @@ namespace Server.Controllers
         }
 
         // GET: api/item/timeline
+        // The list endpoints carry per-user read/saved flags that change between
+        // calls, so the browser must never answer them from its HTTP cache (a
+        // back-navigation would otherwise show a post Unread that was just read).
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [HttpGet("timeline")]
         public async Task<IActionResult> TimelineAsync(bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
@@ -134,6 +138,7 @@ namespace Server.Controllers
             return Ok(count);
         }
 
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [HttpGet("feed")]
         public async Task<IActionResult> FeedAsync(string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
@@ -169,6 +174,7 @@ namespace Server.Controllers
             return Ok(result);
         }
 
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [HttpGet("search")]
         public async Task<IActionResult> SearchAsync(string query, int page = 0, int pageSize = 20)
         {
