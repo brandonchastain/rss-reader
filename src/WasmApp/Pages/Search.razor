@@ -26,7 +26,7 @@ else if (hasSearched)
     <CascadingValue Value="@Page" Name="Page">
     <CascadingValue Value="@Items" Name="Posts">
     <CascadingValue Value="@IsLoading" Name="IsLoading">
-        <PostTable OnPageChanged="UpdatePage" FeedClient="@this.feedClient" OnRefreshTriggered="RefreshItems"/>
+        <PostTable OnPageChanged="UpdatePage" FeedClient="@this.feedClient" OnRefreshTriggered="RefreshItems" NewPostsPollEnabled="false"/>
     </CascadingValue>
     </CascadingValue>
     </CascadingValue>

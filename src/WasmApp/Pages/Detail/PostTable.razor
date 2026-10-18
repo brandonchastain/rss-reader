@@ -117,6 +117,13 @@ else if (_showUpToDate)
     [Parameter]
     public bool CacheEnabled { get; set; }
 
+    // Whether to run the idle "new posts" probe. Only the timeline's newest
+    // loaded item is a valid cursor for the timeline count endpoint; on a page
+    // whose rows are not the timeline (search results) the probe would report
+    // every timeline item newer than the top hit, so the host turns it off.
+    [Parameter]
+    public bool NewPostsPollEnabled { get; set; } = true;
+
     public IEnumerable<string> userTags = null;
     public bool IsFilterUnread => FeedClient.IsFilterUnread;
     public bool IsFilterSaved => FeedClient.IsFilterSaved;
@@ -305,7 +312,7 @@ else if (_showUpToDate)
             // user against the writer, so on a cold start it blocks for the whole
             // container wake -- awaiting it first would hold the new-posts probe
             // behind it for no reason.
-            StartNewPostsPoll();
+            if (NewPostsPollEnabled) StartNewPostsPoll();
 
             await LoadUserTagsAsync();
         }
