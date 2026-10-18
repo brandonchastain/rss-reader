@@ -324,6 +324,15 @@
                 return false;
             }
 
+            // The cache patches read state into every slot, and rows no longer
+            // hide themselves when read, so an unread view must drop read
+            // posts here or returning to it would briefly paint them.
+            cached = PostCache.ForHydration(cached, this.feedClient.IsFilterUnread);
+            if (cached.Count == 0)
+            {
+                return false;
+            }
+
             Items.Clear();
             Items.AddRange(cached);
 

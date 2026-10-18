@@ -103,9 +103,6 @@
     [Parameter]
     public string FilterTag { get; set; }
 
-    [Parameter]
-    public bool IsFilterUnread { get; set; }
-
     private bool _isSpeaking = false;
     private bool _isLoadingContent = false;
     private DotNetObjectReference<PostDetail> _dotNetRef;
@@ -210,9 +207,10 @@
 
     private bool ShouldPostBeHidden(NewsFeedItem post)
     {
-        bool isFilteredByTag = !string.IsNullOrWhiteSpace(this.FilterTag) && !post.FeedTags.Contains(this.FilterTag);
-        bool isFilteredByUnread = !post.IsBeingPreviewed && this.IsFilterUnread && post.IsRead;
-        return isFilteredByTag || isFilteredByUnread;
+        // Read posts are deliberately not hidden here even when the unread filter
+        // is on: marking a post read keeps it in place (styled post-read) until
+        // the list is next fetched from the server, which excludes read posts.
+        return !string.IsNullOrWhiteSpace(this.FilterTag) && !post.FeedTags.Contains(this.FilterTag);
     }
 
     private async Task MarkAsReadAsync(NewsFeedItem item, bool isRead)

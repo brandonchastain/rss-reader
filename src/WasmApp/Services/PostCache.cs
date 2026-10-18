@@ -24,6 +24,16 @@ public class PostCache : IPostCache
     public string Username { get; set; }
 
     /// <summary>
+    /// Which cached rows may paint before the first response. The cache patches
+    /// read state into every slot and rows do not hide themselves when read, so
+    /// an unread view must drop read posts here; every other view shows them all.
+    /// </summary>
+    public static List<NewsFeedItem> ForHydration(IEnumerable<NewsFeedItem> cached, bool isFilterUnread)
+    {
+        var items = cached ?? Enumerable.Empty<NewsFeedItem>();
+        return (isFilterUnread ? items.Where(item => !item.IsRead) : items).ToList();
+    }
+    /// <summary>
     /// Cache key for a filter combination. Kept short and character-safe because
     /// it becomes part of a localStorage key, and stable because a signature that
     /// varied between visits would silently never hit.

@@ -78,8 +78,7 @@ else if (_showUpToDate)
             }
             <PostDetail @key="entry.Post.Id"
                 Post="@entry.Post"
-                FilterTag="@this.filterTag"
-                IsFilterUnread="@this.IsFilterUnread"/>
+                FilterTag="@this.filterTag"/>
         }
 
         <InfiniteScroll ObserverTargetId="observerTarget" ObservableTargetReached="(e) => Next()">
