@@ -25,7 +25,7 @@ public static class AuthEndpoints
 
             var target = ReturnUrlValidator.Resolve(returnUrl, auth.AllowedFrontendOrigins);
             var scheme = AuthenticationSetup.SchemeFor(provider);
-            return Results.Challenge(new AuthenticationProperties { RedirectUri = target }, new[] { scheme });
+            return Results.Challenge(LoginProperties(target), new[] { scheme });
         });
 
         // The provider handlers own /auth/callback/{provider}; nothing to map here.
@@ -50,6 +50,15 @@ public static class AuthEndpoints
 
         return app;
     }
+
+    /// <summary>
+    /// Properties the provider handler carries through to the cookie sign-in.
+    /// IsPersistent makes the cookie carry an Expires (= Auth:SessionLifetime,
+    /// sliding) instead of dying with the browser window, so people stay
+    /// signed in between visits. Logout still deletes the cookie outright.
+    /// </summary>
+    public static AuthenticationProperties LoginProperties(string redirectUri) =>
+        new() { RedirectUri = redirectUri, IsPersistent = true };
 
     public static IReadOnlyList<string> ConfiguredProviders(AuthConfig auth) =>
         UserIdentity.KnownProviders.Where(p => IsEnabled(auth, p)).ToList();
