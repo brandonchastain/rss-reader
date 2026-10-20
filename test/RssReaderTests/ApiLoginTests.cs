@@ -306,6 +306,15 @@ public sealed class ApiLoginTests
     }
 
     [TestMethod]
+    public void Login_IssuesAPersistentCookie_SoTheSessionOutlivesTheBrowserWindow()
+    {
+        var props = AuthEndpoints.LoginProperties("https://rss.example.com/");
+
+        Assert.IsTrue(props.IsPersistent, "without IsPersistent the browser drops the cookie on close");
+        Assert.AreEqual("https://rss.example.com/", props.RedirectUri);
+    }
+
+    [TestMethod]
     public void Providers_ListsOnlyConfiguredKnownOnes()
     {
         var auth = new AuthConfig();
