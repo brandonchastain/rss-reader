@@ -101,8 +101,12 @@ forward with a new loop (Steps 1–7), and never patch production directly. To r
 deploy without a code change: `gh workflow run deploy.yml --ref main`.
 
 ## Step 9 — Validate
-- **Backend**: poll `https://rss.brandonchastain.com/api/healthz` until HTTP 200 with
-  `writer.status=healthy`. Confirm the new revision is active at 100% traffic:
+- **Backend**: poll `https://api.rss.brandonchastain.com/api/healthz` until HTTP 200 with
+  `{"status":"healthy","role":"writer"}`. Do NOT use `https://rss.brandonchastain.com/api/*`:
+  since the auth cutover the Static Web App is deployed static-only (see the comment above
+  the two "Deploy to Static Web Apps" steps in `deploy.yml`), so every `/api/*` path on the
+  frontend origin answers 500 "Backend call failure" by design, whatever the backend's state.
+  Confirm the new revision is active at 100% traffic:
   `az containerapp revision list --name rss-reader-api --resource-group rss-container-rg -o table`.
   A healthy writer also confirms additive schema (`CREATE TABLE IF NOT EXISTS`) applied cleanly.
 - **Frontend**: confirm `https://rss.brandonchastain.com/` returns 200. For asset-level
