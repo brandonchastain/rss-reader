@@ -154,6 +154,20 @@ public sealed class ApiLoginTests
     }
 
     [TestMethod]
+    public void NormalizeIdentity_NoEmail_RejectsTheSignIn()
+    {
+        // Only openid + email are requested, so an account without an email
+        // address yields no display name at all; refuse rather than store "".
+        var identity = new ClaimsIdentity("oidc");
+        identity.AddClaim(new Claim("sub", "pairwise"));
+        identity.AddClaim(new Claim("oid", "obj-1"));
+        var principal = new ClaimsPrincipal(identity);
+
+        Assert.ThrowsException<AuthenticationSetup.NoEmailException>(
+            () => AuthenticationSetup.NormalizeIdentity(principal, "microsoft"));
+    }
+
+    [TestMethod]
     public void NormalizeIdentity_GitHub_HasNoEmailLink()
     {
         var identity = new ClaimsIdentity("oauth");
