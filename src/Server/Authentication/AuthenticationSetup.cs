@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using RssApp.Config;
 
@@ -127,9 +128,14 @@ public static class AuthenticationSetup
                         options.GetClaimsFromUserInfoEndpoint = false;
                         options.MapInboundClaims = false;
                         options.Scope.Clear();
+                        // Only openid + email: the consent screen then asks
+                        // for the address alone. The stable subject (oid /
+                        // sub) rides along with openid, and the display name
+                        // is the email, so "profile" (name, picture, UPN) buys
+                        // nothing. An account with no email cannot sign in; see
+                        // NormalizeIdentity.
                         options.Scope.Add("openid");
                         options.Scope.Add("email");
-                        options.Scope.Add("profile");
                         options.TokenValidationParameters.NameClaimType = "name";
 
                         if (string.Equals(provider, UserIdentity.ProviderMicrosoft, StringComparison.OrdinalIgnoreCase)
@@ -148,6 +154,18 @@ public static class AuthenticationSetup
                         options.Events.OnTokenValidated = ctx =>
                         {
                             NormalizeIdentity(ctx.Principal!, provider.ToLowerInvariant());
+                            return Task.CompletedTask;
+                        };
+
+                        // A failed callback (provider error, cancelled consent,
+                        // or an account the app cannot identify) goes back to
+                        // the frontend with the reason instead of a 500 page.
+                        options.Events.OnRemoteFailure = ctx =>
+                        {
+                            var target = ctx.Properties?.RedirectUri ?? "/";
+                            var reason = ctx.Failure is NoEmailException ? "no-email" : "provider";
+                            ctx.Response.Redirect(QueryHelpers.AddQueryString(target, "authError", reason));
+                            ctx.HandleResponse();
                             return Task.CompletedTask;
                         };
 
@@ -179,6 +197,8 @@ public static class AuthenticationSetup
         var subject = UserIdentity.ResolveSubject(provider, principal)
             ?? throw new InvalidOperationException($"{provider} returned no stable subject claim");
         var name = UserIdentity.ResolveDisplayName(principal);
+        if (string.IsNullOrWhiteSpace(name))
+            throw new NoEmailException(provider);
         var microsoftEmail = provider == UserIdentity.ProviderMicrosoft ? UserIdentity.ResolveMicrosoftEmail(principal) : null;
 
         foreach (var claim in identity.FindAll(ClaimTypes.NameIdentifier).ToList()) identity.RemoveClaim(claim);
@@ -200,6 +220,16 @@ public static class AuthenticationSetup
                 continue;
             identity.RemoveClaim(claim);
         }
+    }
+
+    /// <summary>
+    /// The provider returned an identity with nothing usable as a display
+    /// name. With only the email scope requested this means the account has no
+    /// email address (some Entra work accounts); such accounts cannot sign in.
+    /// </summary>
+    public sealed class NoEmailException(string provider)
+        : InvalidOperationException($"{provider} returned no email address for this account; the app cannot sign it in")
+    {
     }
 
     private static string DefaultAuthority(string provider) => provider.ToLowerInvariant() switch
