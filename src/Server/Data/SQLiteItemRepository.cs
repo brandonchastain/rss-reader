@@ -110,6 +110,17 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         (sub.HideBeforeOrder IS NULL OR p.PublishDateOrder > sub.HideBeforeOrder)
         """;
 
+    // The saved view is the user's own collection: a post stays in it after
+    // the feed is unsubscribed or cleared, as it did when items were per-user
+    // rows. Every other view is scoped by the subscription and its watermark.
+    private static string ScopeFor(bool isFilterSaved) => isFilterSaved
+        ? """
+
+          LEFT JOIN Subscriptions sub ON sub.FeedId = p.FeedId AND sub.UserId = @userId
+          WHERE s.IsSaved = 1
+          """
+        : SubscriptionJoin + " WHERE " + VisibleWhere;
+
     private const string HiddenTagExclusion = """
         NOT EXISTS (
             SELECT 1 FROM SubscriptionTags st JOIN Tags t ON t.Id = st.TagId
@@ -183,7 +194,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var items = new List<NewsFeedItem>();
         using var connection = await this.connections.OpenReadAsync();
         var command = connection.CreateCommand();
-        command.CommandText = SelectColumns(includeContent) + SubscriptionJoin + " WHERE " + VisibleWhere;
+        command.CommandText = SelectColumns(includeContent) + ScopeFor(isFilterSaved);
         command.Parameters.AddWithValue("@userId", feed.UserId);
 
         AppendFilters(command, feed, isFilterUnread, isFilterSaved, filterTag, excludeFeedUrls);
@@ -237,7 +248,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             SELECT COUNT(DISTINCT p.Href) FROM Posts p
             JOIN Feeds f ON f.Id = p.FeedId
             LEFT JOIN UserPostState s ON s.PostId = p.Id AND s.UserId = @userId
-            """ + SubscriptionJoin + " WHERE " + VisibleWhere;
+            """ + ScopeFor(isFilterSaved);
         command.Parameters.AddWithValue("@userId", feed.UserId);
 
         AppendFilters(command, feed, isFilterUnread, isFilterSaved, filterTag, excludeFeedUrls);

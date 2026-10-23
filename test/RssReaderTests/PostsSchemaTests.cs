@@ -125,6 +125,34 @@ public sealed class PostsSchemaTests
     }
 
     [TestMethod]
+    public async Task SavedView_KeepsPosts_AfterUnsubscribeAndClear()
+    {
+        using var db = new TestDatabase();
+        var alice = db.AddUser("alice");
+        const string url = "https://example.com/feed";
+        db.Subscribe(alice, url);
+        await db.AddPosts(url, 3);
+        var saved = (await db.Timeline(alice))[1];
+        db.Items.SavePost(saved, alice);
+
+        await db.Items.DeleteAllItemsAsync(alice);
+        Assert.AreEqual(0, (await db.Timeline(alice)).Count, "cleared");
+        var afterClear = await db.Timeline(alice, saved: true, hideHidden: false);
+        Assert.AreEqual(1, afterClear.Count, "the saved post outlives clear posts");
+
+        db.Feeds.DeleteFeed(alice, url);
+        var afterUnsubscribe = await db.Timeline(alice, saved: true, hideHidden: false);
+        Assert.AreEqual(1, afterUnsubscribe.Count, "and the unsubscribe");
+        Assert.AreEqual(saved.Id, afterUnsubscribe[0].Id);
+        Assert.IsTrue(afterUnsubscribe[0].IsSaved);
+        Assert.AreEqual(1, await db.Items.GetNewItemCountAsync(new NewsFeed("%", alice.Id), false, true, null, 0, 0));
+        Assert.AreEqual("<p>post 1</p>", db.Items.GetItemContent(afterUnsubscribe[0]), "content stays reachable");
+
+        db.Items.UnsavePost(afterUnsubscribe[0], alice);
+        Assert.AreEqual(0, (await db.Timeline(alice, saved: true, hideHidden: false)).Count);
+    }
+
+    [TestMethod]
     public async Task ReadAndSaved_AreIsolatedBetweenUsers()
     {
         using var db = new TestDatabase();

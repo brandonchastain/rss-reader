@@ -227,8 +227,9 @@ public sealed class LegacyMigrationTests
         Assert.IsTrue(bobTimeline.Single(i => i.Href == $"{Shared}/p5").IsSaved);
         Assert.IsFalse(bobTimeline.Single(i => i.Href == $"{Shared}/p0").IsRead, "alice's read state is not bob's");
         var aliceSaved = (await items.GetItemsAsync(new NewsFeed("%", alice.Id), false, true, null, 0, 20, includeContent: false)).ToList();
-        Assert.AreEqual(1, aliceSaved.Count, "saved view: the orphan feed's saved post is not subscribed");
-        Assert.AreEqual(bobTimeline.Single(i => i.Href == $"{Shared}/p5").Id, aliceSaved[0].Id);
+        Assert.AreEqual(2, aliceSaved.Count, "saved view: the shared post and the orphan feed's saved post (a deleted feed's saved item stayed visible before too)");
+        Assert.IsTrue(aliceSaved.Any(i => i.Id == bobTimeline.Single(b => b.Href == $"{Shared}/p5").Id));
+        Assert.IsTrue(aliceSaved.Any(i => i.Href == $"{Orphan}/p1"));
 
         // Running again is a no-op reporting the recorded state.
         var again = LegacyMigration.RunIfNeeded(connections, NullLogger.Instance);
