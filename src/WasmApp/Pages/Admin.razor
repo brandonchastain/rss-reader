@@ -231,23 +231,14 @@
         _ => key,
     };
 
-    // Denser ranges need the time; longer ones only the date.
-    private static string LabelFormat(string key) => key switch
-    {
-        "1h" => "HH:mm:ss",
-        "1d" => "HH:mm",
-        "7d" => "MM/dd HH:mm",
-        "30d" => "MM/dd",
-        _ => "yyyy-MM-dd",
-    };
-
     private async Task RenderChartAsync()
     {
         try
         {
-            var format = LabelFormat(range);
-            var labels = history
-                .Select(s => s.Timestamp.ToLocalTime().ToString(format))
+            // Epoch milliseconds: the chart lays points out on a real time axis
+            // (snapshots are irregular), and formats labels in the browser's zone.
+            var timestamps = history
+                .Select(s => new DateTimeOffset(DateTime.SpecifyKind(s.Timestamp, DateTimeKind.Utc)).ToUnixTimeMilliseconds())
                 .ToArray();
 
             var datasets = new object[]
@@ -272,7 +263,7 @@
                 }
             };
 
-            await JS.InvokeVoidAsync("AdminChart.render", "admin-stats-chart", labels, datasets);
+            await JS.InvokeVoidAsync("AdminChart.render", "admin-stats-chart", timestamps, datasets, range);
         }
         catch (Exception ex)
         {
