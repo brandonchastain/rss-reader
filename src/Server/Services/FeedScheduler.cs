@@ -12,8 +12,9 @@ namespace RssApp.ComponentServices;
 /// The loop is event-driven rather than polled: after each pass it sleeps until the
 /// earliest feed is next due, so an idle replica does no scheduler work at all
 /// between fetches. <see cref="RssAppConfig.SchedulerTickInterval"/> only caps the
-/// sleep as a safety net (a feed added by a user is fetched inline by AddFeedAsync,
-/// so the scheduler never has to notice new feeds quickly).
+/// sleep as a safety net (a brand-new feed is fetched inline by
+/// FetchNewFeedAsync when it is added, so the scheduler never has to notice new
+/// feeds quickly).
 /// </summary>
 public class FeedScheduler : BackgroundService
 {

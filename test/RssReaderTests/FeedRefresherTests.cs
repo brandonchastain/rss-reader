@@ -437,6 +437,28 @@ public sealed class FeedRefresherTests
     }
 
     [TestMethod]
+    public async Task FetchNewFeed_FetchesOnce_OnlyWhileNeverFetched()
+    {
+        // Adding a feed nobody had fetches it right away, once; adding the same
+        // URL again (another subscriber) does not touch the origin.
+        var url = "https://first.example.com/feed";
+        var handler = new StubHandler(_ => Ok("<rss/>"));
+        var feedRepo = new InMemoryFeedRepository();
+        var (refresher, _) = CreateRefresher(feedRepo: feedRepo, primaryHandler: handler);
+
+        feedRepo.AddFeed(new NewsFeed(url, userId: 1));
+        await refresher.FetchNewFeedAsync(url);
+        Assert.AreEqual(1, handler.CallCount, "a brand-new feed row is fetched at once");
+
+        feedRepo.AddFeed(new NewsFeed(url, userId: 2));
+        await refresher.FetchNewFeedAsync(url);
+        Assert.AreEqual(1, handler.CallCount, "a second subscriber reuses the stored posts");
+
+        await refresher.FetchNewFeedAsync("https://unknown.example.com/feed");
+        Assert.AreEqual(1, handler.CallCount, "no feed row, nothing to fetch");
+    }
+
+    [TestMethod]
     public async Task Scheduler_FetchesNewlySubscribedFeed_WhichHasNoSchedule()
     {
         // A brand-new feed row (NextFetchUtc NULL) is due immediately.

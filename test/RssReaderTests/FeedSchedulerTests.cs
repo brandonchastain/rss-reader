@@ -27,6 +27,7 @@ public class FeedSchedulerTests
         }
 
         public Task RefreshAsync(RssUser user) => Task.CompletedTask;
+        public Task FetchNewFeedAsync(string url) => Task.CompletedTask;
         public RefreshStatusResponse GetRefreshStatus(RssUser user) => new();
         public void ResetRefreshCooldown() { }
     }

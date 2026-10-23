@@ -268,6 +268,36 @@ public class FeedRefresher : IFeedRefresher
         }
     }
 
+    public async Task FetchNewFeedAsync(string url)
+    {
+        FeedFetchState state;
+        try
+        {
+            state = this.persistedFeeds.GetFeedFetchState(url);
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogWarning(ex, "Could not read fetch state for new feed {url}", url);
+            return;
+        }
+
+        // Only a row nobody has fetched yet; an existing feed's posts are
+        // already there and the schedule owns the next fetch.
+        if (state == null || state.LastFetchedUtc != null)
+        {
+            return;
+        }
+
+        try
+        {
+            await FetchFeedAsync(url, force: true, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogError(ex, "First fetch of new feed {url} failed; the scheduler will retry.", url);
+        }
+    }
+
     public async Task<DateTimeOffset?> RunSchedulerTickAsync(CancellationToken token)
     {
         IReadOnlyList<FeedFetchState> states;

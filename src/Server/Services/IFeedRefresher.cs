@@ -5,6 +5,14 @@ namespace RssApp.ComponentServices
     public interface IFeedRefresher
     {
         Task RefreshAsync(RssUser user);
+
+        /// <summary>
+        /// First fetch of a feed row that has never been fetched (just created by
+        /// a subscription), so the subscriber sees posts right away instead of
+        /// at the scheduler's next pass. A feed that was fetched before is left
+        /// alone: its posts are already stored. One shared fetch, no per-user copy.
+        /// </summary>
+        Task FetchNewFeedAsync(string url);
         RefreshStatusResponse GetRefreshStatus(RssUser user);
         void ResetRefreshCooldown();
 
