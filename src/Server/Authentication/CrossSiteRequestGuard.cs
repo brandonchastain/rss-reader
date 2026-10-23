@@ -21,6 +21,11 @@ namespace Server.Authentication;
 /// browser cross-site requests (curl, the in-process tests, server-to-server
 /// calls), and the GET routes that used to change state have been removed so
 /// an image tag cannot do anything.
+///
+/// The sign-in callbacks are exempt: the identity providers deliver the
+/// authorization response by POSTing to <c>/auth/callback/*</c> from their
+/// own origin (form_post), and that request is protected by the OpenID
+/// Connect state/nonce correlation cookie, not by its origin.
 /// </summary>
 public sealed class CrossSiteRequestGuard
 {
@@ -34,6 +39,12 @@ public sealed class CrossSiteRequestGuard
             config.Auth.AllowedFrontendOrigins.Select(ReturnUrlValidator.NormalizeOrigin),
             StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>Paths the identity providers POST to; see the class remarks.</summary>
+    public const string CallbackPathPrefix = "/auth/callback/";
+
+    public static bool IsExemptPath(PathString path) =>
+        path.StartsWithSegments("/auth/callback", StringComparison.OrdinalIgnoreCase);
 
     public static bool IsSafeMethod(string method) =>
         HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
@@ -53,7 +64,7 @@ public sealed class CrossSiteRequestGuard
     public async Task InvokeAsync(HttpContext context)
     {
         var origin = context.Request.Headers.Origin.Count > 0 ? context.Request.Headers.Origin.ToString() : null;
-        if (IsForbidden(context.Request.Method, origin, this.allowedOrigins))
+        if (!IsExemptPath(context.Request.Path) && IsForbidden(context.Request.Method, origin, this.allowedOrigins))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             context.Response.ContentType = "application/json";

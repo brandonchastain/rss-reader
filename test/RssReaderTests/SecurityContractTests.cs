@@ -101,6 +101,30 @@ public sealed class SecurityContractTests
     }
 
     [TestMethod]
+    public async Task SignInCallback_PostedByTheProvider_IsNotRefusedByTheGuard()
+    {
+        // Microsoft and Google deliver the authorization code with a form_post
+        // from their own origin. The guard must let it reach the OIDC handler
+        // (which then rejects this fake one on its correlation cookie), not
+        // answer 403 "Cross-site" - that locked every sign-in out once.
+        foreach (var provider in new[] { "microsoft", "google" })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/auth/callback/{provider}")
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["code"] = "x", ["state"] = "y" }),
+            };
+            request.Headers.TryAddWithoutValidation("Origin", provider == "microsoft" ? "https://login.microsoftonline.com" : "https://accounts.google.com");
+            var response = await host.Anonymous().SendAsync(request);
+            var text = await response.Content.ReadAsStringAsync();
+            Assert.IsFalse(text.Contains("Cross-site"), $"{provider}: {(int)response.StatusCode} {text}");
+            Assert.AreNotEqual(HttpStatusCode.Forbidden, response.StatusCode, provider);
+        }
+        Assert.IsTrue(CrossSiteRequestGuard.IsExemptPath("/auth/callback/microsoft"));
+        Assert.IsFalse(CrossSiteRequestGuard.IsExemptPath("/auth/callbackx"));
+        Assert.IsFalse(CrossSiteRequestGuard.IsExemptPath("/api/feed"));
+    }
+
+    [TestMethod]
     public async Task SafeMethods_AreNeverRefusedByOrigin()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/feed");
