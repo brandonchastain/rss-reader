@@ -215,19 +215,20 @@ provider id in `Users.ProviderUserId`; the resolver looks in both.
 
 | Setting (`Auth:`) | Default | Effect |
 |---|---|---|
-| `Providers:<google|microsoft|github>:ClientId/ClientSecret/Authority` | empty | A provider is offered when both id and secret are set. `Authority` defaults to the public Google and Microsoft `common` endpoints. |
+| `Providers:<google|microsoft|github>:ClientId/ClientSecret/Authority` | empty | A provider is offered when both id and secret are set. `Authority` defaults to Google's public endpoint and Microsoft's `consumers` endpoint (personal accounts only). |
 | `AllowedFrontendOrigins` | empty | Origins allowed to call with credentials and to be a login/logout `returnUrl`. The first is the default return target. Required. |
 | `CookieName` / `CookieDomain` / `CookieSameSite` | `.rss.session` / empty / `None` | Session cookie. `None` implies `Secure`; Development uses `Lax`. |
 | `SessionLifetime` | 30 d | Sliding session expiry. |
+| `LoginRateLimitPerMinute` / `AddFeedRateLimitPerMinute` | 30 / 30 | Login and logout requests per client address, and feed additions and OPML imports per user, per minute. |
 | `DataProtectionKeysPath` | empty | Directory for the cookie encryption keys; empty means in-container, which signs everyone out on restart. |
 | `EnableStaticWebAppsHeaders` | `true` | Migration only: also accept the Static Web Apps proxy's gateway header and principal. Set `false` after the cutover. |
 
 | Setting | Default | Effect |
 |---|---|---|
 | `IsReadOnly` | `false` | Reader mode: no background services, writes rejected. |
-| `IsTestUserEnabled` | `false` | Every request is the test user; no provider needed (dev only). |
-| `AdminAadUserIds` | empty | Comma-separated user ids (either stored id) that may use `/admin`. |
-| `ServerHostName` | localhost | Public base URL the API reports for itself. |
+| `IsTestUserEnabled` | `false` | Every request is the test user; no provider needed. Refused in Production unless `AllowTestUserInProduction`. |
+| `AllowTestUserInProduction` | `false` | Lets `IsTestUserEnabled` run in Production, for a private single-user box with no login. |
+| `AdminAadUserIds` | empty | Comma-separated login ids (`provider:subject`, or a bare subject) that may use `/admin`. |
 | `DbLocation` | — | Path of the live SQLite file (`/tmp/storage.db` in prod). |
 
 ### Hardcoded (for now)
@@ -249,7 +250,7 @@ provider id in `Users.ProviderUserId`; the resolver looks in both.
 
 `RssWasmConfig` in `wwwroot/appsettings.json`: `ApiBaseUrl` (the API origin,
 `https://api.rss.brandonchastain.com/` in prod; empty means the page's own origin,
-for when the API serves the frontend), `EnableTestAuth`, `TestAuthUsername`. Login,
+for when the API serves the frontend) and `UseStaticWebAppsAuth` (legacy, off). Login,
 logout and `/auth/me` all go to `{ApiBaseUrl}auth/*`; API calls send the session
 cookie.
 

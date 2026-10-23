@@ -143,7 +143,7 @@ Browser → Azure SWA (Easy Auth / AAD)
 
 | Skill | When to Use |
 |---|---|
-| `run-locally` | Start the full local dev stack (Docker backend + SWA frontend at http://localhost:4280) |
+| `run-locally` | Start the full local dev stack (Docker backend + Blazor dev server at http://localhost:8443) |
 | `playwright-browse` | Open browser, take screenshots, navigate pages, validate UI changes |
 | `stop-local` | Shut down all local servers when done |
 | `deploy` | Push finished, validated changes to production |

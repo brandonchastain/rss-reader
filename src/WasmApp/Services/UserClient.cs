@@ -27,11 +27,6 @@ public class UserClient : IUserClient
 
     public async Task<string> GetUsernameAsync()
     {
-        if (_config.EnableTestAuth)
-        {
-            return string.IsNullOrWhiteSpace(_config.TestAuthUsername) ? "testuser" : _config.TestAuthUsername;
-        }
-
         var principal = await _authClient.GetMeAsync();
         return principal?.UserDetails ?? "Guest";
     }

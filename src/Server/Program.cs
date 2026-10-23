@@ -18,14 +18,15 @@ builder.Configuration
     .AddEnvironmentVariables();
 var config = RssAppConfig.LoadFromAppSettings(builder.Configuration);
 
-// The test-user mode authenticates every request as a fake admin. It exists
-// for local runs and in-process tests only; refusing to start is the only
-// safe answer to finding it switched on in production.
-if (config.IsTestUserEnabled && builder.Environment.IsProduction())
+// The test-user mode authenticates every request as a fake admin. Finding it
+// switched on in Production by accident must stop the app; a private single-user
+// box opts in explicitly with AllowTestUserInProduction.
+if (config.IsTestUserEnabled && builder.Environment.IsProduction() && !config.AllowTestUserInProduction)
 {
     throw new InvalidOperationException(
         "RssAppConfig:IsTestUserEnabled is true in the Production environment. " +
-        "That setting authenticates every request as a fake administrator; turn it off.");
+        "That setting authenticates every request as a fake administrator; turn it off, " +
+        "or set RssAppConfig:AllowTestUserInProduction=true for a private single-user box with no login.");
 }
 var dbConnections = new SqliteDbConnections(config.DbLocation, config.IsReadOnly);
 

@@ -17,15 +17,6 @@ public class MyAuthenticationStateProvider : AuthenticationStateProvider
 
     public override async Task<AuthenticationState> GetAuthenticationStateAsync()
     {
-        if (_config.EnableTestAuth)
-        {
-            var identity = new ClaimsIdentity("test");
-            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "abcdef"));
-            identity.AddClaim(new Claim(ClaimTypes.Name, _config.TestAuthUsername));
-            identity.AddClaim(new Claim(ClaimTypes.Role, "authenticated"));
-            return new AuthenticationState(new ClaimsPrincipal(identity));
-        }
-
         try
         {
             var principal = await _authClient.GetMeAsync();

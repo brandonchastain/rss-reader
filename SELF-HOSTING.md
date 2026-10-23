@@ -64,8 +64,10 @@ docker run -d --name rss-reader \
   Google and Microsoft `common` endpoints).
 - `RssAppConfig__AdminAadUserIds`: comma-separated user ids (as shown by
   `/auth/me`, e.g. `github:12345`) that may open `/admin`.
-- For a single-user box with no login at all, `RssAppConfig__IsTestUserEnabled=true`
-  makes every request the test user. Only on a network you control.
+- For a single-user box with no login at all, set `RssAppConfig__IsTestUserEnabled=true`
+  and `RssAppConfig__AllowTestUserInProduction=true` (the second is required because
+  the API refuses to start with the first alone in Production). Every request is then
+  the test user. Only on a network you control.
 
 Every other setting is listed under [Knobs](ARCHITECTURE.md#knobs).
 

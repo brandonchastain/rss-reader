@@ -181,6 +181,16 @@ public sealed class SecurityContractTests
     }
 
     [TestMethod]
+    public async Task TestUserMode_InProduction_StartsOnlyWithTheExplicitOptIn()
+    {
+        // The documented single-user, no-login self-hosting setup.
+        using var optedIn = new ApiTestHost(isTestUserEnabled: true, environment: "Production", allowTestUserInProduction: true);
+        var response = await optedIn.Anonymous().GetAsync("/auth/me");
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        StringAssert.Contains(await response.Content.ReadAsStringAsync(), "test-user-id");
+    }
+
+    [TestMethod]
     public async Task TestUserMode_InDevelopment_StillWorksForLocalRuns()
     {
         using var dev = new ApiTestHost(isTestUserEnabled: true, environment: "Development");
