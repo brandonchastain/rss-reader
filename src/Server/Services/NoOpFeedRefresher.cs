@@ -8,8 +8,8 @@ namespace RssApp.ComponentServices
     /// </summary>
     public class NoOpFeedRefresher : IFeedRefresher
     {
-        public Task AddFeedAsync(NewsFeed feed) => Task.CompletedTask;
         public Task RefreshAsync(RssUser user) => Task.CompletedTask;
+        public Task FetchNewFeedAsync(string url) => Task.CompletedTask;
         public RefreshStatusResponse GetRefreshStatus(RssUser user) => new()
         {
             HasNewItems = false,

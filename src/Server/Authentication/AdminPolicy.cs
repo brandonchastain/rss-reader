@@ -6,9 +6,9 @@ using RssApp.Contracts;
 namespace Server.Authentication;
 
 /// <summary>
-/// Admin membership is a list of user ids in config. An admin's row carries
-/// both its Static Web Apps id and, once linked, its provider id, so either
-/// value in AdminAadUserIds keeps working across the migration.
+/// Admin membership is a list of user ids in config. A row may carry several
+/// login identities (its Static Web Apps id, its provider ids), so any stored
+/// identity, as a bare subject or as provider:subject, matches the list.
 /// </summary>
 public static class AdminPolicy
 {
@@ -29,6 +29,15 @@ public static class AdminPolicy
             user?.AadUserId,
             user?.ProviderUserId,
         };
+
+        if (user != null)
+        {
+            foreach (var identity in user.Identities)
+            {
+                candidates.Add(identity);
+                candidates.Add(UserIdentity.ParseIdentity(identity).Subject);
+            }
+        }
 
         return candidates.Any(c => !string.IsNullOrEmpty(c) && adminIds.Contains(c, StringComparer.OrdinalIgnoreCase));
     }

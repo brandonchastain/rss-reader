@@ -33,11 +33,12 @@ public sealed class CachingItemRepository : IItemRepository
     // -------------------------------------------------------------------------
 
     /// <inheritdoc/>
-    /// Cache key: <c>itemcontent:{item.UserId}:{item.Href}</c> — 1-hour absolute expiration.
+    /// Content is shared by every subscriber, so the key is the post itself
+    /// (<c>itemcontent:{FeedUrl}|{Href}</c>) — 1-hour absolute expiration.
     /// Null/empty results are NOT cached.
     public string GetItemContent(NewsFeedItem item)
     {
-        var key = ContentKey(item.UserId, item.Href);
+        var key = ContentKey(item);
         if (_cache.TryGetValue(key, out string cached))
             return cached;
 
@@ -55,7 +56,7 @@ public sealed class CachingItemRepository : IItemRepository
     }
 
     /// <inheritdoc/>
-    /// Cache key: <c>item:{user.Id}:{href}</c> — 60-second sliding expiration.
+    /// Cache key: <c>item:{user.Id}:{href}</c> — sliding expiration.
     /// Null results are NOT cached.
     public NewsFeedItem GetItem(RssUser user, string href)
     {
@@ -77,7 +78,7 @@ public sealed class CachingItemRepository : IItemRepository
     }
 
     /// <inheritdoc/>
-    /// Cache key: <c>item:{user.Id}:id:{itemId}</c> — 60-second sliding expiration.
+    /// Cache key: <c>item:{user.Id}:id:{itemId}</c> — sliding expiration.
     /// Null results are NOT cached.
     public NewsFeedItem GetItem(RssUser user, int itemId)
     {
@@ -152,8 +153,7 @@ public sealed class CachingItemRepository : IItemRepository
         {
             if (!string.IsNullOrEmpty(item.Content))
             {
-                var key = ContentKey(item.UserId, item.Href);
-                _cache.Set(key, item.Content, new MemoryCacheEntryOptions
+                _cache.Set(ContentKey(item), item.Content, new MemoryCacheEntryOptions
                 {
                     AbsoluteExpirationRelativeToNow = ContentExpiration
                 });
@@ -220,8 +220,8 @@ public sealed class CachingItemRepository : IItemRepository
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static string ContentKey(int userId, string href)
-        => $"itemcontent:{userId}:{href}";
+    private static string ContentKey(NewsFeedItem item)
+        => $"itemcontent:{item.FeedUrl}|{item.Href}";
 
     private static string ItemByHrefKey(int userId, string href)
         => $"item:{userId}:{href}";

@@ -338,12 +338,16 @@ namespace Server.Controllers
             try
             {
 
+                // Subscribe. The feed row is shared: if it already exists its
+                // stored posts are visible to the new subscriber at once and no
+                // fetch happens; a brand-new row is fetched once, now, so the
+                // first subscriber does not wait for the scheduler.
                 var user = this.userRepository.GetUserById(feed.UserId);
                 var existingFeed = this.feedRepository.GetFeed(user, feed.Href);
                 if (existingFeed == null)
                 {
                     this.feedRepository.AddFeed(feed);
-                    await this.feedRefresher.AddFeedAsync(feed);
+                    await this.feedRefresher.FetchNewFeedAsync(feed.Href);
                 }
 
                 return CreatedAtAction(nameof(GetFeeds), new { username = this.userRepository.GetUserById(feed.UserId)?.Username }, feed);

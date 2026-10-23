@@ -36,12 +36,6 @@ internal sealed class FakeFeedRepository : IFeedRepository
                                          string.Equals(f.Href, url, StringComparison.OrdinalIgnoreCase))!;
     }
 
-    public IEnumerable<string> GetAllDistinctFeedUrls()
-        => Feeds.Select(f => f.Href).Distinct().ToList();
-
-    public IEnumerable<NewsFeed> GetFeedsByUrl(string url)
-        => Feeds.Where(f => string.Equals(f.Href, url, StringComparison.OrdinalIgnoreCase)).ToList();
-
     public void AddFeed(NewsFeed feed)
     {
         AddFeedCallCount++;
@@ -72,6 +66,13 @@ internal sealed class FakeFeedRepository : IFeedRepository
     public void SetTagHidden(RssUser user, string tag, bool isHidden) { }
     public IEnumerable<string> GetHiddenFeedUrls(RssUser user) => Enumerable.Empty<string>();
     public void DeleteAllFeeds(RssUser user) { Feeds.RemoveAll(f => f.UserId == user.Id); }
+
+    public IReadOnlyList<FeedFetchState> GetFeedFetchStates()
+        => Feeds.Select(f => f.Href).Distinct().Select((u, i) => new FeedFetchState(i + 1, u, null, null, null, null, 0)).ToList();
+    public FeedFetchState GetFeedFetchState(string url) => GetFeedFetchStates().FirstOrDefault(s => s.Url == url)!;
+    public IReadOnlyList<FeedFetchState> GetDueFeeds(DateTimeOffset now) => GetFeedFetchStates();
+    public void RecordFetchResult(string url, DateTimeOffset fetchedUtc, DateTimeOffset nextFetchUtc, TimeSpan interval,
+        string etag, DateTimeOffset? lastModified, bool keepValidators, bool failed, string error) { }
 }
 
 // ---------------------------------------------------------------------------

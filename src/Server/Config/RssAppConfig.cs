@@ -93,6 +93,17 @@ namespace RssApp.Config
 
         public bool RebuildFtsOnStartup { get; set; }
 
+        // Retention (DB-REDESIGN-SPEC.md section 4): posts are shared, so the
+        // only thing that removes them is this nightly job. A post first seen
+        // more than PostRetentionDays ago is deleted unless some user saved
+        // it; a feed nobody has subscribed to for FeedOrphanGraceDays goes too
+        // (with its posts), unless one of them is saved. 0 days disables the
+        // post sweep.
+        public int PostRetentionDays { get; set; } = 180;
+        public int FeedOrphanGraceDays { get; set; } = 7;
+        public TimeSpan RetentionInterval { get; set; } = TimeSpan.FromHours(24);
+        public TimeSpan RetentionStartupDelay { get; set; } = TimeSpan.FromMinutes(10);
+
         public string AdminAadUserIds { get; set; } = string.Empty;
 
         // Login: providers, session cookie, allowed frontend origins. See AuthConfig.

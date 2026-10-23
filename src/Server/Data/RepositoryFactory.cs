@@ -39,22 +39,6 @@ public class RepositoryFactory
             this.isReadOnly);
     }
 
-    public IFeedValidatorStore CreateFeedValidatorStore()
-    {
-        return new SQLiteFeedValidatorStore(
-            this.connections,
-            this.serviceProvider.GetRequiredService<ILogger<SQLiteFeedValidatorStore>>(),
-            this.isReadOnly);
-    }
-
-    public IFeedScheduleStore CreateFeedScheduleStore()
-    {
-        return new SQLiteFeedScheduleStore(
-            this.connections,
-            this.serviceProvider.GetRequiredService<ILogger<SQLiteFeedScheduleStore>>(),
-            this.isReadOnly);
-    }
-
     public IItemRepository CreateItemRepository()
     {
         return new SQLiteItemRepository(

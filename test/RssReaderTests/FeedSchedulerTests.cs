@@ -26,8 +26,8 @@ public class FeedSchedulerTests
             return Task.FromResult<DateTimeOffset?>(null);
         }
 
-        public Task AddFeedAsync(NewsFeed feed) => Task.CompletedTask;
         public Task RefreshAsync(RssUser user) => Task.CompletedTask;
+        public Task FetchNewFeedAsync(string url) => Task.CompletedTask;
         public RefreshStatusResponse GetRefreshStatus(RssUser user) => new();
         public void ResetRefreshCooldown() { }
     }

@@ -1,10 +1,17 @@
 using System.Data.Common;
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using RssApp.Contracts;
 
 namespace RssApp.Data;
 
+/// <summary>
+/// Posts are stored once per feed; what a user sees is the join of their
+/// Subscriptions, the shared Posts and their sparse UserPostState rows. The
+/// NewsFeedItem the repository returns is that view: UserId is the requesting
+/// user, FeedUrl comes from Feeds.Url and Id is Posts.Id (shared, opaque).
+/// </summary>
 public class SQLiteItemRepository : IItemRepository, IDisposable
 {
     private readonly IDbConnections connections;
@@ -14,7 +21,6 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
 
     // Serialize writes  SQLite allows only one writer at a time.
     private readonly SemaphoreSlim writeSemaphore = new SemaphoreSlim(1, 1);
-    private readonly bool rebuildFtsOnStartup;
 
     public SQLiteItemRepository(
         IDbConnections connections,
@@ -28,286 +34,150 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         this.logger = logger;
         this.feedStore = feedStore;
         this.userStore = userStore;
-        this.rebuildFtsOnStartup = rebuildFtsOnStartup;
-        if (!isReadOnly) this.InitializeDatabase();
+        if (!isReadOnly) this.InitializeDatabase(rebuildFtsOnStartup);
     }
 
-    private void InitializeDatabase()
+    private void InitializeDatabase(bool rebuildFtsOnStartup)
     {
-        using (var connection = this.connections.OpenWrite())
+        using var connection = this.connections.OpenWrite();
+
+        // A table that is created right here is empty by definition and needs
+        // no rebuild. Checked against sqlite_master rather than by counting the
+        // FTS rows, which walks the whole index on every cold start.
+        var ftsTableExisted = DatabaseSchema.TableExists(connection, "Posts_fts");
+        DatabaseSchema.EnsureCreated(connection);
+
+        if (ftsTableExisted && !rebuildFtsOnStartup)
         {
-            // WAL mode is persistent  only needs to be set once per database file.
-            var walCmd = connection.CreateCommand();
-            walCmd.CommandText = "PRAGMA journal_mode=WAL;";
-            walCmd.ExecuteNonQuery();
+            logger.LogInformation("FTS5 index already present — skipping rebuild");
+            return;
+        }
 
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE TABLE IF NOT EXISTS Items (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    FeedUrl TEXT NOT NULL,
-                    Href TEXT,
-                    CommentsHref TEXT,
-                    Title TEXT,
-                    PublishDateOrder INTEGER NOT NULL DEFAULT 0,
-                    PublishDate TEXT,
-                    Content TEXT,
-                    IsRead BOOLEAN DEFAULT 0,
-                    UserId INTEGER NOT NULL,
-                    ThumbnailUrl TEXT,
-                    IsSaved BOOLEAN DEFAULT 0,
-                    Tags TEXT DEFAULT '',
-                    FOREIGN KEY (UserId) REFERENCES Users(Id),
-                    UNIQUE(FeedUrl, UserId, Href)
-                )";
-            command.ExecuteNonQuery();
-
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE TABLE IF NOT EXISTS ItemContent (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    FeedUrl TEXT NOT NULL,
-                    Href TEXT,
-                    Title TEXT,
-                    PublishDateOrder INTEGER NOT NULL DEFAULT 0,
-                    PublishDate TEXT,
-                    Content TEXT,
-                    UserId INTEGER NOT NULL,
-                    UNIQUE (FeedUrl, UserId, Href),
-                    FOREIGN KEY (UserId) REFERENCES Users(Id)
-                )";
-            command.ExecuteNonQuery();
-
-            // Did the FTS table exist before this boot? Checked against sqlite_master
-            // rather than `SELECT count(*) FROM Items_fts`: counting an external-content
-            // FTS5 table walks the whole index, which took seconds on the production DB
-            // on every cold start. A table that was just created is empty by definition.
-            command = connection.CreateCommand();
-            command.CommandText = @"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='Items_fts';";
-            var ftsTableExisted = Convert.ToInt64(command.ExecuteScalar()) > 0;
-
-            // FTS5 virtual table for full-text search
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE VIRTUAL TABLE IF NOT EXISTS Items_fts
-                USING fts5(
-                    Title,
-                    Content,
-                    Href,
-                    FeedUrl,
-                    UserId UNINDEXED,
-                    content='ItemContent',
-                    content_rowid='Id'
-                );";
-            command.ExecuteNonQuery();
-
-            // Only rebuild FTS5 index when the table was just created (fresh DB or
-            // post-corruption recreation) or when explicitly requested via config
-            // (RssAppConfig__RebuildFtsOnStartup=true).
-            var needsRebuild = !ftsTableExisted || this.rebuildFtsOnStartup;
-
-            if (needsRebuild)
-            {
-                logger.LogInformation("FTS5 rebuild starting (existed={Existed}, forced={Forced})", ftsTableExisted, this.rebuildFtsOnStartup);
-                try
-                {
-                    command = connection.CreateCommand();
-                    command.CommandText = @"INSERT INTO Items_fts(Items_fts) VALUES('rebuild');";
-                    command.ExecuteNonQuery();
-                    logger.LogInformation("FTS5 rebuild completed successfully");
-                }
-                catch (SqliteException ex) when (ex.SqliteErrorCode == 11) // SQLITE_CORRUPT
-                {
-                    logger.LogWarning(ex, "FTS5 index corrupt  dropping and recreating");
-                    command = connection.CreateCommand();
-                    command.CommandText = @"DROP TABLE IF EXISTS Items_fts;";
-                    command.ExecuteNonQuery();
-
-                    command = connection.CreateCommand();
-                    command.CommandText = @"
-                        CREATE VIRTUAL TABLE Items_fts
-                        USING fts5(
-                            Title, Content, Href, FeedUrl,
-                            UserId UNINDEXED,
-                            content='ItemContent', content_rowid='Id'
-                        );";
-                    command.ExecuteNonQuery();
-
-                    command = connection.CreateCommand();
-                    command.CommandText = @"INSERT INTO Items_fts(Items_fts) VALUES('rebuild');";
-                    command.ExecuteNonQuery();
-                    logger.LogInformation("FTS5 recreated and rebuilt from scratch");
-                }
-            }
-            else
-            {
-                logger.LogInformation("FTS5 index already present — skipping rebuild");
-            }
-
-            // Trigger to keep the FTS table in sync with the main table
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE TRIGGER IF NOT EXISTS Items_after_insert
-                AFTER INSERT ON ItemContent
-                BEGIN
-                    INSERT INTO Items_fts (rowid, Title, Content, Href, FeedUrl, UserId)
-                    VALUES (new.Id, new.Title, new.Content, new.Href, new.FeedUrl, new.UserId);
-                END;";
-            command.ExecuteNonQuery();
-
-            // Update trigger
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE TRIGGER IF NOT EXISTS Items_au AFTER UPDATE ON ItemContent
-                BEGIN
-                    INSERT INTO Items_fts(Items_fts, rowid, Title, Content, Href, FeedUrl, UserId)
-                    VALUES('delete', old.Id, old.Title, old.Content, old.Href, old.FeedUrl, old.UserId);
-                    INSERT INTO Items_fts(rowid, Title, Content, Href, FeedUrl, UserId)
-                    VALUES (new.Id, new.Title, new.Content, new.Href, new.FeedUrl, new.UserId);
-                END;";
-            command.ExecuteNonQuery();
-
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE TRIGGER IF NOT EXISTS Items_after_delete
-                AFTER DELETE ON ItemContent
-                BEGIN
-                    DELETE FROM Items_fts WHERE rowid = old.Id;
-                END;";
-            command.ExecuteNonQuery();
-
-            // Index for timeline ORDER BY + cursor pagination  eliminates full-table scan + sort
-            command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE INDEX IF NOT EXISTS idx_items_timeline
-                ON Items(UserId, PublishDateOrder DESC, Id DESC);";
-            command.ExecuteNonQuery();
+        // Only when the table was just created (fresh DB) or explicitly
+        // requested via config (RssAppConfig__RebuildFtsOnStartup=true).
+        logger.LogInformation("FTS5 rebuild starting (existed={Existed}, forced={Forced})", ftsTableExisted, rebuildFtsOnStartup);
+        try
+        {
+            DatabaseSchema.Execute(connection, "INSERT INTO Posts_fts(Posts_fts) VALUES('rebuild');");
+            logger.LogInformation("FTS5 rebuild completed successfully");
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 11) // SQLITE_CORRUPT
+        {
+            logger.LogWarning(ex, "FTS5 index corrupt  dropping and recreating");
+            DatabaseSchema.Execute(connection, "DROP TABLE IF EXISTS Posts_fts;");
+            DatabaseSchema.Execute(connection, DatabaseSchema.FtsTable);
+            DatabaseSchema.Execute(connection, "INSERT INTO Posts_fts(Posts_fts) VALUES('rebuild');");
+            logger.LogInformation("FTS5 recreated and rebuilt from scratch");
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Shared SELECT shape
+    // -------------------------------------------------------------------------
+
+    private static string SelectColumns(bool includeContent) => $"""
+        SELECT
+            p.Id,
+            f.Url AS FeedUrl,
+            p.Href,
+            p.CommentsHref,
+            p.Title,
+            p.PublishDateOrder,
+            p.PublishDate,
+            {(includeContent ? "pc.Content" : "NULL AS Content")},
+            COALESCE(s.IsRead, 0) AS IsRead,
+            COALESCE(s.IsSaved, 0) AS IsSaved,
+            p.ThumbnailUrl,
+            (SELECT group_concat(t.Name, ',') FROM SubscriptionTags st
+             JOIN Tags t ON t.Id = st.TagId
+             WHERE st.UserId = @userId AND st.FeedId = p.FeedId) AS Tags
+        FROM Posts p
+        JOIN Feeds f ON f.Id = p.FeedId
+        {(includeContent ? "LEFT JOIN PostContent pc ON pc.PostId = p.Id" : "")}
+        LEFT JOIN UserPostState s ON s.PostId = p.Id AND s.UserId = @userId
+        """;
+
+    // The subscription join and the per-subscription watermark: a post is
+    // visible when the user subscribes to its feed and it is newer than the
+    // "clear posts" watermark (NULL = show all).
+    private const string SubscriptionJoin = """
+
+        JOIN Subscriptions sub ON sub.FeedId = p.FeedId AND sub.UserId = @userId
+
+        """;
+
+    private const string VisibleWhere = """
+        (sub.HideBeforeOrder IS NULL OR p.PublishDateOrder > sub.HideBeforeOrder)
+        """;
+
+    // The saved view is the user's own collection: a post stays in it after
+    // the feed is unsubscribed or cleared, as it did when items were per-user
+    // rows. Every other view is scoped by the subscription and its watermark.
+    private static string ScopeFor(bool isFilterSaved) => isFilterSaved
+        ? """
+
+          LEFT JOIN Subscriptions sub ON sub.FeedId = p.FeedId AND sub.UserId = @userId
+          WHERE s.IsSaved = 1
+          """
+        : SubscriptionJoin + " WHERE " + VisibleWhere;
+
+    private const string HiddenTagExclusion = """
+        NOT EXISTS (
+            SELECT 1 FROM SubscriptionTags st JOIN Tags t ON t.Id = st.TagId
+            WHERE st.UserId = @userId AND st.FeedId = p.FeedId AND t.IsHidden = 1)
+        """;
+
+    // -------------------------------------------------------------------------
+    // Search
+    // -------------------------------------------------------------------------
 
     public async Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize)
     {
         try
         {
-            return await SearchItemsWithFtsAsync(query, user, page, pageSize);
+            return await SearchItemsCoreAsync(query, user, page, pageSize, useFts: true);
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode == 11) // SQLITE_CORRUPT
         {
             logger.LogWarning(ex, "FTS5 index corrupt, falling back to LIKE-only search for query: {Query}", query);
-            return await SearchItemsLikeOnlyAsync(query, user, page, pageSize);
+            return await SearchItemsCoreAsync(query, user, page, pageSize, useFts: false);
         }
     }
 
-    private async Task<IEnumerable<NewsFeedItem>> SearchItemsWithFtsAsync(string query, RssUser user, int page, int pageSize)
+    private async Task<IEnumerable<NewsFeedItem>> SearchItemsCoreAsync(string query, RssUser user, int page, int pageSize, bool useFts)
     {
-        var set = new HashSet<NewsFeedItem>();
+        var items = new List<NewsFeedItem>();
+        using var connection = await this.connections.OpenReadAsync();
+        var command = connection.CreateCommand();
 
-        using (var connection = await this.connections.OpenReadAsync())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT
-                    i.Id,
-                    i.FeedUrl,
-                    i.Href,
-                    i.CommentsHref,
-                    i.Title,
-                    i.PublishDateOrder,
-                    i.PublishDate,
-                    ic.Content,
-                    i.IsRead,
-                    i.UserId,
-                    i.ThumbnailUrl,
-                    i.IsSaved,
-                    i.Tags
-                FROM Items i
-                LEFT JOIN ItemContent ic
-                    ON i.FeedUrl = ic.FeedUrl AND i.Href = ic.Href AND i.UserId = ic.UserId
-                LEFT JOIN Feeds f
-                    ON i.FeedUrl = f.Url
-                WHERE (i.Id IN (
-                    SELECT rowid FROM Items_fts
-                    WHERE Items_fts MATCH @query)
-                    OR i.Title LIKE @plainQuery)
-                AND i.UserId = @userId
-                ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC
-                LIMIT @pageSize OFFSET @offset
+        // FTS for whole words plus the Title LIKE fallback for partial words.
+        var match = useFts
+            ? "(p.Id IN (SELECT rowid FROM Posts_fts WHERE Posts_fts MATCH @query) OR p.Title LIKE @plainQuery)"
+            : "(p.Title LIKE @plainQuery OR pc.Content LIKE @plainQuery)";
+
+        command.CommandText = SelectColumns(includeContent: true) + SubscriptionJoin + $"""
+            WHERE {match}
+            ORDER BY p.PublishDateOrder DESC, p.Id DESC
+            LIMIT @pageSize OFFSET @offset
             """;
-            
-            command.Parameters.AddWithValue("@query", $"\"{query}\"");
-            command.Parameters.AddWithValue("@plainQuery", $"%{query}%");
-            command.Parameters.AddWithValue("@userId", user.Id);
-            command.Parameters.AddWithValue("@pageSize", pageSize);
-            command.Parameters.AddWithValue("@offset", page * pageSize);
+        if (useFts) command.Parameters.AddWithValue("@query", $"\"{query.Replace("\"", "\"\"")}\"");
+        command.Parameters.AddWithValue("@plainQuery", $"%{query}%");
+        command.Parameters.AddWithValue("@userId", user.Id);
+        command.Parameters.AddWithValue("@pageSize", pageSize);
+        command.Parameters.AddWithValue("@offset", page * pageSize);
 
-            ReadItemsFromCommand(command, set);
-        }
-
-        return set.ToList();
-    }
-
-    private async Task<IEnumerable<NewsFeedItem>> SearchItemsLikeOnlyAsync(string query, RssUser user, int page, int pageSize)
-    {
-        var set = new HashSet<NewsFeedItem>();
-
-        using (var connection = await this.connections.OpenReadAsync())
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
         {
-            var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT
-                    i.Id,
-                    i.FeedUrl,
-                    i.Href,
-                    i.CommentsHref,
-                    i.Title,
-                    i.PublishDateOrder,
-                    i.PublishDate,
-                    ic.Content,
-                    i.IsRead,
-                    i.UserId,
-                    i.ThumbnailUrl,
-                    i.IsSaved,
-                    i.Tags
-                FROM Items i
-                LEFT JOIN ItemContent ic
-                    ON i.FeedUrl = ic.FeedUrl AND i.Href = ic.Href AND i.UserId = ic.UserId
-                LEFT JOIN Feeds f
-                    ON i.FeedUrl = f.Url
-                WHERE (i.Title LIKE @plainQuery OR ic.Content LIKE @plainQuery)
-                AND i.UserId = @userId
-                ORDER BY i.PublishDateOrder DESC, i.PublishDate DESC
-                LIMIT @pageSize OFFSET @offset
-            """;
-
-            command.Parameters.AddWithValue("@plainQuery", $"%{query}%");
-            command.Parameters.AddWithValue("@userId", user.Id);
-            command.Parameters.AddWithValue("@pageSize", pageSize);
-            command.Parameters.AddWithValue("@offset", page * pageSize);
-
-            ReadItemsFromCommand(command, set);
+            items.Add(ReadItemFromResults(reader, user.Id));
         }
 
-        return set.ToList();
+        return items;
     }
 
-    private void ReadItemsFromCommand(SqliteCommand command, HashSet<NewsFeedItem> set)
-    {
-        using (var reader = command.ExecuteReader())
-        {
-            while (reader.Read())
-            {
-                var item = this.ReadItemFromResults(reader);
-
-                if (!set.Contains(item))
-                {
-                    set.Add(item);
-                }
-
-                set.TryGetValue(item, out var storedItem);
-                storedItem.FeedTags = storedItem.FeedTags.Union(item.FeedTags).ToList();
-            }
-        }
-    }
+    // -------------------------------------------------------------------------
+    // Timeline
+    // -------------------------------------------------------------------------
 
     public async Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
         NewsFeed feed,
@@ -322,108 +192,38 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         bool includeContent = true)
     {
         var items = new List<NewsFeedItem>();
-        var user = this.userStore.GetUserById(feed.UserId);
+        using var connection = await this.connections.OpenReadAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = SelectColumns(includeContent) + ScopeFor(isFilterSaved);
+        command.Parameters.AddWithValue("@userId", feed.UserId);
 
-        using (var connection = await this.connections.OpenReadAsync())
+        AppendFilters(command, feed, isFilterUnread, isFilterSaved, filterTag, excludeFeedUrls);
+
+        // Cursor-based pagination: use (PublishDateOrder, Id) as seek position
+        bool useCursor = lastPublishDateOrder.HasValue && lastId.HasValue;
+        if (useCursor)
         {
-            var command = connection.CreateCommand();
+            command.CommandText += " AND (p.PublishDateOrder, p.Id) < (@lastOrder, @lastId)";
+            command.Parameters.AddWithValue("@lastOrder", lastPublishDateOrder.Value);
+            command.Parameters.AddWithValue("@lastId", lastId.Value);
+        }
 
-            var contentColumn = includeContent ? "ic.Content" : "NULL AS Content";
-            var contentJoin = includeContent
-                ? "LEFT JOIN ItemContent ic ON i.FeedUrl = ic.FeedUrl AND i.Href = ic.Href AND i.UserId = ic.UserId"
-                : "";
+        command.CommandText += " ORDER BY p.PublishDateOrder DESC, p.Id DESC";
+        pageSize ??= 20;
+        command.CommandText += " LIMIT @pageSize";
+        command.Parameters.AddWithValue("@pageSize", pageSize);
 
-            command.CommandText = $"""
-                SELECT
-                    i.Id,
-                    i.FeedUrl,
-                    i.Href,
-                    i.CommentsHref,
-                    i.Title,
-                    i.PublishDateOrder,
-                    i.PublishDate,
-                    {contentColumn},
-                    i.IsRead,
-                    i.UserId,
-                    i.ThumbnailUrl,
-                    i.IsSaved,
-                    i.Tags
-                FROM Items i
-                {contentJoin}
-            """;
+        if (!useCursor)
+        {
+            page ??= 0;
+            command.CommandText += " OFFSET @offset";
+            command.Parameters.AddWithValue("@offset", page * pageSize);
+        }
 
-            command.CommandText += " WHERE i.UserId=@userId";
-            command.Parameters.AddWithValue("@userId", user.Id);
-
-            if (feed.Href != "%")
-            {
-                command.CommandText += " AND i.FeedUrl LIKE @feedUrl";
-                command.Parameters.AddWithValue("@feedUrl", feed.Href);
-            }
-
-            if (isFilterUnread)
-            {
-                command.CommandText += " AND i.IsRead = 0";
-            }
-
-            if (isFilterSaved)
-            {
-                command.CommandText += " AND i.IsSaved = 1";
-            }
-
-            if (!string.IsNullOrWhiteSpace(filterTag))
-            {
-                command.CommandText += " AND i.Tags LIKE @tagName";
-                command.Parameters.AddWithValue("@tagName", $"%{filterTag}%");
-            }
-
-            var excludeUrls = excludeFeedUrls?.ToList();
-            if (excludeUrls != null && excludeUrls.Count > 0)
-            {
-                var excludeParams = new List<string>();
-                for (int idx = 0; idx < excludeUrls.Count; idx++)
-                {
-                    var paramName = $"@excludeUrl{idx}";
-                    excludeParams.Add(paramName);
-                    command.Parameters.AddWithValue(paramName, excludeUrls[idx]);
-                }
-                command.CommandText += $" AND i.FeedUrl NOT IN ({string.Join(",", excludeParams)})";
-            }
-
-            // Cursor-based pagination: use (PublishDateOrder, Id) as seek position
-            bool useCursor = lastPublishDateOrder.HasValue && lastId.HasValue;
-            if (useCursor)
-            {
-                command.CommandText += " AND (i.PublishDateOrder, i.Id) < (@lastOrder, @lastId)";
-                command.Parameters.AddWithValue("@lastOrder", lastPublishDateOrder.Value);
-                command.Parameters.AddWithValue("@lastId", lastId.Value);
-            }
-
-            command.CommandText += " ORDER BY i.PublishDateOrder DESC, i.Id DESC";
-            pageSize ??= 20;
-            command.CommandText += " LIMIT @pageSize";
-            command.Parameters.AddWithValue("@pageSize", pageSize);
-
-            if (!useCursor)
-            {
-                page ??= 0;
-                command.CommandText += " OFFSET @offset";
-                command.Parameters.AddWithValue("@offset", page * pageSize);
-            }
-
-            using (var reader = await command.ExecuteReaderAsync())
-            {
-                while (await reader.ReadAsync())
-                {
-                    var item = this.ReadItemFromResults(reader);
-
-                    if (item.FeedTags == null || !item.FeedTags.Any())
-                    {
-                        item.FeedTags = feed.Tags;
-                    }
-                    items.Add(item);
-                }
-            }
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            items.Add(ReadItemFromResults(reader, feed.UserId));
         }
 
         return items;
@@ -438,48 +238,72 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         long cursorId,
         IEnumerable<string> excludeFeedUrls = null)
     {
-        var user = this.userStore.GetUserById(feed.UserId);
+        using var connection = await this.connections.OpenReadAsync();
+        var command = connection.CreateCommand();
 
-        using (var connection = await this.connections.OpenReadAsync())
+        // Same WHERE as the timeline with the cursor comparison flipped. COUNT
+        // DISTINCT Href mirrors the controller's post-query DistinctBy(Href) so
+        // the hint matches what a top-of-list reload actually surfaces.
+        command.CommandText = """
+            SELECT COUNT(DISTINCT p.Href) FROM Posts p
+            JOIN Feeds f ON f.Id = p.FeedId
+            LEFT JOIN UserPostState s ON s.PostId = p.Id AND s.UserId = @userId
+            """ + ScopeFor(isFilterSaved);
+        command.Parameters.AddWithValue("@userId", feed.UserId);
+
+        AppendFilters(command, feed, isFilterUnread, isFilterSaved, filterTag, excludeFeedUrls);
+
+        command.CommandText += " AND (p.PublishDateOrder, p.Id) > (@cursorOrder, @cursorId)";
+        command.Parameters.AddWithValue("@cursorOrder", cursorPublishDateOrder);
+        command.Parameters.AddWithValue("@cursorId", cursorId);
+
+        var count = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(count);
+    }
+
+    private static void AppendFilters(
+        SqliteCommand command,
+        NewsFeed feed,
+        bool isFilterUnread,
+        bool isFilterSaved,
+        string filterTag,
+        IEnumerable<string> excludeFeedUrls)
+    {
+        if (feed.Href != "%")
         {
-            var command = connection.CreateCommand();
+            command.CommandText += " AND f.Url = @feedUrl";
+            command.Parameters.AddWithValue("@feedUrl", feed.Href);
+        }
 
-            // Mirror the timeline exactly: same WHERE filters + cursor, plus the
-            // post-query DistinctBy(Href) (COUNT DISTINCT Href) so the hint matches
-            // what a top-of-list reload actually surfaces. The
-            // idx_items_timeline(UserId, PublishDateOrder DESC, Id DESC) index serves
-            // the seek; no rows are materialized.
-            command.CommandText = "SELECT COUNT(DISTINCT i.Href) FROM Items i WHERE i.UserId=@userId";
-            command.Parameters.AddWithValue("@userId", user.Id);
+        if (isFilterUnread)
+        {
+            command.CommandText += " AND COALESCE(s.IsRead, 0) = 0";
+        }
 
-            if (feed.Href != "%")
-            {
-                command.CommandText += " AND i.FeedUrl LIKE @feedUrl";
-                command.Parameters.AddWithValue("@feedUrl", feed.Href);
-            }
+        if (isFilterSaved)
+        {
+            command.CommandText += " AND s.IsSaved = 1";
+        }
 
-            if (isFilterUnread)
-            {
-                command.CommandText += " AND i.IsRead = 0";
-            }
+        if (!string.IsNullOrWhiteSpace(filterTag))
+        {
+            command.CommandText += """
+                 AND EXISTS (SELECT 1 FROM SubscriptionTags st JOIN Tags t ON t.Id = st.TagId
+                             WHERE st.UserId = @userId AND st.FeedId = p.FeedId AND t.Name = @tagName)
+                """;
+            command.Parameters.AddWithValue("@tagName", filterTag);
+        }
 
-            if (isFilterSaved)
-            {
-                command.CommandText += " AND i.IsSaved = 1";
-            }
-
-            if (!string.IsNullOrWhiteSpace(filterTag))
-            {
-                // Exact comma-delimited membership, mirroring the timeline's
-                // FeedTags.Contains(tag) (Tags is the comma-joined column that
-                // FeedTags is split from) — not a loose substring match, so e.g.
-                // "news" does not match an item tagged only "newsletter".
-                command.CommandText += " AND (',' || i.Tags || ',') LIKE @tagName";
-                command.Parameters.AddWithValue("@tagName", $"%,{filterTag},%");
-            }
-
-            var excludeUrls = excludeFeedUrls?.ToList();
-            if (excludeUrls != null && excludeUrls.Count > 0)
+        // The caller passes a (possibly empty) exclusion list exactly when the
+        // view should hide feeds carrying a hidden tag: the plain timeline. The
+        // saved and explicit-tag views pass null and see everything. The hidden
+        // flag is read live from Tags; any URLs the caller listed are excluded
+        // as well.
+        if (excludeFeedUrls != null)
+        {
+            command.CommandText += " AND " + HiddenTagExclusion;
+            var excludeUrls = excludeFeedUrls.ToList();
+            if (excludeUrls.Count > 0)
             {
                 var excludeParams = new List<string>();
                 for (int idx = 0; idx < excludeUrls.Count; idx++)
@@ -488,24 +312,14 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                     excludeParams.Add(paramName);
                     command.Parameters.AddWithValue(paramName, excludeUrls[idx]);
                 }
-                command.CommandText += $" AND i.FeedUrl NOT IN ({string.Join(",", excludeParams)})";
+                command.CommandText += $" AND f.Url NOT IN ({string.Join(",", excludeParams)})";
             }
-
-            // Strictly newer than the cursor seek position (mirror of the timeline's
-            // "< (lastOrder, lastId)" comparison, flipped to ">").
-            command.CommandText += " AND (i.PublishDateOrder, i.Id) > (@cursorOrder, @cursorId)";
-            command.Parameters.AddWithValue("@cursorOrder", cursorPublishDateOrder);
-            command.Parameters.AddWithValue("@cursorId", cursorId);
-
-            var count = await command.ExecuteScalarAsync();
-            return Convert.ToInt32(count);
         }
     }
 
-    private NewsFeedItem ReadItemFromResults(DbDataReader reader)
+    private static NewsFeedItem ReadItemFromResults(DbDataReader reader, int userId)
     {
-        var id = reader.IsDBNull(reader.GetOrdinal("Id")) ? "" : reader.GetString(reader.GetOrdinal("Id"));
-        var userId = reader.IsDBNull(reader.GetOrdinal("UserId")) ? 1 : reader.GetInt32(reader.GetOrdinal("UserId"));
+        var id = reader.GetInt64(reader.GetOrdinal("Id")).ToString(CultureInfo.InvariantCulture);
         var href = reader.IsDBNull(reader.GetOrdinal("Href")) ? "" : reader.GetString(reader.GetOrdinal("Href"));
         var commentsHref = reader.IsDBNull(reader.GetOrdinal("CommentsHref")) ? "" : reader.GetString(reader.GetOrdinal("CommentsHref"));
         var title = reader.IsDBNull(reader.GetOrdinal("Title")) ? "" : reader.GetString(reader.GetOrdinal("Title"));
@@ -513,13 +327,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var publishDate = reader.IsDBNull(reader.GetOrdinal("PublishDate")) ? "" : reader.GetString(reader.GetOrdinal("PublishDate"));
         string content = reader.IsDBNull(reader.GetOrdinal("Content")) ? null : reader.GetString(reader.GetOrdinal("Content"));
         var url = reader.IsDBNull(reader.GetOrdinal("FeedUrl")) ? "" : reader.GetString(reader.GetOrdinal("FeedUrl"));
-        var isRead = reader.IsDBNull(reader.GetOrdinal("IsRead")) ? false : reader.GetBoolean(reader.GetOrdinal("IsRead"));
+        var isRead = !reader.IsDBNull(reader.GetOrdinal("IsRead")) && reader.GetInt64(reader.GetOrdinal("IsRead")) != 0;
+        var isSaved = !reader.IsDBNull(reader.GetOrdinal("IsSaved")) && reader.GetInt64(reader.GetOrdinal("IsSaved")) != 0;
         var tags = reader.IsDBNull(reader.GetOrdinal("Tags")) ? "" : reader.GetString(reader.GetOrdinal("Tags"));
         var thumbnailUrl = reader.IsDBNull(reader.GetOrdinal("ThumbnailUrl")) ? "" : reader.GetString(reader.GetOrdinal("ThumbnailUrl"));
-        //var isPaywalled = reader.IsDBNull(reader.GetOrdinal("IsPaywalled")) ? false : reader.GetBoolean(reader.GetOrdinal("IsPaywalled"));
-        var isSaved = reader.IsDBNull(reader.GetOrdinal("IsSaved")) ? false : reader.GetBoolean(reader.GetOrdinal("IsSaved"));
-        
-        var item = new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
+
+        return new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
         {
             FeedUrl = url,
             IsRead = isRead,
@@ -527,171 +340,151 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             IsSaved = isSaved,
             PublishDateOrder = publishDateOrder
         };
-
-        // logger.LogInformation("DEBUG: isread: {IsRead}", isRead);
-
-        return item;
     }
+
+    // -------------------------------------------------------------------------
+    // Single items
+    // -------------------------------------------------------------------------
+
+    // A post is the user's when they subscribe to its feed or already hold
+    // state on it (a saved post of a feed they since left stays reachable).
+    private const string OwnershipWhere = """
+        (EXISTS (SELECT 1 FROM Subscriptions sub WHERE sub.FeedId = p.FeedId AND sub.UserId = @userId)
+         OR s.PostId IS NOT NULL)
+        """;
 
     public NewsFeedItem GetItem(RssUser user, string href)
     {
-        using (var connection = this.connections.OpenRead())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT * FROM Items
-                LEFT JOIN Feeds ON Items.FeedUrl = Feeds.Url
-                WHERE Items.Href = @href AND Items.UserId = @userId
-            """;
-            command.Parameters.AddWithValue("@href", href);
-            command.Parameters.AddWithValue("@userId", user.Id);
-
-            using (var reader = command.ExecuteReader())
-            {
-                if (!reader.Read())
-                {
-                    return null;
-                }
-
-                var item = this.ReadItemFromResults(reader);
-                return item;
-            }
-        }
+        using var connection = this.connections.OpenRead();
+        var command = connection.CreateCommand();
+        command.CommandText = SelectColumns(includeContent: false)
+            + " WHERE p.Href = @href AND " + OwnershipWhere + " ORDER BY p.Id LIMIT 1";
+        command.Parameters.AddWithValue("@href", href);
+        command.Parameters.AddWithValue("@userId", user.Id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadItemFromResults(reader, user.Id) : null;
     }
 
     public NewsFeedItem GetItem(RssUser user, int itemId)
     {
-        using (var connection = this.connections.OpenRead())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT * FROM Items
-                LEFT JOIN Feeds ON Items.FeedUrl = Feeds.Url
-                WHERE Items.Id = @id AND Items.UserId = @userId
-            """;
-            command.Parameters.AddWithValue("@id", itemId);
-            command.Parameters.AddWithValue("@userId", user.Id);
-
-            using (var reader = command.ExecuteReader())
-            {
-                if (!reader.Read())
-                {
-                    return null;
-                }
-
-                var item = this.ReadItemFromResults(reader);
-                return item;
-            }
-        }
+        using var connection = this.connections.OpenRead();
+        var command = connection.CreateCommand();
+        command.CommandText = SelectColumns(includeContent: false)
+            + " WHERE p.Id = @id AND " + OwnershipWhere;
+        command.Parameters.AddWithValue("@id", itemId);
+        command.Parameters.AddWithValue("@userId", user.Id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadItemFromResults(reader, user.Id) : null;
     }
 
     public string GetItemContent(NewsFeedItem item)
     {
-        using (var connection = this.connections.OpenRead())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-                SELECT Content 
-                FROM ItemContent 
-                WHERE FeedUrl = @feedUrl AND Href = @href AND UserId = @userId";
-            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
-            command.Parameters.AddWithValue("@href", item.Href);
-            command.Parameters.AddWithValue("@userId", item.UserId);
+        using var connection = this.connections.OpenRead();
+        var postId = ResolvePostId(connection, item);
+        if (postId == null) return string.Empty;
 
-            var content = command.ExecuteScalar() as string;
-            //logger.LogError("content: {Content}", content);
-            return content ?? string.Empty;
-        }
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT Content FROM PostContent WHERE PostId = @postId";
+        command.Parameters.AddWithValue("@postId", postId.Value);
+        return command.ExecuteScalar() as string ?? string.Empty;
     }
 
-    private const int InsertBatchSize = 25;
+    /// <summary>
+    /// The shared post an item refers to. (FeedUrl, Href) is preferred because
+    /// it is stable across the id change of the migration; the numeric Id is
+    /// the fallback for callers that only have that.
+    /// </summary>
+    private static long? ResolvePostId(SqliteConnection connection, NewsFeedItem item)
+    {
+        if (!string.IsNullOrEmpty(item.FeedUrl) && !string.IsNullOrEmpty(item.Href))
+        {
+            var byKey = connection.CreateCommand();
+            byKey.CommandText = "SELECT p.Id FROM Posts p JOIN Feeds f ON f.Id = p.FeedId WHERE f.Url = @url AND p.Href = @href";
+            byKey.Parameters.AddWithValue("@url", item.FeedUrl);
+            byKey.Parameters.AddWithValue("@href", item.Href);
+            var found = byKey.ExecuteScalar();
+            if (found is long id) return id;
+        }
+
+        if (long.TryParse(item.Id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+        {
+            var byId = connection.CreateCommand();
+            byId.CommandText = "SELECT Id FROM Posts WHERE Id = @id";
+            byId.Parameters.AddWithValue("@id", parsed);
+            if (byId.ExecuteScalar() is long id) return id;
+        }
+
+        return null;
+    }
+
+    // -------------------------------------------------------------------------
+    // Writes
+    // -------------------------------------------------------------------------
 
     public async Task<int> AddItemsAsync(IEnumerable<NewsFeedItem> items)
     {
-        var itemList = items.ToList();
+        var itemList = items.Where(i => !string.IsNullOrEmpty(i.FeedUrl)).ToList();
         if (itemList.Count == 0) return 0;
 
-        // Phase 1: Resolve per-feed tags OUTSIDE the write lock (cached repo reads,
-        // no single-writer lock needed). Thumbnails are already resolved upstream
-        // by the FeedRefresher (ThumbnailResolver) and arrive on item.ThumbnailUrl.
-        var feedTags = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var preparedItems = new List<NewsFeedItem>();
-
-        foreach (var item in itemList)
-        {
-            try
-            {
-                if (!feedTags.ContainsKey(item.FeedUrl))
-                {
-                    var user = this.userStore.GetUserById(item.UserId);
-                    NewsFeed feed = this.feedStore.GetFeed(user, item.FeedUrl);
-                    feedTags[item.FeedUrl] = string.Join(",", feed.Tags ?? []);
-                }
-
-                preparedItems.Add(item);
-            }
-            catch (Exception ex)
-            {
-                this.logger.LogWarning(ex, "Error preparing item {Href}, skipping", item.Href);
-            }
-        }
-
-        if (preparedItems.Count == 0) return 0;
-
-        // Phase 2: Acquire the write lock only for the transaction.
         var insertedCount = 0;
         await this.writeSemaphore.WaitAsync();
-
         try
         {
             using var connection = await this.connections.OpenWriteAsync();
             using var transaction = connection.BeginTransaction();
 
-            foreach (var item in preparedItems)
+            // One Feeds lookup per distinct URL. A URL with no feed row has no
+            // subscribers and nothing to attach its posts to; skip it.
+            var feedIds = new Dictionary<string, long?>(StringComparer.Ordinal);
+            foreach (var url in itemList.Select(i => i.FeedUrl).Distinct(StringComparer.Ordinal))
             {
+                var lookup = connection.CreateCommand();
+                lookup.Transaction = transaction;
+                lookup.CommandText = "SELECT Id FROM Feeds WHERE Url = @url";
+                lookup.Parameters.AddWithValue("@url", url);
+                feedIds[url] = lookup.ExecuteScalar() as long?;
+                if (feedIds[url] == null)
+                {
+                    this.logger.LogWarning("No feed row for {Url}; its {Count} items were not stored", url, itemList.Count(i => i.FeedUrl == url));
+                }
+            }
+
+            var now = DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+            foreach (var item in itemList)
+            {
+                var feedId = feedIds[item.FeedUrl];
+                if (feedId == null) continue;
+
                 try
                 {
-                    // INSERT OR IGNORE lets the UNIQUE constraint handle duplicates
+                    // INSERT OR IGNORE lets UNIQUE(FeedId, Href) handle duplicates.
                     var command = connection.CreateCommand();
-                    command.CommandText = @"
-                        INSERT OR IGNORE INTO Items (
-                            FeedUrl, Href, CommentsHref, Title,
-                            PublishDateOrder, PublishDate, UserId, ThumbnailUrl, Tags
-                        )
-                        VALUES (@feedUrl, @href, @commentsHref, @title,
-                                @publishDateOrder, @publishDate, @userId, @thumbnailUrl, @tags)";
-                    command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
+                    command.Transaction = transaction;
+                    command.CommandText = """
+                        INSERT OR IGNORE INTO Posts (FeedId, Href, CommentsHref, Title, PublishDateOrder, PublishDate, ThumbnailUrl, FirstSeenUtc)
+                        VALUES (@feedId, @href, @commentsHref, @title, @publishDateOrder, @publishDate, @thumbnailUrl, @now)
+                        """;
+                    command.Parameters.AddWithValue("@feedId", feedId.Value);
                     command.Parameters.AddWithValue("@href", item.Href ?? "");
                     command.Parameters.AddWithValue("@commentsHref", (object)item.CommentsHref ?? DBNull.Value);
                     command.Parameters.AddWithValue("@title", item.Title ?? "");
                     command.Parameters.AddWithValue("@publishDateOrder", item.PublishDateOrder);
                     command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
-                    command.Parameters.AddWithValue("@userId", item.UserId);
                     command.Parameters.AddWithValue("@thumbnailUrl", (object)item.ThumbnailUrl ?? DBNull.Value);
-                    command.Parameters.AddWithValue("@tags", feedTags.GetValueOrDefault(item.FeedUrl, ""));
+                    command.Parameters.AddWithValue("@now", now);
                     var rowsAffected = await command.ExecuteNonQueryAsync();
+                    if (rowsAffected == 0) continue;
 
-                    // Only insert content if the Items row was actually inserted (not a duplicate)
-                    if (rowsAffected > 0)
-                    {
-                        insertedCount += rowsAffected;
-                        command = connection.CreateCommand();
-                        command.CommandText = @"
-                            INSERT OR IGNORE INTO ItemContent (
-                                FeedUrl, Href, Title, PublishDateOrder,
-                                PublishDate, Content, UserId
-                            ) 
-                            VALUES (@feedUrl, @href, @title, @publishDateOrder,
-                                    @publishDate, @content, @userId)";
-                        command.Parameters.AddWithValue("@feedUrl", item.FeedUrl ?? "");
-                        command.Parameters.AddWithValue("@href", item.Href ?? "");
-                        command.Parameters.AddWithValue("@title", item.Title ?? "");
-                        command.Parameters.AddWithValue("@publishDateOrder", item.PublishDateOrder);
-                        command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
-                        command.Parameters.AddWithValue("@content", item.Content ?? "");
-                        command.Parameters.AddWithValue("@userId", item.UserId);
-                        await command.ExecuteNonQueryAsync();
-                    }
+                    insertedCount += rowsAffected;
+                    var content = connection.CreateCommand();
+                    content.Transaction = transaction;
+                    content.CommandText = """
+                        INSERT OR IGNORE INTO PostContent (PostId, Title, Content)
+                        VALUES (last_insert_rowid(), @title, @content)
+                        """;
+                    content.Parameters.AddWithValue("@title", item.Title ?? "");
+                    content.Parameters.AddWithValue("@content", item.Content ?? "");
+                    await content.ExecuteNonQueryAsync();
                 }
                 catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
                 {
@@ -714,96 +507,81 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         return insertedCount;
     }
 
+    /// <summary>
+    /// Tags are per-subscription (see IFeedRepository.AddTag) and the timeline
+    /// reads them live, so there is nothing to stamp onto a post. Kept for the
+    /// interface; a no-op.
+    /// </summary>
     public void UpdateTags(NewsFeedItem item, string tags)
     {
-        using (var connection = this.connections.OpenWrite())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-                UPDATE Items
-                SET Tags = @tags
-                WHERE FeedUrl LIKE @feedUrl AND Href LIKE @href AND UserId = @userId";
-            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
-            command.Parameters.AddWithValue("@href", item.Href);
-            command.Parameters.AddWithValue("@tags", tags);
-            command.Parameters.AddWithValue("@userId", item.UserId);
-            command.ExecuteNonQuery();
-        }
     }
 
     public void MarkAsRead(NewsFeedItem item, bool isRead, RssUser user)
-    {
-        using (var connection = this.connections.OpenWrite())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-                UPDATE Items
-                SET IsRead = @isRead
-                WHERE FeedUrl LIKE @feedUrl AND Href LIKE @href AND UserId = @userId";
-            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
-            command.Parameters.AddWithValue("@href", item.Href);
-            command.Parameters.AddWithValue("@isRead", isRead ? 1 : 0);
-            command.Parameters.AddWithValue("@userId", user.Id);
-            command.ExecuteNonQuery();
-        }
-    }
+        => UpsertState(item, user, "IsRead", "ReadUtc", isRead);
 
     public void SavePost(NewsFeedItem item, RssUser user)
-    {
-        using (var connection = this.connections.OpenWrite())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-                UPDATE Items
-                SET IsSaved = 1
-                WHERE UserId = @userId AND FeedUrl LIKE @feedUrl AND Href LIKE @href";
-            command.Parameters.AddWithValue("@userId", user.Id);
-            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
-            command.Parameters.AddWithValue("@href", item.Href);
-            command.ExecuteNonQuery();
-        }
-    }
+        => UpsertState(item, user, "IsSaved", "SavedUtc", true);
 
     public void UnsavePost(NewsFeedItem item, RssUser user)
+        => UpsertState(item, user, "IsSaved", "SavedUtc", false);
+
+    // Sparse state: a row exists only while something differs from "unread,
+    // not saved", so clearing the last flag deletes the row.
+    private void UpsertState(NewsFeedItem item, RssUser user, string flagColumn, string timeColumn, bool value)
     {
-        using (var connection = this.connections.OpenWrite())
+        using var connection = this.connections.OpenWrite();
+        var postId = ResolvePostId(connection, item);
+        if (postId == null)
         {
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-                UPDATE Items
-                SET IsSaved = 0
-                WHERE UserId = @userId AND FeedUrl = @feedUrl AND Href = @href";
-            command.Parameters.AddWithValue("@userId", user.Id);
-            command.Parameters.AddWithValue("@feedUrl", item.FeedUrl);
-            command.Parameters.AddWithValue("@href", item.Href);
-            command.ExecuteNonQuery();
+            this.logger.LogWarning("Cannot set {Flag} on unknown post {Href}", flagColumn, item.Href);
+            return;
         }
+
+        var command = connection.CreateCommand();
+        command.CommandText = $"""
+            INSERT INTO UserPostState (UserId, PostId, {flagColumn}, {timeColumn})
+            VALUES (@userId, @postId, @value, CASE WHEN @value THEN @now ELSE NULL END)
+            ON CONFLICT(UserId, PostId) DO UPDATE SET
+                {flagColumn} = excluded.{flagColumn},
+                {timeColumn} = excluded.{timeColumn};
+            DELETE FROM UserPostState WHERE UserId = @userId AND PostId = @postId AND IsRead = 0 AND IsSaved = 0;
+            """;
+        command.Parameters.AddWithValue("@userId", user.Id);
+        command.Parameters.AddWithValue("@postId", postId.Value);
+        command.Parameters.AddWithValue("@value", value ? 1 : 0);
+        command.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+        command.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// "Clear posts": moves every subscription's watermark to the feed's newest
+    /// post so the timeline starts empty. Shared posts and read/saved state
+    /// are untouched; the operation is reversible by clearing the watermark.
+    /// </summary>
     public async Task DeleteAllItemsAsync(RssUser user)
     {
         using var connection = await this.connections.OpenWriteAsync();
-        using var transaction = connection.BeginTransaction();
-
         var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM ItemContent WHERE UserId = @userId";
+        command.CommandText = """
+            UPDATE Subscriptions
+            SET HideBeforeOrder = (SELECT MAX(p.PublishDateOrder) FROM Posts p WHERE p.FeedId = Subscriptions.FeedId)
+            WHERE UserId = @userId
+            """;
         command.Parameters.AddWithValue("@userId", user.Id);
-        await command.ExecuteNonQueryAsync();
-
-        command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM Items WHERE UserId = @userId";
-        command.Parameters.AddWithValue("@userId", user.Id);
-        var deleted = await command.ExecuteNonQueryAsync();
-
-        transaction.Commit();
-        this.logger.LogInformation("Deleted {Count} items for user {UserId}", deleted, user.Id);
+        var updated = await command.ExecuteNonQueryAsync();
+        this.logger.LogInformation("Set clear-posts watermark on {Count} subscriptions for user {UserId}", updated, user.Id);
     }
 
     public int GetItemCountForFeed(RssUser user, string feedUrl)
     {
         using var connection = this.connections.OpenRead();
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM Items WHERE UserId = @userId AND FeedUrl = @feedUrl";
+        command.CommandText = """
+            SELECT COUNT(*) FROM Posts p
+            JOIN Feeds f ON f.Id = p.FeedId
+            JOIN Subscriptions sub ON sub.FeedId = p.FeedId AND sub.UserId = @userId
+            WHERE f.Url = @feedUrl AND (sub.HideBeforeOrder IS NULL OR p.PublishDateOrder > sub.HideBeforeOrder)
+            """;
         command.Parameters.AddWithValue("@userId", user.Id);
         command.Parameters.AddWithValue("@feedUrl", feedUrl);
         return Convert.ToInt32(command.ExecuteScalar());

@@ -200,16 +200,20 @@ public sealed class ApiContractTests
         var hide = await alice.PutAsJsonAsync("/api/feed/tagSettings", new TagSetting { Tag = HiddenTag, IsHidden = true });
         Assert.AreEqual(HttpStatusCode.OK, hide.StatusCode);
 
-        // Posts are stored per (user, feed) today, so the shared feed's posts are
-        // inserted once for each subscriber, with identical hrefs.
+        // Posts are stored once per feed: the shared feed's posts are inserted a
+        // single time and both subscribers see them through their subscription.
         var items = host.Services.GetRequiredService<IItemRepository>();
         var seeded = new List<NewsFeedItem>();
         seeded.AddRange(Posts(aliceId, AliceFeed, "alpha", AliceFeedCount, orderBase: 1_000_000));
         seeded.AddRange(Posts(aliceId, SharedFeed, "shared", SharedFeedCount, orderBase: 2_000_000));
-        seeded.AddRange(Posts(bobId, SharedFeed, "shared", SharedFeedCount, orderBase: 2_000_000));
         seeded.AddRange(Posts(bobId, BobFeed, "beta", BobFeedCount, orderBase: 3_000_000));
-        var inserted = await items.AddItemsAsync(seeded);
-        Assert.AreEqual(seeded.Count, inserted);
+        await items.AddItemsAsync(seeded);
+
+        // What matters is what each user can see, not how many rows were written.
+        Assert.AreEqual(AliceFeedCount + SharedFeedCount,
+            (await items.GetItemsAsync(new NewsFeed("%", aliceId), false, false, null, 0, 100)).Count());
+        Assert.AreEqual(SharedFeedCount + BobFeedCount,
+            (await items.GetItemsAsync(new NewsFeed("%", bobId), false, false, null, 0, 100)).Count());
 
         // Mixed read/saved state. Alice's state on alpha is what the exact filter
         // counts below rely on; nothing else in the class mutates alpha.
@@ -643,7 +647,6 @@ public sealed class ApiContractTests
     }
 
     [TestMethod]
-    [Ignore("Fixed by the shared-posts redesign")]
     public async Task AddFeed_AlreadySubscribedByAnotherUser_SeesExistingPostsImmediately()
     {
         var response = await bob.PostAsJsonAsync("/api/feed", new NewsFeed(AliceFeed, bobId));

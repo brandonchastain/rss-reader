@@ -24,15 +24,7 @@ public class FeedRefresher : IFeedRefresher
     private readonly BackgroundWorkQueue backgroundWorkQueue;
     private readonly RssAppConfig config;
     private readonly ThumbnailResolver thumbnailResolver;
-    private readonly IFeedValidatorStore validatorStore;
     private readonly ConcurrentDictionary<int, UserRefreshState> refreshStates = new();
-
-    // In-memory HTTP cache validators per feed URL, used for conditional GET
-    // (If-None-Match / If-Modified-Since). Acts as a write-through cache in front
-    // of IFeedValidatorStore: a cache miss (e.g. the first fetch of a feed after a
-    // restart) loads the persisted validator, so we resume sending conditional GETs
-    // and earn 304s instead of cold-fetching every feed (no restart thundering herd).
-    private readonly ConcurrentDictionary<string, (EntityTagHeaderValue ETag, DateTimeOffset? LastModified)> feedValidators = new();
 
     // Per-feed-URL fetch health: tracks consecutive failures and a backoff
     // window. After a failed/non-OK fetch we refuse to re-hit the origin until
@@ -45,23 +37,12 @@ public class FeedRefresher : IFeedRefresher
     // requests in flight to the same host at once.
     private readonly ConcurrentDictionary<string, SemaphoreSlim> hostGates = new();
 
-    private readonly IFeedScheduleStore scheduleStore;
-
-    // In-memory per-URL next-earliest-fetch schedule, write-through to scheduleStore.
-    // Loaded once from the store (so the cadence survives restarts) and updated after
-    // every fetch. Both the scheduler and manual refreshes consult it to decide whether
-    // a URL is due, which is what dedups a feed shared by many users down to one fetch.
-    private readonly ConcurrentDictionary<string, DateTimeOffset> nextEarliestByUrl = new();
-    private readonly ConcurrentDictionary<string, DateTimeOffset> lastFetchedByUrl = new();
-    private volatile bool scheduleLoaded;
-    private readonly object scheduleLoadLock = new();
-
     // In-flight fetch coalescing: concurrent callers for the same URL (e.g. a manual
     // refresh racing the scheduler) share one HTTP fetch instead of each hitting the origin.
     private readonly ConcurrentDictionary<string, Task<FeedFetchResult>> inflightFetches = new();
 
-    // Placeholder used when parsing a feed not on behalf of a specific user; the real
-    // UserId is assigned per subscriber during fan-out, so this value is never persisted.
+    // Placeholder used when parsing a feed; posts are shared, so no user id is
+    // ever persisted with them.
     private static readonly RssUser SchedulerUser = new("scheduler", 0);
 
     private static readonly Regex TtlRegex =
@@ -79,6 +60,9 @@ public class FeedRefresher : IFeedRefresher
         public List<NewsFeedItem> Items { get; init; } = new();
         public TimeSpan? AdvertisedInterval { get; init; }
         public DateTimeOffset? BackoffUntil { get; init; }
+        public string ETag { get; init; }
+        public DateTimeOffset? LastModified { get; init; }
+        public string Error { get; init; }
     }
 
     private DateTime startupTime = DateTime.UtcNow;
@@ -171,9 +155,7 @@ public class FeedRefresher : IFeedRefresher
         IUserRepository userStore,
         BackgroundWorkQueue backgroundWorkQueue,
         RssAppConfig config,
-        ThumbnailResolver thumbnailResolver,
-        IFeedValidatorStore validatorStore,
-        IFeedScheduleStore scheduleStore)
+        ThumbnailResolver thumbnailResolver)
     {
         this.httpClientFactory = httpClientFactory;
         this.deserializer = deserializer;
@@ -184,8 +166,6 @@ public class FeedRefresher : IFeedRefresher
         this.backgroundWorkQueue = backgroundWorkQueue;
         this.config = config;
         this.thumbnailResolver = thumbnailResolver;
-        this.validatorStore = validatorStore;
-        this.scheduleStore = scheduleStore;
     }
 
     public void ResetRefreshCooldown()
@@ -203,13 +183,6 @@ public class FeedRefresher : IFeedRefresher
             PendingFeeds = state.PendingFeeds,
             NewItemCount = state.NewItemCount
         };
-    }
-
-    public async Task AddFeedAsync(NewsFeed feed)
-    {
-        // A newly added feed: force a fetch and write its items for this user right
-        // away (don't wait for the scheduler), independent of the per-URL schedule.
-        await FetchAndWriteForFeedAsync(feed, force: true, CancellationToken.None);
     }
 
     public async Task RefreshAsync(RssUser user)
@@ -253,22 +226,22 @@ public class FeedRefresher : IFeedRefresher
             {
                 using var gate = new SemaphoreSlim(Math.Max(1, this.config.RefreshFetchConcurrency));
 
+                // One schedule read for the whole refresh instead of one per feed.
+                var states = LoadStates();
+
                 var tasks = feeds.Select(async feed =>
                 {
                     await gate.WaitAsync(token);
                     int added = 0;
                     try
                     {
-                        // Route through the shared per-URL coordinator: fetches are
-                        // coalesced + deduped, items fan out to every subscriber, and
-                        // we take this user's new-item count for the refresh status.
                         // A manual refresh asks "is it stale?" rather than "is it due?":
                         // a feed not attempted within the politeness floor is fetched
                         // even if the scheduler would have waited for its full interval.
                         // One fetched moments ago is left alone, and a feed in failure
                         // backoff is still skipped inside the fetch itself.
-                        var counts = await FetchAndFanOutAsync(feed.Href, force: IsStale(feed.Href), token);
-                        counts.TryGetValue(user.Id, out added);
+                        states.TryGetValue(feed.Href, out var feedState);
+                        added = await FetchFeedAsync(feed.Href, force: IsStale(feedState), token);
                     }
                     catch (OperationCanceledException)
                     {
@@ -295,37 +268,65 @@ public class FeedRefresher : IFeedRefresher
         }
     }
 
-    public async Task<DateTimeOffset?> RunSchedulerTickAsync(CancellationToken token)
+    public async Task FetchNewFeedAsync(string url)
     {
-        EnsureScheduleLoaded();
-
-        List<string> urls;
+        FeedFetchState state;
         try
         {
-            urls = this.persistedFeeds.GetAllDistinctFeedUrls().ToList();
+            state = this.persistedFeeds.GetFeedFetchState(url);
         }
         catch (Exception ex)
         {
-            this.logger.LogError(ex, "Scheduler: failed to enumerate feed URLs.");
+            this.logger.LogWarning(ex, "Could not read fetch state for new feed {url}", url);
+            return;
+        }
+
+        // Only a row nobody has fetched yet; an existing feed's posts are
+        // already there and the schedule owns the next fetch.
+        if (state == null || state.LastFetchedUtc != null)
+        {
+            return;
+        }
+
+        try
+        {
+            await FetchFeedAsync(url, force: true, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogError(ex, "First fetch of new feed {url} failed; the scheduler will retry.", url);
+        }
+    }
+
+    public async Task<DateTimeOffset?> RunSchedulerTickAsync(CancellationToken token)
+    {
+        IReadOnlyList<FeedFetchState> states;
+        try
+        {
+            states = this.persistedFeeds.GetFeedFetchStates() ?? Array.Empty<FeedFetchState>();
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogError(ex, "Scheduler: failed to enumerate feeds.");
             return null;
         }
 
         var now = DateTimeOffset.UtcNow;
-        var due = urls.Where(u => !nextEarliestByUrl.TryGetValue(u, out var next) || next <= now).ToList();
+        var due = states.Where(s => IsDue(s, now)).ToList();
         if (due.Count == 0)
         {
-            return EarliestNextFetch(urls);
+            return EarliestNextFetch(states);
         }
 
-        this.logger.LogInformation("Scheduler: {due} of {total} distinct feeds due for refresh.", due.Count, urls.Count);
+        this.logger.LogInformation("Scheduler: {due} of {total} feeds due for refresh.", due.Count, states.Count);
 
         using var gate = new SemaphoreSlim(Math.Max(1, this.config.RefreshFetchConcurrency));
-        var tasks = due.Select(async url =>
+        var tasks = due.Select(async feed =>
         {
             await gate.WaitAsync(token);
             try
             {
-                await FetchAndFanOutAsync(url, force: false, token);
+                await FetchFeedAsync(feed.Url, force: true, token);
             }
             catch (OperationCanceledException)
             {
@@ -333,7 +334,7 @@ public class FeedRefresher : IFeedRefresher
             }
             catch (Exception ex)
             {
-                this.logger.LogError(ex, "Scheduler: error refreshing {url}", url);
+                this.logger.LogError(ex, "Scheduler: error refreshing {url}", feed.Url);
             }
             finally
             {
@@ -342,149 +343,100 @@ public class FeedRefresher : IFeedRefresher
         });
 
         await Task.WhenAll(tasks);
-        return EarliestNextFetch(urls);
+
+        try
+        {
+            return EarliestNextFetch(this.persistedFeeds.GetFeedFetchStates() ?? Array.Empty<FeedFetchState>());
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogWarning(ex, "Scheduler: failed to re-read the schedule after the pass.");
+            return null;
+        }
     }
 
     /// <summary>
-    /// Earliest next-fetch time across the given URLs. A URL with no schedule entry
-    /// (e.g. its fetch failed before the schedule was written) is due now.
+    /// Earliest next-fetch time across the feeds. A feed with no schedule yet (just
+    /// subscribed, or its fetch failed before the schedule was written) is due now.
     /// </summary>
-    private DateTimeOffset? EarliestNextFetch(IReadOnlyCollection<string> urls)
+    private static DateTimeOffset? EarliestNextFetch(IReadOnlyList<FeedFetchState> states)
     {
-        if (urls.Count == 0)
+        if (states.Count == 0)
         {
             return null;
         }
 
         var now = DateTimeOffset.UtcNow;
-        return urls.Min(u => nextEarliestByUrl.TryGetValue(u, out var next) ? next : now);
+        return states.Min(s => s.NextFetchUtc ?? now);
     }
 
     /// <summary>
-    /// Fetches a URL once (if due, unless forced) and fans the parsed items out to
-    /// every subscriber, returning each subscriber's new-item count. This is the one
-    /// place a feed's items are produced, so a feed shared by N users is fetched once.
+    /// Fetches a feed once (if due, unless forced) and stores its posts once,
+    /// returning the number of new posts. This is the one place a feed's posts
+    /// are produced; subscribers see them through their subscription, so a feed
+    /// shared by N users costs one fetch and one write.
     /// </summary>
-    private async Task<IReadOnlyDictionary<int, int>> FetchAndFanOutAsync(string url, bool force, CancellationToken token)
+    internal async Task<int> FetchFeedAsync(string url, bool force, CancellationToken token)
     {
-        var counts = new Dictionary<int, int>();
-        if (!force && !IsDue(url))
-        {
-            return counts;
-        }
-
-        var result = await FetchParsedItemsAsync(url, token);
-        UpdateSchedule(url, result);
-
-        if (result.Outcome != FetchOutcome.Fetched || result.Items.Count == 0)
-        {
-            return counts;
-        }
-
-        var subscribers = this.persistedFeeds.GetFeedsByUrl(url).ToList();
-        foreach (var feed in subscribers)
-        {
-            var userItems = result.Items.Select(t => CloneForSubscriber(t, feed.UserId, feed.Tags)).ToList();
-            counts[feed.UserId] = await this.newsFeedItemStore.AddItemsAsync(userItems);
-        }
-
-        return counts;
-    }
-
-    /// <summary>
-    /// Fetches a URL (if due, unless forced) and writes its items for a single feed's
-    /// user. Used when a user adds a feed so their items appear immediately, without
-    /// waiting for the scheduler and without disturbing the shared per-URL schedule.
-    /// </summary>
-    private async Task<int> FetchAndWriteForFeedAsync(NewsFeed feed, bool force, CancellationToken token)
-    {
-        var url = feed.Href;
-        if (!force && !IsDue(url))
+        if (!force && !IsDue(this.persistedFeeds.GetFeedFetchState(url), DateTimeOffset.UtcNow))
         {
             return 0;
         }
 
         var result = await FetchParsedItemsAsync(url, token);
+        RecordFetchResult(url, result);
 
         if (result.Outcome != FetchOutcome.Fetched || result.Items.Count == 0)
         {
             return 0;
         }
 
-        var userItems = result.Items.Select(t => CloneForSubscriber(t, feed.UserId, feed.Tags)).ToList();
-        return await this.newsFeedItemStore.AddItemsAsync(userItems);
+        return await this.newsFeedItemStore.AddItemsAsync(result.Items);
     }
 
-    /// <summary>Produces a per-subscriber copy of a parsed item with the user's id and tags.</summary>
-    private static NewsFeedItem CloneForSubscriber(NewsFeedItem template, int userId, ICollection<string> tags)
-    {
-        return new NewsFeedItem(
-            template.Id,
-            userId,
-            template.Title,
-            template.Href,
-            template.CommentsHref,
-            template.PublishDate,
-            template.Content,
-            template.ThumbnailUrl)
-        {
-            FeedUrl = template.FeedUrl,
-            PublishDateOrder = template.PublishDateOrder,
-            FeedTags = tags ?? new List<string>(),
-        };
-    }
+    // --- Schedule (the Feeds row is the source of truth) ---
 
-    // --- Per-URL schedule (write-through cache over IFeedScheduleStore) ---
-
-    private void EnsureScheduleLoaded()
+    private Dictionary<string, FeedFetchState> LoadStates()
     {
-        if (scheduleLoaded) return;
-        lock (scheduleLoadLock)
+        try
         {
-            if (scheduleLoaded) return;
-            try
-            {
-                foreach (var kv in this.scheduleStore.GetSchedule())
-                {
-                    nextEarliestByUrl[kv.Key] = kv.Value;
-                }
-                foreach (var kv in this.scheduleStore.GetLastFetched())
-                {
-                    lastFetchedByUrl[kv.Key] = kv.Value;
-                }
-            }
-            catch (Exception ex)
-            {
-                this.logger.LogWarning(ex, "Failed to load persisted feed schedule; treating all feeds as due.");
-            }
-            scheduleLoaded = true;
+            return (this.persistedFeeds.GetFeedFetchStates() ?? Array.Empty<FeedFetchState>())
+                .ToDictionary(s => s.Url, StringComparer.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogWarning(ex, "Failed to load the feed schedule; treating all feeds as due.");
+            return new Dictionary<string, FeedFetchState>(StringComparer.Ordinal);
         }
     }
 
-    private bool IsDue(string url)
-    {
-        EnsureScheduleLoaded();
-        return !nextEarliestByUrl.TryGetValue(url, out var next) || next <= DateTimeOffset.UtcNow;
-    }
+    private static bool IsDue(FeedFetchState state, DateTimeOffset now)
+        => state?.NextFetchUtc == null || state.NextFetchUtc <= now;
 
     /// <summary>
-    /// True when the URL has not been fetched (or attempted) within
+    /// True when the feed has not been fetched (or attempted) within
     /// <see cref="RssAppConfig.FeedRefreshIntervalFloor"/>. Never fetched counts as stale.
     /// </summary>
-    internal bool IsStale(string url)
-    {
-        EnsureScheduleLoaded();
-        return !lastFetchedByUrl.TryGetValue(url, out var last)
-            || last + this.config.FeedRefreshIntervalFloor <= DateTimeOffset.UtcNow;
-    }
+    internal bool IsStale(string url) => IsStale(this.persistedFeeds.GetFeedFetchState(url));
 
-    private void UpdateSchedule(string url, FeedFetchResult result)
+    private bool IsStale(FeedFetchState state)
+        => state?.LastFetchedUtc == null
+            || state.LastFetchedUtc.Value + this.config.FeedRefreshIntervalFloor <= DateTimeOffset.UtcNow;
+
+    private void RecordFetchResult(string url, FeedFetchResult result)
     {
+        if (result.Outcome == FetchOutcome.BackedOff)
+        {
+            // Nothing reached the origin: the failure that started the backoff
+            // already wrote the schedule and the counter; leave the row alone.
+            return;
+        }
+
         var now = DateTimeOffset.UtcNow;
         TimeSpan interval;
         DateTimeOffset nextEarliest;
 
-        if (result.Outcome == FetchOutcome.BackedOff || result.Outcome == FetchOutcome.Failed)
+        if (result.Outcome == FetchOutcome.Failed)
         {
             // Align the schedule with the politeness backoff so the scheduler doesn't
             // re-select a struggling feed every tick.
@@ -497,9 +449,15 @@ public class FeedRefresher : IFeedRefresher
             nextEarliest = now + interval;
         }
 
-        nextEarliestByUrl[url] = nextEarliest;
-        lastFetchedByUrl[url] = now;
-        this.scheduleStore.Record(url, now, nextEarliest, interval);
+        // Validators: a successful fetch that returned new ones replaces the
+        // stored pair; a 304, a failure or a fetch without validators keeps it.
+        var hasNewValidators = result.Outcome == FetchOutcome.Fetched && (result.ETag != null || result.LastModified != null);
+        this.persistedFeeds.RecordFetchResult(
+            url, now, nextEarliest, interval,
+            result.ETag, result.LastModified,
+            keepValidators: !hasNewValidators,
+            failed: result.Outcome == FetchOutcome.Failed,
+            error: result.Error);
     }
 
     private TimeSpan ClampInterval(TimeSpan interval)
@@ -527,9 +485,8 @@ public class FeedRefresher : IFeedRefresher
     /// <summary>
     /// Fetches and parses a feed once, applying all politeness (conditional GET,
     /// per-host throttle, Retry-After/backoff). Returns parsed items with the feed
-    /// URL + resolved thumbnail set but no UserId — that is assigned per subscriber
-    /// during fan-out. The result's outcome tells the caller whether to fan out and
-    /// how to schedule the next fetch.
+    /// URL + resolved thumbnail set. The result's outcome tells the caller whether
+    /// to store the posts and how to schedule the next fetch.
     /// </summary>
     private async Task<FeedFetchResult> FetchParsedItemsCoreAsync(string url, CancellationToken token)
     {
@@ -562,6 +519,9 @@ public class FeedRefresher : IFeedRefresher
         TimeSpan? advertisedInterval = null;
         TimeSpan? originRetryAfter = null;
         bool notModified = false;
+        string newEtag = null;
+        DateTimeOffset? newLastModified = null;
+        string lastError = null;
 
         try
         {
@@ -598,6 +558,7 @@ public class FeedRefresher : IFeedRefresher
                         httpRes.StatusCode == HttpStatusCode.ServiceUnavailable)
                     {
                         originRetryAfter = GetRetryAfterDelay(httpRes);
+                        lastError = $"HTTP {(int)httpRes.StatusCode}";
                         this.logger.LogWarning(
                             "Feed {url} returned {status}; backing off (Retry-After: {retryAfter}).",
                             url, (int)httpRes.StatusCode, originRetryAfter);
@@ -609,6 +570,7 @@ public class FeedRefresher : IFeedRefresher
                     // succeed we record a failure + backoff below.
                     if (!httpRes.IsSuccessStatusCode)
                     {
+                        lastError = $"HTTP {(int)httpRes.StatusCode}";
                         this.logger.LogWarning(
                             "Feed {url} returned {status} for agent {agent}.",
                             url, (int)httpRes.StatusCode, agent);
@@ -619,19 +581,14 @@ public class FeedRefresher : IFeedRefresher
 
                     if (string.IsNullOrEmpty(response))
                     {
+                        lastError = "empty response";
                         this.logger.LogWarning("Empty response when refreshing feed: {url} (headers: {headers})", url, httpRes.Headers);
                         continue;
                     }
 
                     // Remember validators so future refreshes can short-circuit with a 304.
-                    // Persisted (keyed by URL) so they also survive a restart.
-                    var newEtag = httpRes.Headers.ETag;
-                    var newLastModified = httpRes.Content.Headers.LastModified;
-                    if (newEtag != null || newLastModified != null)
-                    {
-                        feedValidators[url] = (newEtag, newLastModified);
-                        this.validatorStore.Set(url, newEtag?.ToString(), newLastModified);
-                    }
+                    newEtag = httpRes.Headers.ETag?.ToString();
+                    newLastModified = httpRes.Content.Headers.LastModified;
 
                     var items = this.deserializer.FromString(response, SchedulerUser, url).ToList();
                     foreach (var item in items)
@@ -651,6 +608,7 @@ public class FeedRefresher : IFeedRefresher
                 }
                 catch (Exception ex)
                 {
+                    lastError = ex.GetType().Name + ": " + ex.Message;
                     int len = Math.Min(500, response?.Length ?? 0);
                     this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
                 }
@@ -675,6 +633,8 @@ public class FeedRefresher : IFeedRefresher
                 Outcome = FetchOutcome.Fetched,
                 Items = parsed,
                 AdvertisedInterval = advertisedInterval,
+                ETag = newEtag,
+                LastModified = newLastModified,
             };
         }
 
@@ -687,7 +647,7 @@ public class FeedRefresher : IFeedRefresher
         this.logger.LogWarning(
             "Feed {url} fetch failed ({failures} consecutive); next attempt no earlier than {delay} from now.",
             url, failures, delay);
-        return new FeedFetchResult { Outcome = FetchOutcome.Failed, BackoffUntil = until };
+        return new FeedFetchResult { Outcome = FetchOutcome.Failed, BackoffUntil = until, Error = lastError };
     }
 
     /// <summary>
@@ -726,28 +686,29 @@ public class FeedRefresher : IFeedRefresher
     }
 
     /// <summary>
-    /// Returns the conditional-GET validators for a feed URL. Serves from the
-    /// in-memory cache when present; on a miss (e.g. the first fetch after a
-    /// restart) loads the persisted validator from the store and warms the cache,
-    /// so we still send a conditional GET and can earn a 304 instead of a cold fetch.
+    /// The conditional-GET validators stored on the feed row, so a fresh
+    /// process still sends a conditional GET and can earn a 304 instead of a
+    /// cold fetch after a restart.
     /// </summary>
     private (EntityTagHeaderValue ETag, DateTimeOffset? LastModified) GetValidators(string url)
     {
-        if (feedValidators.TryGetValue(url, out var cached))
+        FeedFetchState persisted = null;
+        try
         {
-            return cached;
+            persisted = this.persistedFeeds.GetFeedFetchState(url);
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogWarning(ex, "Failed to read validators for {url}; fetching unconditionally.", url);
         }
 
-        var persisted = this.validatorStore.Get(url);
         EntityTagHeaderValue etag = null;
         if (persisted != null && !string.IsNullOrEmpty(persisted.ETag))
         {
             EntityTagHeaderValue.TryParse(persisted.ETag, out etag);
         }
 
-        var loaded = (etag, persisted?.LastModified);
-        feedValidators[url] = loaded;
-        return loaded;
+        return (etag, persisted?.LastModified);
     }
 
     /// <summary>

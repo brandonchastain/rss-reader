@@ -1,6 +1,8 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using RssApp.Contracts;
+using Server.Authentication;
 
 namespace RssApp.Data;
 
@@ -16,180 +18,61 @@ public class SQLiteUserRepository : IUserRepository
     {
         this.connections = connections;
         this.logger = logger;
-        if (!isReadOnly) this.InitializeDatabase();
-    }
-
-    private void InitializeDatabase()
-    {
-        using (var connection = this.connections.OpenWrite())
+        if (!isReadOnly)
         {
-            // WAL mode is persistent  only needs to be set once per database file.
-            var walCmd = connection.CreateCommand();
-            walCmd.CommandText = "PRAGMA journal_mode=WAL;";
-            walCmd.ExecuteNonQuery();
-
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-                CREATE TABLE IF NOT EXISTS Users (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Username TEXT NOT NULL UNIQUE
-                )";
-            command.ExecuteNonQuery();
-
-            // Add AadUserId column if it doesn't exist (migration for existing databases)
-            var alterCommand = connection.CreateCommand();
-            alterCommand.CommandText = @"
-                SELECT COUNT(*) FROM pragma_table_info('Users') WHERE name = 'AadUserId'";
-            var hasColumn = Convert.ToInt64(alterCommand.ExecuteScalar()) > 0;
-            if (!hasColumn)
-            {
-                var addColumn = connection.CreateCommand();
-                addColumn.CommandText = "ALTER TABLE Users ADD COLUMN AadUserId TEXT";
-                addColumn.ExecuteNonQuery();
-                logger.LogInformation("Added AadUserId column to Users table");
-            }
-
-            // ProviderUserId: provider:subject id linked during the login migration.
-            var providerCheck = connection.CreateCommand();
-            providerCheck.CommandText = @"
-                SELECT COUNT(*) FROM pragma_table_info('Users') WHERE name = 'ProviderUserId'";
-            if (Convert.ToInt64(providerCheck.ExecuteScalar()) == 0)
-            {
-                var addProvider = connection.CreateCommand();
-                addProvider.CommandText = "ALTER TABLE Users ADD COLUMN ProviderUserId TEXT";
-                addProvider.ExecuteNonQuery();
-                logger.LogInformation("Added ProviderUserId column to Users table");
-            }
-            var providerIndex = connection.CreateCommand();
-            providerIndex.CommandText = @"
-                CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_ProviderUserId
-                ON Users(ProviderUserId) WHERE ProviderUserId IS NOT NULL";
-            providerIndex.ExecuteNonQuery();
-
-            // Create index on AadUserId for fast lookups
-            var indexCommand = connection.CreateCommand();
-            indexCommand.CommandText = @"
-                CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_AadUserId 
-                ON Users(AadUserId) WHERE AadUserId IS NOT NULL";
-            indexCommand.ExecuteNonQuery();
+            using var connection = this.connections.OpenWrite();
+            DatabaseSchema.EnsureCreated(connection);
         }
     }
 
     public RssUser GetUserByName(string username)
-    {
-        using (var connection = this.connections.OpenRead())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = "SELECT * FROM Users WHERE Username = @username";
-            command.Parameters.AddWithValue("@username", username);
-
-            using (var reader = command.ExecuteReader())
-            {
-                if (!reader.Read())
-                {
-                    return null;
-                }
-                
-                return this.ReadItemFromResults(reader);
-            }
-        }
-    }
+        => QueryOne("SELECT Id, Username FROM Users WHERE Username = @p", username);
 
     public RssUser GetUserById(int userId)
-    {
-        using (var connection = this.connections.OpenRead())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = "SELECT * FROM Users WHERE Id = @userId";
-            command.Parameters.AddWithValue("@userId", userId);
+        => QueryOne("SELECT Id, Username FROM Users WHERE Id = @p", userId);
 
-            using (var reader = command.ExecuteReader())
-            {
-                if (!reader.Read())
-                {
-                    return null;
-                }
-                
-                var item = this.ReadItemFromResults(reader);
-                return item;
-            }
-        }
+    public RssUser FindByIdentity(string provider, string subject)
+    {
+        using var connection = this.connections.OpenRead();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT u.Id, u.Username FROM UserIdentities i
+            JOIN Users u ON u.Id = i.UserId
+            WHERE i.Provider = @provider AND i.Subject = @subject
+            """;
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@subject", subject);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read()) return null;
+        var user = new RssUser(reader.GetString(1), reader.GetInt32(0));
+        reader.Close();
+        AttachIdentities(connection, user);
+        return user;
     }
 
-    public RssUser GetUserByAadId(string aadUserId)
+    public void LinkIdentity(int userId, string provider, string subject)
     {
-        using (var connection = this.connections.OpenRead())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = "SELECT * FROM Users WHERE AadUserId = @aadUserId";
-            command.Parameters.AddWithValue("@aadUserId", aadUserId);
-
-            using (var reader = command.ExecuteReader())
-            {
-                if (!reader.Read())
-                {
-                    return null;
-                }
-
-                return this.ReadItemFromResults(reader);
-            }
-        }
-    }
-
-    public RssUser GetUserByProviderUserId(string providerUserId)
-    {
-        using (var connection = this.connections.OpenRead())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = "SELECT * FROM Users WHERE ProviderUserId = @providerUserId";
-            command.Parameters.AddWithValue("@providerUserId", providerUserId);
-
-            using (var reader = command.ExecuteReader())
-            {
-                if (!reader.Read())
-                {
-                    return null;
-                }
-
-                return this.ReadItemFromResults(reader);
-            }
-        }
-    }
-
-    public void SetProviderUserId(int userId, string providerUserId)
-    {
-        using (var connection = this.connections.OpenWrite())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = "UPDATE Users SET ProviderUserId = @providerUserId WHERE Id = @userId";
-            command.Parameters.AddWithValue("@providerUserId", providerUserId);
-            command.Parameters.AddWithValue("@userId", userId);
-            command.ExecuteNonQuery();
-        }
-    }
-
-    public void SetAadUserId(int userId, string aadUserId)
-    {
-        using (var connection = this.connections.OpenWrite())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = "UPDATE Users SET AadUserId = @aadUserId WHERE Id = @userId";
-            command.Parameters.AddWithValue("@aadUserId", aadUserId);
-            command.Parameters.AddWithValue("@userId", userId);
-            command.ExecuteNonQuery();
-        }
+        using var connection = this.connections.OpenWrite();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO UserIdentities (Provider, Subject, UserId)
+            VALUES (@provider, @subject, @userId)
+            ON CONFLICT(Provider, Subject) DO NOTHING
+            """;
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@subject", subject);
+        command.Parameters.AddWithValue("@userId", userId);
+        command.ExecuteNonQuery();
     }
 
     public void UpdateUsername(int userId, string newUsername)
     {
-        using (var connection = this.connections.OpenWrite())
-        {
-            var command = connection.CreateCommand();
-            command.CommandText = "UPDATE Users SET Username = @newUsername WHERE Id = @userId";
-            command.Parameters.AddWithValue("@newUsername", newUsername);
-            command.Parameters.AddWithValue("@userId", userId);
-            command.ExecuteNonQuery();
-        }
+        using var connection = this.connections.OpenWrite();
+        var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Users SET Username = @newUsername WHERE Id = @userId";
+        command.Parameters.AddWithValue("@newUsername", newUsername);
+        command.Parameters.AddWithValue("@userId", userId);
+        command.ExecuteNonQuery();
     }
 
     public RssUser AddUser(string username, int? id = null)
@@ -197,44 +80,38 @@ public class SQLiteUserRepository : IUserRepository
         using (var connection = this.connections.OpenWrite())
         {
             var command = connection.CreateCommand();
-            command.CommandText = "INSERT INTO Users (Username";
-            if (id.HasValue)
-            {
-                command.CommandText += ", Id";
-            }
-            command.CommandText += ") VALUES (@username";
-            if (id.HasValue)
-            {
-                command.CommandText += ", @id";
-                command.Parameters.AddWithValue("@id", id.Value);
-            }
-            command.CommandText += ")";
+            command.CommandText = id.HasValue
+                ? "INSERT INTO Users (Id, Username, CreatedUtc) VALUES (@id, @username, @now)"
+                : "INSERT INTO Users (Username, CreatedUtc) VALUES (@username, @now)";
+            if (id.HasValue) command.Parameters.AddWithValue("@id", id.Value);
             command.Parameters.AddWithValue("@username", username);
+            command.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture));
             command.ExecuteNonQuery();
         }
 
-        var user = this.GetUserByName(username);
-        return user;
+        return this.GetUserByName(username);
     }
 
     public IEnumerable<RssUser> GetAllUsers()
     {
-        using (var connection = this.connections.OpenRead())
+        var users = new List<RssUser>();
+        using var connection = this.connections.OpenRead();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT Id, Username FROM Users ORDER BY Id";
+        using (var reader = command.ExecuteReader())
         {
-            var command = connection.CreateCommand();
-            command.CommandText = "SELECT * FROM Users";
-
-            using (var reader = command.ExecuteReader())
+            while (reader.Read())
             {
-                while (reader.Read())
-                {
-                    var item = this.ReadItemFromResults(reader);
-                    yield return item;
-                }
+                users.Add(new RssUser(reader.GetString(1), reader.GetInt32(0)));
             }
         }
+
+        foreach (var user in users) AttachIdentities(connection, user);
+        return users;
     }
 
+    // Everything per-user (identities, subscriptions, tags, read/saved state)
+    // cascades from the Users row. Shared feeds and posts are untouched.
     public void DeleteUser(int userId)
     {
         using var connection = this.connections.OpenWrite();
@@ -244,14 +121,41 @@ public class SQLiteUserRepository : IUserRepository
         command.ExecuteNonQuery();
     }
 
-    private RssUser ReadItemFromResults(SqliteDataReader reader)
+    private RssUser QueryOne(string sql, object parameter)
     {
-        var id = reader.IsDBNull(reader.GetOrdinal("Id")) ? 0 : reader.GetInt32(reader.GetOrdinal("Id"));
-        var username = reader.IsDBNull(reader.GetOrdinal("Username")) ? "" : reader.GetString(reader.GetOrdinal("Username"));
-        var aadOrdinal = reader.GetOrdinal("AadUserId");
-        var aadUserId = reader.IsDBNull(aadOrdinal) ? null : reader.GetString(aadOrdinal);
-        var providerOrdinal = reader.GetOrdinal("ProviderUserId");
-        var providerUserId = reader.IsDBNull(providerOrdinal) ? null : reader.GetString(providerOrdinal);
-        return new RssUser(username, id) { AadUserId = aadUserId, ProviderUserId = providerUserId };
+        using var connection = this.connections.OpenRead();
+        var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("@p", parameter);
+        RssUser user;
+        using (var reader = command.ExecuteReader())
+        {
+            if (!reader.Read()) return null;
+            user = new RssUser(reader.GetString(1), reader.GetInt32(0));
+        }
+
+        AttachIdentities(connection, user);
+        return user;
+    }
+
+    private static void AttachIdentities(SqliteConnection connection, RssUser user)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT Provider, Subject FROM UserIdentities WHERE UserId = @userId ORDER BY rowid";
+        command.Parameters.AddWithValue("@userId", user.Id);
+        var identities = new List<string>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var provider = reader.GetString(0);
+            var subject = reader.GetString(1);
+            identities.Add(UserIdentity.FormatIdentity(provider, subject));
+            if (user.AadUserId == null && provider == UserIdentity.ProviderMicrosoft)
+                user.AadUserId = subject;
+            if (user.ProviderUserId == null && provider != UserIdentity.ProviderEmailLink)
+                user.ProviderUserId = UserIdentity.FormatIdentity(provider, subject);
+        }
+
+        user.Identities = identities;
     }
 }

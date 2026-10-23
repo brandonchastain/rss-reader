@@ -16,7 +16,11 @@ internal static class SqliteConnectionExtensions
         PRAGMA mmap_size = 268435456;
     """;
 
+    // foreign_keys is per connection; the schema relies on ON DELETE CASCADE
+    // (delete a user, a subscription or a feed and everything hanging off it
+    // goes too), so every writer turns it on explicitly.
     private const string WritePragmas = """
+        PRAGMA foreign_keys = ON;
         PRAGMA busy_timeout = 5000;
         PRAGMA synchronous = NORMAL;
         PRAGMA cache_size = -20000;
