@@ -7,7 +7,7 @@ namespace RssReader.Server.Services;
 ///
 /// Replaces FeedThumbnailRetriever: uses IHttpClientFactory instead of
 /// `new HttpClient()`, and returns a local file path rather than baking
-/// ServerHostName into a stored absolute URL (which broke whenever the host
+/// a server host name into a stored absolute URL (which broke whenever the host
 /// differed between environments).
 /// </summary>
 public class FaviconService
