@@ -218,6 +218,28 @@ public sealed class AdminTests
     }
 
     [TestMethod]
+    public async Task CaptureNow_RecordsASnapshotEvenWhenTheLatestIsFresh()
+    {
+        var db   = $"admin-stats-{System.Guid.NewGuid():N}.db";
+        var repo = CreateRepo(db);
+        // No live database at this path: counts come back as zero, which is fine
+        // here; the point is the recording cadence, not the numbers.
+        var config = new RssApp.Config.RssAppConfig { DbLocation = Path.Combine(Path.GetTempPath(), $"missing-{System.Guid.NewGuid():N}.db") };
+        var collector = new RssReader.Server.Services.SystemStatsCollector(repo, config,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<RssReader.Server.Services.SystemStatsCollector>.Instance);
+
+        var first = await collector.GetOrCaptureAsync();
+        var cached = await collector.GetOrCaptureAsync();
+        Assert.AreEqual(first.Timestamp, cached.Timestamp, "within MinInterval the dashboard load reuses the latest snapshot");
+
+        var forced = await collector.CaptureNowAsync();
+        Assert.IsTrue(forced.Timestamp > first.Timestamp, "the refresh button always records a new one");
+        Assert.AreEqual(2, repo.GetHistory(1).Count());
+
+        Cleanup(db);
+    }
+
+    [TestMethod]
     public void GetLatestSnapshot_WhenEmpty_ReturnsNull()
     {
         var db   = $"admin-stats-{System.Guid.NewGuid():N}.db";

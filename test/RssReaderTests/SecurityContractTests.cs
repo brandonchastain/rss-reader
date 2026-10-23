@@ -58,6 +58,7 @@ public sealed class SecurityContractTests
         yield return new object[] { "POST", "/api/item/unsave", "{\"id\":\"1\",\"href\":\"x\",\"feedUrl\":\"x\",\"userId\":0}" };
         yield return new object[] { "DELETE", "/api/item/all", "" };
         yield return new object[] { "DELETE", "/api/user", "" };
+        yield return new object[] { "POST", "/api/admin/stats/refresh", "" };
     }
 
     [DataTestMethod]

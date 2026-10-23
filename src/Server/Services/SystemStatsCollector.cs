@@ -46,16 +46,26 @@ public class SystemStatsCollector
 
         try
         {
-            var fresh = await CaptureAsync();
-            _statsRepo.RecordSnapshot(fresh);
-            _statsRepo.CleanupOlderThan(StatsHistoryRange.RetentionDays);
-            return fresh;
+            return await CaptureNowAsync();
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Failed to capture system stats snapshot");
             return latest ?? new SystemStatsSnapshot { Timestamp = DateTime.UtcNow };
         }
+    }
+
+    /// <summary>
+    /// Captures and records a snapshot right now, ignoring <see cref="MinInterval"/>.
+    /// Behind the dashboard's refresh button; the counts are cheap indexed
+    /// COUNT(*)s, and the endpoint is admin-only. Throws on failure.
+    /// </summary>
+    public async Task<SystemStatsSnapshot> CaptureNowAsync()
+    {
+        var fresh = await CaptureAsync();
+        _statsRepo.RecordSnapshot(fresh);
+        _statsRepo.CleanupOlderThan(StatsHistoryRange.RetentionDays);
+        return fresh;
     }
 
     private async Task<SystemStatsSnapshot> CaptureAsync()
