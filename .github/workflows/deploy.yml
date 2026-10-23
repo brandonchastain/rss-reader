@@ -178,3 +178,10 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "https://rss.brandonchastain.com/" || true)
           echo "site: HTTP $code"
           [ "$code" = "200" ]
+
+      # Both halves are live now. This proves the sign-in plumbing (login
+      # redirects, the provider callback getting past the cross-site guard,
+      # CORS, the frontend's API address) without needing an account; run it by
+      # hand with the same command.
+      - name: Smoke check sign-in and the cross-site guard
+        run: bash .github/scripts/smoke-prod.sh

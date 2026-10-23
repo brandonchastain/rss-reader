@@ -164,7 +164,11 @@ public static class AuthenticationSetup
                         // the frontend with the reason instead of a 500 page.
                         options.Events.OnRemoteFailure = ctx =>
                         {
-                            var target = ctx.Properties?.RedirectUri ?? "/";
+                            // Without the state cookie (a replayed or expired callback) there
+                            // are no properties; "/" would land on the API host, so fall back
+                            // to the frontend.
+                            var target = ctx.Properties?.RedirectUri
+                                ?? ReturnUrlValidator.Resolve(null, auth.AllowedFrontendOrigins);
                             var reason = ctx.Failure switch
                             {
                                 NoEmailException => "no-email",

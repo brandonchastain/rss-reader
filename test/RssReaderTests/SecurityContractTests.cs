@@ -126,6 +126,26 @@ public sealed class SecurityContractTests
     }
 
     [TestMethod]
+    public async Task SignInCallback_WithoutItsStateCookie_FailsBackToTheFrontend()
+    {
+        // A replayed or expired callback has no correlation cookie, so the
+        // handler has no return URL. The person must land on the frontend with
+        // an error, not on the API host's root (which is what "/" resolved to).
+        using var configured = new ApiTestHost(isTestUserEnabled: false, microsoftConfigured: true);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/auth/callback/microsoft")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["code"] = "x", ["state"] = "y" }),
+        };
+        request.Headers.TryAddWithoutValidation("Origin", "https://login.microsoftonline.com");
+        var response = await configured.Anonymous().SendAsync(request);
+
+        Assert.AreEqual(HttpStatusCode.Redirect, response.StatusCode, await response.Content.ReadAsStringAsync());
+        var location = response.Headers.Location!.ToString();
+        StringAssert.StartsWith(location, configured.AllowedOrigin + "/");
+        StringAssert.Contains(location, "authError=");
+    }
+
+    [TestMethod]
     public async Task SafeMethods_AreNeverRefusedByOrigin()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/feed");
