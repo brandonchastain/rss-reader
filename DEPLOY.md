@@ -62,6 +62,28 @@ az containerapp show --name rss-reader-api --resource-group rss-container-rg --q
 
 Logs land in the `rss-reader-logs` Log Analytics workspace at Warning and above.
 
+## Sign-in smoke check
+
+The Deploy workflow ends with `.github/scripts/smoke-prod.sh`, which needs only bash and
+curl and no credentials. It cannot sign anyone in, but it checks every piece that broke or
+could break silently: each configured provider's login redirects to the right authorize
+endpoint with a client id, a state, PKCE and a correlation cookie; the provider's POST back
+to `/auth/callback/<provider>` is not refused by the cross-site guard and a failed one
+returns to the frontend (not the API host); writes from a foreign or `null` origin get 403;
+mark-as-read has no GET route; CORS admits only the frontend; an anonymous `/auth/me` has no
+principal; and the site is serving and pointed at this API. A failure fails the Frontend job
+and prints `FAIL` lines naming the broken piece.
+
+Run it by hand any time (for example after changing a provider registration):
+
+```bash
+bash .github/scripts/smoke-prod.sh
+API=https://api.example.com SITE=https://app.example.com bash .github/scripts/smoke-prod.sh
+```
+
+It does not replace one real sign-in after changing auth code: open the site in a private
+window, sign in with each provider, and sign out.
+
 ## Troubleshooting
 
 **App refuses to boot after a deploy.** The app seeds `/tmp/storage.db` from
