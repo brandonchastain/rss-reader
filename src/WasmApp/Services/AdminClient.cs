@@ -17,6 +17,13 @@ public class AdminClient : IAdminClient
         return await _apiClient.GetFromJsonAsync<SystemStatsSnapshot>("api/admin/stats");
     }
 
+    public async Task<SystemStatsSnapshot> RefreshStatsAsync()
+    {
+        var response = await _apiClient.PostAsync("api/admin/stats/refresh", null);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SystemStatsSnapshot>();
+    }
+
     public async Task<List<SystemStatsSnapshot>> GetStatsHistoryAsync(int days = 30)
     {
         return await _apiClient.GetFromJsonAsync<List<SystemStatsSnapshot>>($"api/admin/stats/history?days={days}")

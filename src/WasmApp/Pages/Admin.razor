@@ -10,7 +10,15 @@
 @inject NavigationManager navigationManager
 
 <div class="admin-container">
-    <h1 class="admin-title">Admin Dashboard</h1>
+    <div class="admin-header">
+        <h1 class="admin-title">Admin Dashboard</h1>
+        @if (!loading && isAdmin)
+        {
+            <button type="button" class="refresh-btn" disabled="@refreshing" @onclick="RefreshNowAsync" title="Take a fresh snapshot now">
+                @(refreshing ? "Refreshing…" : "Refresh now")
+            </button>
+        }
+    </div>
 
     @if (loading)
     {
@@ -117,6 +125,7 @@
     private static readonly int[] RangeOptions = { 1, 7, 30, 365 };
     private int rangeDays = 30;
     private bool historyLoading;
+    private bool refreshing;
     private List<AdminUser> users = new();
     private string error;
 
@@ -164,6 +173,28 @@
         catch (Exception ex)
         {
             error = $"Failed to refresh stats: {ex.Message}";
+        }
+    }
+
+    private async Task RefreshNowAsync()
+    {
+        if (refreshing) return;
+        refreshing = true;
+        try
+        {
+            // A forced snapshot, then the chart and user table catch up to it.
+            current = await adminClient.RefreshStatsAsync();
+            history = await adminClient.GetStatsHistoryAsync(rangeDays);
+            users = await adminClient.GetUsersAsync();
+            error = null;
+        }
+        catch (Exception ex)
+        {
+            error = $"Refresh failed: {ex.Message}";
+        }
+        finally
+        {
+            refreshing = false;
         }
     }
 

@@ -47,6 +47,18 @@ public class AdminController : ControllerBase
         return Ok(snapshot);
     }
 
+    // POST /api/admin/stats/refresh: take a snapshot now instead of waiting
+    // for the hourly cadence; returns it.
+    [HttpPost("stats/refresh")]
+    public async Task<IActionResult> RefreshStats()
+    {
+        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
+            return Forbid();
+
+        var snapshot = await _statsCollector.CaptureNowAsync();
+        return Ok(snapshot);
+    }
+
     // GET /api/admin/stats/history?days=30   (1, 7, 30 or 365)
     [HttpGet("stats/history")]
     public IActionResult GetStatsHistory([FromQuery] int days = 30)
