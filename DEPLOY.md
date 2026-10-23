@@ -183,8 +183,13 @@ DNS: `CNAME api.rss -> <container app FQDN>` and `TXT asuid.api.rss ->
    challenges anyone.
 
 **Status:** steps 1 to 6 were done on 2026-10-17 (Microsoft only; registration "RSS
-Reader", appId `747a7699-5c86-4614-bd6b-71c44c4012d5`, in the user's Entra tenant). Step 7 is
-still open.
+Reader", appId `747a7699-5c86-4614-bd6b-71c44c4012d5`, in the user's Entra tenant). Step 7
+is partly done: `api/`, its deploy step and `swa-cli.config.json`'s `apiLocation` are gone
+and the workflow publishes static only. Still open: the `gatewaySecretKey` parameter and
+`gateway-secret-key` secret in `main.bicep`, the `GATEWAY_SECRET_KEY` secret, the
+`AUTH_CUTOVER` variable (now unread), `EnableStaticWebAppsHeaders` and
+`StaticWebAppsAuthenticationHandler` (the in-process API tests still authenticate through
+it), `UseStaticWebAppsAuth` with `AuthClient`'s legacy branch, and `signedout.html`.
 
 **Rollback** before step 7: revert the step 6 PR and set `AUTH_CUTOVER` back to `false`;
 the next deploy restores the proxy and the old login. The API keeps both schemes until

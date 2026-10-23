@@ -57,7 +57,7 @@ Then restart the CLI again.
 
 If the user specified a URL, use it. If not, default to the production site: **https://rss.brandonchastain.com**
 
-To browse the local dev stack instead, use **http://localhost:4280** (requires the `run-locally` skill to have been run first).
+To browse the local dev stack instead, use **http://localhost:8443** (requires the `run-locally` skill to have been run first).
 
 ## Step 3: Navigate to the URL
 

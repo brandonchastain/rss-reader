@@ -58,7 +58,7 @@ Follow these phases **in order**. Each phase must complete before moving to the 
    Get-Process -Name firefox -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
    if (Test-Path "$env:USERPROFILE\AppData\Local\mcp-firefox") { Remove-Item "$env:USERPROFILE\AppData\Local\mcp-firefox" -Recurse -Force -ErrorAction SilentlyContinue }
    ```
-3. Use Playwright to browse `http://localhost:4280/`:
+3. Use Playwright to browse `http://localhost:8443/`:
    - Navigate to `/` first (direct route navigation may cause content encoding errors with SWA CLI).
    - Wait for Blazor to load and redirect to `/timeline`.
    - Verify the changed behavior works as expected.

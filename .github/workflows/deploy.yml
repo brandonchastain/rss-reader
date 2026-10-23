@@ -18,9 +18,9 @@
 #
 # Repo configuration:
 #   AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID   (identifiers)
-#   GATEWAY_SECRET_KEY                                          (proxy -> API; retired after the login cutover)
+#   GATEWAY_SECRET_KEY                                          (the retired proxy's secret; safe to delete once the SWA header scheme is removed)
 #   AUTH_{GOOGLE,MICROSOFT,GITHUB}_CLIENT_{ID,SECRET}           (login providers; an unset pair disables that provider)
-#   vars.AUTH_CUTOVER = 'true'                                  (stop publishing the Functions proxy; see DEPLOY.md)
+#   vars.AUTH_CUTOVER                                           (no longer read; safe to delete)
 # The image is a public GHCR package, so nothing needs a registry credential at
 # runtime and CI pushes it with GITHUB_TOKEN.
 name: Deploy
@@ -162,24 +162,9 @@ jobs:
           echo "::add-mask::$token"
           echo "token=$token" >> "$GITHUB_OUTPUT"
 
-      # Until the login cutover the Functions proxy under api/ is still what
-      # turns the SWA session into an API call, so it ships with the site.
-      # Once vars.AUTH_CUTOVER is 'true' the frontend talks to the API's own
-      # domain and the proxy is left out (an upload without api_location
-      # removes the managed functions from the site).
-      - name: Deploy to Static Web Apps (with the API proxy)
-        if: vars.AUTH_CUTOVER != 'true'
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
-          action: upload
-          app_location: publish/wwwroot
-          api_location: api
-          output_location: ''
-          skip_app_build: true
-
-      - name: Deploy to Static Web Apps (static only)
-        if: vars.AUTH_CUTOVER == 'true'
+      # The site is static only: the frontend talks to the API's own domain, and
+      # an upload without api_location carries no managed functions.
+      - name: Deploy to Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
