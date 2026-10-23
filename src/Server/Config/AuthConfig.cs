@@ -56,6 +56,16 @@ public class AuthConfig
     /// frontend logs in through the API directly.
     /// </summary>
     public bool EnableStaticWebAppsHeaders { get; set; } = true;
+
+    /// <summary>
+    /// Login and logout attempts allowed per client address per minute. Sign-in
+    /// is delegated to the providers, so this only bounds abuse of the
+    /// redirect endpoints themselves.
+    /// </summary>
+    public int LoginRateLimitPerMinute { get; set; } = 30;
+
+    /// <summary>Feed additions (and OPML imports) allowed per user per minute.</summary>
+    public int AddFeedRateLimitPerMinute { get; set; } = 30;
 }
 
 public class AuthProviderConfig
@@ -66,8 +76,11 @@ public class AuthProviderConfig
     /// <summary>
     /// OpenID Connect authority. Defaults per provider:
     /// google -> https://accounts.google.com,
-    /// microsoft -> https://login.microsoftonline.com/common/v2.0.
-    /// GitHub is plain OAuth 2 and ignores this.
+    /// microsoft -> https://login.microsoftonline.com/consumers/v2.0, which
+    /// admits personal Microsoft accounts only (the issuer and tenant claim
+    /// are then matched exactly; see MicrosoftAccounts). Point it at a tenant
+    /// to run the app for one organisation instead. GitHub is plain OAuth 2
+    /// and ignores this.
     /// </summary>
     public string Authority { get; set; } = string.Empty;
 

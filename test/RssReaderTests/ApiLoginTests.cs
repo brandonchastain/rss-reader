@@ -262,12 +262,102 @@ public sealed class ApiLoginTests
     [DataRow("https://rss.example.com:8443/")]
     [DataRow("//evil.example.com/")]
     [DataRow("/\\evil.example.com")]
+    [DataRow("\\\\evil.example.com")]
+    [DataRow("/\\/evil.example.com")]
+    [DataRow("https://rss.example.com@evil.example.com/")]
+    [DataRow("https://evil.example.com\\@rss.example.com/")]
+    [DataRow("https://rss.example.com%40evil.example.com/")]
+    [DataRow("https://rss.example.com%2Eevil.example.com/")]
+    [DataRow("https:evil.example.com")]
     [DataRow("javascript:alert(1)")]
+    [DataRow("data:text/html,hi")]
+    [DataRow("file:///etc/passwd")]
     [DataRow("http://localhost:4281/")]
     [DataRow("not a url")]
     public void ReturnUrl_Rejected_FallsBack(string returnUrl)
     {
         Assert.AreEqual("https://rss.example.com/", ReturnUrlValidator.Resolve(returnUrl, Origins));
+    }
+
+    [TestMethod]
+    public void ReturnUrl_RelativeWithQueryAndFragment_IsKept()
+    {
+        Assert.AreEqual("https://rss.example.com/feeds?tag=a#top", ReturnUrlValidator.Resolve("/feeds?tag=a#top", Origins));
+    }
+
+    [TestMethod]
+    public void AdminPolicy_IgnoresRequestControlledClaims()
+    {
+        // Only identities the server stored or derived count; a principal that
+        // merely claims roles or ids cannot promote itself.
+        var config = new RssAppConfig { AdminAadUserIds = "admin-subject" };
+        var identity = new ClaimsIdentity("cookie");
+        identity.AddClaim(new Claim(ClaimTypes.Role, "admin"));
+        identity.AddClaim(new Claim("role", "admin"));
+        identity.AddClaim(new Claim("isAdmin", "true"));
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "github:someone"));
+        var principal = new ClaimsPrincipal(identity);
+
+        Assert.IsFalse(AdminPolicy.IsAdmin(config, principal));
+        Assert.IsFalse(AdminPolicy.IsAdmin(config, principal, new RssUser("someone", 7) { Identities = new[] { "github:someone" } }));
+    }
+
+    [TestMethod]
+    public void AdminPolicy_EmptyConfig_NobodyIsAdmin()
+    {
+        var identity = new ClaimsIdentity("cookie");
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "microsoft:anything"));
+        Assert.IsFalse(AdminPolicy.IsAdmin(new RssAppConfig { AdminAadUserIds = "" }, new ClaimsPrincipal(identity)));
+    }
+
+    // ---------- Microsoft: personal accounts only ----------
+
+    [TestMethod]
+    public void Microsoft_DefaultAuthority_IsConsumers()
+    {
+        Assert.IsTrue(MicrosoftAccounts.IsConsumersAuthority(MicrosoftAccounts.ConsumersAuthority));
+        Assert.IsTrue(MicrosoftAccounts.IsConsumersAuthority("https://login.microsoftonline.com/consumers/v2.0/"));
+        Assert.IsFalse(MicrosoftAccounts.IsConsumersAuthority("https://login.microsoftonline.com/common/v2.0"));
+        Assert.IsFalse(MicrosoftAccounts.IsConsumersAuthority("https://login.microsoftonline.com/contoso.onmicrosoft.com/v2.0"));
+    }
+
+    [TestMethod]
+    public void Microsoft_Issuer_OnlyTheConsumersTenantIsAccepted()
+    {
+        Assert.AreEqual(MicrosoftAccounts.ConsumersIssuer, MicrosoftAccounts.ValidateIssuer(MicrosoftAccounts.ConsumersIssuer, null, null));
+        Assert.AreEqual(MicrosoftAccounts.ConsumersIssuer + "/", MicrosoftAccounts.ValidateIssuer(MicrosoftAccounts.ConsumersIssuer + "/", null, null));
+    }
+
+    [DataTestMethod]
+    [DataRow("https://login.microsoftonline.com/72f988bf-86f1-41af-91ab-2d7cd011db47/v2.0")]   // a work tenant
+    [DataRow("https://login.microsoftonline.com/common/v2.0")]
+    [DataRow("https://login.microsoftonline.com/{tenantid}/v2.0")]
+    [DataRow("https://sts.windows.net/9188040d-6c67-4c5b-b112-36a304b66dad/")]           // v1 issuer form
+    [DataRow("https://evil.example.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0")]
+    [DataRow("")]
+    public void Microsoft_Issuer_OtherTenantsAreRejected(string issuer)
+    {
+        Assert.ThrowsException<Microsoft.IdentityModel.Tokens.SecurityTokenInvalidIssuerException>(
+            () => MicrosoftAccounts.ValidateIssuer(issuer, null, null));
+    }
+
+    [TestMethod]
+    public void Microsoft_WorkAccountToken_IsRefusedEvenWithAValidShape()
+    {
+        var identity = new ClaimsIdentity("oidc");
+        identity.AddClaim(new Claim("sub", "pairwise"));
+        identity.AddClaim(new Claim("oid", "obj-1"));
+        identity.AddClaim(new Claim("email", "person@contoso.com"));
+        identity.AddClaim(new Claim("tid", "72f988bf-86f1-41af-91ab-2d7cd011db47"));
+        Assert.IsFalse(MicrosoftAccounts.IsPersonalAccount(new ClaimsPrincipal(identity)));
+
+        var personal = new ClaimsIdentity("oidc");
+        personal.AddClaim(new Claim("tid", MicrosoftAccounts.ConsumersTenantId));
+        Assert.IsTrue(MicrosoftAccounts.IsPersonalAccount(new ClaimsPrincipal(personal)));
+
+        var noTenant = new ClaimsIdentity("oidc");
+        noTenant.AddClaim(new Claim("oid", "obj-1"));
+        Assert.IsFalse(MicrosoftAccounts.IsPersonalAccount(new ClaimsPrincipal(noTenant)), "a token without a tenant claim is not trusted");
     }
 
     [TestMethod]

@@ -17,6 +17,16 @@ builder.Configuration
     .AddJsonFile("appsettings.Development.json", optional: true)
     .AddEnvironmentVariables();
 var config = RssAppConfig.LoadFromAppSettings(builder.Configuration);
+
+// The test-user mode authenticates every request as a fake admin. It exists
+// for local runs and in-process tests only; refusing to start is the only
+// safe answer to finding it switched on in production.
+if (config.IsTestUserEnabled && builder.Environment.IsProduction())
+{
+    throw new InvalidOperationException(
+        "RssAppConfig:IsTestUserEnabled is true in the Production environment. " +
+        "That setting authenticates every request as a fake administrator; turn it off.");
+}
 var dbConnections = new SqliteDbConnections(config.DbLocation, config.IsReadOnly);
 
 // Writer durability: the live DB is seeded from the share copy and the backup
@@ -108,7 +118,7 @@ builder.Services.AddCors(options =>
 // and the Secure cookie need the original scheme and host.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedFor;
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
 });
@@ -116,6 +126,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 // Add authn and authz: session cookie + one scheme per configured provider,
 // plus the Static Web Apps header scheme during the migration window.
 builder.Services.AddRssAuthentication(config);
+builder.Services.AddRssRateLimiting(config.Auth);
 
 // Register services for DI
 // Repositories: SQLite implementations wrapped with caching decorators.
@@ -232,8 +243,13 @@ app.UseHttpsRedirection();
 app.UseResponseCompression();
 app.UseStaticFiles();
 app.UseCors("Frontend");
+// Cross-site request forgery: the session cookie is SameSite=None (the
+// frontend is another origin), so a state-changing request from a foreign
+// origin is refused here by its Origin header. See CrossSiteRequestGuard.
+app.UseMiddleware<CrossSiteRequestGuard>();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 // Setup endpoints
 app.MapControllers();

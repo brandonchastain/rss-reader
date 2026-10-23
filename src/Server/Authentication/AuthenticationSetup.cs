@@ -138,21 +138,23 @@ public static class AuthenticationSetup
                         options.Scope.Add("email");
                         options.TokenValidationParameters.NameClaimType = "name";
 
-                        if (string.Equals(provider, UserIdentity.ProviderMicrosoft, StringComparison.OrdinalIgnoreCase)
-                            && options.Authority.Contains("/common/", StringComparison.OrdinalIgnoreCase))
+                        // Personal Microsoft accounts only. The consumers
+                        // endpoint's metadata advertises the issuer as a
+                        // tenant template, so the handler's default issuer
+                        // check cannot be used; match the one tenant exactly
+                        // instead, and check the token's tenant claim too.
+                        var personalOnly = string.Equals(provider, UserIdentity.ProviderMicrosoft, StringComparison.OrdinalIgnoreCase)
+                            && MicrosoftAccounts.IsConsumersAuthority(options.Authority);
+                        if (personalOnly)
                         {
-                            // The common endpoint's metadata advertises the
-                            // issuer as a template; real tokens carry the
-                            // user's tenant. Accept any Microsoft tenant.
-                            options.TokenValidationParameters.IssuerValidator = (issuer, _, _) =>
-                                issuer.StartsWith("https://login.microsoftonline.com/", StringComparison.OrdinalIgnoreCase)
-                                && issuer.EndsWith("/v2.0", StringComparison.OrdinalIgnoreCase)
-                                    ? issuer
-                                    : throw new Microsoft.IdentityModel.Tokens.SecurityTokenInvalidIssuerException($"Issuer '{issuer}' is not a Microsoft identity platform tenant");
+                            options.TokenValidationParameters.ValidIssuer = MicrosoftAccounts.ConsumersIssuer;
+                            options.TokenValidationParameters.IssuerValidator = MicrosoftAccounts.ValidateIssuer;
                         }
 
                         options.Events.OnTokenValidated = ctx =>
                         {
+                            if (personalOnly && !MicrosoftAccounts.IsPersonalAccount(ctx.Principal!))
+                                throw new MicrosoftAccounts.WorkAccountException();
                             NormalizeIdentity(ctx.Principal!, provider.ToLowerInvariant());
                             return Task.CompletedTask;
                         };
@@ -163,7 +165,13 @@ public static class AuthenticationSetup
                         options.Events.OnRemoteFailure = ctx =>
                         {
                             var target = ctx.Properties?.RedirectUri ?? "/";
-                            var reason = ctx.Failure is NoEmailException ? "no-email" : "provider";
+                            var reason = ctx.Failure switch
+                            {
+                                NoEmailException => "no-email",
+                                MicrosoftAccounts.WorkAccountException => "work-account",
+                                Microsoft.IdentityModel.Tokens.SecurityTokenInvalidIssuerException => "work-account",
+                                _ => "provider",
+                            };
                             ctx.Response.Redirect(QueryHelpers.AddQueryString(target, "authError", reason));
                             ctx.HandleResponse();
                             return Task.CompletedTask;
@@ -235,7 +243,7 @@ public static class AuthenticationSetup
     private static string DefaultAuthority(string provider) => provider.ToLowerInvariant() switch
     {
         UserIdentity.ProviderGoogle => "https://accounts.google.com",
-        UserIdentity.ProviderMicrosoft => "https://login.microsoftonline.com/common/v2.0",
+        UserIdentity.ProviderMicrosoft => MicrosoftAccounts.ConsumersAuthority,
         _ => throw new InvalidOperationException($"Auth:Providers:{provider}:Authority is required"),
     };
 }

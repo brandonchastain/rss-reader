@@ -63,6 +63,7 @@ namespace Server.Controllers
 
         [HttpPost]
         [Route("importOpml")]
+        [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Server.Authentication.RateLimits.AddFeedPolicy)]
         public async Task<IActionResult> ImportOpmlAsync(OpmlImport import)
         {
             await Task.Yield();
@@ -296,6 +297,7 @@ namespace Server.Controllers
 
         // POST: api/feed
         [HttpPost]
+        [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Server.Authentication.RateLimits.AddFeedPolicy)]
         public async Task<IActionResult> AddFeedAsync([FromBody] NewsFeed feed)
         {
             if (feed == null)
@@ -359,7 +361,9 @@ namespace Server.Controllers
             }
         }
 
-        [HttpPost]
+        // DELETE, not POST: this binds from the query string, and a cross-site
+        // HTML form can POST without a CORS preflight; DELETE always preflights.
+        [HttpDelete]
         [Route("delete")]
         public async Task<IActionResult> DeleteFeedAsync([FromQuery]string href)
         {

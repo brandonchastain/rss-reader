@@ -332,7 +332,7 @@ namespace WasmApp.Services
         public async Task DeleteFeedAsync(string feedHref)
         {
             var url = $"{_config.ApiBaseUrl}api/feed/delete?href={Uri.EscapeDataString(feedHref)}";
-            await _httpClient.PostAsync(url, null);
+            await _httpClient.DeleteAsync(url);
         }
 
         public async Task TriggerRefreshAsync()

@@ -281,7 +281,8 @@ namespace Server.Controllers
             return Ok(results);
         }
 
-        [HttpGet("markAsRead")]
+        // POST only: a GET that changes state can be triggered cross-site by an
+        // image tag with the session cookie attached (no CORS preflight).
         [HttpPost("markAsRead")]
         public IActionResult MarkAsRead(int itemId, bool isRead)
         {
