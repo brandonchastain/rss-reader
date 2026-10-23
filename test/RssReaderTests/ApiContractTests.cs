@@ -35,7 +35,15 @@ internal sealed class ApiTestHost : IDisposable
     private readonly string dbPath;
     private readonly WebApplicationFactory<Program> factory;
 
-    public ApiTestHost(bool isTestUserEnabled)
+    /// <summary>
+    /// First frontend origin the running host allows (the in-process host runs
+    /// as Development, whose settings list localhost origins).
+    /// </summary>
+    public string AllowedOrigin =>
+        Server.Authentication.ReturnUrlValidator.NormalizeOrigin(
+            this.Services.GetRequiredService<RssApp.Config.RssAppConfig>().Auth.AllowedFrontendOrigins[0]);
+
+    public ApiTestHost(bool isTestUserEnabled, string? environment = null, int? loginRateLimit = null, int? addFeedRateLimit = null)
     {
         this.dbPath = Path.Combine(Path.GetTempPath(), $"rss-contract-{Guid.NewGuid():N}.db");
 
@@ -46,9 +54,12 @@ internal sealed class ApiTestHost : IDisposable
             Environment.SetEnvironmentVariable("RssAppConfig__IsTestUserEnabled", isTestUserEnabled ? "true" : "false");
             Environment.SetEnvironmentVariable("RssAppConfig__SchedulerEnabled", "false");
             Environment.SetEnvironmentVariable("RssAppConfig__IsReadOnly", "false");
+            Environment.SetEnvironmentVariable("RssAppConfig__Auth__LoginRateLimitPerMinute", loginRateLimit?.ToString());
+            Environment.SetEnvironmentVariable("RssAppConfig__Auth__AddFeedRateLimitPerMinute", addFeedRateLimit?.ToString());
 
             this.factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
+                if (environment != null) builder.UseEnvironment(environment);
                 builder.ConfigureTestServices(services =>
                 {
                     // No feed scheduler, worker, or backup copies: tests are offline and deterministic.
@@ -492,7 +503,7 @@ public sealed class ApiContractTests
         var target = aliceView.Single(i => i.Href.EndsWith("/07"));
         Assert.IsFalse(target.IsRead);
 
-        var response = await alice.GetAsync($"/api/item/markAsRead?itemId={target.Id}&isRead=true");
+        var response = await alice.PostAsync($"/api/item/markAsRead?itemId={target.Id}&isRead=true", content: null);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
 
         aliceView = await GetItemsAsync(alice, $"/api/item/feed?href={Feed(SharedFeed)}&pageSize=100");
@@ -520,8 +531,37 @@ public sealed class ApiContractTests
     [TestMethod]
     public async Task MarkRead_UnknownItem_Is404()
     {
-        var response = await bob.GetAsync("/api/item/markAsRead?itemId=999999&isRead=true");
+        var response = await bob.PostAsync("/api/item/markAsRead?itemId=999999&isRead=true", content: null);
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task MarkRead_Get_IsNoLongerARoute()
+    {
+        // A GET that changed state could be fired cross-site by an <img> with
+        // the session cookie attached; only POST remains.
+        var response = await bob.GetAsync("/api/item/markAsRead?itemId=1&isRead=true");
+        Assert.AreEqual(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task DeleteFeed_UsesDelete_AndPostIsGone()
+    {
+        const string href = "https://epsilon.example.com/feed.xml";
+        var add = await bob.PostAsJsonAsync("/api/feed", new NewsFeed(href, bobId));
+        Assert.AreEqual(HttpStatusCode.Created, add.StatusCode);
+
+        var post = await bob.PostAsync($"/api/feed/delete?href={Uri.EscapeDataString(href)}", content: null);
+        Assert.AreEqual(HttpStatusCode.MethodNotAllowed, post.StatusCode, "query-bound POST could be forged by a cross-site form");
+
+        var delete = await bob.DeleteAsync($"/api/feed/delete?href={Uri.EscapeDataString(href)}");
+        Assert.AreEqual(HttpStatusCode.OK, delete.StatusCode);
+
+        var list = await bob.GetFromJsonAsync<List<NewsFeed>>("/api/feed", Json);
+        Assert.IsFalse(list!.Any(f => f.Href == href));
+
+        var again = await bob.DeleteAsync($"/api/feed/delete?href={Uri.EscapeDataString(href)}");
+        Assert.AreEqual(HttpStatusCode.NotFound, again.StatusCode);
     }
 
     [TestMethod]

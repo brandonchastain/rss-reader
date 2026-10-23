@@ -26,7 +26,7 @@ public static class AuthEndpoints
             var target = ReturnUrlValidator.Resolve(returnUrl, auth.AllowedFrontendOrigins);
             var scheme = AuthenticationSetup.SchemeFor(provider);
             return Results.Challenge(LoginProperties(target), new[] { scheme });
-        });
+        }).RequireRateLimiting(RateLimits.AuthPolicy);
 
         // The provider handlers own /auth/callback/{provider}; nothing to map here.
 
@@ -35,7 +35,7 @@ public static class AuthEndpoints
             var target = ReturnUrlValidator.Resolve(returnUrl, auth.AllowedFrontendOrigins);
             await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return Results.Redirect(target);
-        });
+        }).RequireRateLimiting(RateLimits.AuthPolicy);
 
         group.MapGet("/me", async (HttpContext ctx) =>
         {
