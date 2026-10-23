@@ -71,7 +71,12 @@ public static class LegacyMigration
         var migrateMs = sw.ElapsedMilliseconds;
 
         logger.LogInformation("Migration committed in {Ms} ms; running VACUUM.", migrateMs);
+        // The write connection keeps temp tables in memory (temp_store=MEMORY);
+        // VACUUM copies the whole database through a transient temp database,
+        // which must not be a 1 GB in-memory copy on a 1 GiB container.
+        DatabaseSchema.Execute(connection, "PRAGMA temp_store = FILE;");
         DatabaseSchema.Execute(connection, "VACUUM;");
+        DatabaseSchema.Execute(connection, "PRAGMA temp_store = MEMORY;");
         sw.Stop();
         var sizeAfter = DatabaseSize(connection);
 
