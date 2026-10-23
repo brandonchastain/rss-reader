@@ -595,6 +595,23 @@ a.btn-primary:hover {
     text-decoration: underline;
 }
 
+/* A feed whose last few fetches failed: it is not producing posts. */
+.feeds-health-badge {
+    color: var(--warn);
+    border: 1px solid var(--warn);
+    border-radius: 0.25rem;
+    font-size: 0.75em;
+    padding: 0 0.4em;
+    white-space: nowrap;
+    cursor: help;
+}
+
+.feeds-health-detail {
+    color: var(--warn);
+    font-size: 0.85em;
+    margin-top: 0.4rem;
+}
+
 .feeds-form-row {
     display: flex;
     align-items: center;

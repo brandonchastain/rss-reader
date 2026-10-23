@@ -60,6 +60,7 @@ public sealed class FeedRefresherTests
     private sealed class InMemoryFeedRepository : IFeedRepository
     {
         private readonly ConcurrentDictionary<string, FeedFetchState> states = new();
+        public ConcurrentDictionary<string, string> LastErrors { get; } = new();
         public List<NewsFeed> Subscriptions { get; } = new();
         public int RecordCount;
 
@@ -91,6 +92,7 @@ public sealed class FeedRefresherTests
             string etag, DateTimeOffset? lastModified, bool keepValidators, bool failed, string error)
         {
             Interlocked.Increment(ref this.RecordCount);
+            this.LastErrors[url] = error;
             this.states.AddOrUpdate(url,
                 _ => new FeedFetchState(this.states.Count + 1, url, etag, lastModified, fetchedUtc, nextFetchUtc, failed ? 1 : 0),
                 (_, old) => old with
@@ -311,6 +313,49 @@ public sealed class FeedRefresherTests
         Assert.AreEqual(2, handler.CallCount,
             "After a failed fetch the feed should back off; the second fetch must not hit the origin again.");
         Assert.AreEqual(1, feedRepo.GetFeedFetchState(url).ConsecutiveFailures, "the failure is recorded on the feed row");
+    }
+
+    [TestMethod]
+    public async Task Fetch_WebPageInsteadOfFeed_RecordsAFriendlyReason()
+    {
+        // A retired feed URL that redirects to an HTML landing page (what NASA's
+        // APOD feed did): the stored reason must say so, not quote an XML parser error.
+        const string url = "https://retired.example.com/feed.rss";
+        var landing = new Uri("https://www.example.com/landing/");
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<!DOCTYPE html><html><body>Moved</body></html>", System.Text.Encoding.UTF8, "text/html"),
+            RequestMessage = new HttpRequestMessage(HttpMethod.Get, landing),
+        });
+        var feedRepo = new InMemoryFeedRepository();
+        var (refresher, _) = CreateRefresher(feedRepo: feedRepo, primaryHandler: handler);
+
+        feedRepo.Seed(url);
+        await refresher.FetchFeedAsync(url, force: true, CancellationToken.None);
+
+        Assert.AreEqual(1, feedRepo.GetFeedFetchState(url).ConsecutiveFailures);
+        Assert.AreEqual("returned a web page, not a feed (redirected to www.example.com/landing/)", feedRepo.LastErrors[url]);
+    }
+
+    [TestMethod]
+    public void DescribeNonFeed_OnlyFlagsHtml()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK);
+        Assert.AreEqual("returned a web page, not a feed", FeedRefresher.DescribeNonFeed(response, "https://a.example/feed", "  <html lang=en>"));
+        Assert.IsNull(FeedRefresher.DescribeNonFeed(response, "https://a.example/feed", "<?xml version=\"1.0\"?><rss/>"));
+        Assert.IsNull(FeedRefresher.DescribeNonFeed(response, "https://a.example/feed", null));
+    }
+
+    [TestMethod]
+    public async Task Fetch_NetworkFailure_StoresTheExceptionTypeAndMessage()
+    {
+        var handler = new StubHandler(_ => throw new HttpRequestException("connection refused"));
+        var feedRepo = new InMemoryFeedRepository();
+        var (refresher, _) = CreateRefresher(feedRepo: feedRepo, primaryHandler: handler);
+        const string url = "https://down.example.com/feed";
+        feedRepo.Seed(url);
+        await refresher.FetchFeedAsync(url, force: true, CancellationToken.None);
+        StringAssert.Contains(feedRepo.LastErrors[url], "connection refused");
     }
 
     [TestMethod]

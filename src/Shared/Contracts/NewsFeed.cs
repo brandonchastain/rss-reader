@@ -24,10 +24,21 @@ public class NewsFeed : IEquatable<NewsFeed>
         this.Tags = new List<string>();
     }
 
+    /// <summary>Consecutive failed fetches at which a feed is reported as failing.</summary>
+    public const int FailingThreshold = 3;
+
     public int FeedId { get; set; }
     public string Href { get; set; }
     public int UserId { get; set; }
     public ICollection<string> Tags { get; set; }
+
+    // Fetch health, read-only for clients: filled from the shared feed row so a
+    // dead feed (retired URL, blocked, returns a web page) is visible instead of
+    // silently producing no posts. Ignored when a client sends them back.
+    public int ConsecutiveFailures { get; set; }
+    public string LastError { get; set; }
+    public DateTimeOffset? LastFetchedUtc { get; set; }
+    public bool IsFailing => this.ConsecutiveFailures >= FailingThreshold;
 
     public bool Equals(NewsFeed other)
     {

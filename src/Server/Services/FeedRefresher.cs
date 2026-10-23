@@ -423,6 +423,37 @@ public class FeedRefresher : IFeedRefresher
         => state?.LastFetchedUtc == null
             || state.LastFetchedUtc.Value + this.config.FeedRefreshIntervalFloor <= DateTimeOffset.UtcNow;
 
+    private const int MaxStoredErrorLength = 300;
+
+    private static string TruncateError(string error)
+        => error != null && error.Length > MaxStoredErrorLength ? error[..MaxStoredErrorLength] + "…" : error;
+
+    /// <summary>
+    /// When the response body is an HTML page rather than a feed, returns a
+    /// human-readable reason (naming where a redirect landed), otherwise null.
+    /// </summary>
+    internal static string DescribeNonFeed(HttpResponseMessage response, string requestedUrl, string body)
+    {
+        var trimmed = body?.TrimStart() ?? string.Empty;
+        var looksLikeHtml =
+            trimmed.StartsWith("<!doctype html", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
+        if (!looksLikeHtml)
+        {
+            return null;
+        }
+
+        var final = response.RequestMessage?.RequestUri;
+        if (final != null
+            && Uri.TryCreate(requestedUrl, UriKind.Absolute, out var requested)
+            && !string.Equals(final.GetLeftPart(UriPartial.Path), requested.GetLeftPart(UriPartial.Path), StringComparison.OrdinalIgnoreCase))
+        {
+            return $"returned a web page, not a feed (redirected to {final.Host}{final.AbsolutePath})";
+        }
+
+        return "returned a web page, not a feed";
+    }
+
     private void RecordFetchResult(string url, FeedFetchResult result)
     {
         if (result.Outcome == FetchOutcome.BackedOff)
@@ -528,6 +559,7 @@ public class FeedRefresher : IFeedRefresher
             foreach (string agent in agents)
             {
                 string response = null;
+                string nonFeedNote = null;
                 try
                 {
                     using var httpClient = httpClientFactory.CreateClient("RssClient");
@@ -586,6 +618,8 @@ public class FeedRefresher : IFeedRefresher
                         continue;
                     }
 
+                    nonFeedNote = DescribeNonFeed(httpRes, url, response);
+
                     // Remember validators so future refreshes can short-circuit with a 304.
                     newEtag = httpRes.Headers.ETag?.ToString();
                     newLastModified = httpRes.Content.Headers.LastModified;
@@ -608,7 +642,10 @@ public class FeedRefresher : IFeedRefresher
                 }
                 catch (Exception ex)
                 {
-                    lastError = ex.GetType().Name + ": " + ex.Message;
+                    // A web page where a feed should be (a retired URL redirecting to a
+                    // landing page) is the common case; say that, not "'doctype' is an
+                    // unexpected token".
+                    lastError = TruncateError(nonFeedNote ?? ex.GetType().Name + ": " + ex.Message);
                     int len = Math.Min(500, response?.Length ?? 0);
                     this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
                 }

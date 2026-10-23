@@ -79,6 +79,54 @@ internal sealed class TestDatabase : IDisposable
 public sealed class PostsSchemaTests
 {
     [TestMethod]
+    public void FeedHealth_RoundTripsThroughTheSubscriptionList_AndResetsOnSuccess()
+    {
+        using var db = new TestDatabase("health");
+        var user = db.AddUser("health-user");
+        const string url = "https://flaky.example.com/feed";
+        db.Subscribe(user, url);
+
+        var fresh = db.Feeds.GetFeeds(user).Single();
+        Assert.AreEqual(0, fresh.ConsecutiveFailures);
+        Assert.IsNull(fresh.LastError);
+        Assert.IsNull(fresh.LastFetchedUtc);
+        Assert.IsFalse(fresh.IsFailing);
+
+        var when = DateTimeOffset.UtcNow;
+        for (var i = 0; i < NewsFeed.FailingThreshold; i++)
+        {
+            db.Feeds.RecordFetchResult(url, when, when.AddHours(1), TimeSpan.FromHours(1), null, null, keepValidators: true, failed: true, error: "HTTP 403");
+        }
+
+        var failing = db.Feeds.GetFeed(user, url);
+        Assert.AreEqual(NewsFeed.FailingThreshold, failing.ConsecutiveFailures);
+        Assert.AreEqual("HTTP 403", failing.LastError);
+        Assert.IsTrue(failing.IsFailing);
+        Assert.IsNotNull(failing.LastFetchedUtc);
+        Assert.AreEqual(when.ToUnixTimeSeconds(), failing.LastFetchedUtc!.Value.ToUnixTimeSeconds());
+
+        db.Feeds.RecordFetchResult(url, when, when.AddHours(1), TimeSpan.FromHours(1), null, null, keepValidators: true, failed: false, error: null);
+        var recovered = db.Feeds.GetFeeds(user).Single();
+        Assert.AreEqual(0, recovered.ConsecutiveFailures);
+        Assert.IsNull(recovered.LastError);
+        Assert.IsFalse(recovered.IsFailing);
+    }
+
+    [TestMethod]
+    public void FeedHealth_IsSharedByEverySubscriberOfTheFeed()
+    {
+        using var db = new TestDatabase("health-shared");
+        var a = db.AddUser("a");
+        var b = db.AddUser("b");
+        const string url = "https://shared-dead.example.com/feed";
+        db.Subscribe(a, url);
+        db.Subscribe(b, url);
+        db.Feeds.RecordFetchResult(url, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddHours(1), TimeSpan.FromHours(1), null, null, true, true, "HTTP 404");
+        Assert.AreEqual("HTTP 404", db.Feeds.GetFeeds(a).Single().LastError);
+        Assert.AreEqual("HTTP 404", db.Feeds.GetFeeds(b).Single().LastError);
+    }
+
+    [TestMethod]
     public async Task Subscribe_ShowsExistingPosts_AllUnread()
     {
         using var db = new TestDatabase();

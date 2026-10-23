@@ -170,6 +170,10 @@ public sealed class ApiContractTests
         ("href", [JsonValueKind.String]),
         ("userId", [JsonValueKind.Number]),
         ("tags", [JsonValueKind.Array]),
+        ("consecutiveFailures", [JsonValueKind.Number]),
+        ("lastError", [JsonValueKind.String, JsonValueKind.Null]),
+        ("lastFetchedUtc", [JsonValueKind.String, JsonValueKind.Null]),
+        ("isFailing", [JsonValueKind.True, JsonValueKind.False]),
     };
 
     private static readonly (string Name, JsonValueKind[] Kinds)[] UserShape =

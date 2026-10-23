@@ -28,7 +28,8 @@ public class SQLiteFeedRepository : IFeedRepository
         SELECT f.Id, f.Url, s.UserId,
                (SELECT group_concat(t.Name, ',') FROM SubscriptionTags st
                 JOIN Tags t ON t.Id = st.TagId
-                WHERE st.UserId = s.UserId AND st.FeedId = s.FeedId) AS Tags
+                WHERE st.UserId = s.UserId AND st.FeedId = s.FeedId) AS Tags,
+               f.ConsecutiveFailures, f.LastError, f.LastFetchedUtc
         FROM Subscriptions s
         JOIN Feeds f ON f.Id = s.FeedId
         """;
@@ -176,6 +177,10 @@ public class SQLiteFeedRepository : IFeedRepository
         var tags = reader.IsDBNull(3) ? "" : reader.GetString(3);
         var res = new NewsFeed(feedId, url, userId);
         res.Tags = tags.Split(',').Where(t => !string.IsNullOrWhiteSpace(t)).ToList();
+        res.ConsecutiveFailures = reader.IsDBNull(4) ? 0 : reader.GetInt32(4);
+        res.LastError = reader.IsDBNull(5) ? null : reader.GetString(5);
+        res.LastFetchedUtc = !reader.IsDBNull(6) && DateTimeOffset.TryParse(reader.GetString(6), null,
+            System.Globalization.DateTimeStyles.RoundtripKind, out var fetched) ? fetched : null;
         return res;
     }
 
