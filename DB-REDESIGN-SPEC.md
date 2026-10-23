@@ -253,6 +253,42 @@ Untouched
 
 ## 6. Tests
 
+Testing is layered, and the layers land in this order so the migration PR is
+measured against a safety net that is known to pass on `main` first.
+
+### 6.1 API contract tests (separate PR, lands on `main` BEFORE the migration)
+
+Today nothing exercises the HTTP layer: the suite is unit and repository
+level, and the deploy smoke check is two curls. Since the redesign promises
+that routes and JSON shapes do not change, that promise needs a test that
+passes on the old code and must keep passing on the new.
+
+- New test class(es) in `test/RssReaderTests` using
+  `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`),
+  booting the real API in-process against a temp SQLite file, with the
+  existing test-auth header path (`StaticWebAppsAuthenticationHandler`).
+- Seed: two users; three feeds, one shared by both users; tags on both
+  users' subscriptions, one hidden; a few dozen posts with mixed read/saved
+  state and distinct `PublishDateOrder` values.
+- For each endpoint assert status code and the JSON property names and
+  types (not values that legitimately change, such as ids or timestamps):
+  timeline first page and a cursor page; unread, saved and tag filters;
+  per-feed items; feed list; add feed; mark read; save and unsave; tag
+  update; search; new-item count; delete-all; OPML export and import;
+  `/auth/me`; `/api/healthz`.
+- Behavioural assertions that must hold before and after the redesign:
+  read/saved state is per user; a hidden tag removes that feed's posts for
+  that user only; cursor paging never repeats or skips a post; OPML export
+  then import round-trips feeds and tags.
+- One assertion that documents the bug being fixed and is expected to flip:
+  user B adding a URL user A already has sees A's existing posts
+  immediately. Mark it `[Ignore]` with the reason on `main`; the migration
+  PR un-ignores it.
+- Capture the expected shapes from the behaviour of `main`, not from the
+  redesign code.
+
+### 6.2 Unit and repository tests (in the migration PR)
+
 - Repository tests on a temp SQLite file: subscribe shows existing posts;
   unsubscribe leaves posts; read/saved isolation between two users; hidden
   tag excludes a feed for one user only; watermark hides and un-hides;
@@ -263,6 +299,24 @@ Untouched
   a new subscriber on an already-fetched feed triggers no HTTP call.
 - Retention: saved posts survive; orphan feeds are removed after the grace
   period.
+- Migration test: run the migration against a synthetic old-schema database
+  and assert the section 7 count checks; also run it manually against a copy
+  of the production file and record elapsed time and sizes in the PR.
+
+### 6.3 Full-stack verification on real data (manual, before merge)
+
+Copy `dbcopy\storage.db`, migrate the copy, run the Docker API plus the
+Blazor app locally against it (`.github/skills/run-locally`), and check:
+timeline loads and pages; unread filter; a per-feed page; search; mark read
+persists across reload; save and unsave; a hidden tag hides its feed; OPML
+export contains tags; sign-in works. Record the checklist and results in the
+PR description.
+
+### Sequencing
+
+1. PR A: section 6.1 contract tests against `main`, green in CI, merged.
+2. PR B: the redesign and migration, rebased on A, with 6.2 added and the
+   6.1 suite still green (plus the one un-ignored test), and 6.3 recorded.
 
 ## 7. Migration and rollout
 
