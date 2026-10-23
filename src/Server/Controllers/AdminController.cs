@@ -47,15 +47,18 @@ public class AdminController : ControllerBase
         return Ok(snapshot);
     }
 
-    // GET /api/admin/stats/history
+    // GET /api/admin/stats/history?days=30   (1, 7, 30 or 365)
     [HttpGet("stats/history")]
-    public IActionResult GetStatsHistory()
+    public IActionResult GetStatsHistory([FromQuery] int days = 30)
     {
         if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
             return Forbid();
 
-        var history = _statsRepo.GetHistory(30).ToList();
-        return Ok(history);
+        if (!RssReader.Server.Services.StatsHistoryRange.IsAllowed(days))
+            return BadRequest($"days must be one of {string.Join(", ", RssReader.Server.Services.StatsHistoryRange.AllowedDays)}.");
+
+        var history = _statsRepo.GetHistory(days).ToList();
+        return Ok(RssReader.Server.Services.StatsHistoryRange.Thin(history));
     }
 
     // GET /api/admin/users

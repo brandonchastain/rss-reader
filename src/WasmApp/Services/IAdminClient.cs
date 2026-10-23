@@ -7,6 +7,6 @@ public record AdminUser(int Id, string Username, int FeedCount, int PostCount);
 public interface IAdminClient
 {
     Task<SystemStatsSnapshot> GetCurrentStatsAsync();
-    Task<List<SystemStatsSnapshot>> GetStatsHistoryAsync();
+    Task<List<SystemStatsSnapshot>> GetStatsHistoryAsync(int days = 30);
     Task<List<AdminUser>> GetUsersAsync();
 }
