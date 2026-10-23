@@ -73,7 +73,9 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
         return ReadSnapshot(reader);
     }
 
-    public IEnumerable<SystemStatsSnapshot> GetHistory(int days = 30)
+    public IEnumerable<SystemStatsSnapshot> GetHistory(int days = 30) => GetHistory(TimeSpan.FromDays(days));
+
+    public IEnumerable<SystemStatsSnapshot> GetHistory(TimeSpan window)
     {
         using var connection = _connections.OpenRead();
 
@@ -83,7 +85,7 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
             FROM SystemStats
             WHERE Timestamp >= @cutoff
             ORDER BY Timestamp ASC";
-        cmd.Parameters.AddWithValue("@cutoff", DateTime.UtcNow.AddDays(-days).ToString("o"));
+        cmd.Parameters.AddWithValue("@cutoff", (DateTime.UtcNow - window).ToString("o"));
 
         var results = new List<SystemStatsSnapshot>();
         using var reader = cmd.ExecuteReader();

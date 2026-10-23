@@ -62,16 +62,16 @@
         @* Chart *@
         <div class="chart-section">
             <div class="section-header">
-                <h2 class="section-title">Trends (@RangeLabel(rangeDays))</h2>
+                <h2 class="section-title">Trends (@RangeLabel(range))</h2>
                 <div class="range-switch" role="group" aria-label="Trend range">
-                    @foreach (var days in RangeOptions)
+                    @foreach (var key in RangeOptions)
                     {
-                        var d = days;
+                        var r = key;
                         <button type="button"
-                                class="range-btn @(d == rangeDays ? "active" : "")"
-                                aria-pressed="@(d == rangeDays ? "true" : "false")"
+                                class="range-btn @(r == range ? "active" : "")"
+                                aria-pressed="@(r == range ? "true" : "false")"
                                 disabled="@historyLoading"
-                                @onclick="() => SetRangeAsync(d)">@RangeButton(d)</button>
+                                @onclick="() => SetRangeAsync(r)">@r</button>
                     }
                 </div>
             </div>
@@ -83,7 +83,9 @@
             }
             else
             {
-                <p class="text-muted">Not enough data for chart yet. Check back after the first backup cycle.</p>
+                <p class="text-muted">
+                    Not enough snapshots in this range yet. Snapshots are taken hourly and whenever you press Refresh now.
+                </p>
             }
         </div>
 
@@ -122,8 +124,8 @@
     private bool isAdmin = false;
     private SystemStatsSnapshot current;
     private List<SystemStatsSnapshot> history = new();
-    private static readonly int[] RangeOptions = { 1, 7, 30, 365 };
-    private int rangeDays = 30;
+    private static readonly string[] RangeOptions = { "1h", "1d", "7d", "30d", "1y" };
+    private string range = "30d";
     private bool historyLoading;
     private bool refreshing;
     private List<AdminUser> users = new();
@@ -167,7 +169,7 @@
         try
         {
             current = await adminClient.GetCurrentStatsAsync();
-            history = await adminClient.GetStatsHistoryAsync(rangeDays);
+            history = await adminClient.GetStatsHistoryAsync(range);
             users = await adminClient.GetUsersAsync();
         }
         catch (Exception ex)
@@ -184,7 +186,7 @@
         {
             // A forced snapshot, then the chart and user table catch up to it.
             current = await adminClient.RefreshStatsAsync();
-            history = await adminClient.GetStatsHistoryAsync(rangeDays);
+            history = await adminClient.GetStatsHistoryAsync(range);
             users = await adminClient.GetUsersAsync();
             error = null;
         }
@@ -198,19 +200,19 @@
         }
     }
 
-    private async Task SetRangeAsync(int days)
+    private async Task SetRangeAsync(string key)
     {
-        if (days == rangeDays || historyLoading) return;
+        if (key == range || historyLoading) return;
         historyLoading = true;
         try
         {
-            history = await adminClient.GetStatsHistoryAsync(days);
-            rangeDays = days;
+            history = await adminClient.GetStatsHistoryAsync(key);
+            range = key;
             error = null;
         }
         catch (Exception ex)
         {
-            error = $"Failed to load {RangeLabel(days)} of history: {ex.Message}";
+            error = $"Failed to load {RangeLabel(key)} of history: {ex.Message}";
         }
         finally
         {
@@ -219,30 +221,23 @@
         // OnAfterRenderAsync redraws the chart from the new history.
     }
 
-    private static string RangeButton(int days) => days switch
+    private static string RangeLabel(string key) => key switch
     {
-        1 => "1d",
-        7 => "7d",
-        30 => "30d",
-        365 => "1y",
-        _ => $"{days}d",
-    };
-
-    private static string RangeLabel(int days) => days switch
-    {
-        1 => "24 hours",
-        7 => "7 days",
-        30 => "30 days",
-        365 => "1 year",
-        _ => $"{days} days",
+        "1h" => "1 hour",
+        "1d" => "24 hours",
+        "7d" => "7 days",
+        "30d" => "30 days",
+        "1y" => "1 year",
+        _ => key,
     };
 
     // Denser ranges need the time; longer ones only the date.
-    private static string LabelFormat(int days) => days switch
+    private static string LabelFormat(string key) => key switch
     {
-        1 => "HH:mm",
-        7 => "MM/dd HH:mm",
-        30 => "MM/dd",
+        "1h" => "HH:mm:ss",
+        "1d" => "HH:mm",
+        "7d" => "MM/dd HH:mm",
+        "30d" => "MM/dd",
         _ => "yyyy-MM-dd",
     };
 
@@ -250,7 +245,7 @@
     {
         try
         {
-            var format = LabelFormat(rangeDays);
+            var format = LabelFormat(range);
             var labels = history
                 .Select(s => s.Timestamp.ToLocalTime().ToString(format))
                 .ToArray();

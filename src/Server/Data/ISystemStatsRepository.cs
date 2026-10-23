@@ -7,6 +7,8 @@ public interface ISystemStatsRepository
     void RecordSnapshot(SystemStatsSnapshot snapshot);
     SystemStatsSnapshot GetLatestSnapshot();
     IEnumerable<SystemStatsSnapshot> GetHistory(int days = 30);
+    /// <summary>Snapshots taken within the last <paramref name="window"/>, oldest first.</summary>
+    IEnumerable<SystemStatsSnapshot> GetHistory(TimeSpan window);
     void CleanupOlderThan(int days = 30);
     IEnumerable<UserStats> GetPerUserStats();
 }
