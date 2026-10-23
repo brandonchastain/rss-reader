@@ -45,6 +45,10 @@ else
         {
             <div class="feeds-row" @onclick="() => ToggleFeed(feed.Href)">
                 <span class="feeds-row-hostname">@feed.Href.GetRootDomain()</span>
+                @if (feed.IsFailing)
+                {
+                    <span class="feeds-health-badge" title="@FailureSummary(feed)">not updating</span>
+                }
                 <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)" class="feeds-row-link" @onclick:stopPropagation="true">View feed</a>
                 @if (feed.Tags != null && feed.Tags.Any())
                 {
@@ -67,12 +71,27 @@ else
                 <div class="col">
                     Feed URL: @feed.Href
                 </div>
+                @if (feed.ConsecutiveFailures > 0)
+                {
+                    <div class="col feeds-health-detail">
+                        @FailureSummary(feed)
+                    </div>
+                }
             </div>
         }
     </div>
 }
 
 @code {
+    private static string FailureSummary(NewsFeed feed)
+    {
+        var error = string.IsNullOrWhiteSpace(feed.LastError) ? "unknown error" : feed.LastError;
+        var last = feed.LastFetchedUtc.HasValue
+            ? $", last tried {feed.LastFetchedUtc.Value.ToLocalTime():g}"
+            : string.Empty;
+        return $"Last {feed.ConsecutiveFailures} fetch{(feed.ConsecutiveFailures == 1 ? "" : "es")} failed: {error}{last}. If the feed moved, delete it and add its new address.";
+    }
+
     private string openFeed = null;
     private Dictionary<string, string> newTagInputs = new Dictionary<string, string>();
     private IEnumerable<NewsFeed> feeds;

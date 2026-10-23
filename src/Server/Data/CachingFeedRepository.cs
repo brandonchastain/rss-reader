@@ -9,6 +9,7 @@ public class CachingFeedRepository : IFeedRepository
     private readonly IMemoryCache _cache;
 
     private static readonly TimeSpan SlidingExpiration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan HealthStaleness = TimeSpan.FromMinutes(2);
 
     public CachingFeedRepository(IFeedRepository inner, IMemoryCache cache)
     {
@@ -34,7 +35,10 @@ public class CachingFeedRepository : IFeedRepository
 
         _cache.Set(key, result, new MemoryCacheEntryOptions
         {
-            SlidingExpiration = SlidingExpiration
+            SlidingExpiration = SlidingExpiration,
+            // Fetch health (failures, last error) changes in the background and
+            // is not invalidated by user writes, so cap how stale a list can get.
+            AbsoluteExpirationRelativeToNow = HealthStaleness
         });
 
         return result;
