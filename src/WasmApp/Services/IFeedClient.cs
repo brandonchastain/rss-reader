@@ -40,7 +40,6 @@ public interface IFeedClient : IDisposable
     // user having scrolled. True when the cache is warm, false to retry later.
     Task<bool> WarmTimelineCacheAsync();
     Task DeleteFeedAsync(string feedHref);
-    Task<bool> ClearAllItemsAsync();
     Task ImportOpmlAsync(string opmlContent);
     Task<string> ExportOpmlAsync();
 }

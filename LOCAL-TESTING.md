@@ -42,6 +42,7 @@ The database is wherever `RssAppConfig:DbLocation` points in
 docker build -f src/Server/Dockerfile -t rss-reader-api:local .
 docker run -d --name rss-reader-test -p 8080:8080 `
   -v C:\dev\rssreader\docker-data:/data `
+  -e ASPNETCORE_ENVIRONMENT=Development `
   -e RssAppConfig__IsTestUserEnabled=true `
   -e RssAppConfig__Auth__CookieSameSite=Lax `
   -e RssAppConfig__Auth__AllowedFrontendOrigins__0=http://localhost:8443 `

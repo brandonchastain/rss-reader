@@ -53,7 +53,7 @@ You have access to four skills. Know when to use each:
 
 | Skill | When to Use |
 |-------|-------------|
-| `run-locally` | Start the full local dev stack (Docker backend + SWA frontend at http://localhost:4280) before inspecting or validating UI |
+| `run-locally` | Start the full local dev stack (Docker backend + Blazor dev server at http://localhost:8443) before inspecting or validating UI |
 | `playwright-browse` | Open the browser, take screenshots, check layouts, click through the app — use this to inspect the current state AND to validate your changes |
 | `stop-local` | Shut down all local servers when done |
 | `deploy` | Push a finished, validated change to production |

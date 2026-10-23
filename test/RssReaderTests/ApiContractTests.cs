@@ -43,7 +43,7 @@ internal sealed class ApiTestHost : IDisposable
         Server.Authentication.ReturnUrlValidator.NormalizeOrigin(
             this.Services.GetRequiredService<RssApp.Config.RssAppConfig>().Auth.AllowedFrontendOrigins[0]);
 
-    public ApiTestHost(bool isTestUserEnabled, string? environment = null, int? loginRateLimit = null, int? addFeedRateLimit = null, bool microsoftConfigured = false)
+    public ApiTestHost(bool isTestUserEnabled, string? environment = null, int? loginRateLimit = null, int? addFeedRateLimit = null, bool microsoftConfigured = false, bool allowTestUserInProduction = false)
     {
         this.dbPath = Path.Combine(Path.GetTempPath(), $"rss-contract-{Guid.NewGuid():N}.db");
 
@@ -56,6 +56,7 @@ internal sealed class ApiTestHost : IDisposable
             Environment.SetEnvironmentVariable("RssAppConfig__IsReadOnly", "false");
             Environment.SetEnvironmentVariable("RssAppConfig__Auth__LoginRateLimitPerMinute", loginRateLimit?.ToString());
             Environment.SetEnvironmentVariable("RssAppConfig__Auth__AddFeedRateLimitPerMinute", addFeedRateLimit?.ToString());
+            Environment.SetEnvironmentVariable("RssAppConfig__AllowTestUserInProduction", allowTestUserInProduction ? "true" : null);
             // A fake Microsoft registration (never contacted: the callbacks tested
             // here fail before the handler fetches provider metadata).
             Environment.SetEnvironmentVariable("RssAppConfig__Auth__Providers__microsoft__ClientId", microsoftConfigured ? "00000000-0000-0000-0000-000000000000" : null);

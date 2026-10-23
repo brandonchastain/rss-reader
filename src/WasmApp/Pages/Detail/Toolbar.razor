@@ -5,7 +5,6 @@
 @inject IPostCache PostCache
 @inject ILogger<Toolbar> Logger
 @inject NavigationManager NavigationManager
-@inject RssWasmConfig Config
 
 <div class="toolbar">
 
@@ -18,20 +17,6 @@
             @onclick="async () => await OnToggleReadHeadlines.InvokeAsync()">
         <i class="fas @(IsReadingHeadlines ? "fa-pause" : "fa-headphones")"></i>
     </button>
-
-    @if (Config.EnableTestAuth)
-    {
-        <button class="btn-link" title="Clear all posts (test mode)" @onclick="() => ClearAllItemsAsync()">
-            @if (isClearing)
-            {
-                <i class="fas fa-trash fa-spin"></i>
-            }
-            else
-            {
-                <i class="fas fa-trash"></i>
-            }
-        </button>
-    }
 
     <button class="btn-link @(this.IsFilterUnread ? "toolbar-active" : "")" @onclick="async () => {await ToggleUnreadFilterAsync.InvokeAsync(); }">[unread]</button>
     <button class="btn-link @(this.IsFilterSaved ? "toolbar-active" : "")" @onclick="async () => {await ToggleSavedFilterAsync.InvokeAsync(); }">[saved]</button>
@@ -83,10 +68,6 @@
     [Parameter]
     public EventCallback OnRefreshRequested { get; set; }
 
-    // Used by the test-only "clear all" button to force a timeline reload.
-    [Parameter]
-    public EventCallback OnRefreshComplete { get; set; }
-
     // Headline-reading mode (owned by PostTable): true while it's speaking
     // headlines top-to-bottom; the button toggles start/pause.
     [Parameter]
@@ -96,8 +77,6 @@
     public EventCallback OnToggleReadHeadlines { get; set; }
 
     private bool tagsAreHidden = true;
-
-    private bool isClearing = false;
 
     private async Task OnRefreshClicked()
     {
@@ -109,30 +88,5 @@
     {
         tagsAreHidden = !tagsAreHidden;
         await InvokeAsync(StateHasChanged);
-    }
-
-    private async Task ClearAllItemsAsync()
-    {
-        if (isClearing) return;
-
-        isClearing = true;
-        StateHasChanged();
-
-        var success = await FeedClient.ClearAllItemsAsync();
-
-        if (success)
-        {
-            // Posts were wiped server-side; the cached copy would otherwise be
-            // rehydrated on the next cold start.
-            await PostCache.ClearAsync();
-        }
-
-        isClearing = false;
-        StateHasChanged();
-
-        if (success)
-        {
-            await OnRefreshComplete.InvokeAsync();
-        }
     }
 }
