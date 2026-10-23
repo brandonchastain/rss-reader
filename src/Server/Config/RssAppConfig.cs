@@ -4,7 +4,6 @@ namespace RssApp.Config
 {
     public class RssAppConfig
     {
-        public string ServerHostName { get; set; } = "https://localhost:8080/";
         public string DbLocation { get; set; }
         public bool IsTestUserEnabled { get; set; }
 
