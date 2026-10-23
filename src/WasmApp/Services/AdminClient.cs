@@ -24,9 +24,9 @@ public class AdminClient : IAdminClient
         return await response.Content.ReadFromJsonAsync<SystemStatsSnapshot>();
     }
 
-    public async Task<List<SystemStatsSnapshot>> GetStatsHistoryAsync(int days = 30)
+    public async Task<List<SystemStatsSnapshot>> GetStatsHistoryAsync(string range = "30d")
     {
-        return await _apiClient.GetFromJsonAsync<List<SystemStatsSnapshot>>($"api/admin/stats/history?days={days}")
+        return await _apiClient.GetFromJsonAsync<List<SystemStatsSnapshot>>($"api/admin/stats/history?range={Uri.EscapeDataString(range)}")
                ?? new List<SystemStatsSnapshot>();
     }
 

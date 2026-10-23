@@ -59,17 +59,18 @@ public class AdminController : ControllerBase
         return Ok(snapshot);
     }
 
-    // GET /api/admin/stats/history?days=30   (1, 7, 30 or 365)
+    // GET /api/admin/stats/history?range=30d   (1h, 1d, 7d, 30d, 1y; ?days=N still accepted)
     [HttpGet("stats/history")]
-    public IActionResult GetStatsHistory([FromQuery] int days = 30)
+    public IActionResult GetStatsHistory([FromQuery] string range = null, [FromQuery] int? days = null)
     {
         if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
             return Forbid();
 
-        if (!RssReader.Server.Services.StatsHistoryRange.IsAllowed(days))
-            return BadRequest($"days must be one of {string.Join(", ", RssReader.Server.Services.StatsHistoryRange.AllowedDays)}.");
+        if (range == null && days == null) range = RssReader.Server.Services.StatsHistoryRange.DefaultRange;
+        if (!RssReader.Server.Services.StatsHistoryRange.TryResolve(range, days, out var window))
+            return BadRequest($"range must be one of {string.Join(", ", RssReader.Server.Services.StatsHistoryRange.Ranges.Keys)}.");
 
-        var history = _statsRepo.GetHistory(days).ToList();
+        var history = _statsRepo.GetHistory(window).ToList();
         return Ok(RssReader.Server.Services.StatsHistoryRange.Thin(history));
     }
 

@@ -186,6 +186,33 @@ public sealed class AdminTests
     }
 
     [TestMethod]
+    public void HistoryRange_Keys_ResolveAndLegacyDaysStillWork()
+    {
+        var r = typeof(RssReader.Server.Services.StatsHistoryRange);
+        Assert.IsTrue(RssReader.Server.Services.StatsHistoryRange.TryResolve("1h", null, out var w) && w == TimeSpan.FromHours(1));
+        Assert.IsTrue(RssReader.Server.Services.StatsHistoryRange.TryResolve("1Y", null, out w) && w == TimeSpan.FromDays(365), "case-insensitive");
+        Assert.IsTrue(RssReader.Server.Services.StatsHistoryRange.TryResolve(null, 7, out w) && w == TimeSpan.FromDays(7), "legacy ?days=");
+        Assert.IsFalse(RssReader.Server.Services.StatsHistoryRange.TryResolve("2h", null, out _));
+        Assert.IsFalse(RssReader.Server.Services.StatsHistoryRange.TryResolve(null, 14, out _));
+        Assert.IsFalse(RssReader.Server.Services.StatsHistoryRange.TryResolve("1h", 14, out w) && w != TimeSpan.FromHours(1), "range wins over days");
+        CollectionAssert.AreEqual(new[] { "1h", "1d", "7d", "30d", "1y" }, RssReader.Server.Services.StatsHistoryRange.Ranges.Keys.ToList());
+    }
+
+    [TestMethod]
+    public void GetHistory_Window_OnlyReturnsSnapshotsInsideIt()
+    {
+        var db   = $"admin-stats-{System.Guid.NewGuid():N}.db";
+        var repo = CreateRepo(db);
+        repo.RecordSnapshot(new SystemStatsSnapshot { Timestamp = DateTime.UtcNow.AddMinutes(-20), UserCount = 1 });
+        repo.RecordSnapshot(new SystemStatsSnapshot { Timestamp = DateTime.UtcNow.AddMinutes(-90), UserCount = 2 });
+        var hour = repo.GetHistory(TimeSpan.FromHours(1)).ToList();
+        Assert.AreEqual(1, hour.Count);
+        Assert.AreEqual(1, hour[0].UserCount);
+        Assert.AreEqual(2, repo.GetHistory(TimeSpan.FromHours(2)).Count());
+        Cleanup(db);
+    }
+
+    [TestMethod]
     public void HistoryRange_OnlyTheFourRangesAreAllowed()
     {
         foreach (var days in new[] { 1, 7, 30, 365 })
