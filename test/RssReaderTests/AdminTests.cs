@@ -186,6 +186,38 @@ public sealed class AdminTests
     }
 
     [TestMethod]
+    public void HistoryRange_OnlyTheFourRangesAreAllowed()
+    {
+        foreach (var days in new[] { 1, 7, 30, 365 })
+            Assert.IsTrue(RssReader.Server.Services.StatsHistoryRange.IsAllowed(days), days.ToString());
+        foreach (var days in new[] { 0, -1, 2, 14, 90, 366, 100000 })
+            Assert.IsFalse(RssReader.Server.Services.StatsHistoryRange.IsAllowed(days), days.ToString());
+        Assert.IsTrue(RssReader.Server.Services.StatsHistoryRange.RetentionDays > 365, "retention must cover the longest range");
+    }
+
+    [TestMethod]
+    public void HistoryRange_Thin_KeepsEndsAndSpreadsEvenly()
+    {
+        var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var hourly = Enumerable.Range(0, 24 * 365)
+            .Select(i => new SystemStatsSnapshot { Timestamp = start.AddHours(i), ItemCount = i })
+            .ToList();
+
+        var thinned = RssReader.Server.Services.StatsHistoryRange.Thin(hourly, 400);
+
+        Assert.AreEqual(400, thinned.Count);
+        Assert.AreEqual(0, thinned[0].ItemCount, "first point kept");
+        Assert.AreEqual(hourly.Count - 1, thinned[^1].ItemCount, "last point kept");
+        for (var i = 1; i < thinned.Count; i++)
+            Assert.IsTrue(thinned[i].ItemCount > thinned[i - 1].ItemCount, "order preserved, no repeats");
+        var gaps = Enumerable.Range(1, thinned.Count - 1).Select(i => thinned[i].ItemCount - thinned[i - 1].ItemCount).ToList();
+        Assert.IsTrue(gaps.Max() - gaps.Min() <= 1, $"even spacing, gaps {gaps.Min()}..{gaps.Max()}");
+
+        var small = hourly.Take(50).ToList();
+        CollectionAssert.AreEqual(small, RssReader.Server.Services.StatsHistoryRange.Thin(small, 400), "short lists pass through untouched");
+    }
+
+    [TestMethod]
     public void GetLatestSnapshot_WhenEmpty_ReturnsNull()
     {
         var db   = $"admin-stats-{System.Guid.NewGuid():N}.db";

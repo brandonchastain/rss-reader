@@ -48,7 +48,7 @@ public class SystemStatsCollector
         {
             var fresh = await CaptureAsync();
             _statsRepo.RecordSnapshot(fresh);
-            _statsRepo.CleanupOlderThan(30);
+            _statsRepo.CleanupOlderThan(StatsHistoryRange.RetentionDays);
             return fresh;
         }
         catch (Exception ex)
