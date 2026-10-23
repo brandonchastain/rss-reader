@@ -1,5 +1,5 @@
 # start-local.ps1
-# Starts the RSS Reader full local stack: Docker backend + SWA frontend
+# Starts the RSS Reader full local stack: Docker backend + Blazor dev server
 # Usage: .\start-local.ps1
 
 Set-StrictMode -Version Latest
@@ -66,6 +66,8 @@ docker run -d `
     --name $ContainerName `
     -p 8080:8080 `
     -v "${DataDir}:/data" `
+    -e ASPNETCORE_ENVIRONMENT=Development `
+    -e RssAppConfig__Auth__AllowedFrontendOrigins__0=http://localhost:8443 `
     -e RssAppConfig__IsTestUserEnabled=true `
     $ImageName
 
@@ -94,24 +96,6 @@ if (-not $healthy) {
 }
 Write-Host "Backend API is healthy." -ForegroundColor Green
 
-# ── Step 7: Ensure api/local.settings.json exists ────────────────────────────
-$localSettings = Join-Path $RepoRoot "api\local.settings.json"
-if (-not (Test-Path $localSettings)) {
-    Write-Host "`nCreating api/local.settings.json..." -ForegroundColor Cyan
-    @'
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "node",
-    "RSSREADER_API_URL": "http://localhost:8080",
-    "RSSREADER_API_KEY": "local-dev-key",
-    "IS_TEST_USER_ENABLED": "true"
-  }
-}
-'@ | Set-Content $localSettings
-}
-
 # ── Step 8: Build Blazor WASM frontend ───────────────────────────────────────
 # ⛔ NEVER use dotnet publish -c release here. The release build excludes
 # appsettings.Development.json, which contains EnableTestAuth: true.
@@ -126,10 +110,10 @@ try {
 }
 Write-Host "Frontend built successfully." -ForegroundColor Green
 
-# ── Step 9: Start SWA dev server ─────────────────────────────────────────────
-Write-Host "`nStarting SWA frontend dev server..." -ForegroundColor Cyan
-Write-Host "Frontend will be available at http://localhost:4280" -ForegroundColor Green
-Write-Host "(Press Ctrl+C to stop the SWA dev server)`n"
+# ── Step 9: Start the Blazor dev server ────────────────────────────────
+Write-Host "`nStarting the Blazor dev server..." -ForegroundColor Cyan
+Write-Host "Frontend will be available at http://localhost:8443 (API at http://localhost:8080)" -ForegroundColor Green
+Write-Host "(Press Ctrl+C to stop)`n"
 
-Set-Location $RepoRoot
-swa start rss-reader-local
+Set-Location (Join-Path $RepoRoot "src\WasmApp")
+dotnet run -c Debug --no-build
