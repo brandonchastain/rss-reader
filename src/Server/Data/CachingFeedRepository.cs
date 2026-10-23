@@ -56,7 +56,7 @@ public class CachingFeedRepository : IFeedRepository
             });
         }
 
-        return result;;
+        return result;
     }
 
     // --- Write methods (evict then delegate) ---
@@ -88,12 +88,6 @@ public class CachingFeedRepository : IFeedRepository
         _inner.AddTag(feed, tag);
     }
 
-    // --- Scheduler support (pass-through; these scan across users) ---
-
-    public IEnumerable<string> GetAllDistinctFeedUrls() => _inner.GetAllDistinctFeedUrls();
-
-    public IEnumerable<NewsFeed> GetFeedsByUrl(string url) => _inner.GetFeedsByUrl(url);
-
     // --- Tag settings (pass-through, no caching) ---
 
     public IEnumerable<TagSetting> GetTagSettings(RssUser user)
@@ -113,4 +107,16 @@ public class CachingFeedRepository : IFeedRepository
         _inner.DeleteAllFeeds(user);
         _cache.Remove(FeedsKey(user.Id));
     }
+
+    // --- Fetch scheduling (pass-through; read by the scheduler, not by requests) ---
+
+    public IReadOnlyList<FeedFetchState> GetFeedFetchStates() => _inner.GetFeedFetchStates();
+
+    public FeedFetchState GetFeedFetchState(string url) => _inner.GetFeedFetchState(url);
+
+    public IReadOnlyList<FeedFetchState> GetDueFeeds(DateTimeOffset now) => _inner.GetDueFeeds(now);
+
+    public void RecordFetchResult(string url, DateTimeOffset fetchedUtc, DateTimeOffset nextFetchUtc, TimeSpan interval,
+        string etag, DateTimeOffset? lastModified, bool keepValidators, bool failed, string error)
+        => _inner.RecordFetchResult(url, fetchedUtc, nextFetchUtc, interval, etag, lastModified, keepValidators, failed, error);
 }

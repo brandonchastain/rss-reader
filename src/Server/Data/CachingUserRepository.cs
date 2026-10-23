@@ -27,8 +27,7 @@ public sealed class CachingUserRepository : IUserRepository
 
     private static string UserNameKey(string username) => $"user:name:{username}";
     private static string UserIdKey(int userId) => $"user:id:{userId}";
-    private static string UserAadIdKey(string aadId) => $"user:aad:{aadId}";
-    private static string UserProviderIdKey(string providerId) => $"user:provider:{providerId}";
+    private static string IdentityKey(string provider, string subject) => $"user:identity:{provider}:{subject}";
     private const string AllUsersKey = "users:all";
 
     // --- Read methods (cache-aside) ---
@@ -63,27 +62,13 @@ public sealed class CachingUserRepository : IUserRepository
         return user!;
     }
 
-    public RssUser GetUserByAadId(string aadUserId)
+    public RssUser FindByIdentity(string provider, string subject)
     {
-        var key = UserAadIdKey(aadUserId);
+        var key = IdentityKey(provider, subject);
         if (_cache.TryGetValue(key, out RssUser cached))
             return cached!;
 
-        var user = _inner.GetUserByAadId(aadUserId);
-
-        if (user is not null)
-            SetWithEvictionToken(key, user);
-
-        return user!;
-    }
-
-    public RssUser GetUserByProviderUserId(string providerUserId)
-    {
-        var key = UserProviderIdKey(providerUserId);
-        if (_cache.TryGetValue(key, out RssUser cached))
-            return cached!;
-
-        var user = _inner.GetUserByProviderUserId(providerUserId);
+        var user = _inner.FindByIdentity(provider, subject);
 
         if (user is not null)
             SetWithEvictionToken(key, user);
@@ -120,15 +105,9 @@ public sealed class CachingUserRepository : IUserRepository
         return user!;
     }
 
-    public void SetAadUserId(int userId, string aadUserId)
+    public void LinkIdentity(int userId, string provider, string subject)
     {
-        _inner.SetAadUserId(userId, aadUserId);
-        EvictAll();
-    }
-
-    public void SetProviderUserId(int userId, string providerUserId)
-    {
-        _inner.SetProviderUserId(userId, providerUserId);
+        _inner.LinkIdentity(userId, provider, subject);
         EvictAll();
     }
 

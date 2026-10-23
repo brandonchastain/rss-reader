@@ -37,7 +37,40 @@ public static class UserIdentity
 
     public const string EmailLinkPrefix = "microsoft-email:";
 
+    /// <summary>
+    /// UserIdentities.Provider for the Microsoft email-hash link recorded during
+    /// the Static Web Apps migration window.
+    /// </summary>
+    public const string ProviderEmailLink = "email-link";
+
     public static readonly string[] KnownProviders = { ProviderGoogle, ProviderMicrosoft, ProviderGitHub };
+
+    /// <summary>
+    /// Splits a stored or claimed user id into the (provider, subject) pair that
+    /// keys UserIdentities. <c>provider:subject</c> ids from the API login split
+    /// on the first colon; <c>microsoft-email:hash</c> link ids become
+    /// (<see cref="ProviderEmailLink"/>, hash); anything else is a legacy Static
+    /// Web Apps id (an opaque Entra-issued hash) and is filed under microsoft,
+    /// which is the provider SWA authenticated it with.
+    /// </summary>
+    public static (string Provider, string Subject) ParseIdentity(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) throw new ArgumentException("id is required", nameof(id));
+        id = id.Trim();
+        if (id.StartsWith(EmailLinkPrefix, StringComparison.Ordinal))
+            return (ProviderEmailLink, id.Substring(EmailLinkPrefix.Length));
+        var colon = id.IndexOf(':');
+        if (colon > 0 && colon < id.Length - 1)
+        {
+            var provider = id.Substring(0, colon).ToLowerInvariant();
+            if (IsKnownProvider(provider))
+                return (provider, id.Substring(colon + 1));
+        }
+        return (ProviderMicrosoft, id);
+    }
+
+    public static string FormatIdentity(string provider, string subject) =>
+        provider == ProviderEmailLink ? EmailLinkPrefix + subject : $"{provider}:{subject}";
 
     public static string BuildUserId(string provider, string subject)
     {

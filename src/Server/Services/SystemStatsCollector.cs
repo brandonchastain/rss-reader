@@ -73,7 +73,7 @@ public class SystemStatsCollector
                 conn.Open();
                 userCount = Count(conn, "Users");
                 feedCount = Count(conn, "Feeds");
-                itemCount = Count(conn, "Items");
+                itemCount = Count(conn, "Posts");
             });
         }
 

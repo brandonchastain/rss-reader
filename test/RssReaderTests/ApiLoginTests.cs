@@ -118,19 +118,19 @@ public sealed class ApiLoginTests
     }
 
     [TestMethod]
-    public void UserResolver_EmailHashLink_ThenFirstDirectLogin_UpgradesToObjectId()
+    public void UserResolver_EmailHashLink_ThenFirstDirectLogin_LinksObjectId()
     {
         var fake = new FakeUserRepository();
-        fake.Users.Add(new RssUser("024d97", 7)); fake.AadUserIds[7] = "024d97";
+        fake.Users.Add(new RssUser("024d97", 7)); fake.Link(7, "024d97");
         var resolver = new UserResolver(fake, NullLogger<UserResolver>.Instance);
         var emailLink = UserIdentity.EmailLinkId("person@example.com");
 
-        // Migration window: SWA visit records the email hash.
+        // Migration window: SWA visit records the email hash as an email-link identity.
         var swa = new ClaimsIdentity("aad");
         swa.AddClaim(new Claim(ClaimTypes.NameIdentifier, "024d97"));
         swa.AddClaim(new Claim(UserIdentity.LinkedUserIdClaim, emailLink));
         Assert.AreEqual(7, resolver.ResolveUser(new ClaimsPrincipal(swa))!.Id);
-        Assert.AreEqual(emailLink, fake.ProviderUserIds[7]);
+        Assert.AreEqual(7, fake.Identities[(UserIdentity.ProviderEmailLink, emailLink.Substring(UserIdentity.EmailLinkPrefix.Length))]);
 
         // After cutover: direct Microsoft login carries the object id and the email hash.
         var oidc = new ClaimsIdentity("oidc");
@@ -142,12 +142,12 @@ public sealed class ApiLoginTests
 
         var user = resolver.ResolveOrCreateUser(principal);
         Assert.AreEqual(7, user.Id, "must land on the pre-migration row");
-        Assert.AreEqual("microsoft:obj-1", fake.ProviderUserIds[7], "hash replaced by the real id");
+        Assert.AreEqual(7, fake.Identities[("microsoft", "obj-1")], "the real id is linked to the same row");
         Assert.AreEqual(0, fake.AddUserCallCount);
 
-        // A later SWA visit must not downgrade the real id back to the hash.
+        // A later SWA visit changes nothing.
         resolver.ResolveUser(new ClaimsPrincipal(swa));
-        Assert.AreEqual("microsoft:obj-1", fake.ProviderUserIds[7]);
+        Assert.AreEqual(3, fake.Identities.Count);
 
         // And the next direct login finds the row by the real id.
         Assert.AreEqual(7, resolver.ResolveUser(principal)!.Id);
@@ -183,7 +183,7 @@ public sealed class ApiLoginTests
     {
         var fake = new FakeUserRepository();
         fake.Users.Add(new RssUser("024d97a14bc74c58b9a83e88b919a92c", 7));
-        fake.AadUserIds[7] = "024d97a14bc74c58b9a83e88b919a92c";
+        fake.Link(7, "024d97a14bc74c58b9a83e88b919a92c");
         var resolver = new UserResolver(fake, NullLogger<UserResolver>.Instance);
 
         // Migration window: SWA principal with the linked id claim.
@@ -193,7 +193,7 @@ public sealed class ApiLoginTests
         var viaSwa = resolver.ResolveUser(new ClaimsPrincipal(swa));
         Assert.IsNotNull(viaSwa);
         Assert.AreEqual(7, viaSwa.Id);
-        Assert.AreEqual("microsoft:obj-1", fake.ProviderUserIds[7]);
+        Assert.AreEqual(7, fake.Identities[("microsoft", "obj-1")]);
 
         // After cutover: the API's own Microsoft login for the same person.
         var direct = new ClaimsIdentity("cookie");
@@ -208,7 +208,7 @@ public sealed class ApiLoginTests
     }
 
     [TestMethod]
-    public void UserResolver_NewProviderLogin_CreatesRowWithProviderId()
+    public void UserResolver_NewProviderLogin_CreatesRowWithProviderIdentity()
     {
         var fake = new FakeUserRepository();
         var resolver = new UserResolver(fake, NullLogger<UserResolver>.Instance);
@@ -218,7 +218,7 @@ public sealed class ApiLoginTests
         var user = resolver.ResolveOrCreateUser(new ClaimsPrincipal(identity));
 
         Assert.AreEqual("github:4242", user.Username);
-        Assert.AreEqual("github:4242", fake.AadUserIds[user.Id]);
+        Assert.AreEqual(user.Id, fake.Identities[("github", "4242")]);
     }
 
     [TestMethod]
@@ -230,8 +230,8 @@ public sealed class ApiLoginTests
         var principal = new ClaimsPrincipal(identity);
 
         Assert.IsFalse(AdminPolicy.IsAdmin(config, principal));
-        var row = new RssUser("x", 1) { AadUserId = "024d97a14bc74c58b9a83e88b919a92c", ProviderUserId = "microsoft:obj-1" };
-        Assert.IsTrue(AdminPolicy.IsAdmin(config, principal, row));
+        var row = new RssUser("x", 1) { Identities = new[] { "microsoft:024d97a14bc74c58b9a83e88b919a92c", "microsoft:obj-1" } };
+        Assert.IsTrue(AdminPolicy.IsAdmin(config, principal, row), "the legacy SWA id is matched as a bare subject");
     }
 
     // ---------- returnUrl validation ----------
@@ -350,9 +350,9 @@ public sealed class AdminControllerLinkedIdTests
     {
         var config = new RssAppConfig { AdminAadUserIds = "024d97a14bc74c58b9a83e88b919a92c" };
         var repo = new FakeUserRepository();
-        repo.Users.Add(new RssUser("legacy", 7) { AadUserId = "024d97a14bc74c58b9a83e88b919a92c" });
-        repo.AadUserIds[7] = "024d97a14bc74c58b9a83e88b919a92c";
-        repo.SetProviderUserId(7, "microsoft:obj-1");
+        repo.Users.Add(new RssUser("legacy", 7));
+        repo.Link(7, "024d97a14bc74c58b9a83e88b919a92c");
+        repo.Link(7, "microsoft:obj-1");
         var resolver = new UserResolver(repo, NullLogger<UserResolver>.Instance);
         var stats = new Moq.Mock<RssApp.Data.ISystemStatsRepository>().Object;
         var controller = new Server.Controllers.AdminController(

@@ -7,8 +7,9 @@ using Server.Authentication;
 namespace RssApp.ComponentServices;
 
 /// <summary>
-/// Resolves the authenticated RssUser from claims, using the SWA-provided
-/// user identifier as the sole lookup key.
+/// Resolves the authenticated RssUser from claims. The NameIdentifier claim is
+/// a login identity (provider:subject from the API login, or a legacy Static
+/// Web Apps id) and is looked up in UserIdentities.
 /// </summary>
 public interface IUserResolver
 {
@@ -20,7 +21,7 @@ public interface IUserResolver
 
     /// <summary>
     /// Resolves or creates the authenticated user during registration.
-    /// New users are created with the SWA user ID as their username (email never stored).
+    /// New users are created with the login id as their username (email never stored).
     /// </summary>
     RssUser ResolveOrCreateUser(ClaimsPrincipal principal);
 }
@@ -38,43 +39,36 @@ public class UserResolver : IUserResolver
 
     public RssUser? ResolveUser(ClaimsPrincipal principal)
     {
-        var aadId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(aadId))
+        var loginId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(loginId))
             return null;
 
-        var user = _userRepository.GetUserByAadId(aadId);
+        var (provider, subject) = UserIdentity.ParseIdentity(loginId);
+        var user = _userRepository.FindByIdentity(provider, subject);
         if (user != null)
         {
-            // Lazy migration: replace email-based usernames with AAD GUID
-            if (user.Username != aadId)
+            // Lazy migration: replace email-based usernames with the login id
+            if (user.Username != loginId && UserIdentity.LooksLikeEmail(user.Username))
             {
-                _logger.LogInformation("Migrating username for user {UserId} from legacy value to AAD GUID", user.Id);
-                _userRepository.UpdateUsername(user.Id, aadId);
-                user.Username = aadId;
+                _logger.LogInformation("Migrating username for user {UserId} from legacy value to login id", user.Id);
+                _userRepository.UpdateUsername(user.Id, loginId);
+                user.Username = loginId;
             }
-            LinkProviderUserId(principal, user);
+            LinkFromClaim(principal, user, UserIdentity.LinkedUserIdClaim);
             return user;
         }
 
-        // Not found by the id on the principal: the person may have signed up
-        // through Static Web Apps and now logs in through the API, in which
-        // case the row carries their provider:subject id in ProviderUserId.
-        user = _userRepository.GetUserByProviderUserId(aadId);
-        if (user != null)
-            return user;
-
         // First direct login of an account linked by email hash during the
-        // migration window: find the row by the hash, then replace the hash
-        // with the real provider id so the email link is used exactly once.
+        // Static Web Apps migration window: find the row by its email-link
+        // identity, then attach the real provider identity to it.
         var emailLink = principal.FindFirst(UserIdentity.EmailLinkClaim)?.Value;
         if (!string.IsNullOrEmpty(emailLink))
         {
-            user = _userRepository.GetUserByProviderUserId(emailLink);
+            var (linkProvider, linkSubject) = UserIdentity.ParseIdentity(emailLink);
+            user = _userRepository.FindByIdentity(linkProvider, linkSubject);
             if (user != null)
             {
-                _userRepository.SetProviderUserId(user.Id, aadId);
-                user.ProviderUserId = aadId;
-                _logger.LogInformation("Upgraded email link to provider id for user {UserId}", user.Id);
+                TryLink(user, provider, subject, "Linked {Provider} identity to user {UserId} through the email link");
                 return user;
             }
         }
@@ -84,26 +78,28 @@ public class UserResolver : IUserResolver
 
     // During the migration the SWA principal carries a link id (the Entra
     // object id when available, otherwise a hash of the Microsoft-reported
-    // email). Record it on a row that has none yet so the row survives
-    // cutover; never overwrite a real provider id with a weaker link.
-    private void LinkProviderUserId(ClaimsPrincipal principal, RssUser user)
+    // email). Attach it as an additional identity so the row survives cutover.
+    private void LinkFromClaim(ClaimsPrincipal principal, RssUser user, string claimType)
     {
-        var linked = principal.FindFirst(UserIdentity.LinkedUserIdClaim)?.Value;
-        if (string.IsNullOrEmpty(linked) || user.ProviderUserId == linked)
-            return;
-        if (!string.IsNullOrEmpty(user.ProviderUserId)
-            && !user.ProviderUserId.StartsWith(UserIdentity.EmailLinkPrefix, StringComparison.Ordinal))
+        var linked = principal.FindFirst(claimType)?.Value;
+        if (string.IsNullOrEmpty(linked) || user.Identities.Contains(linked, StringComparer.Ordinal))
             return;
 
+        var (provider, subject) = UserIdentity.ParseIdentity(linked);
+        TryLink(user, provider, subject, "Linked user {UserId} to {Provider} identity for the login migration");
+    }
+
+    private void TryLink(RssUser user, string provider, string subject, string message)
+    {
         try
         {
-            _userRepository.SetProviderUserId(user.Id, linked);
-            user.ProviderUserId = linked;
-            _logger.LogInformation("Linked user {UserId} to provider id for the login migration", user.Id);
+            _userRepository.LinkIdentity(user.Id, provider, subject);
+            user.Identities = user.Identities.Append(UserIdentity.FormatIdentity(provider, subject)).ToList();
+            _logger.LogInformation(message, provider, user.Id);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to link provider id on user {UserId}; will retry on next request", user.Id);
+            _logger.LogWarning(ex, "Failed to link identity on user {UserId}; will retry on next request", user.Id);
         }
     }
 
@@ -113,21 +109,23 @@ public class UserResolver : IUserResolver
         if (existing != null)
             return existing;
 
-        var aadId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(aadId))
-            throw new InvalidOperationException("Cannot create user without AAD identifier");
+        var loginId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(loginId))
+            throw new InvalidOperationException("Cannot create user without a login identifier");
 
-        // New user: use AAD GUID as username (email is never stored)
-        var newUser = _userRepository.AddUser(aadId);
+        // New user: the login id is the username (email is never stored)
+        var newUser = _userRepository.AddUser(loginId);
+        var (provider, subject) = UserIdentity.ParseIdentity(loginId);
         try
         {
-            _userRepository.SetAadUserId(newUser.Id, aadId);
+            _userRepository.LinkIdentity(newUser.Id, provider, subject);
+            newUser.Identities = new[] { UserIdentity.FormatIdentity(provider, subject) };
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to set AadUserId on newly created user {UserId}; will retry on next login", newUser.Id);
+            _logger.LogWarning(ex, "Failed to link identity on newly created user {UserId}; will retry on next login", newUser.Id);
         }
-        _logger.LogInformation("Created anonymous user {UserId} with AAD GUID", newUser.Id);
+        _logger.LogInformation("Created anonymous user {UserId} with login id", newUser.Id);
         return newUser;
     }
 }

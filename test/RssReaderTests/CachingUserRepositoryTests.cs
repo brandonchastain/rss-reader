@@ -12,21 +12,39 @@ internal sealed class FakeUserRepository : IUserRepository
 {
     // Backing store — tests can pre-populate this to simulate existing data.
     public List<RssUser> Users { get; } = new();
-    public Dictionary<int, string> AadUserIds { get; } = new();
-    public Dictionary<int, string> ProviderUserIds { get; } = new();
+
+    // (provider, subject) -> user id, the UserIdentities table.
+    public Dictionary<(string Provider, string Subject), int> Identities { get; } = new();
 
     // Call counters so tests can assert how many times each method was invoked.
     public int AddUserCallCount { get; private set; }
     public int GetUserByNameCallCount { get; private set; }
     public int GetUserByIdCallCount { get; private set; }
-    public int GetUserByAadIdCallCount { get; private set; }
-    public int SetAadUserIdCallCount { get; private set; }
+    public int FindByIdentityCallCount { get; private set; }
+    public int LinkIdentityCallCount { get; private set; }
     public int GetAllUsersCallCount { get; private set; }
 
-    // When true, SetAadUserId throws to simulate a DB constraint violation.
-    public bool ThrowOnSetAadUserId { get; set; }
+    // When true, LinkIdentity throws to simulate a DB constraint violation.
+    public bool ThrowOnLinkIdentity { get; set; }
 
     private int _nextId = 1;
+
+    /// <summary>Test helper: link a provider:subject (or legacy) id the way the migration would.</summary>
+    public void Link(int userId, string storedId)
+    {
+        var (p, s) = Server.Authentication.UserIdentity.ParseIdentity(storedId);
+        Identities[(p, s)] = userId;
+        Refresh(userId);
+    }
+
+    public IEnumerable<string> IdentitiesOf(int userId)
+        => Identities.Where(kv => kv.Value == userId).Select(kv => Server.Authentication.UserIdentity.FormatIdentity(kv.Key.Provider, kv.Key.Subject));
+
+    private void Refresh(int userId)
+    {
+        var user = Users.FirstOrDefault(u => u.Id == userId);
+        if (user != null) user.Identities = IdentitiesOf(userId).ToList();
+    }
 
     public RssUser AddUser(string username, int? id = null)
     {
@@ -49,36 +67,21 @@ internal sealed class FakeUserRepository : IUserRepository
         return Users.FirstOrDefault(u => u.Id == userId)!;
     }
 
-    public RssUser GetUserByAadId(string aadUserId)
+    public RssUser FindByIdentity(string provider, string subject)
     {
-        GetUserByAadIdCallCount++;
-        var userId = AadUserIds.FirstOrDefault(kvp => kvp.Value == aadUserId);
-        if (userId.Value != null)
-        {
-            return Users.FirstOrDefault(u => u.Id == userId.Key)!;
-        }
-        return null!;
+        FindByIdentityCallCount++;
+        return Identities.TryGetValue((provider, subject), out var userId)
+            ? Users.FirstOrDefault(u => u.Id == userId)!
+            : null!;
     }
 
-    public void SetAadUserId(int userId, string aadUserId)
+    public void LinkIdentity(int userId, string provider, string subject)
     {
-        SetAadUserIdCallCount++;
-        if (ThrowOnSetAadUserId)
+        LinkIdentityCallCount++;
+        if (ThrowOnLinkIdentity)
             throw new InvalidOperationException("Simulated DB constraint violation");
-        AadUserIds[userId] = aadUserId;
-    }
-
-    public RssUser GetUserByProviderUserId(string providerUserId)
-    {
-        var userId = ProviderUserIds.FirstOrDefault(kvp => kvp.Value == providerUserId);
-        return userId.Value != null ? Users.FirstOrDefault(u => u.Id == userId.Key)! : null!;
-    }
-
-    public void SetProviderUserId(int userId, string providerUserId)
-    {
-        ProviderUserIds[userId] = providerUserId;
-        var user = Users.FirstOrDefault(u => u.Id == userId);
-        if (user != null) user.ProviderUserId = providerUserId;
+        Identities.TryAdd((provider, subject), userId);
+        Refresh(userId);
     }
 
     public void UpdateUsername(int userId, string newUsername)

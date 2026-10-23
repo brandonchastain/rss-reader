@@ -110,15 +110,14 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
     {
         using var connection = _connections.OpenRead();
 
-        // LEFT JOIN ensures users with zero feeds/items still appear.
-        // COUNT(DISTINCT) is needed because joining Feeds and Items on
-        // UserId would multiply rows.
+        // Feeds a user subscribes to and the shared posts those subscriptions
+        // make visible. Correlated subqueries so users with nothing still appear.
         var cmd = connection.CreateCommand();
         cmd.CommandText = @"
             SELECT
                 u.Id AS UserId,
-                (SELECT COUNT(*) FROM Feeds f WHERE f.UserId = u.Id) AS FeedCount,
-                (SELECT COUNT(*) FROM Items i WHERE i.UserId = u.Id) AS ItemCount
+                (SELECT COUNT(*) FROM Subscriptions s WHERE s.UserId = u.Id) AS FeedCount,
+                (SELECT COUNT(*) FROM Posts p JOIN Subscriptions s ON s.FeedId = p.FeedId WHERE s.UserId = u.Id) AS ItemCount
             FROM Users u
             ORDER BY u.Id";
 

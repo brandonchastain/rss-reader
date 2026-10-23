@@ -54,6 +54,15 @@ if (!config.IsReadOnly && !string.IsNullOrEmpty(backupPaths.BackupDbPath) && !li
     }
 }
 
+// One-shot schema migration (DB-REDESIGN-SPEC.md section 7) before any
+// repository opens the database. Runs inside one transaction and refuses to
+// start on failure; the legacy tables stay as Legacy_* until dropped by hand.
+MigrationState migrationState = new(DatabaseSchema.MigrationId, "skipped-reader", null, null, null);
+if (!config.IsReadOnly)
+{
+    migrationState = LegacyMigration.RunIfNeeded(dbConnections, startupLoggerFactory.CreateLogger("LegacyMigration"));
+}
+
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     serverOptions.Limits.MaxConcurrentConnections = 500;
@@ -159,12 +168,9 @@ if (!config.IsReadOnly)
                 writerLock))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupToFileService>())
         .AddHostedService<BackgroundWorker>()
-        .AddSingleton<IFeedValidatorStore>(sb =>
-            sb.GetRequiredService<RepositoryFactory>().CreateFeedValidatorStore())
-        .AddSingleton<IFeedScheduleStore>(sb =>
-            sb.GetRequiredService<RepositoryFactory>().CreateFeedScheduleStore())
         .AddSingleton<IFeedRefresher, FeedRefresher>()
         .AddHostedService<FeedScheduler>()
+        .AddHostedService<PostRetentionService>()
         .AddTransient<RedirectDowngradeHandler>()
         .AddTransient<OutboundUrlGuardHandler>()
         // Per-request timeout so a single slow/hung feed can't stall the whole
@@ -238,7 +244,19 @@ if (File.Exists(Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "index.ht
 {
     app.MapFallbackToFile("index.html");
 }
-app.MapGet("/api/healthz", () => Results.Ok(new { status = "healthy", role = config.IsReadOnly ? "reader" : "writer" })).AllowAnonymous();
+app.MapGet("/api/healthz", () => Results.Ok(new
+{
+    status = "healthy",
+    role = config.IsReadOnly ? "reader" : "writer",
+    migration = new
+    {
+        id = migrationState.Id,
+        status = migrationState.Status,
+        appliedUtc = migrationState.AppliedUtc,
+        durationMs = migrationState.DurationMs,
+        notes = migrationState.Notes,
+    },
+})).AllowAnonymous();
 app.MapAuthEndpoints(config.Auth);
 
 if (config.IsTestUserEnabled)

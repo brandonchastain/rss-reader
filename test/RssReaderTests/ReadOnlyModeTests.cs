@@ -23,13 +23,6 @@ public sealed class ReadOnlyModeTests
     }
 
     [TestMethod]
-    public async Task NoOpFeedRefresher_AddFeed_CompletesWithoutError()
-    {
-        var refresher = new NoOpFeedRefresher();
-        await refresher.AddFeedAsync(new NewsFeed("https://example.com/rss", 1));
-    }
-
-    [TestMethod]
     public async Task NoOpFeedRefresher_Refresh_CompletesWithoutError()
     {
         var refresher = new NoOpFeedRefresher();

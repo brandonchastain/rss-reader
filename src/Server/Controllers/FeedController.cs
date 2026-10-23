@@ -338,12 +338,14 @@ namespace Server.Controllers
             try
             {
 
+                // Subscribe only. The feed row is shared: its stored posts are
+                // visible to the new subscriber at once, and a brand-new feed
+                // (NextFetchUtc NULL) is picked up by the scheduler's next pass.
                 var user = this.userRepository.GetUserById(feed.UserId);
                 var existingFeed = this.feedRepository.GetFeed(user, feed.Href);
                 if (existingFeed == null)
                 {
                     this.feedRepository.AddFeed(feed);
-                    await this.feedRefresher.AddFeedAsync(feed);
                 }
 
                 return CreatedAtAction(nameof(GetFeeds), new { username = this.userRepository.GetUserById(feed.UserId)?.Username }, feed);
