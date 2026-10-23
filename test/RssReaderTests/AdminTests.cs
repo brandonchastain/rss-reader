@@ -260,8 +260,11 @@ public sealed class AdminTests
         Assert.AreEqual(first.Timestamp, cached.Timestamp, "within MinInterval the dashboard load reuses the latest snapshot");
 
         var forced = await collector.CaptureNowAsync();
-        Assert.IsTrue(forced.Timestamp > first.Timestamp, "the refresh button always records a new one");
-        Assert.AreEqual(2, repo.GetHistory(1).Count());
+        // Two captures can share a clock tick, so the proof is the row count, not
+        // the timestamps: the forced capture recorded a second snapshot where the
+        // cached dashboard load did not.
+        Assert.IsTrue(forced.Timestamp >= first.Timestamp);
+        Assert.AreEqual(2, repo.GetHistory(1).Count(), "the refresh button always records a new one");
 
         Cleanup(db);
     }
