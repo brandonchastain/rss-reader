@@ -68,6 +68,9 @@ namespace RssReader.Server.Services
         /// <summary>Set when the final backup in <see cref="StopAsync"/> succeeded.</summary>
         public DateTimeOffset? FinalBackupAtUtc { get; private set; }
 
+        /// <summary>Size of the most recent successful backup copy, in bytes.</summary>
+        public long LastBackupBytes { get; private set; }
+
         /// <summary>The share lock this writer holds. Exposed for tests and the startup gate.</summary>
         public ShareWriterLock Lock => _lock;
 
@@ -179,6 +182,7 @@ namespace RssReader.Server.Services
         /// </summary>
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
+            var sw = Stopwatch.StartNew();
             await base.StopAsync(cancellationToken);
             if (!Enabled) return;
 
@@ -206,31 +210,42 @@ namespace RssReader.Server.Services
 
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(_paths.FinalBackupTimeout);
-                _logger.LogInformation("Shutdown: running final DB backup to the share.");
+                _logger.LogInformation(
+                    "Shutdown: running final DB backup to the share ({Ms} ms into StopAsync).",
+                    sw.ElapsedMilliseconds);
+                var copyStart = sw.ElapsedMilliseconds;
                 var ok = await RunBackupCycleAsync(force: true, timeout.Token);
                 if (ok)
                 {
                     FinalBackupAtUtc = DateTimeOffset.UtcNow;
-                    _logger.LogInformation("Shutdown: final DB backup OK.");
+                    _logger.LogInformation(
+                        "Shutdown: final DB backup OK: {Bytes:N0} bytes copied in {CopyMs} ms ({TotalMs} ms into StopAsync).",
+                        LastBackupBytes, sw.ElapsedMilliseconds - copyStart, sw.ElapsedMilliseconds);
                 }
                 else
                 {
-                    _logger.LogError("Shutdown: final DB backup did not run — writes since the last cycle may be lost.");
+                    _logger.LogError(
+                        "Shutdown: final DB backup did not run after {Ms} ms — writes since the last cycle may be lost.",
+                        sw.ElapsedMilliseconds);
                 }
             }
             catch (OperationCanceledException)
             {
                 _logger.LogError(
-                    "Shutdown: final DB backup timed out after {Timeout} — writes since the last cycle may be lost.",
-                    _paths.FinalBackupTimeout);
+                    "Shutdown: final DB backup timed out after {Timeout} ({Ms} ms into StopAsync) — writes since the last cycle may be lost.",
+                    _paths.FinalBackupTimeout, sw.ElapsedMilliseconds);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Shutdown: final DB backup failed");
+                _logger.LogError(ex, "Shutdown: final DB backup failed after {Ms} ms", sw.ElapsedMilliseconds);
             }
             finally
             {
+                var wasHeld = _lock.IsHeld;
                 _lock.Release();
+                _logger.LogInformation(
+                    "Shutdown: share writer lock released (wasHeld={WasHeld}) {Ms} ms into StopAsync.",
+                    wasHeld, sw.ElapsedMilliseconds);
             }
         }
 
@@ -378,6 +393,7 @@ namespace RssReader.Server.Services
                 LastSuccessAtUtc = DateTimeOffset.UtcNow;
                 _lastBackedUpFingerprint = fingerprint;
                 var size = new FileInfo(_paths.BackupDbPath).Length;
+                LastBackupBytes = size;
                 _logger.LogInformation(
                     "DB backup OK: {Bytes:N0} bytes in {Ms} ms (host={Host} pid={Pid}).",
                     size, sw.ElapsedMilliseconds, _hostName, _processId);
