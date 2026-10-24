@@ -31,7 +31,7 @@ the storage account key, so rotating the key breaks the mount mid-backup (the
 rotation runbook exists for this), and SMB does not give SQLite the locking it
 needs, which is why backups are staged locally and renamed.
 
-Litestream is already in the image (0.5.9) and in the infrastructure (a
+Litestream is already in the image (0.5.9 when this was written; 0.5.17 since 11.7) and in the infrastructure (a
 `litestream` blob container, a blob role on the app's identity), but aimed at
 read replicas that nothing routes to and that the capacity work shows are not
 needed: the writer sustains 150 requests/s on 0.5 vCPU against a real peak of
@@ -594,3 +594,55 @@ Section 3.5 and `infrastructure/litestream.yml` now use these.
   port that the liveness probe (30 s period, three failures) rides out. With
   a 30 s lease that gap is at most about 30 s and only follows a crashed
   writer.
+
+### 11.7 Found in rollout step 1: 0.5.9 snapshots the whole database on every WAL restart
+
+Observed in production within an hour of step 1 going live (2026-10-24,
+20:54 to 21:42 UTC, revisions 89 to 92): the replica received a 228 MB LTX
+file, the size of a full snapshot, every one to three minutes in steady
+state, not only after a deploy. Seven landed between 21:18 and 21:31. Blob
+transactions ran at about 14,000 an hour against the 3,000 to 6,000 a day
+in section 6; the old writer's final `litestream sync` timed out at 20 s
+behind one of the uploads during the 21:25 deploy, and its lease expired
+mid-shutdown; the container's working set reached 865 MB of 1 GiB. Step 1
+was rolled back the same evening (`enableBlobReplication=false`, PR #176).
+
+Reproduced on this machine with the production copy, the scheduler on and
+Litestream logging at debug: every full-size file carried a reason.
+
+```
+msg=sync txid=000000000000000b offset=32 snap=true reason="wal truncated, snapshotting for complete page coverage"
+msg=sync txid=000000000000000e offset=32 snap=true reason="wal restarted, snapshotting for complete page coverage"
+```
+
+The first is the restart-on-restored-file case of 11.3 and is expected once.
+The second is the cause: SQLite restarts its write-ahead log from the
+beginning after a complete checkpoint, and 0.5.9's `verify` answers a
+restart it did not perform itself with a full snapshot. Litestream
+checkpoints every minute (`checkpoint-interval`) and releases its read lock
+to do so; this app writes often enough that the next app transaction
+restarts the WAL inside that window, so the snapshot fired every minute or
+two. The May 2026 scaling-mode experiment ran the same version against the
+same pattern, which is the likely origin of the 25 GiB of leftovers that
+production's retention sweep deleted at 20:56.
+
+Litestream 0.5.15 ("fix(db): harden checkpoint snapshots", PR 1292) is the
+upstream fix: "unnecessarily large LTX output when WAL state changed around
+a checkpoint", with checkpoint boundaries falling back to a normal catch-up
+sync. Verified here with 0.5.17 (the current release) in the same
+reproduction: nine minutes, one full snapshot at start, every other upload
+1.4 to 1.7 MB (a feed-refresh batch), no `reason=` line at all. The image
+moves to 0.5.17 (`src/Server/Dockerfile`, checksum
+`cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c9c006d`), the
+Docker durability test passes on it, and step 1 is switched back on with it.
+
+Two lessons for the rest of the rollout:
+
+- The Docker test's database is 160 KB, so a "full snapshot every sync"
+  looked like nothing there. The shadow period on the real size is what
+  caught it, and the blob Transactions metric is the signal to watch after
+  every change to Litestream's version or config.
+- The sanity check for the seed held throughout: a restore of the live
+  replica during the episode matched `/api/healthz` exactly (151,884 posts,
+  225 subscriptions, 5,509 user-post rows, max id 151884, quick_check ok).
+  Oversized, not wrong.
