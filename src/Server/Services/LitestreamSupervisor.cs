@@ -186,7 +186,7 @@ namespace RssReader.Server.Services
         public async Task StopAsync(CancellationToken cancellationToken)
         {
             if (!Enabled) return;
-            _stopping.Cancel();
+            await _stopping.CancelAsync();
             var process = _process;
             if (process == null || process.HasExited)
             {
@@ -240,8 +240,12 @@ namespace RssReader.Server.Services
 
         public async ValueTask DisposeAsync()
         {
-            _stopping.Cancel();
+            await _stopping.CancelAsync();
+            // VSTHRD003: no synchronization context in ASP.NET, so awaiting the supervise
+            // task cannot deadlock.
+#pragma warning disable VSTHRD003
             if (_supervise != null) { try { await _supervise; } catch { } }
+#pragma warning restore VSTHRD003
             _process?.Dispose();
             _stopping.Dispose();
         }

@@ -357,7 +357,7 @@ namespace RssReader.Server.Services
             _renewCts = null;
             _renewTask = null;
             if (cts == null) return;
-            cts.Cancel();
+            await cts.CancelAsync();
             if (task != null)
             {
                 try { await task; } catch (OperationCanceledException) { }

@@ -182,6 +182,8 @@ public class BlobWriterLeaseTests
     [TestMethod]
     public async Task UnreachableService_GivesUpAfterTimeout()
     {
+        // NOT A SECRET: Azurite's published well-known test key for devstoreaccount1, pointed at a
+        // closed port so the service is unreachable.
         var bogus = new BlobContainerClient("DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:1/devstoreaccount1;", "x");
         var l = new BlobWriterLease(bogus, "lease", TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(5), NullLogger.Instance)
         {

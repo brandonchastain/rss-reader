@@ -13,6 +13,8 @@ dbs:
   - path: /tmp/storage.db
     replica:
       type: abs
+      # NOT A SECRET: Azurite's published well-known test key for its fake account
+      # devstoreaccount1 (see the Azurite README); it only works against the emulator.
       account-name: devstoreaccount1
       account-key: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
       endpoint: http://azurite:10000/devstoreaccount1

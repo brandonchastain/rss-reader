@@ -84,7 +84,11 @@ if (writerLease != null)
 {
     // The gate returned with the share lock held (or given up on). The lease normally
     // arrives within seconds of it: the old writer releases its lock first, then its lease.
+    // VSTHRD003 guards against JoinableTaskFactory deadlocks when awaiting a task
+    // started elsewhere; ASP.NET has no synchronization context, so none is possible.
+#pragma warning disable VSTHRD003
     try { await leaseAcquire; }
+#pragma warning restore VSTHRD003
     catch (OperationCanceledException) { }
     startupLoggerFactory.CreateLogger("Durability").LogInformation(
         "Startup: blob lease held={LeaseHeld}, share lock held={LockHeld}; {Verdict}.",
