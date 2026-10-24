@@ -76,6 +76,16 @@ public class FeedRefresher : IFeedRefresher
         private int _consecutiveFailures;
         private long _nextEarliestFetchTicks; // DateTimeOffset.UtcTicks; 0 = no backoff
 
+        public FeedFetchHealth()
+        {
+        }
+
+        public FeedFetchHealth(int consecutiveFailures, DateTimeOffset? nextEarliestFetch)
+        {
+            _consecutiveFailures = consecutiveFailures;
+            _nextEarliestFetchTicks = nextEarliestFetch?.UtcTicks ?? 0;
+        }
+
         public int ConsecutiveFailures => Volatile.Read(ref _consecutiveFailures);
 
         public DateTimeOffset? NextEarliestFetch
@@ -423,10 +433,41 @@ public class FeedRefresher : IFeedRefresher
         => state?.LastFetchedUtc == null
             || state.LastFetchedUtc.Value + this.config.FeedRefreshIntervalFloor <= DateTimeOffset.UtcNow;
 
+    /// <summary>
+    /// Starts a feed's backoff from what the Feeds row recorded, not from zero. The replica
+    /// restarts on every deploy and every scale-to-zero, and an in-memory-only counter began
+    /// each restart at the shortest delay, so a dead feed was retried about every half hour
+    /// (45 failures in a day) instead of backing off to the cap.
+    /// </summary>
+    private FeedFetchHealth HealthFromPersisted(string url)
+    {
+        var state = this.persistedFeeds.GetFeedFetchState(url);
+        return state is { ConsecutiveFailures: > 0 }
+            ? new FeedFetchHealth(state.ConsecutiveFailures, state.NextFetchUtc)
+            : new FeedFetchHealth();
+    }
+
+    /// <summary>
+    /// The reason to show a person: the exception's message plus the innermost one, which is
+    /// where the cause lives ("The SSL connection could not be established, see inner
+    /// exception." hides "the remote certificate has expired").
+    /// </summary>
+    internal static string DescribeFailure(Exception ex)
+    {
+        var inner = ex;
+        while (inner.InnerException != null)
+        {
+            inner = inner.InnerException;
+        }
+
+        var outer = ex.Message.Replace(", see inner exception.", string.Empty).Replace(" See inner exception.", string.Empty).TrimEnd('.', ' ');
+        return ReferenceEquals(inner, ex) ? ex.Message : $"{outer} - {inner.Message.TrimEnd('.', ' ')}";
+    }
+
     private const int MaxStoredErrorLength = 300;
 
     private static string TruncateError(string error)
-        => error != null && error.Length > MaxStoredErrorLength ? error[..MaxStoredErrorLength] + "…" : error;
+        => error != null && error.Length > MaxStoredErrorLength ? error[..MaxStoredErrorLength] + "â€¦" : error;
 
     /// <summary>
     /// When the response body is an HTML page rather than a feed, returns a
@@ -526,7 +567,7 @@ public class FeedRefresher : IFeedRefresher
             return new FeedFetchResult { Outcome = FetchOutcome.NotModified };
         }
 
-        var health = feedHealth.GetOrAdd(url, _ => new FeedFetchHealth());
+        var health = feedHealth.GetOrAdd(url, HealthFromPersisted);
 
         // Politeness: if this feed is in a backoff window (from a prior failure
         // or an origin Retry-After), don't touch the origin yet.
@@ -645,7 +686,7 @@ public class FeedRefresher : IFeedRefresher
                     // A web page where a feed should be (a retired URL redirecting to a
                     // landing page) is the common case; say that, not "'doctype' is an
                     // unexpected token".
-                    lastError = TruncateError(nonFeedNote ?? ex.GetType().Name + ": " + ex.Message);
+                    lastError = TruncateError(nonFeedNote ?? DescribeFailure(ex));
                     int len = Math.Min(500, response?.Length ?? 0);
                     this.logger.LogError(ex, "Error reloading feeds. Bad RSS response.\n{url}\n{response}", url, response?.Substring(0, len));
                 }
