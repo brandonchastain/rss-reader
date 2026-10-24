@@ -78,6 +78,91 @@ internal sealed class TestDatabase : IDisposable
 [TestClass]
 public sealed class PostsSchemaTests
 {
+    private static async Task<List<string>> SearchTitles(TestDatabase db, RssUser user, string query)
+        => (await db.Items.SearchItemsAsync(query, user, 0, 50)).Select(i => i.Title).OrderBy(t => t).ToList();
+
+    [TestMethod]
+    public async Task Search_MatchesWholeWords_WordStarts_AndPhrases_InTitleAndBody()
+    {
+        using var db = new TestDatabase("search");
+        var user = db.AddUser("search-user");
+        const string feed = "https://search.example.com/f";
+        db.Subscribe(user, feed);
+        await db.Items.AddItemsAsync(new[]
+        {
+            Post(feed, "1", "Cloudflare outage report", "<p>The edge network went down.</p>"),
+            Post(feed, "2", "Weekly roundup", "<p>A zeppelin landed near the quantum widgets factory.</p>"),
+            Post(feed, "3", "Unrelated", "<p>Nothing to see.</p>"),
+        });
+
+        CollectionAssert.AreEqual(new[] { "Cloudflare outage report" }, await SearchTitles(db, user, "cloudflare"), "whole word in a title");
+        CollectionAssert.AreEqual(new[] { "Cloudflare outage report" }, await SearchTitles(db, user, "CLOUDFL"), "word start, any case");
+        CollectionAssert.AreEqual(new[] { "Weekly roundup" }, await SearchTitles(db, user, "zeppelin"), "word in the body");
+        CollectionAssert.AreEqual(new[] { "Weekly roundup" }, await SearchTitles(db, user, "quantum wid"), "phrase with a cut-short last word");
+        Assert.AreEqual(0, (await SearchTitles(db, user, "quantum factory")).Count, "words must be adjacent: it is a phrase");
+    }
+
+    [TestMethod]
+    public async Task Search_NoLongerMatchesInTheMiddleOfAWord()
+    {
+        // The deliberate trade for dropping the title LIKE '%word%' scan: only word starts match.
+        using var db = new TestDatabase("search-mid");
+        var user = db.AddUser("mid-user");
+        const string feed = "https://mid.example.com/f";
+        db.Subscribe(user, feed);
+        await db.Items.AddItemsAsync(new[] { Post(feed, "1", "Cloudflare outage", "<p>x</p>") });
+
+        Assert.AreEqual(0, (await SearchTitles(db, user, "flare")).Count);
+        Assert.AreEqual(1, (await SearchTitles(db, user, "cloud")).Count);
+    }
+
+    [DataTestMethod]
+    [DataRow("!!!")]
+    [DataRow("   ")]
+    [DataRow("\"")]
+    [DataRow("a \"quoted\" word")]
+    [DataRow("c++")]
+    [DataRow("it's")]
+    [DataRow("*")]
+    [DataRow("NEAR(a b)")]
+    [DataRow("a AND OR b")]
+    public async Task Search_OddInput_NeverThrows(string query)
+    {
+        using var db = new TestDatabase("search-odd");
+        var user = db.AddUser("odd-user");
+        const string feed = "https://odd.example.com/f";
+        db.Subscribe(user, feed);
+        await db.Items.AddItemsAsync(new[] { Post(feed, "1", "A quoted word", "<p>c plus plus</p>") });
+
+        await db.Items.SearchItemsAsync(query, user, 0, 20);
+    }
+
+    [TestMethod]
+    public async Task Search_AnswersFromTheFullTextIndex_WithoutScanningPosts()
+    {
+        // The plan, not a stopwatch, is what must not regress: a title scan next to the index lookup
+        // is what made every search cost about 200 ms.
+        using var db = new TestDatabase("search-plan");
+        var user = db.AddUser("plan-user");
+        db.Subscribe(user, "https://plan.example.com/f");
+        await db.AddPosts("https://plan.example.com/f", 50);
+        db.Execute("ANALYZE;");
+
+        using var connection = db.Connections.OpenRead();
+        using var command = SQLiteItemRepository.BuildSearchCommand(connection, "post", user, 0, 20, useFts: true);
+        var plan = ExplainPlan(connection, command);
+        StringAssert.Contains(plan, "Posts_fts", plan);
+        Assert.IsFalse(plan.Contains("SCAN p", StringComparison.Ordinal), plan);
+        Assert.IsFalse(command.CommandText.Contains("LIKE", StringComparison.OrdinalIgnoreCase), "no substring scan alongside the index");
+    }
+
+    private static NewsFeedItem Post(string feedUrl, string id, string title, string content) => new(
+        "0", 0, title, $"{feedUrl}/{id}", null, "2025-01-01", content, null)
+    {
+        FeedUrl = feedUrl,
+        PublishDateOrder = 1_000 + long.Parse(id),
+    };
+
     [TestMethod]
     public void FeedHealth_RoundTripsThroughTheSubscriptionList_AndResetsOnSuccess()
     {
