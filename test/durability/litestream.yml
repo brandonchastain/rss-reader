@@ -1,0 +1,21 @@
+# Litestream config for the durability test: same shape as
+# infrastructure/litestream.yml, pointed at Azurite (the `endpoint` key, verified
+# in BLOB-DURABILITY-SPEC.md 11.1) with a short sync interval so the crash
+# scenario's recovery point is measurable in seconds.
+socket:
+  enabled: true
+  path: /tmp/litestream.sock
+snapshot:
+  interval: 24h
+  retention: 72h
+shutdown-sync-timeout: 30s
+dbs:
+  - path: /tmp/storage.db
+    replica:
+      type: abs
+      account-name: devstoreaccount1
+      account-key: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
+      endpoint: http://azurite:10000/devstoreaccount1
+      bucket: litestream
+      path: storage.db
+      sync-interval: 3s

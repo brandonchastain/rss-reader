@@ -24,6 +24,8 @@
 
 set -euo pipefail
 cd "$(dirname "$0")"
+# Git Bash on Windows would rewrite /tmp/... container paths into Windows paths.
+export MSYS_NO_PATHCONV=1
 
 export RSS_IMAGE="${RSS_IMAGE:-rss-reader-api:durability}"
 COMPOSE=(docker compose -f compose.yml --profile a --profile b)
@@ -57,6 +59,11 @@ reset() {
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
   : > "$ACK"
   "${COMPOSE[@]}" up -d azurite >/dev/null
+  "${COMPOSE[@]}" create writer-a >/dev/null 2>&1   # creates the data volume under compose's name
+  # A brand-new share: the entrypoint expects a database there (or a replica to
+  # bootstrap from), as a new environment would be given one by hand.
+  docker run --rm -v rss-durability_data:/data --entrypoint sh "$RSS_IMAGE" -c \
+    'mkdir -p /data/db && sqlite3 /data/db/storage.db "CREATE TABLE IF NOT EXISTS Bootstrap (x); DROP TABLE Bootstrap;"'
 }
 
 sql() { docker exec "$1" sqlite3 "$DB" "$2"; }

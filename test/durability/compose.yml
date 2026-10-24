@@ -1,0 +1,58 @@
+# Durability integration test (BLOB-DURABILITY-SPEC.md 9.2): the real image, the
+# real Litestream binary, Azurite standing in for blob storage, and the Azure
+# Files share standing in as a shared Docker volume. Two writers, A and B, share
+# the volume and the replica; run.sh starts and stops them per scenario.
+#
+# Rollout steps 1 and 2 are what this proves today: the share is still what a
+# new writer seeds from, the blob replica must hold every acknowledged write,
+# and the lease must be taken and released beside the lock file.
+name: rss-durability
+
+x-writer: &writer
+  image: ${RSS_IMAGE:-rss-reader-api:durability}
+  volumes:
+    - data:/data
+    - ./litestream.yml:/etc/litestream-test.yml:ro
+  environment:
+    ASPNETCORE_ENVIRONMENT: Development
+    RssAppConfig__IsTestUserEnabled: "true"
+    RssAppConfig__SchedulerEnabled: "false"
+    RssAppConfig__BackupDbPath: /data/db/storage.db
+    # Shorter than production's three minutes so the overlap scenario does not
+    # wait that long for a stale lock, but above the lock's 30 s heartbeat, or
+    # every live lock would look stale.
+    RssAppConfig__BackupLockStaleAfter: "00:00:40"
+    RssAppConfig__BackupInterval: "00:00:10"
+    RssAppConfig__Durability__ConnectionString: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+    RssAppConfig__Durability__LeaseDuration: "00:00:15"
+    RssAppConfig__Durability__LeaseRenewInterval: "00:00:05"
+    RssAppConfig__Durability__LitestreamEnabled: "true"
+    RssAppConfig__Durability__LitestreamConfigPath: /etc/litestream-test.yml
+    Logging__LogLevel__Default: Information
+  depends_on:
+    azurite:
+      condition: service_started
+
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.33.0
+    command: azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose
+    ports:
+      - "10000"
+
+  writer-a:
+    <<: *writer
+    profiles: [a]
+    ports:
+      - "18081:8080"
+    stop_grace_period: 60s
+
+  writer-b:
+    <<: *writer
+    profiles: [b]
+    ports:
+      - "18082:8080"
+    stop_grace_period: 60s
+
+volumes:
+  data:
