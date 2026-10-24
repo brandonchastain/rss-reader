@@ -23,6 +23,13 @@ namespace RssReader.Server.Services
     {
         public string LockPath => BackupDbPath + ".lock";
 
+        /// <summary>
+        /// The shutdown delta next to the base copy: changed blocks plus WAL since the
+        /// last periodic copy (<see cref="DatabaseDelta"/>). The seeder applies it on top
+        /// of <see cref="BackupDbPath"/>; the next periodic copy deletes it.
+        /// </summary>
+        public string DeltaPath => BackupDbPath + ".delta";
+
         /// <summary>How often the held lock's mtime is refreshed. Keep well under <see cref="LockStaleThreshold"/>.</summary>
         public TimeSpan HeartbeatInterval => LockHeartbeatInterval ?? TimeSpan.FromSeconds(30);
 
@@ -42,16 +49,22 @@ namespace RssReader.Server.Services
     ///
     /// Safety contract:
     ///   - Uses SQLite's online <c>BackupDatabase</c> API (no WAL checkpoint forced on source).
+    ///     The copy is page-for-page the live file as of the snapshot, which is what lets the
+    ///     shutdown delta below be small.
     ///   - The SQLite backup is staged to local disk (next to <c>ActiveDbPath</c>); Azure Files
     ///     SMB does not reliably support the file-locking semantics SQLite needs, so backing up
     ///     directly to the share fails with <c>SQLITE_BUSY</c>. After staging we plain-file-copy
-    ///     to a unique temp on the share and atomically rename to <c>BackupDbPath</c>.
+    ///     to a unique temp on the share and atomically rename to <c>BackupDbPath</c>, hashing
+    ///     the blocks on the way (<see cref="BlockManifest"/>).
     ///   - Runs <c>PRAGMA quick_check</c> on the staged file before publishing.
     ///   - Holds the <see cref="ShareWriterLock"/> for the process lifetime so two writer
     ///     revisions never copy at once, and so a booting revision can wait for this one's
     ///     final copy (issue #136).
-    ///   - On host shutdown (SIGTERM from a deploy or restart) <see cref="StopAsync"/> runs one
-    ///     last copy, ignoring the unchanged-DB skip, before releasing the lock.
+    ///   - On host shutdown (SIGTERM from a deploy or restart) <see cref="StopAsync"/> writes a
+    ///     <see cref="DatabaseDelta"/> next to the base: only the blocks that changed since the
+    ///     last periodic copy, plus the WAL. That costs one sequential read of the live file
+    ///     instead of a full copy, so the handover no longer scales with database size. The
+    ///     full copy remains the fallback when no base was published by this process.
     ///   - This is SEPARATE from <see cref="DatabaseBackupService"/>, which still owns image
     ///     sync and stats and must NEVER write the DB.
     /// </summary>
@@ -67,6 +80,15 @@ namespace RssReader.Server.Services
 
         /// <summary>Set when the final backup in <see cref="StopAsync"/> succeeded.</summary>
         public DateTimeOffset? FinalBackupAtUtc { get; private set; }
+
+        /// <summary>How the final backup was written: "delta" or "full". Null until it ran.</summary>
+        public string? FinalBackupKind { get; private set; }
+
+        /// <summary>
+        /// Block hashes of the base this process last published to the share, or null when
+        /// it has published none (then the final backup falls back to a full copy).
+        /// </summary>
+        internal BlockManifest? LastPublishedManifest { get; private set; }
 
         /// <summary>The share lock this writer holds. Exposed for tests and the startup gate.</summary>
         public ShareWriterLock Lock => _lock;
@@ -189,11 +211,11 @@ namespace RssReader.Server.Services
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(_paths.FinalBackupTimeout);
                 _logger.LogInformation("Shutdown: running final DB backup to the share.");
-                var ok = await RunBackupCycleAsync(force: true, timeout.Token);
+                var ok = await RunFinalBackupAsync(timeout.Token);
                 if (ok)
                 {
                     FinalBackupAtUtc = DateTimeOffset.UtcNow;
-                    _logger.LogInformation("Shutdown: final DB backup OK.");
+                    _logger.LogInformation("Shutdown: final DB backup OK ({Kind}).", FinalBackupKind);
                 }
                 else
                 {
@@ -213,6 +235,122 @@ namespace RssReader.Server.Services
             finally
             {
                 _lock.Release();
+            }
+        }
+
+        /// <summary>
+        /// The final backup: a delta against the base this process published, or a full
+        /// copy when there is none (first cycle never completed) or the base on the share
+        /// is gone. A delta that fails for any reason other than the deadline falls back
+        /// to the full copy with whatever time is left. Exposed for tests.
+        /// </summary>
+        internal async Task<bool> RunFinalBackupAsync(CancellationToken cancellationToken)
+        {
+            var manifest = LastPublishedManifest;
+            if (manifest != null && File.Exists(_paths.BackupDbPath) && File.Exists(_paths.ActiveDbPath))
+            {
+                try
+                {
+                    if (await WriteDeltaAsync(manifest, cancellationToken))
+                    {
+                        FinalBackupKind = "delta";
+                        return true;
+                    }
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Shutdown: delta backup failed — falling back to a full copy.");
+                }
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Shutdown: no base published by this process — running a full copy.");
+            }
+
+            var ok = await RunBackupCycleAsync(force: true, cancellationToken);
+            if (ok) FinalBackupKind = "full";
+            return ok;
+        }
+
+        /// <summary>
+        /// Write <see cref="DatabaseBackupToFilePaths.DeltaPath"/>: the live main file's blocks
+        /// that differ from <paramref name="manifest"/>, plus the WAL. Writers may still be
+        /// active (Kestrel stops after the hosted services), so the read is made consistent
+        /// by SQLite itself: a checkpoint first folds the WAL into the main file where it
+        /// can, then a read transaction is held for the whole read so the WAL cannot be reset
+        /// or restarted; any page a concurrent checkpoint still writes into the main file is
+        /// also a frame in the WAL that is shipped afterwards, and frames win on replay.
+        /// </summary>
+        private async Task<bool> WriteDeltaAsync(BlockManifest manifest, CancellationToken cancellationToken)
+        {
+            var sw = Stopwatch.StartNew();
+            var tempPath = $"{_paths.BackupDbPath}.tmp.{_hostName}.{_processId}.{Guid.NewGuid():N}.delta";
+            try
+            {
+                using var conn = new SqliteConnection($"Data Source={_paths.ActiveDbPath};Pooling=False");
+                conn.Open();
+                using (var pragma = conn.CreateCommand())
+                {
+                    pragma.CommandText = "PRAGMA busy_timeout = 5000;";
+                    pragma.ExecuteNonQuery();
+                }
+                try
+                {
+                    using var checkpoint = conn.CreateCommand();
+                    checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                    checkpoint.ExecuteNonQuery();
+                }
+                catch (SqliteException ex)
+                {
+                    _logger.LogWarning(ex, "Shutdown: checkpoint before the delta did not complete; shipping the WAL instead.");
+                }
+
+                DatabaseDelta.WriteResult result;
+                using (var pin = conn.CreateCommand())
+                {
+                    // A deferred BEGIN plus one read opens a snapshot without taking the
+                    // write lock (BeginTransaction() would issue BEGIN IMMEDIATE and stall
+                    // any request still writing), and the snapshot keeps the WAL from
+                    // being reset until the read below is done.
+                    pin.CommandText = "BEGIN; SELECT count(*) FROM sqlite_master;";
+                    pin.ExecuteScalar();
+                }
+                try
+                {
+                    using var dst = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, ShareCopyBufferBytes);
+                    result = await DatabaseDelta.WriteAsync(
+                        _paths.ActiveDbPath, _paths.ActiveDbPath + "-wal", manifest, dst, cancellationToken);
+                    // Same reasoning as the full copy: make the SMB client push its cache
+                    // before the size check and the rename.
+                    dst.Flush(flushToDisk: true);
+                }
+                finally
+                {
+                    using var end = conn.CreateCommand();
+                    end.CommandText = "ROLLBACK;";
+                    end.ExecuteNonQuery();
+                }
+
+                var actual = new FileInfo(tempPath).Length;
+                if (actual != result.BytesWritten)
+                {
+                    _logger.LogError(
+                        "Shutdown: delta '{Temp}' is {Actual:N0} bytes on the share but {Expected:N0} were written — discarding.",
+                        tempPath, actual, result.BytesWritten);
+                    return false;
+                }
+
+                File.Move(tempPath, _paths.DeltaPath, overwrite: true);
+                _logger.LogInformation(
+                    "DB delta OK: {Bytes:N0} bytes ({Changed} of {Total} blocks, WAL {Wal:N0} bytes) in {Ms} ms (host={Host} pid={Pid}).",
+                    result.BytesWritten, result.ChangedBlocks, result.TotalBlocks, result.WalBytes, sw.ElapsedMilliseconds, _hostName, _processId);
+                return true;
+            }
+            finally
+            {
+                SafeDelete(tempPath);
             }
         }
 
@@ -276,6 +414,13 @@ namespace RssReader.Server.Services
                 var stageExists = File.Exists(stagePath);
                 var stageSize = stageExists ? new FileInfo(stagePath).Length : -1;
                 var (qcOk, qcResult, qcError) = QuickCheckDiagnostic(stagePath);
+                if (qcOk && WalHoldsFrames(stagePath))
+                {
+                    _logger.LogError(
+                        "Staged backup '{Stage}' has a write-ahead log with frames in it — discarding rather than publishing an incomplete file.",
+                        stagePath);
+                    return false;
+                }
                 if (!qcOk)
                 {
                     _logger.LogError(
@@ -285,11 +430,13 @@ namespace RssReader.Server.Services
                 }
 
                 // Plain-file-copy to a unique temp on the SMB share. This involves no SQLite
-                // file locking on /data, only sequential bytes-on-the-wire writes.
-                using (var src = new FileStream(stagePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                using (var dst = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                // file locking on /data, only sequential bytes-on-the-wire writes. The
+                // blocks are hashed on the way: the shutdown delta is computed against them.
+                BlockManifest manifest;
+                using (var src = new FileStream(stagePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1, FileOptions.SequentialScan))
+                using (var dst = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, ShareCopyBufferBytes))
                 {
-                    await src.CopyToAsync(dst, ShareCopyBufferBytes, cancellationToken);
+                    manifest = await BlockManifest.CopyAndHashAsync(src, dst, BlockManifest.DefaultBlockSize, cancellationToken);
                     // Force the SMB client to push its write-back cache to the share before
                     // we trust the file. On Linux CIFS a write-back failure (e.g. the share
                     // quota filling mid-copy) can otherwise be dropped silently: Dispose
@@ -312,6 +459,11 @@ namespace RssReader.Server.Services
                 // Atomic rename within the same SMB directory. File.Move with overwrite=true
                 // uses rename(2) on Linux and is atomic on Azure Files SMB.
                 File.Move(tempPath, _paths.BackupDbPath, overwrite: true);
+                LastPublishedManifest = manifest;
+                // A delta left by the previous shutdown belongs to the previous base. The
+                // seeder ignores a delta whose base hash does not match, so the window
+                // between the rename above and this delete is harmless.
+                SafeDelete(_paths.DeltaPath);
 
                 LastSuccessAtUtc = DateTimeOffset.UtcNow;
                 _lastBackedUpFingerprint = fingerprint;
@@ -411,24 +563,37 @@ namespace RssReader.Server.Services
         {
             await Task.Run(() =>
             {
-                // Use VACUUM INTO instead of the BackupDatabase API. VACUUM INTO produces a
-                // single, clean, fully-checkpointed DB file in DELETE journal mode with NO
-                // -wal/-shm sidecars. This avoids the corruption observed in production where
-                // BackupDatabase produced a WAL-mode dest, the post-backup PRAGMA journal_mode
-                // change failed to fully checkpoint pages into the main file, and our
-                // subsequent SafeDelete of -wal then orphaned uncommitted pages — making the
-                // staged file fail PRAGMA quick_check on every cycle.
+                // The online backup API copies the source's pages one for one, so the stage
+                // has the same page layout as the live file and the shutdown delta against
+                // it stays small. (VACUUM INTO, used before, rebuilds every b-tree: a clean
+                // file, but one that shares almost no blocks with the live one.)
+                //
+                // The destination starts empty in rollback-journal mode and the backup
+                // writes its pages directly, so no -wal is produced here; the copied header
+                // does say WAL, which is why a later open may create empty sidecars. The
+                // corruption seen in production in 2025 came from flipping the stage's
+                // journal_mode afterwards and deleting a -wal that still held pages; the
+                // stage's journal mode is now left alone and a non-empty -wal fails the
+                // cycle instead of being deleted (see the caller).
                 using var src = new SqliteConnection(
                     $"Data Source={sourcePath};Mode=ReadOnly;Pooling=False");
                 src.Open();
                 ApplyBusyTimeout(src);
-                using var cmd = src.CreateCommand();
-                // VACUUM INTO requires a string-literal path; parameter binding is not
-                // supported by SQLite for this statement. Escape single quotes by doubling.
-                var escaped = destPath.Replace("'", "''");
-                cmd.CommandText = $"VACUUM INTO '{escaped}'";
-                cmd.ExecuteNonQuery();
+                using var dst = new SqliteConnection($"Data Source={destPath};Pooling=False");
+                dst.Open();
+                src.BackupDatabase(dst);
             }, cancellationToken);
+        }
+
+        /// <summary>
+        /// A write-ahead log of 32 bytes or less holds no frames. Anything larger next to a
+        /// staged or seeded file means pages live outside the main file and the file must
+        /// not be published as is. Exposed for tests.
+        /// </summary>
+        internal static bool WalHoldsFrames(string dbPath)
+        {
+            var wal = new FileInfo(dbPath + "-wal");
+            return wal.Exists && wal.Length > 32;
         }
 
         private static void ApplyBusyTimeout(SqliteConnection conn)

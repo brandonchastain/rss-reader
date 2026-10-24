@@ -228,7 +228,8 @@ public class DatabaseBackupToFileServiceTests
 
         // Watcher events arrive asynchronously; wait for both rather than for a
         // fixed time, bounded so a broken ordering still fails instead of hanging.
-        var publishName = "renamed:" + Path.GetFileName(_backupDbPath);
+        // A base was published, so the final flush publishes the delta next to it.
+        var publishName = "renamed:" + Path.GetFileName(_paths.DeltaPath);
         var releaseName = "deleted:" + Path.GetFileName(_paths.LockPath);
         string[] snapshot;
         var deadline = DateTime.UtcNow.AddSeconds(10);
@@ -281,7 +282,7 @@ public class DatabaseBackupToFileServiceTests
         await svc.StopAsync(CancellationToken.None);
 
         Assert.IsNotNull(svc.FinalBackupAtUtc, "Final copy still runs");
-        Assert.AreEqual(3, ReadAllRows(_backupDbPath).Count);
+        Assert.AreEqual(3, ReadAllRows(await SeedElsewhere()).Count);
     }
 
 
@@ -298,7 +299,10 @@ public class DatabaseBackupToFileServiceTests
         await _service.StopAsync(CancellationToken.None);
 
         Assert.IsNotNull(_service.FinalBackupAtUtc, "Final backup ran on stop");
-        Assert.AreEqual(3, ReadAllRows(_backupDbPath).Count, "Share copy holds the late write");
+        Assert.AreEqual("delta", _service.FinalBackupKind, "A base was published, so the final backup is a delta");
+        Assert.IsTrue(File.Exists(_paths.DeltaPath), "Delta published next to the base");
+        Assert.AreEqual(2, ReadAllRows(_backupDbPath).Count, "Base copy untouched by the final flush");
+        Assert.AreEqual(3, ReadAllRows(await SeedElsewhere()).Count, "Base + delta holds the late write");
         Assert.IsFalse(File.Exists(_paths.LockPath), "Lock released after the final copy");
     }
 
@@ -308,14 +312,152 @@ public class DatabaseBackupToFileServiceTests
         Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
         // Prove the periodic skip (#128) is in effect for an unchanged DB...
         Assert.IsFalse(await _service.RunBackupCycleAsync(CancellationToken.None));
-        var stale = DateTime.UtcNow - TimeSpan.FromHours(1);
-        File.SetLastWriteTimeUtc(_backupDbPath, stale);
 
-        // ...and that the final flush does not honour it.
+        // ...and that the final flush does not honour it: a delta is written regardless.
         await _service.StopAsync(CancellationToken.None);
 
         Assert.IsNotNull(_service.FinalBackupAtUtc);
-        Assert.IsTrue(File.GetLastWriteTimeUtc(_backupDbPath) > stale, "Share copy rewritten by the final flush");
+        Assert.IsTrue(File.Exists(_paths.DeltaPath), "Delta written by the final flush");
+    }
+
+    [TestMethod]
+    public async Task StopAsync_WithoutPublishedBase_FallsBackToFullCopy()
+    {
+        // No periodic cycle completed in this process (stopped within seconds of boot):
+        // there is nothing to diff against, so the old full copy runs.
+        await _service.StopAsync(CancellationToken.None);
+
+        Assert.AreEqual("full", _service.FinalBackupKind);
+        Assert.AreEqual(2, ReadAllRows(_backupDbPath).Count);
+        Assert.IsFalse(File.Exists(_paths.DeltaPath));
+    }
+
+    [TestMethod]
+    public async Task RunBackup_PublishingANewBaseDeletesThePreviousDelta()
+    {
+        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
+        AddRow(_activeDbPath, "gamma", 3);
+        Assert.IsTrue(await _service.RunFinalBackupAsync(CancellationToken.None));
+        Assert.IsTrue(File.Exists(_paths.DeltaPath));
+
+        // The next revision's first cycle publishes a fresh base: the delta is folded in.
+        AddRow(_activeDbPath, "delta", 4);
+        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
+
+        Assert.IsFalse(File.Exists(_paths.DeltaPath), "Old delta removed with the new base");
+        Assert.AreEqual(4, ReadAllRows(_backupDbPath).Count);
+    }
+
+    [TestMethod]
+    public async Task RunBackup_FromWalModeDb_PublishesACompleteFileWithoutSidecars()
+    {
+        SetWalMode(_activeDbPath);
+        // The app keeps pooled connections open; while any connection is open the WAL is
+        // not folded and deleted on close, so the frames stay in the sidecar.
+        using var holder = new SqliteConnection($"Data Source={_activeDbPath};Pooling=False");
+        holder.Open();
+        // Only a connection that has read the database has the WAL open (its -shm lock).
+        using (var touch = holder.CreateCommand()) { touch.CommandText = "SELECT count(*) FROM kv;"; touch.ExecuteScalar(); }
+        AddRow(_activeDbPath, "gamma", 3);
+        Assert.IsTrue(DatabaseBackupToFileService.WalHoldsFrames(_activeDbPath), "Live DB has frames in its WAL");
+
+        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
+
+        // Checked before anything opens the share copy with SQLite (which would create
+        // empty sidecars of its own): the publish itself leaves none.
+        Assert.IsFalse(File.Exists(_backupDbPath + "-wal"));
+        Assert.IsFalse(File.Exists(_backupDbPath + "-shm"));
+        Assert.AreEqual(3, ReadAllRows(_backupDbPath).Count, "Share copy includes the WAL frames");
+        Assert.AreEqual(0, Directory.GetFiles(Path.GetDirectoryName(_activeDbPath)!, "*.bk-stage.*").Length, "Stage files cleaned up");
+    }
+
+    [TestMethod]
+    public async Task FinalDelta_ShipsOnlyTheBlocksThatChanged()
+    {
+        // The base is a page-for-page copy (online backup API), so a few new rows after
+        // the periodic cycle touch a few 64 KB blocks, not the whole file.
+        SetWalMode(_activeDbPath);
+        AddBulkRows(_activeDbPath, 20_000); // several MB
+        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
+        var dbSize = new FileInfo(_backupDbPath).Length;
+        Assert.IsTrue(dbSize > 2 * 1024 * 1024, $"Test DB should be several MB, was {dbSize:N0}");
+
+        AddRow(_activeDbPath, "late", 1);
+        Assert.IsTrue(await _service.RunFinalBackupAsync(CancellationToken.None));
+
+        var deltaSize = new FileInfo(_paths.DeltaPath).Length;
+        Assert.IsTrue(deltaSize < dbSize / 4, $"Delta {deltaSize:N0} bytes should be a fraction of the {dbSize:N0} byte base");
+        Assert.AreEqual(20_003, ReadAllRows(await SeedElsewhere()).Count, "Base + delta holds everything");
+    }
+
+    [TestMethod]
+    public async Task FinalDelta_ShipsTheWalWhenItCannotBeCheckpointed()
+    {
+        SetWalMode(_activeDbPath);
+        Assert.IsTrue(await _service.RunBackupCycleAsync(CancellationToken.None));
+
+        // A reader holding a snapshot blocks the shutdown checkpoint from emptying the WAL,
+        // so the late write lives only in WAL frames; the delta must carry them.
+        AddRow(_activeDbPath, "gamma", 3);
+        using var reader = new SqliteConnection($"Data Source={_activeDbPath};Pooling=False");
+        reader.Open();
+        using var busy = reader.CreateCommand();
+        busy.CommandText = "PRAGMA busy_timeout = 0;";
+        busy.ExecuteNonQuery();
+        using (var pin = reader.CreateCommand())
+        {
+            // Deferred BEGIN plus a read: a snapshot that pins the WAL, not a write lock.
+            pin.CommandText = "BEGIN; SELECT count(*) FROM kv;";
+            pin.ExecuteScalar();
+        }
+        AddRow(_activeDbPath, "delta", 4);
+        Assert.IsTrue(DatabaseBackupToFileService.WalHoldsFrames(_activeDbPath));
+
+        Assert.IsTrue(await _service.RunFinalBackupAsync(CancellationToken.None));
+        using (var end = reader.CreateCommand()) { end.CommandText = "ROLLBACK;"; end.ExecuteNonQuery(); }
+
+        Assert.AreEqual(4, ReadAllRows(await SeedElsewhere()).Count, "Base + delta (with WAL) holds both late writes");
+    }
+
+    /// <summary>Seed a second live path from the share, as the next revision would, and return it.</summary>
+    private async Task<string> SeedElsewhere()
+    {
+        var p = _paths with { ActiveDbPath = Path.Combine(_testDir, "next", "storage.db") };
+        Assert.IsTrue(await DatabaseSeeder.SeedFromShareAsync(p, NullLogger.Instance, CancellationToken.None));
+        Assert.IsFalse(DatabaseBackupToFileService.WalHoldsFrames(p.ActiveDbPath), "Seeded file is complete on its own");
+        return p.ActiveDbPath;
+    }
+
+    private static void SetWalMode(string path)
+    {
+        using var conn = new SqliteConnection($"Data Source={path};Pooling=False");
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA journal_mode=WAL;";
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void AddBulkRows(string path, int count)
+    {
+        using var conn = new SqliteConnection($"Data Source={path};Pooling=False");
+        conn.Open();
+        using var tx = conn.BeginTransaction();
+        using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "INSERT INTO kv (name, value) VALUES ($n, $v);";
+        var n = cmd.Parameters.Add("$n", SqliteType.Text);
+        var v = cmd.Parameters.Add("$v", SqliteType.Integer);
+        var filler = new string('x', 200);
+        for (var i = 0; i < count; i++)
+        {
+            n.Value = $"bulk-{i}-{filler}";
+            v.Value = i;
+            cmd.ExecuteNonQuery();
+        }
+        tx.Commit();
+        using var checkpoint = conn.CreateCommand();
+        checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        checkpoint.ExecuteNonQuery();
     }
 
     [TestMethod]

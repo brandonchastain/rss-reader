@@ -224,11 +224,14 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
       }
     }
     template: {
-      // Deploy handover (issue #136): on SIGTERM the old revision copies the live
-      // SQLite file to the share one last time before it exits, and the new
-      // revision waits for that copy before it seeds /tmp. The app's own budget is
+      // Deploy handover (issue #136): on SIGTERM the old revision writes the
+      // blocks of the live SQLite file that changed since its last periodic copy
+      // (plus the WAL) next to that copy on the share, and the new revision waits
+      // for it before it seeds /tmp from copy + delta. That is one read of the
+      // live file, a few seconds at 1 GB on 0.5 vCPU; the full copy only runs
+      // when the old revision never published a base. The app's own budget is
       // HostOptions.ShutdownTimeout 110 s (ShutdownBackupTimeout 90 s inside it);
-      // this must stay above both or the platform kills the copy mid-write.
+      // this must stay above both or the platform kills the flush mid-write.
       terminationGracePeriodSeconds: 120
       containers: [
         {
@@ -266,8 +269,8 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
             {
               // Persistent SQLite backup file on the Azure Files mount.
               // The DatabaseBackupToFileService writes here every BackupInterval
-              // and once more on SIGTERM; the app seeds /tmp/storage.db from this
-              // on cold start, after the previous revision's final copy lands.
+              // and a .delta next to it on SIGTERM; the app seeds /tmp/storage.db
+              // from both on cold start, after the previous revision's flush lands.
               //
               // NOTE: Path is intentionally inside a NEW subdirectory `/data/db/`
               // so that any pre-existing `/data/storage.db` (left over from a

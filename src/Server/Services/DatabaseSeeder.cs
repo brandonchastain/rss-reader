@@ -54,40 +54,111 @@ namespace RssReader.Server.Services
 
             // Stage next to the live file so the final step is a same-volume rename.
             var stagePath = $"{paths.ActiveDbPath}.seed.{Guid.NewGuid():N}";
+            var deltaLocalPath = stagePath + ".delta";
             try
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                using (var src = new FileStream(paths.BackupDbPath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                using (var dst = new FileStream(stagePath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                BlockManifest baseCopy;
+                using (var src = new FileStream(paths.BackupDbPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1, FileOptions.SequentialScan))
+                using (var dst = new FileStream(stagePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024))
                 {
-                    await src.CopyToAsync(dst, 1024 * 1024, cancellationToken);
+                    // Hashed on the way: the delta below names the base it was computed on.
+                    baseCopy = await BlockManifest.CopyAndHashAsync(src, dst, BlockManifest.DefaultBlockSize, cancellationToken);
                 }
+
+                var applied = await ApplyDeltaAsync(paths, stagePath, deltaLocalPath, baseCopy, logger, cancellationToken);
 
                 var (ok, result, error) = DatabaseBackupToFileService.QuickCheckDiagnostic(stagePath);
                 if (!ok)
                 {
                     throw new InvalidOperationException(
-                        $"PRAGMA quick_check failed on the seeded database copied from '{paths.BackupDbPath}' " +
-                        $"(result='{result ?? "<null>"}', error='{error ?? "<none>"}'). " +
+                        $"PRAGMA quick_check failed on the seeded database copied from '{paths.BackupDbPath}'" +
+                        (applied ? $" with '{paths.DeltaPath}' applied" : "") +
+                        $" (result='{result ?? "<null>"}', error='{error ?? "<none>"}'). " +
                         "Refusing to start; restore a known-good copy to the share and redeploy.");
                 }
 
-                // The share copy is a VACUUM INTO product (no WAL); drop any sidecars of a
-                // previous live file so SQLite does not replay a foreign WAL onto it.
+                // The staged file is complete on its own (any shipped WAL was folded in
+                // above); drop the sidecars of a previous live file so SQLite does not
+                // replay a foreign WAL onto it, and the stage's own empty ones.
                 SafeDelete(paths.ActiveDbPath + "-wal");
                 SafeDelete(paths.ActiveDbPath + "-shm");
                 File.Move(stagePath, paths.ActiveDbPath, overwrite: true);
 
                 var size = new FileInfo(paths.ActiveDbPath).Length;
                 logger.LogInformation(
-                    "Seeded {Active} from {Backup}: {Bytes:N0} bytes in {Ms} ms (quick_check ok).",
-                    paths.ActiveDbPath, paths.BackupDbPath, size, sw.ElapsedMilliseconds);
+                    "Seeded {Active} from {Backup}{Delta}: {Bytes:N0} bytes in {Ms} ms (quick_check ok).",
+                    paths.ActiveDbPath, paths.BackupDbPath, applied ? " + delta" : "", size, sw.ElapsedMilliseconds);
                 return true;
             }
             finally
             {
                 SafeDelete(stagePath);
+                SafeDelete(stagePath + "-wal");
+                SafeDelete(stagePath + "-shm");
+                SafeDelete(deltaLocalPath);
             }
+        }
+
+        /// <summary>
+        /// Apply the previous writer's shutdown delta (<see cref="DatabaseBackupToFilePaths.DeltaPath"/>)
+        /// to the staged base copy, then fold its WAL into the main file so the stage is a
+        /// single complete file. Returns false, leaving the stage as the plain base, when
+        /// there is no delta or it does not belong to this base (left over from an earlier
+        /// one). A delta that fails its own integrity check is an error worth a loud log but
+        /// not a refusal to start: the base alone is the state of the last periodic copy.
+        /// </summary>
+        private static async Task<bool> ApplyDeltaAsync(
+            DatabaseBackupToFilePaths paths, string stagePath, string deltaLocalPath, BlockManifest baseCopy,
+            ILogger logger, CancellationToken cancellationToken)
+        {
+            if (!File.Exists(paths.DeltaPath)) return false;
+
+            // One sequential read off the share; the apply then reads the local copy twice.
+            using (var src = new FileStream(paths.DeltaPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1, FileOptions.SequentialScan))
+            using (var dst = new FileStream(deltaLocalPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024))
+            {
+                await src.CopyToAsync(dst, 1024 * 1024, cancellationToken);
+            }
+
+            var apply = await DatabaseDelta.ApplyAsync(
+                deltaLocalPath, baseCopy.Length, baseCopy.FileHash, stagePath, stagePath + "-wal", cancellationToken);
+            switch (apply.Outcome)
+            {
+                case DatabaseDelta.ApplyOutcome.BaseMismatch:
+                    logger.LogWarning(
+                        "Ignoring {Delta}: it belongs to an earlier base copy ({Detail}).", paths.DeltaPath, apply.Detail);
+                    return false;
+                case DatabaseDelta.ApplyOutcome.Corrupt:
+                    logger.LogError(
+                        "Ignoring {Delta}: it failed its integrity check ({Detail}). Seeding from the base copy alone; " +
+                        "writes between the last periodic backup and the previous shutdown are lost.",
+                        paths.DeltaPath, apply.Detail);
+                    return false;
+            }
+
+            if (apply.WalBytes > 0)
+            {
+                // Fold the shipped frames into the main file. A read-write open replays the
+                // WAL; TRUNCATE leaves it empty, so the stage is complete as one file.
+                using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={stagePath};Pooling=False");
+                conn.Open();
+                using var checkpoint = conn.CreateCommand();
+                checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                checkpoint.ExecuteNonQuery();
+                conn.Close();
+                if (DatabaseBackupToFileService.WalHoldsFrames(stagePath))
+                {
+                    throw new InvalidOperationException(
+                        $"The write-ahead log shipped in '{paths.DeltaPath}' could not be folded into the seeded database. " +
+                        "Refusing to start; restore a known-good copy to the share and redeploy.");
+                }
+            }
+
+            logger.LogInformation(
+                "Applied {Delta}: {Blocks} changed blocks and {Wal:N0} WAL bytes on top of the base copy.",
+                paths.DeltaPath, apply.ChangedBlocks, apply.WalBytes);
+            return true;
         }
 
         private static void SafeDelete(string path)

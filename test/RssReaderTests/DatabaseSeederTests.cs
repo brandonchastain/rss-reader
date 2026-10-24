@@ -172,4 +172,67 @@ public class DatabaseSeederTests
         Assert.IsFalse(unwritable.IsHeld);
         Assert.AreEqual("from-share", WriterStartupGateTests.ReadMarker(_paths.ActiveDbPath));
     }
+
+    // ── Shutdown delta ─────────────────────────────────────────────────
+
+    /// <summary>Publish a base with the backup service, write late rows, then its shutdown delta.</summary>
+    private async Task<DatabaseBackupToFileService> PublishBaseThenDelta(string liveDbPath, params string[] lateMarkers)
+    {
+        var writer = _paths with { ActiveDbPath = liveDbPath };
+        var service = new DatabaseBackupToFileService(NullLogger<DatabaseBackupToFileService>.Instance, writer, _lock);
+        Assert.IsTrue(await service.RunBackupCycleAsync(CancellationToken.None));
+        foreach (var m in lateMarkers) WriterStartupGateTests.SeedSqliteDb(liveDbPath, m);
+        Assert.IsTrue(await service.RunFinalBackupAsync(CancellationToken.None));
+        Assert.AreEqual("delta", service.FinalBackupKind);
+        return service;
+    }
+
+    [TestMethod]
+    public async Task Seed_AppliesTheShutdownDeltaOnTopOfTheBase()
+    {
+        var previousLive = Path.Combine(_dir, "previous", "storage.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(previousLive)!);
+        WriterStartupGateTests.SeedSqliteDb(previousLive, "periodic");
+        await PublishBaseThenDelta(previousLive, "late-write");
+        Assert.AreEqual("periodic", WriterStartupGateTests.ReadMarker(_paths.BackupDbPath), "Base alone is the periodic state");
+
+        Assert.IsTrue(await Seed(_paths));
+
+        Assert.AreEqual("late-write", WriterStartupGateTests.ReadMarker(_paths.ActiveDbPath));
+        Assert.IsFalse(File.Exists(_paths.ActiveDbPath + "-wal"), "Shipped WAL folded into the main file");
+        Assert.IsTrue(File.Exists(_paths.DeltaPath), "Delta stays on the share until the next base is published");
+        Assert.AreEqual(0, Directory.GetFiles(Path.Combine(_dir, "live"), "*.seed.*").Length, "Stage files cleaned up");
+    }
+
+    [TestMethod]
+    public async Task Seed_IgnoresADeltaThatBelongsToAnEarlierBase()
+    {
+        var previousLive = Path.Combine(_dir, "previous", "storage.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(previousLive)!);
+        WriterStartupGateTests.SeedSqliteDb(previousLive, "periodic");
+        await PublishBaseThenDelta(previousLive, "late-write");
+        // A newer base replaced the file the delta was computed against (crash between
+        // publishing it and deleting the old delta).
+        File.Delete(_paths.BackupDbPath);
+        WriterStartupGateTests.SeedSqliteDb(_paths.BackupDbPath, "newer-base");
+
+        Assert.IsTrue(await Seed(_paths));
+
+        Assert.AreEqual("newer-base", WriterStartupGateTests.ReadMarker(_paths.ActiveDbPath));
+    }
+
+    [TestMethod]
+    public async Task Seed_IgnoresACorruptDelta_SeedsTheBaseAlone()
+    {
+        var previousLive = Path.Combine(_dir, "previous", "storage.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(previousLive)!);
+        WriterStartupGateTests.SeedSqliteDb(previousLive, "periodic");
+        await PublishBaseThenDelta(previousLive, "late-write");
+        // Truncate the delta as a torn share write would.
+        using (var f = new FileStream(_paths.DeltaPath, FileMode.Open)) f.SetLength(f.Length - 7);
+
+        Assert.IsTrue(await Seed(_paths));
+
+        Assert.AreEqual("periodic", WriterStartupGateTests.ReadMarker(_paths.ActiveDbPath));
+    }
 }

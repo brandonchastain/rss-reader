@@ -27,6 +27,8 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.3" />
     <PackageReference Include="Microsoft.Extensions.Logging.AzureAppServices" Version="9.0.3" />
     <PackageReference Include="Microsoft.VisualStudio.Threading" Version="17.13.2" />
+    <!-- XxHash128 for the backup block manifest and shutdown delta (DatabaseDelta.cs). -->
+    <PackageReference Include="System.IO.Hashing" Version="9.0.3" />
   </ItemGroup>
 
   <ItemGroup>

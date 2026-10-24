@@ -207,9 +207,13 @@ else
     builder.Services.AddSingleton<IFeedRefresher, NoOpFeedRefresher>();
 }
 
-// Shutdown budget: Kestrel drains, the feed scheduler and worker stop, then the
-// backup service's final copy runs (ShutdownBackupTimeout). The default 30 s is
-// not enough for the copy; terminationGracePeriodSeconds in main.bicep is 120.
+// Shutdown budget: the feed scheduler and worker stop, then the backup service's
+// final flush runs (ShutdownBackupTimeout): a delta of the blocks changed since
+// the last periodic copy, which costs one read of the live file rather than a
+// copy of it, or the full copy when no base was published by this process. The
+// default 30 s is not enough for the fallback copy; terminationGracePeriodSeconds
+// in main.bicep is 120. Kestrel is a hosted service registered before these, so
+// it stops after them: the flush tolerates in-flight writers (see WriteDeltaAsync).
 builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(110));
 
 builder.Services.AddControllers(options =>

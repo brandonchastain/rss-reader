@@ -40,6 +40,8 @@ At the 60/s planning rate that is about 400 average readers reading at once (abo
 200 power users in a heavy hour, but only about 6 if all of them burst like the 10.6/s minute together.
 
 ### Data volume: the limit that arrives first
+(Resolved later the same day: see "Handover delta" below. The figures here describe the full-copy handover.)
+
 Bytes per post, 2.14 KB: bodies 1.0 KB, full-text index 0.5 KB, rows and indexes 0.5 KB.
 New posts: about 960 a day deduplicated across 105 feeds that post (9.1 per feed per day), very uneven: the top 4 feeds are
 52% of all new posts (one deals feed alone is 267 a day).
@@ -61,6 +63,39 @@ retention, roughly 250 distinct feeds inside 450 MB (about 750 at 30 days). Feed
 Subscriptions (about 0.1 KB), tags (about 0.1 KB) and per-user read or saved state (about 0.1 KB a post) are not limits:
 a million subscriptions would be about 100 MB. Not measured: CPU per refreshed feed (154 feeds an hour is small next to the
 above).
+
+### Handover delta: size is no longer the first limit (2026-10-24, later the same day)
+The final backup on shutdown no longer copies the database. The periodic copy now uses SQLite's online backup API
+(page-for-page, where `VACUUM INTO` rebuilt every b-tree) and hashes the file in 64 KB blocks as it copies it to the
+share; on SIGTERM the writer reads the live file once, compares blocks against that manifest and writes only the
+changed blocks plus the write-ahead log to `storage.db.delta` next to the base. The next revision seeds from base +
+delta (`DatabaseSeeder`), verifying the delta's trailer hash and that it names the base it was computed on, and its
+first periodic copy publishes a fresh base and removes the delta. `DatabaseDelta.cs` holds the format;
+`test/load/handover-measure.ps1` is the measurement below.
+
+Measured in Docker at the production shape (`--cpus 0.5 --memory 1g`) on a 1.3 GB copy of the production database
+(the 322 MB file with its posts duplicated twice: 606,472 posts; the "share" is a local bind mount, so the share-side
+bytes move at local-disk speed rather than SMB):
+
+| Step at 1.3 GB, 0.5 vCPU | Time | Bytes to the share |
+|---|---|---|
+| Final backup on shutdown (delta, after one register write) | **1.9 s** (`docker stop` returned in 2.4 s) | 176 KB (3 of 19,919 blocks) |
+| Final backup fallback (full copy, no base published by the process yet) | 47 s | 1.3 GB |
+| Seed at boot, base alone | 46 s | 1.3 GB read |
+| Seed at boot, base + delta | 48 s | 1.3 GB read + 176 KB |
+| Periodic copy (online backup, quick_check, copy to the share) | 46 s | 1.3 GB |
+
+The late write survived the whole round trip (seven users in the published base afterwards, six before). The
+shutdown step that had to fit in 90 s now takes about 2 s and does not grow with the file: the limit that was about
+450 MB is gone, and the budget comment in `Program.cs` and `main.bicep` describes the new flush.
+
+What bounds size now, in order: the share quota (5 GB; a cycle holds base, temp copy and images at once, so about
+2.4 GB of database), cold-start time (about 35 s per GB to seed on 0.5 vCPU, behind the startup gate so the probe
+still passes), and the first periodic copy after a boot, which is the full file (about 35 s per GB locally, more
+over SMB); a second deploy inside that window falls back to the full copy and may time out, losing the writes since
+that boot. At the 2 MB a day measured above, 180-day retention for a handful of users (about 700 MB) fits with room
+to spare, and the per-feed arithmetic above now runs to the share quota, roughly 1,400 distinct feeds at 90-day
+retention.
 
 ## Re-run on the shared-posts schema (2026-10-24)
 
