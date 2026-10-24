@@ -48,6 +48,19 @@ var writerLock = new ShareWriterLock(
 // Litestream must not see the file replaced underneath it (scaling mode, off).
 var litestreamSupervised = string.Equals(
     Environment.GetEnvironmentVariable("RSSREADER_ENABLE_LITESTREAM_REPLICATION"), "true", StringComparison.OrdinalIgnoreCase);
+
+// Blob writer lease (BLOB-DURABILITY-SPEC.md 3.4), rollout step 2: taken beside the
+// lock file and logged, nothing depends on it yet. Acquired while the gate below is
+// answering the startup probe, because the old revision only releases it after it has
+// been told to stop, and it is only told to stop once this revision's probe passes.
+var writerLease = config.IsReadOnly
+    ? null
+    : BlobWriterLease.Create(config.Durability, startupLoggerFactory.CreateLogger<BlobWriterLease>());
+using var leaseAcquireCts = new CancellationTokenSource();
+var leaseAcquire = writerLease == null
+    ? Task.FromResult(false)
+    : Task.Run(() => writerLease.AcquireAsync(leaseAcquireCts.Token));
+
 if (!config.IsReadOnly && !string.IsNullOrEmpty(backupPaths.BackupDbPath) && !litestreamSupervised)
 {
     // Before the repositories below open the live DB: answer the startup probe,
@@ -61,8 +74,21 @@ if (!config.IsReadOnly && !string.IsNullOrEmpty(backupPaths.BackupDbPath) && !li
     }
     catch (OperationCanceledException)
     {
+        leaseAcquireCts.Cancel();
+        if (writerLease != null) await writerLease.ReleaseAsync();
         return;
     }
+}
+
+if (writerLease != null)
+{
+    // The gate returned with the share lock held (or given up on). The lease normally
+    // arrives within seconds of it: the old writer releases its lock first, then its lease.
+    try { await leaseAcquire; }
+    catch (OperationCanceledException) { }
+    startupLoggerFactory.CreateLogger("Durability").LogInformation(
+        "Startup: blob lease held={LeaseHeld}, share lock held={LockHeld}; {Verdict}.",
+        writerLease.IsHeld, writerLock.IsHeld, writerLease.IsHeld == writerLock.IsHeld ? "agree" : "DISAGREE");
 }
 
 // One-shot schema migration (DB-REDESIGN-SPEC.md section 7) before any
@@ -173,6 +199,13 @@ if (!config.IsReadOnly)
                 sb))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
         .AddSingleton(writerLock)
+        // Hosted services stop in reverse registration order. The lease is registered
+        // before the share backup so it is released after the final copy and the lock
+        // file; Litestream is registered after the scheduler and worker so it stops
+        // (final sync) once they have stopped writing, and before the share copy runs.
+        .AddSingleton(sb => new WriterLeaseHostedService(
+            writerLease, writerLock, sb.GetRequiredService<ILogger<WriterLeaseHostedService>>()))
+        .AddHostedService(p => p.GetRequiredService<WriterLeaseHostedService>())
         .AddSingleton<DatabaseBackupToFileService>(sb =>
             new DatabaseBackupToFileService(
                 sb.GetRequiredService<ILogger<DatabaseBackupToFileService>>(),
@@ -183,6 +216,9 @@ if (!config.IsReadOnly)
         .AddSingleton<IFeedRefresher, FeedRefresher>()
         .AddHostedService<FeedScheduler>()
         .AddHostedService<PostRetentionService>()
+        .AddSingleton(sb => new LitestreamSupervisor(
+            config.Durability, config.DbLocation, sb.GetRequiredService<ILogger<LitestreamSupervisor>>()))
+        .AddHostedService(p => p.GetRequiredService<LitestreamSupervisor>())
         .AddTransient<RedirectDowngradeHandler>()
         .AddTransient<OutboundUrlGuardHandler>()
         // Per-request timeout so a single slow/hung feed can't stall the whole
@@ -261,19 +297,36 @@ if (File.Exists(Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "index.ht
 {
     app.MapFallbackToFile("index.html");
 }
-app.MapGet("/api/healthz", () => Results.Ok(new
+app.MapGet("/api/healthz", async () =>
 {
-    status = "healthy",
-    role = config.IsReadOnly ? "reader" : "writer",
-    migration = new
+    // Row counts for the nightly restore drill (BLOB-DURABILITY-SPEC.md 9.5), which
+    // compares them with the same counts in a restore of the blob replica. Cheap:
+    // Posts and UserPostState have rowid tables; a count(*) on either is a btree walk
+    // of a few milliseconds at the live size.
+    DatabaseRowCounts counts;
+    try
     {
-        id = migrationState.Id,
-        status = migrationState.Status,
-        appliedUtc = migrationState.AppliedUtc,
-        durationMs = migrationState.DurationMs,
-        notes = migrationState.Notes,
-    },
-})).AllowAnonymous();
+        counts = await DatabaseRowCounts.ReadAsync(dbConnections);
+    }
+    catch (Exception ex)
+    {
+        counts = DatabaseRowCounts.Unavailable(ex.Message);
+    }
+    return Results.Ok(new
+    {
+        status = "healthy",
+        role = config.IsReadOnly ? "reader" : "writer",
+        migration = new
+        {
+            id = migrationState.Id,
+            status = migrationState.Status,
+            appliedUtc = migrationState.AppliedUtc,
+            durationMs = migrationState.DurationMs,
+            notes = migrationState.Notes,
+        },
+        rows = counts,
+    });
+}).AllowAnonymous();
 app.MapAuthEndpoints(config.Auth);
 
 if (config.IsTestUserEnabled)

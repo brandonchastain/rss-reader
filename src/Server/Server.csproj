@@ -27,6 +27,9 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.3" />
     <PackageReference Include="Microsoft.Extensions.Logging.AzureAppServices" Version="9.0.3" />
     <PackageReference Include="Microsoft.VisualStudio.Threading" Version="17.13.2" />
+    <!-- Blob writer lease (BLOB-DURABILITY-SPEC.md 3.4), reached through the app identity. -->
+    <PackageReference Include="Azure.Identity" Version="1.13.2" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.24.1" />
   </ItemGroup>
 
   <ItemGroup>

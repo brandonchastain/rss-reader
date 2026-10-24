@@ -41,6 +41,14 @@ param customDomain string = 'rss.brandonchastain.com'
 param apiCustomDomain string = 'api.rss.brandonchastain.com'
 
 
+// BLOB-DURABILITY-SPEC.md section 8. Each is a rollout step with its rollback:
+// redeploy with the parameter false and the previous behaviour is back.
+@description('Rollout step 1: Litestream replication of the live database to blob, beside the file backup')
+param enableBlobReplication bool = true
+
+@description('Rollout step 2: blob writer lease taken and logged beside the share lock file')
+param enableBlobLease bool = true
+
 @description('Gateway secret key for API authentication')
 @secure()
 param gatewaySecretKey string
@@ -129,8 +137,20 @@ resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01
   parent: storageAccount
 }
 
+// BLOB-DURABILITY-SPEC.md 3.1: the Litestream replica (snapshot + LTX files under
+// storage.db/) and, at the container root, the writer-lease blob (3.4).
 resource litestreamContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   name: 'litestream'
+  parent: blobServices
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
+// Data-protection key ring, used from rollout step 4 (spec 3.6). Created now so
+// the switch is a configuration change only.
+resource dataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  name: 'dataprotection'
   parent: blobServices
   properties: {
     publicAccess: 'None'
@@ -259,9 +279,25 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
             {
               // Default off: file-mount backup is sole durability. Set to 'true'
               // only when rolling out scaling mode (read replicas), per the
-              // sequenced rollout in plan.md.
+              // sequenced rollout in plan.md. (Scaling mode is slated for removal,
+              // BLOB-DURABILITY-SPEC.md section 4; untouched in rollout steps 1-2.)
               name: 'RSSREADER_ENABLE_LITESTREAM_REPLICATION'
               value: 'false'
+            }
+            {
+              // BLOB-DURABILITY-SPEC.md rollout step 1: Litestream replicates the
+              // live database to the `litestream` blob container beside the file
+              // backup. The app starts it after the seed. Nothing restores from
+              // it at boot yet; the share stays authoritative. Rollback: 'false'.
+              name: 'RssAppConfig__Durability__LitestreamEnabled'
+              value: string(enableBlobReplication)
+            }
+            {
+              // Rollout step 2: the blob writer lease, taken beside the lock file
+              // through the app's managed identity and logged with it. Empty
+              // disables the lease (rollback).
+              name: 'RssAppConfig__Durability__BlobServiceUri'
+              value: enableBlobLease ? storageAccount.properties.primaryEndpoints.blob : ''
             }
             {
               // Persistent SQLite backup file on the Azure Files mount.

@@ -23,6 +23,19 @@ jobs:
   test:
     name: Build + test
     runs-on: ubuntu-latest
+    # Azurite stands in for blob storage for the writer-lease tests
+    # (BLOB-DURABILITY-SPEC.md 9.1). Without the connection string those tests
+    # are inconclusive, so it is set here to make them count.
+    services:
+      azurite:
+        # `latest` on purpose: a service container cannot be given
+        # --skipApiVersionCheck, and the Azure SDK's API version moves ahead
+        # of any pinned Azurite release (3.33.0 rejected 2025-05-05).
+        image: mcr.microsoft.com/azure-storage/azurite:latest
+        ports:
+          - 10000:10000
+    env:
+      RSSREADER_TEST_AZURITE_CONNECTION: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -32,6 +45,31 @@ jobs:
       # someone else's server is up, which is not a signal worth blocking on.
       # Run them deliberately with --filter TestCategory=Network.
       - run: dotnet test test/RssReaderTests/RssReaderTests.csproj --filter "TestCategory!=Network" --logger "console;verbosity=minimal"
+
+  # The real image, the real Litestream binary, Azurite as blob storage and a
+  # shared volume as the share: deploy handover, crash, and two overlapping
+  # writers (BLOB-DURABILITY-SPEC.md 9.2, test/durability/run.sh). Budgeted
+  # under five minutes so it can gate merges; the image build is most of it,
+  # cached between runs and without ReadyToRun, which this test does not need.
+  durability:
+    name: Durability (Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/Server/Dockerfile
+          build-args: READY_TO_RUN=false
+          tags: rss-reader-api:durability
+          load: true
+          cache-from: type=gha,scope=durability
+          cache-to: type=gha,scope=durability,mode=max
+      - name: Handover, crash, overlap
+        run: RSS_IMAGE=rss-reader-api:durability bash test/durability/run.sh
 
   # The real API and Blazor app on a seeded database, driven by Playwright (test/e2e).
   # Separate from the unit job so a unit failure still reports in under a minute.

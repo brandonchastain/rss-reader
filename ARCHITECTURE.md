@@ -109,14 +109,30 @@ docs link here.
 2. **Litestream bootstrap (legacy, read-only).** If `BackupDbPath` does not
    exist at boot, the entrypoint tries a one-shot `litestream restore` from the
    `litestream` blob container that the previous architecture replicated to,
-   validates it and publishes it as the first file-mount copy. Nothing writes to
-   that blob container in the default mode.
+   validates it and publishes it as the first file-mount copy.
 
 3. **Litestream replication (scaling mode, off).** With
    `RSSREADER_ENABLE_LITESTREAM_REPLICATION=true` the writer runs under
    `litestream replicate`, streaming WAL changes to blob storage so read
    replicas can restore from it. It is a feed for readers, not a second backup.
-   Config: `infrastructure/litestream.yml`.
+   Slated for removal (BLOB-DURABILITY-SPEC.md section 4).
+
+4. **Blob replication and the writer lease (BLOB-DURABILITY-SPEC.md, rollout
+   steps 1 and 2).** The path that will replace the share. With
+   `RssAppConfig:Durability:LitestreamEnabled` the app starts
+   `litestream replicate` as its child (`LitestreamSupervisor`) once
+   `/tmp/storage.db` is in place, replicating it to the `litestream` blob
+   container every 30 s through the app's managed identity
+   (`infrastructure/litestream.yml`); on shutdown it runs `litestream sync`
+   and then stops the child, before the final share copy. With
+   `RssAppConfig:Durability:BlobServiceUri` the writer also holds a 30 s blob
+   lease on `litestream/writer-lease` (`BlobWriterLease`), acquired while the
+   startup gate answers the probe and released after the lock file on
+   shutdown; every acquire and release is logged beside the lock's state.
+   Today nothing restores from the replica at boot and the share stays
+   authoritative; `/api/healthz` reports row counts so the restore drill
+   (`.github/workflows/restore-drill.yml`) can compare a restore with the
+   live writer. The spec's section 8 has the remaining steps.
 
 ##### Read Replicas (optional)
 
