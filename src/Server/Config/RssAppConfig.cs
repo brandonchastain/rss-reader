@@ -107,6 +107,9 @@ namespace RssApp.Config
         /// <summary>Sign-in providers, session cookie, and allowed frontend origins.</summary>
         public AuthConfig Auth { get; set; } = new AuthConfig();
 
+        /// <summary>Blob writer lease and Litestream replication (BLOB-DURABILITY-SPEC.md).</summary>
+        public DurabilityConfig Durability { get; set; } = new DurabilityConfig();
+
         public static RssAppConfig LoadFromAppSettings(IConfiguration configuration)
         {
             var config = new RssAppConfig();
