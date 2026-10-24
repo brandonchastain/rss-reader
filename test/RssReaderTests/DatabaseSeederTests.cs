@@ -38,6 +38,101 @@ public class DatabaseSeederTests
     private static Task<bool> Seed(DatabaseBackupToFilePaths p) =>
         DatabaseSeeder.SeedFromShareAsync(p, NullLogger.Instance, CancellationToken.None);
 
+    private static void WriteDb(string path, string marker)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var conn = new SqliteConnection($"Data Source={path}");
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"CREATE TABLE IF NOT EXISTS m (v TEXT); DELETE FROM m; INSERT INTO m VALUES ('{marker}');";
+        cmd.ExecuteNonQuery();
+    }
+
+    private static string MarkerOf(string path)
+    {
+        using var conn = new SqliteConnection($"Data Source={path};Mode=ReadOnly");
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT v FROM m LIMIT 1";
+        return (string)cmd.ExecuteScalar()!;
+    }
+
+    // Rollout step 3 (BLOB-DURABILITY-SPEC.md 3.2): restore from the replica first, share copy
+    // as the fallback.
+
+    [TestMethod]
+    public async Task RestoreOrSeed_RestoreSucceeds_SkipsShareCopyAndLeavesLockToBackupService()
+    {
+        WriteDb(_paths.BackupDbPath, "share");
+        var restored = await DatabaseSeeder.RestoreOrSeedAsync(_paths, _lock, ct =>
+        {
+            WriteDb(_paths.ActiveDbPath, "replica");
+            return Task.FromResult(true);
+        }, NullLogger.Instance, CancellationToken.None);
+
+        Assert.IsTrue(restored);
+        Assert.AreEqual("replica", MarkerOf(_paths.ActiveDbPath), "the share copy must not overwrite the restore");
+        Assert.IsFalse(_lock.IsHeld, "a successful restore does not wait for the share lock");
+        Assert.IsFalse(File.Exists(_paths.LockPath));
+    }
+
+    [TestMethod]
+    public async Task RestoreOrSeed_RestoreReturnsFalse_FallsBackToShareCopyWithLock()
+    {
+        WriteDb(_paths.BackupDbPath, "share");
+        var restored = await DatabaseSeeder.RestoreOrSeedAsync(
+            _paths, _lock, ct => Task.FromResult(false), NullLogger.Instance, CancellationToken.None);
+
+        Assert.IsFalse(restored);
+        Assert.AreEqual("share", MarkerOf(_paths.ActiveDbPath));
+        Assert.IsTrue(_lock.IsHeld, "the share path takes the lock as before");
+    }
+
+    [TestMethod]
+    public async Task RestoreOrSeed_RestoreThrows_FallsBackToShareCopy()
+    {
+        WriteDb(_paths.BackupDbPath, "share");
+        var restored = await DatabaseSeeder.RestoreOrSeedAsync(
+            _paths, _lock, ct => throw new InvalidOperationException("blob unreachable"), NullLogger.Instance, CancellationToken.None);
+
+        Assert.IsFalse(restored);
+        Assert.AreEqual("share", MarkerOf(_paths.ActiveDbPath));
+        Assert.IsTrue(_lock.IsHeld);
+    }
+
+    [TestMethod]
+    public async Task RestoreOrSeed_FallbackWaitsOnForeignLiveLock()
+    {
+        WriteDb(_paths.BackupDbPath, "share");
+        var other = new ShareWriterLock(_paths.LockPath, _paths.LockStaleThreshold, _paths.HeartbeatInterval, NullLogger.Instance);
+        Assert.IsTrue(other.TryAcquire());
+        try
+        {
+            var task = DatabaseSeeder.RestoreOrSeedAsync(
+                _paths, _lock, ct => Task.FromResult(false), NullLogger.Instance, CancellationToken.None);
+            await Task.Delay(150);
+            Assert.IsFalse(task.IsCompleted, "must wait for the previous writer's final copy before seeding from the share");
+            other.Release();
+            Assert.IsFalse(await task.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.AreEqual("share", MarkerOf(_paths.ActiveDbPath));
+        }
+        finally { other.Release(); }
+    }
+
+    [TestMethod]
+    public async Task RestoreOrSeed_CancelledDuringRestore_Throws()
+    {
+        using var cts = new CancellationTokenSource();
+        var task = DatabaseSeeder.RestoreOrSeedAsync(_paths, _lock, async ct =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(10), ct);
+            return true;
+        }, NullLogger.Instance, cts.Token);
+        cts.Cancel();
+        await Assert.ThrowsExceptionAsync<TaskCanceledException>(() => task);
+        Assert.IsFalse(_lock.IsHeld);
+    }
+
     [TestMethod]
     public async Task Seed_ReplacesLiveDbWithShareCopy()
     {

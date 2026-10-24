@@ -53,6 +53,28 @@ namespace RssReader.Server.Services
             }
         }
 
+        /// <summary>
+        /// <c>litestream restore -config CFG -o OUT DB</c>: a full restore of the replica that
+        /// <paramref name="configPath"/> declares for <paramref name="dbPath"/>, written to
+        /// <paramref name="outputPath"/> (which must not exist yet; Litestream refuses to
+        /// overwrite). Spec 3.2 step 4. Bounded by <paramref name="timeout"/>.
+        /// </summary>
+        public async Task<(LitestreamSyncResult Result, string Output)> RestoreAsync(
+            string configPath, string dbPath, string outputPath, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(timeout);
+            try
+            {
+                var (code, output) = await _run(_binary, $"restore -config \"{configPath}\" -o \"{outputPath}\" \"{dbPath}\"", cts.Token);
+                return (code == 0 ? LitestreamSyncResult.Ok : LitestreamSyncResult.Failed, output);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return (LitestreamSyncResult.TimedOut, string.Empty);
+            }
+        }
+
         public static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName, string arguments, CancellationToken cancellationToken)
         {
             var psi = new ProcessStartInfo(fileName, arguments)
@@ -85,12 +107,14 @@ namespace RssReader.Server.Services
     /// app directly as PID 1, and this service stops the child in its own
     /// <see cref="StopAsync"/>.
     ///
-    /// Stop order (spec 3.3): registered after the feed scheduler and worker, so they have
-    /// stopped writing before the final sync; registered after the file backup service too,
-    /// so this stops <em>before</em> the share copy runs and the two budgets add up inside
-    /// the host's shutdown timeout rather than overlap. First <c>litestream sync -wait</c>
-    /// uploads the pending WAL (logged as "final sync OK"), then the child gets SIGTERM and
-    /// performs its own shutdown sync as a safety net (11.4) before exiting.
+    /// Stop order (spec 3.3; hosted services stop in reverse registration order, see the
+    /// registrations in Program.cs): the feed scheduler, worker and retention service stop
+    /// first, so nothing is writing during the final sync; this service stops next; then
+    /// the blob lease is released; then the share copy runs and the lock file goes. First
+    /// <c>litestream sync -wait</c> uploads the pending WAL (logged as "final sync OK"),
+    /// then the child gets SIGTERM and performs its own shutdown sync as a safety net
+    /// (11.4) before exiting. The next writer restores from the replica only once it holds
+    /// the lease, so everything this sync uploaded is in that restore.
     ///
     /// An exited child is restarted with backoff; replication is a shadow of the share in
     /// rollout steps 1 and 2, so a Litestream failure is logged, never fatal.
@@ -201,7 +225,7 @@ namespace RssReader.Server.Services
             switch (result)
             {
                 case LitestreamSyncResult.Ok:
-                    _logger.LogInformation("Shutdown: Litestream final sync OK in {Ms} ms.", sw.ElapsedMilliseconds);
+                    _logger.LogInformation("Shutdown: Litestream final sync OK in {Ms} ms; the blob lease is released next.", sw.ElapsedMilliseconds);
                     break;
                 case LitestreamSyncResult.TimedOut:
                     _logger.LogError("Shutdown: Litestream final sync timed out after {Timeout}; up to one sync interval of writes may be missing from the replica.", _config.FinalSyncTimeout);

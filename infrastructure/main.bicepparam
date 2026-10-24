@@ -20,3 +20,7 @@ param gatewaySecretKey = ''  // specify at deployment time
 // false and redeploy; the share path never stopped being authoritative.
 param enableBlobReplication = true
 param enableBlobLease = true
+// Rollout step 3: restore from the replica at startup instead of copying the share.
+// Flip to true to start step 3; rollback is false (the share is still written every
+// cycle and on shutdown, so the next boot seeds from it as before).
+param enableBlobRestore = false

@@ -2,8 +2,9 @@
 # database to Azure Blob Storage (BLOB-DURABILITY-SPEC.md 3.5, verified in 11.5).
 #
 # Started by the app (LitestreamSupervisor) once /tmp/storage.db is in place.
-# Rollout steps 1 and 2: a shadow of the Azure Files backup; nothing restores
-# from this replica at boot yet.
+# Rollout steps 1 and 2: a shadow of the Azure Files backup. Rollout step 3
+# (RssAppConfig:Durability:RestoreFromBlob, default off) restores from this
+# replica at boot with `litestream restore -config /etc/litestream.yml`.
 #
 # Auth, in Litestream's order: LITESTREAM_AZURE_SAS_TOKEN, then account-key /
 # LITESTREAM_AZURE_ACCOUNT_KEY, then the default Azure credential chain, which

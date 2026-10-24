@@ -9,9 +9,11 @@ namespace RssApp.Config
     /// <see cref="BlobServiceUri"/> or <see cref="ConnectionString"/> is set, which is
     /// how local development and the e2e suite run without a storage account.
     ///
-    /// Rollout state (spec section 8): steps 1 and 2. Replication runs beside the file
-    /// backup and the lease is taken beside the lock file; the share stays authoritative
-    /// and nothing restores from blob yet.
+    /// Rollout state (spec section 8): steps 1 and 2 are on; step 3 is built and behind
+    /// <see cref="RestoreFromBlob"/>. Replication runs beside the file backup and the
+    /// lease is taken beside the lock file. With <see cref="RestoreFromBlob"/> on, startup
+    /// restores the live database from the replica instead of copying the share; the file
+    /// backup keeps running either way, so the share stays current for a rollback.
     /// </summary>
     public class DurabilityConfig
     {
@@ -64,6 +66,25 @@ namespace RssApp.Config
         /// after the child is told to stop; this bounds how long the host waits for it.
         /// </summary>
         public TimeSpan FinalSyncTimeout { get; set; } = TimeSpan.FromSeconds(20);
+
+        /// <summary>
+        /// Rollout step 3 (spec 3.2 steps 3 to 5): once the blob lease is held, restore the
+        /// live database from the Litestream replica (<c>litestream restore</c>, then
+        /// <c>PRAGMA quick_check</c>) instead of copying the share. Needs
+        /// <see cref="LitestreamEnabled"/> and the lease; a failed restore falls back to the
+        /// share copy with an error logged, so the flag is safe to flip and to flip back.
+        /// </summary>
+        public bool RestoreFromBlob { get; set; }
+
+        /// <summary>
+        /// Upper bound for <c>litestream restore</c> at startup. The target is single-digit
+        /// seconds in region at 320 MB; past this the restore is abandoned and the share
+        /// copy is used instead.
+        /// </summary>
+        public TimeSpan RestoreTimeout { get; set; } = TimeSpan.FromSeconds(120);
+
+        /// <summary>True when startup should try the replica first (spec 3.2 step 4).</summary>
+        public bool RestoreEnabled => RestoreFromBlob && LitestreamEnabled && LeaseEnabled;
 
         public bool LeaseEnabled => !string.IsNullOrWhiteSpace(BlobServiceUri) || !string.IsNullOrWhiteSpace(ConnectionString);
     }

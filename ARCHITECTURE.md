@@ -123,16 +123,26 @@ docs link here.
    `litestream replicate` as its child (`LitestreamSupervisor`) once
    `/tmp/storage.db` is in place, replicating it to the `litestream` blob
    container every 30 s through the app's managed identity
-   (`infrastructure/litestream.yml`); on shutdown it runs `litestream sync`
-   and then stops the child, before the final share copy. With
+   (`infrastructure/litestream.yml`). With
    `RssAppConfig:Durability:BlobServiceUri` the writer also holds a 30 s blob
    lease on `litestream/writer-lease` (`BlobWriterLease`), acquired while the
-   startup gate answers the probe and released after the lock file on
-   shutdown; every acquire and release is logged beside the lock's state.
-   Today nothing restores from the replica at boot and the share stays
-   authoritative; `/api/healthz` reports row counts so a restore of the
-   replica can be compared with the live writer by hand (the cutover check
-   in the spec's section 9.5). The spec's section 8 has the remaining steps.
+   startup gate answers the probe; every acquire and release is logged beside
+   the lock's state. Shutdown order (hosted services stop in reverse
+   registration order): the feed scheduler and worker stop, `litestream sync`
+   uploads the pending WAL and the child stops, the lease is released, then
+   the final share copy runs and the lock file goes.
+   Rollout step 3 is behind `RssAppConfig:Durability:RestoreFromBlob`
+   (`enableBlobRestore` in the Bicep, default off): once the lease is held,
+   startup runs `litestream restore` into a staging file, `quick_check`s it
+   and renames it over `/tmp/storage.db` (`BlobRestoreSeeder`) instead of
+   waiting for the share lock and copying the share; a failed restore logs an
+   error and falls back to the share copy. The file backup keeps writing the
+   share either way, so turning the flag off (or the previous image) seeds
+   from the share again. With the flag off nothing restores from the replica
+   and the share stays authoritative; `/api/healthz` reports row counts so a
+   restore of the replica can be compared with the live writer by hand (the
+   cutover check in the spec's section 9.5). The spec's section 8 has the
+   remaining steps.
 
 ##### Read Replicas (optional)
 

@@ -61,16 +61,51 @@ var leaseAcquire = writerLease == null
     ? Task.FromResult(false)
     : Task.Run(() => writerLease.AcquireAsync(leaseAcquireCts.Token));
 
+// Rollout step 3 (spec 3.2 steps 3 to 5), behind RssAppConfig:Durability:RestoreFromBlob:
+// once the lease is held, restore /tmp from the Litestream replica instead of copying the
+// share. The delegate returns false (after an error log) whenever the lease was not
+// obtained or the restore fails, and the gate falls back to the share copy.
+var durabilityLogger = startupLoggerFactory.CreateLogger("Durability");
+Func<CancellationToken, Task<bool>>? restoreFromReplica = null;
+if (config.Durability.RestoreFromBlob && !config.IsReadOnly && !litestreamSupervised)
+{
+    if (!config.Durability.RestoreEnabled || writerLease == null)
+    {
+        durabilityLogger.LogError(
+            "Durability:RestoreFromBlob is on but needs LitestreamEnabled={Litestream} and the blob lease (configured={Lease}); seeding from the share instead.",
+            config.Durability.LitestreamEnabled, writerLease != null);
+    }
+    else
+    {
+        restoreFromReplica = async ct =>
+        {
+#pragma warning disable VSTHRD003
+            var leaseHeld = await leaseAcquire.WaitAsync(ct);
+#pragma warning restore VSTHRD003
+            if (!leaseHeld || !writerLease.IsHeld)
+            {
+                durabilityLogger.LogError("Startup: blob lease not held; not restoring from the replica, falling back to the share copy.");
+                return false;
+            }
+            return await BlobRestoreSeeder.RestoreFromReplicaAsync(
+                config.Durability, config.DbLocation, new LitestreamCli(config.Durability.LitestreamBinary),
+                startupLoggerFactory.CreateLogger("BlobRestore"), ct);
+        };
+    }
+}
+
 if (!config.IsReadOnly && !string.IsNullOrEmpty(backupPaths.BackupDbPath) && !litestreamSupervised)
 {
-    // Before the repositories below open the live DB: answer the startup probe,
-    // wait for the previous revision's final copy, take the lock, seed /tmp.
+    // Before the repositories below open the live DB: answer the startup probe, then
+    // either (restore on) wait for the lease and restore from the replica, or wait for
+    // the previous revision's final copy, take the lock, and seed /tmp from the share.
     try
     {
         await WriterStartupGate.RunAsync(
             args, backupPaths, writerLock,
             config.Auth.AllowedFrontendOrigins.Select(ReturnUrlValidator.NormalizeOrigin).ToArray(),
-            startupLoggerFactory);
+            startupLoggerFactory,
+            restoreFromReplica: restoreFromReplica);
     }
     catch (OperationCanceledException)
     {
@@ -80,6 +115,7 @@ if (!config.IsReadOnly && !string.IsNullOrEmpty(backupPaths.BackupDbPath) && !li
     }
 }
 
+var shareLockDeferred = false;
 if (writerLease != null)
 {
     // The gate returned with the share lock held (or given up on). The lease normally
@@ -90,9 +126,12 @@ if (writerLease != null)
     try { await leaseAcquire; }
 #pragma warning restore VSTHRD003
     catch (OperationCanceledException) { }
-    startupLoggerFactory.CreateLogger("Durability").LogInformation(
+    shareLockDeferred = restoreFromReplica != null && !writerLock.IsHeld;
+    durabilityLogger.LogInformation(
         "Startup: blob lease held={LeaseHeld}, share lock held={LockHeld}; {Verdict}.",
-        writerLease.IsHeld, writerLock.IsHeld, writerLease.IsHeld == writerLock.IsHeld ? "agree" : "DISAGREE");
+        writerLease.IsHeld, writerLock.IsHeld,
+        shareLockDeferred ? "restored from the replica, share lock left to the backup service"
+            : writerLease.IsHeld == writerLock.IsHeld ? "agree" : "DISAGREE");
 }
 
 // One-shot schema migration (DB-REDESIGN-SPEC.md section 7) before any
@@ -203,27 +242,29 @@ if (!config.IsReadOnly)
                 sb))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
         .AddSingleton(writerLock)
-        // Hosted services stop in reverse registration order. The lease is registered
-        // before the share backup so it is released after the final copy and the lock
-        // file; Litestream is registered after the scheduler and worker so it stops
-        // (final sync) once they have stopped writing, and before the share copy runs.
-        .AddSingleton(sb => new WriterLeaseHostedService(
-            writerLease, writerLock, sb.GetRequiredService<ILogger<WriterLeaseHostedService>>()))
-        .AddHostedService(p => p.GetRequiredService<WriterLeaseHostedService>())
+        // Hosted services stop in reverse registration order, so the shutdown sequence of
+        // BLOB-DURABILITY-SPEC.md 3.3 is this list read bottom-up: the retention service,
+        // feed scheduler and worker stop first (nothing writes after this); Litestream runs
+        // the final sync; the blob lease is released (the next writer may now restore from
+        // the replica); the share copy runs and the lock file is released. The share copy
+        // comes last because only a rollback to the previous image reads it.
         .AddSingleton<DatabaseBackupToFileService>(sb =>
             new DatabaseBackupToFileService(
                 sb.GetRequiredService<ILogger<DatabaseBackupToFileService>>(),
                 backupPaths,
                 writerLock))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupToFileService>())
+        .AddSingleton(sb => new WriterLeaseHostedService(
+            writerLease, writerLock, sb.GetRequiredService<ILogger<WriterLeaseHostedService>>(), shareLockDeferred))
+        .AddHostedService(p => p.GetRequiredService<WriterLeaseHostedService>())
+        .AddSingleton(sb => new LitestreamSupervisor(
+            config.Durability, config.DbLocation, sb.GetRequiredService<ILogger<LitestreamSupervisor>>()))
+        .AddHostedService(p => p.GetRequiredService<LitestreamSupervisor>())
         .AddHostedService<BackgroundWorker>()
         .AddSingleton<RefreshPacer>()
         .AddSingleton<IFeedRefresher, FeedRefresher>()
         .AddHostedService<FeedScheduler>()
         .AddHostedService<PostRetentionService>()
-        .AddSingleton(sb => new LitestreamSupervisor(
-            config.Durability, config.DbLocation, sb.GetRequiredService<ILogger<LitestreamSupervisor>>()))
-        .AddHostedService(p => p.GetRequiredService<LitestreamSupervisor>())
         .AddTransient<RedirectDowngradeHandler>()
         .AddTransient<OutboundUrlGuardHandler>()
         // Per-request timeout so a single slow/hung feed can't stall the whole

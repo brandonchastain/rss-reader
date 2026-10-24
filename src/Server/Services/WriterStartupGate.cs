@@ -102,7 +102,8 @@ namespace RssReader.Server.Services
             string[] allowedOrigins,
             ILoggerFactory loggerFactory,
             string? urls = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            Func<CancellationToken, Task<bool>>? restoreFromReplica = null)
         {
             var logger = loggerFactory.CreateLogger("WriterStartupGate");
 
@@ -112,12 +113,17 @@ namespace RssReader.Server.Services
 
             var gate = await StartAsync(args, allowedOrigins, urls, stopping.Token);
             logger.LogInformation(
-                "Startup gate listening: /api/healthz answers while the database is seeded from {Backup}.",
+                restoreFromReplica == null
+                    ? "Startup gate listening: /api/healthz answers while the database is seeded from {Backup}."
+                    : "Startup gate listening: /api/healthz answers while the database is restored from the Litestream replica (fallback: seed from {Backup}).",
                 paths.BackupDbPath);
 
             try
             {
-                await DatabaseSeeder.WaitForLockAndSeedAsync(paths, writerLock, logger, stopping.Token);
+                if (restoreFromReplica == null)
+                    await DatabaseSeeder.WaitForLockAndSeedAsync(paths, writerLock, logger, stopping.Token);
+                else
+                    await DatabaseSeeder.RestoreOrSeedAsync(paths, writerLock, restoreFromReplica, logger, stopping.Token);
             }
             catch (OperationCanceledException) when (stopping.IsCancellationRequested)
             {

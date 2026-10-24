@@ -35,6 +35,54 @@ namespace RssReader.Server.Services
         }
 
         /// <summary>
+        /// Rollout step 3 (BLOB-DURABILITY-SPEC.md 3.2): try <paramref name="restoreFromReplica"/>
+        /// first (it waits for the blob lease and restores from the Litestream replica); when
+        /// it returns false or throws, fall back to <see cref="WaitForLockAndSeedAsync"/>, the
+        /// share copy, with an error logged. A restore that succeeds does not wait for the
+        /// share lock: the previous writer may still be running its final share copy, which
+        /// this process does not need. <see cref="DatabaseBackupToFileService"/> takes the
+        /// lock itself before its first cycle, so the share keeps being written for rollback.
+        /// Cancellation propagates from either path.
+        /// </summary>
+        /// <returns>True when the live DB was restored from the replica, false when it was
+        /// seeded from the share (or left as is because the share had no copy).</returns>
+        public static async Task<bool> RestoreOrSeedAsync(
+            DatabaseBackupToFilePaths paths,
+            ShareWriterLock writerLock,
+            Func<CancellationToken, Task<bool>> restoreFromReplica,
+            ILogger logger,
+            CancellationToken cancellationToken)
+        {
+            var restored = false;
+            try
+            {
+                restored = await restoreFromReplica(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Startup: restore from the Litestream replica threw; falling back to the share copy.");
+            }
+
+            if (restored)
+            {
+                logger.LogInformation(
+                    "Startup: live database restored from the replica; the share lock is left to the backup service (share lock held={LockHeld}).",
+                    writerLock.IsHeld);
+                return true;
+            }
+
+            logger.LogError(
+                "Startup: restore from the Litestream replica did not produce a database; seeding from the share copy at {Backup} instead.",
+                paths.BackupDbPath);
+            await WaitForLockAndSeedAsync(paths, writerLock, logger, cancellationToken);
+            return false;
+        }
+
+        /// <summary>
         /// Copy the share's database over the live path, validating the copy with
         /// <c>PRAGMA quick_check</c> before it replaces anything. Caller must hold the lock.
         /// </summary>
