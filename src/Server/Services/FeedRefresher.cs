@@ -24,6 +24,7 @@ public class FeedRefresher : IFeedRefresher
     private readonly BackgroundWorkQueue backgroundWorkQueue;
     private readonly RssAppConfig config;
     private readonly ThumbnailResolver thumbnailResolver;
+    private readonly RefreshPacer pacer;
     private readonly ConcurrentDictionary<int, UserRefreshState> refreshStates = new();
 
     // Per-feed-URL fetch health: tracks consecutive failures and a backoff
@@ -165,8 +166,10 @@ public class FeedRefresher : IFeedRefresher
         IUserRepository userStore,
         BackgroundWorkQueue backgroundWorkQueue,
         RssAppConfig config,
-        ThumbnailResolver thumbnailResolver)
+        ThumbnailResolver thumbnailResolver,
+        RefreshPacer pacer)
     {
+        this.pacer = pacer;
         this.httpClientFactory = httpClientFactory;
         this.deserializer = deserializer;
         this.logger = logger;
@@ -328,14 +331,21 @@ public class FeedRefresher : IFeedRefresher
             return EarliestNextFetch(states);
         }
 
-        this.logger.LogInformation("Scheduler: {due} of {total} feeds due for refresh.", due.Count, states.Count);
+        this.logger.LogInformation(
+            "Scheduler: {due} of {total} feeds due for refresh, paced at {rate}/s.",
+            due.Count, states.Count, this.config.SchedulerFetchesPerSecond);
 
+        // The gate bounds how many fetches are in flight; the pacer spreads their
+        // starts over time (taken inside the gate so only a gate's worth of tasks
+        // ever hold a timer). A tick with thousands of due feeds is therefore a
+        // trickle at SchedulerFetchesPerSecond, not a burst that pins the CPU.
         using var gate = new SemaphoreSlim(Math.Max(1, this.config.RefreshFetchConcurrency));
         var tasks = due.Select(async feed =>
         {
             await gate.WaitAsync(token);
             try
             {
+                await this.pacer.WaitForFetchSlotAsync(token);
                 await FetchFeedAsync(feed.Url, force: true, token);
             }
             catch (OperationCanceledException)

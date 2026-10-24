@@ -59,6 +59,13 @@ namespace RssApp.Config
         /// <summary>Simultaneous in-flight fetches to any single origin host.</summary>
         public int MaxConcurrentFetchesPerHost { get; set; } = 2;
 
+        /// <summary>
+        /// Most feed fetches the scheduler starts per second; due feeds are spread evenly at this rate instead of
+        /// fetched in a burst. 10/s serves about 36,000 distinct feeds at the one-hour default interval. Manual
+        /// refreshes are not paced. 0 disables pacing.
+        /// </summary>
+        public double SchedulerFetchesPerSecond { get; set; } = 10;
+
         /// <summary>First retry delay after a failed fetch; doubles with each consecutive failure.</summary>
         public TimeSpan FeedBackoffBase { get; set; } = TimeSpan.FromMinutes(2);
 
