@@ -346,27 +346,70 @@ looks (each request is about 2 ms of work) and the parse it then starts runs to 
 too much for the half-core (p95 216 ms), so keep the default at 5/s and treat about 10/s as the ceiling for
 this replica size. Reproduce with `test/load/refresh-pacing.sh` (prepare, run, teardown).
 
-**Request capacity while the paced refresher runs.** Same container and data, `capacity.sh` rates of 30 s each,
-run inside one 5,000-feed cycle at the default 5/s (the cycle was between fetch 5 and 710 of 5,000 for the whole
-sweep), then the same sweep on the same image with `SchedulerEnabled=false` as the control. CPU is one
-`docker stats` sample 15 s into each rate.
+**Request capacity while the paced refresher runs, by budget.** Same container and data (a fresh copy of the
+prepared database for each budget; the eight origins and the network stayed up). `capacity.sh` rates of 30 s
+each, started at the first scheduled fetch so every rate ran inside one 5,000-feed cycle, then the same sweep on
+the same image with `SchedulerEnabled=false` as the control. CPU is one `docker stats` sample 15 s into each rate
+(the 0.5 vCPU cap reads as 50%). Knee: the first rate where p95 exceeds 500 ms, failures exceed 1% or
+iterations drop. One run per budget except 5/s, which was run twice (b is the repeat). Summaries in
+`results/refresh-pacing/sweep-*.json`.
 
-| Requests/s | Refresh on: achieved | p50 | p95 | failed | dropped | CPU | Refresh off: achieved | p50 | p95 | failed | dropped | CPU |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 50 | 50 | 2 ms | 20 ms | 0% | 0 | 33% | 50 | 2 ms | 22 ms | 0% | 0 | 27% |
-| 100 | 100 | 2 ms | 69 ms | 0% | 0 | 38% | 100 | 2 ms | 12 ms | 0% | 0 | 30% |
-| 150 | 150 | 2 ms | 22 ms | 0% | 0 | 32% | 150 | 1 ms | 13 ms | 0% | 0 | 31% |
-| 200 | 200 | 137 ms | 1.0 s | 0% | 3 | 49% | 197 | 2 ms | 306 ms | 0% | 0 | 47% |
-| 300 | 266 | 899 ms | 3.7 s | 17.6% | 413 | 49% | 299 | 24 ms | 187 ms | 0% | 0 | 48% |
-| 400 | 343 | 1.8 s | 3.7 s | 63.3% | 920 | 48% | 388 | 489 ms | 1.8 s | 32.6% | 353 | 50% |
+Control, scheduler off. Knee **400 req/s**.
 
-The knee with the refresher running is **150 req/s** (200 queues: p95 1 s, iterations dropped); with it off it is
-**300 req/s** (400 collapses). A paced refresh therefore costs about half the request headroom while a cycle is
-in progress, but up to 150 req/s requests do not notice it (p95 20 to 69 ms against 12 to 22 ms idle), and at
-the planning rate of about 60/s the two are indistinguishable. Under load the cycle also slows (710 fetches in
-about 3.4 minutes, 3.5/s against the 5/s budget) because the yield holds fetches back while requests are in
-flight. The `docker stats` CPU sample never read above 50% because that is the cap; the 300 and 400 rows are
-the saturated core.
+| Requests/s | achieved | p50 | p95 | failed | dropped | CPU |
+|---|---|---|---|---|---|---|
+| 50 | 50 | 2 ms | 22 ms | 0% | 0 | 27% |
+| 100 | 100 | 2 ms | 12 ms | 0% | 0 | 30% |
+| 150 | 150 | 1 ms | 13 ms | 0% | 0 | 31% |
+| 200 | 197 | 2 ms | 306 ms | 0% | 0 | 47% |
+| 300 | 299 | 24 ms | 187 ms | 0% | 0 | 48% |
+| 400 | 388 | 489 ms | 1.8 s | 32.6% | 353 | 50% |
+
+Budget 5/s (default). Knee **200 req/s** in both runs. Cycle 1,053 s under load (999 s idle).
+
+| Requests/s | achieved | p50 | p95 | failed | dropped | CPU | run b: p50 | p95 | failed | dropped |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 50 | 50 | 2 ms | 20 ms | 0% | 0 | 33% | 3 ms | 61 ms | 0% | 0 |
+| 100 | 100 | 2 ms | 69 ms | 0% | 0 | 38% | 4 ms | 255 ms | 0% | 0 |
+| 150 | 150 | 2 ms | 22 ms | 0% | 0 | 32% | 2 ms | 55 ms | 0% | 0 |
+| 200 | 200 | 137 ms | 1.0 s | 0% | 3 | 49% | 60 ms | 914 ms | 0% | 71 |
+| 300 | 266 | 899 ms | 3.7 s | 17.6% | 413 | 49% | 436 ms | 3.6 s | 1.1% | 234 |
+| 400 | 343 | 1.8 s | 3.7 s | 63.3% | 920 | 48% | 678 ms | 4.1 s | 29.5% | 299 |
+
+Budget 10/s. Knee **300 req/s**. Cycle 555 s under load.
+
+| Requests/s | achieved | p50 | p95 | failed | dropped | CPU |
+|---|---|---|---|---|---|---|
+| 50 | 50 | 2 ms | 32 ms | 0% | 0 | 32% |
+| 100 | 100 | 14 ms | 194 ms | 0% | 0 | 50% |
+| 150 | 150 | 1 ms | 21 ms | 0% | 0 | 34% |
+| 200 | 200 | 3 ms | 67 ms | 0% | 0 | 45% |
+| 300 | 283 | 783 ms | 5.9 s | 12.9% | 367 | 49% |
+| 400 | 379 | 987 ms | 2.6 s | 47.5% | 596 | 52% |
+
+Budget 20/s. Knee **150 req/s**. Cycle 380 s under load (255 s idle).
+
+| Requests/s | achieved | p50 | p95 | failed | dropped | CPU |
+|---|---|---|---|---|---|---|
+| 50 | 50 | 2 ms | 86 ms | 0% | 0 | 40% |
+| 100 | 100 | 57 ms | 248 ms | 0% | 0 | 48% |
+| 150 | 127 | 1.5 s | 9.7 s | 8.8% | 468 | 51% |
+| 200 | 165 | 2.0 s | 7.6 s | 31.7% | 610 | 51% |
+| 300 | 245 | 1.7 s | 4.3 s | 50.2% | 679 | 50% |
+| 400 | 378 | 971 ms | 2.4 s | 53.8% | 618 | 51% |
+
+**Reading it.** Knees: control 400, budget 5/s 200 (twice), 10/s 300, 20/s 150. The 10/s run beating 5/s at
+200 req/s is one 30 s sample against two and should be read as "5 and 10 are the same within run-to-run
+variance", not as 10 being cheaper: both keep every rate up to 150 req/s inside p95 70 ms (one 10/s point at
+100 req/s read 194 ms, one 5/s point 255 ms), and both lose the 300 req/s step the control still passes. 20/s
+is clearly too much: p95 86 ms already at 50 req/s and a collapse at 150. Under load every budget runs slower
+than nominal (the yield holds fetches back): 4.7/s at 5, 9/s at 10, 13/s at 20.
+
+**Recommendation: 10 fetches/s.** Same request impact as 5/s in these runs, the 5,000-feed cycle in 9 minutes
+instead of 17, and room for about 36,000 distinct feeds inside the one-hour default interval. The code still
+ships with 5/s; changing the default is a one-line change to `RssAppConfig.cs` and the two tables above.
+Whatever the budget, plan request capacity at the 150 req/s knee, not the 300 req/s the idle box shows, since a
+cycle is in progress for a sizeable part of every hour once feed counts grow.
 
 **Next step if feed counts grow past tens of thousands.** At 5/s the budget itself becomes the limit (18,000
 feeds an hour). Past that, fetch and parse should move to a separate worker container that posts parsed items
