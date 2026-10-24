@@ -217,6 +217,7 @@ if (!config.IsReadOnly)
                 writerLock))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupToFileService>())
         .AddHostedService<BackgroundWorker>()
+        .AddSingleton<RefreshPacer>()
         .AddSingleton<IFeedRefresher, FeedRefresher>()
         .AddHostedService<FeedScheduler>()
         .AddHostedService<PostRetentionService>()
@@ -278,7 +279,7 @@ var b = app.Services.GetRequiredService<IUserRepository>();
 var c = app.Services.GetRequiredService<IItemRepository>();
 var d = app.Services.GetRequiredService<ISystemStatsRepository>();
 
-// Enable middleware 
+// Enable middleware
 app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 app.UseResponseCompression();

@@ -203,6 +203,7 @@ Bound from `appsettings.json` section `RssAppConfig` or env vars
 | `FeedRefreshIntervalMax` | 6 h | Never wait longer than this. |
 | `RefreshFetchConcurrency` | 8 | Feeds fetched and parsed concurrently inside one refresh. DB writes stay serialized. |
 | `MaxConcurrentFetchesPerHost` | 2 | In-flight fetches to one origin host across all refreshes. |
+| `SchedulerFetchesPerSecond` | 10 | Budget: the scheduler starts at most this many fetches a second, spreading due feeds over time instead of bursting (about 36,000 distinct feeds fit in the one-hour default interval). Manual refreshes are not paced. 0 disables. A yield-to-live-traffic step was measured and dropped (test/load/REPORT.md, "Refresh pacing"). |
 | `FeedBackoffBase` / `FeedBackoffMax` | 2 min / 6 h | Exponential backoff after a failed fetch (base × 2^(failures−1), jittered). `Retry-After` wins. In-memory only. |
 | `BackgroundWorkerCount` | 1 | Keep at 1: more workers contend for SQLite's single writer lock. |
 | `BackgroundQueueCapacity` | 1000 | Bounded queue of background jobs; producers wait when it is full. |

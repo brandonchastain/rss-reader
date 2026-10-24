@@ -63,33 +63,38 @@ public class CachingFeedRepository : IFeedRepository
         return result;
     }
 
-    // --- Write methods (evict then delegate) ---
+    // --- Write methods (delegate, then evict) ---
+    //
+    // Evict after the write, not before: a reader that runs between an eviction
+    // and the write refills the cache with the old list, and the next reader then
+    // sees the write missing until the entry expires (a feed added and not in the
+    // list a moment later).
 
     public void AddFeed(NewsFeed feed)
     {
+        _inner.AddFeed(feed);
         _cache.Remove(FeedsKey(feed.UserId));
         _cache.Remove(FeedKey(feed.UserId, feed.Href));
-        _inner.AddFeed(feed);
     }
 
     public void AddFeeds(RssUser user, IEnumerable<NewsFeed> feeds)
     {
-        _cache.Remove(FeedsKey(user.Id));
         _inner.AddFeeds(user, feeds);
+        _cache.Remove(FeedsKey(user.Id));
     }
 
     public void DeleteFeed(RssUser user, string url)
     {
+        _inner.DeleteFeed(user, url);
         _cache.Remove(FeedsKey(user.Id));
         _cache.Remove(FeedKey(user.Id, url));
-        _inner.DeleteFeed(user, url);
     }
 
     public void AddTag(NewsFeed feed, string tag)
     {
+        _inner.AddTag(feed, tag);
         _cache.Remove(FeedsKey(feed.UserId));
         _cache.Remove(FeedKey(feed.UserId, feed.Href));
-        _inner.AddTag(feed, tag);
     }
 
     // --- Tag settings (pass-through, no caching) ---
@@ -99,8 +104,8 @@ public class CachingFeedRepository : IFeedRepository
 
     public void SetTagHidden(RssUser user, string tag, bool isHidden)
     {
-        _cache.Remove(FeedsKey(user.Id));
         _inner.SetTagHidden(user, tag, isHidden);
+        _cache.Remove(FeedsKey(user.Id));
     }
 
     public IEnumerable<string> GetHiddenFeedUrls(RssUser user)
