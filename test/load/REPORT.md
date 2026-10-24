@@ -318,13 +318,19 @@ feeds due at once on the 0.5 vCPU replica the fetch-parse-store burst took the w
 user requests queued behind it: at 50 req/s, p95 went from 12 ms idle to several hundred ms (352 ms in the
 capacity study above; 513 ms in this run, which overlapped a whole cycle).
 
-**Change** (`RefreshPacer`, `RequestActivity`). Two settings, documented in `RssAppConfig.cs`:
-- `SchedulerFetchesPerSecond` (default 5): the scheduler starts at most this many fetches a second, so a tick
-  with thousands of due feeds is a trickle spread over time rather than a burst. 5/s still covers about 18,000
-  distinct feeds inside the one-hour default interval. Manual refreshes are not paced.
-- `RefreshYieldMaxWait` (3 s) with `RefreshYieldPollInterval` (25 ms): before each fetch and each store the
-  refresher waits while any user request is in flight (counted by the first middleware in the pipeline, the
-  health probe excluded), for at most the maximum, so refreshes still progress under sustained traffic.
+**Change** (`RefreshPacer`). One setting, documented in `RssAppConfig.cs`: `SchedulerFetchesPerSecond`
+(default 10): the scheduler starts at most this many fetches a second, so a tick with thousands of due feeds is a
+trickle spread over time rather than a burst. 10/s covers about 36,000 distinct feeds inside the one-hour default
+interval. Manual refreshes are not paced.
+
+**Measured and dropped: a yield to live traffic.** The first version also waited, before each fetch and each
+store, while any user request was in flight (an in-flight counter kept by a first middleware, polled every 25 ms,
+bounded at 3 s). Measured alone it moved p95 at 50 req/s from 513 ms to only 429 ms, because at that rate the
+pipeline is usually empty at the instant of the check (each request is about 2 ms of work) and the parse that
+then starts runs to completion; and under load it held every budget below nominal (4.7/s at 5, 9/s at 10, 13/s
+at 20). It was removed from the branch. **All tables in this section were taken with the yield present**; the
+budget is what produced the numbers, so they stand for the budget-only build, but the cycle times under load will
+be nearer the nominal budget without it.
 
 **Measurement.** Local container `--cpus 0.5 --memory 1g`, copy of the production database (322 MB) with
 5,000 synthetic feeds added (eight local origins on a `11.11.0.0/24` Docker network returning a 20-item feed
@@ -335,16 +341,14 @@ the first scheduled fetch, so the whole window is inside a refresh cycle. One ru
 | Build | Fetch budget | p50 | p90 | p95 | max | failed | Cycle (5,000 feeds) |
 |---|---|---|---|---|---|---|---|
 | before (`main`) | none | 87 ms | 308 ms | 513 ms | 1.8 s | 0% | about 80 s, CPU at the cap |
-| after | 5/s (default) | 2 ms | 14 ms | 30 ms | 212 ms | 0% | 1,000 s (16.7 min), CPU about 7% |
+| after | 5/s | 2 ms | 14 ms | 30 ms | 212 ms | 0% | 1,000 s (16.7 min), CPU about 7% |
 | after | 20/s | 17 ms | 160 ms | 216 ms | 722 ms | 0% | 255 s, CPU about 25 to 35% |
 | after | off (yield only) | 167 ms | 362 ms | 429 ms | 1.0 s | 0% | 102 s, CPU at the cap |
 
-p95 at 50 req/s during a refresh cycle is 30 ms with the defaults (idle is 12 ms), against 513 ms before; the
-cycle completes, at the budgeted rate. The budget is what does the work: with it off, the yield alone only
-takes p95 from 513 to 429 ms, because at 50 req/s the pipeline is usually empty at the instant the refresher
-looks (each request is about 2 ms of work) and the parse it then starts runs to completion. 20/s is already
-too much for the half-core (p95 216 ms), so keep the default at 5/s and treat about 10/s as the ceiling for
-this replica size. Reproduce with `test/load/refresh-pacing.sh` (prepare, run, teardown).
+p95 at 50 req/s during a refresh cycle is 30 ms at 5/s (idle is 12 ms), against 513 ms before; the cycle
+completes, at the budgeted rate. The budget is what does the work (the yield-only row is the dropped mechanism
+on its own). 20/s is already too much for the half-core (p95 216 ms). Reproduce with
+`test/load/refresh-pacing.sh` (prepare, run, teardown).
 
 **Request capacity while the paced refresher runs, by budget.** Same container and data (a fresh copy of the
 prepared database for each budget; the eight origins and the network stayed up). `capacity.sh` rates of 30 s
@@ -365,7 +369,7 @@ Control, scheduler off. Knee **400 req/s**.
 | 300 | 299 | 24 ms | 187 ms | 0% | 0 | 48% |
 | 400 | 388 | 489 ms | 1.8 s | 32.6% | 353 | 50% |
 
-Budget 5/s (default). Knee **200 req/s** in both runs. Cycle 1,053 s under load (999 s idle).
+Budget 5/s. Knee **200 req/s** in both runs. Cycle 1,053 s under load (999 s idle).
 
 | Requests/s | achieved | p50 | p95 | failed | dropped | CPU | run b: p50 | p95 | failed | dropped |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -376,7 +380,7 @@ Budget 5/s (default). Knee **200 req/s** in both runs. Cycle 1,053 s under load 
 | 300 | 266 | 899 ms | 3.7 s | 17.6% | 413 | 49% | 436 ms | 3.6 s | 1.1% | 234 |
 | 400 | 343 | 1.8 s | 3.7 s | 63.3% | 920 | 48% | 678 ms | 4.1 s | 29.5% | 299 |
 
-Budget 10/s. Knee **300 req/s**. Cycle 555 s under load.
+Budget 10/s (the default). Knee **300 req/s**. Cycle 555 s under load.
 
 | Requests/s | achieved | p50 | p95 | failed | dropped | CPU |
 |---|---|---|---|---|---|---|
@@ -405,13 +409,11 @@ variance", not as 10 being cheaper: both keep every rate up to 150 req/s inside 
 is clearly too much: p95 86 ms already at 50 req/s and a collapse at 150. Under load every budget runs slower
 than nominal (the yield holds fetches back): 4.7/s at 5, 9/s at 10, 13/s at 20.
 
-**Recommendation: 10 fetches/s.** Same request impact as 5/s in these runs, the 5,000-feed cycle in 9 minutes
-instead of 17, and room for about 36,000 distinct feeds inside the one-hour default interval. The code still
-ships with 5/s; changing the default is a one-line change to `RssAppConfig.cs` and the two tables above.
-Whatever the budget, plan request capacity at the 150 req/s knee, not the 300 req/s the idle box shows, since a
+**Default: 10 fetches/s.** Same request impact as 5/s in these runs, the 5,000-feed cycle in 9 minutes
+instead of 17, and room for about 36,000 distinct feeds inside the one-hour default interval. Whatever the budget, plan request capacity at the 150 req/s knee, not the 300 req/s the idle box shows, since a
 cycle is in progress for a sizeable part of every hour once feed counts grow.
 
-**Next step if feed counts grow past tens of thousands.** At 5/s the budget itself becomes the limit (18,000
+**Next step if feed counts grow past tens of thousands.** At 10/s the budget itself becomes the limit (36,000
 feeds an hour). Past that, fetch and parse should move to a separate worker container that posts parsed items
 back to the API: the SQLite file lives on the API container's own disk and only the API can write it, so the
 API would keep the single writer and lose only the fetch and parse CPU.

@@ -61,19 +61,10 @@ namespace RssApp.Config
 
         /// <summary>
         /// Most feed fetches the scheduler starts per second; due feeds are spread evenly at this rate instead of
-        /// fetched in a burst. 5/s serves about 18,000 distinct feeds at the one-hour default interval. Manual
+        /// fetched in a burst. 10/s serves about 36,000 distinct feeds at the one-hour default interval. Manual
         /// refreshes are not paced. 0 disables pacing.
         /// </summary>
-        public double SchedulerFetchesPerSecond { get; set; } = 5;
-
-        /// <summary>
-        /// Longest a refresh waits for user requests to finish before fetching or storing anyway, so refreshes
-        /// still progress under sustained traffic. 0 disables yielding.
-        /// </summary>
-        public TimeSpan RefreshYieldMaxWait { get; set; } = TimeSpan.FromSeconds(3);
-
-        /// <summary>How often a yielding refresh re-checks whether any user request is still in flight.</summary>
-        public TimeSpan RefreshYieldPollInterval { get; set; } = TimeSpan.FromMilliseconds(25);
+        public double SchedulerFetchesPerSecond { get; set; } = 10;
 
         /// <summary>First retry delay after a failed fetch; doubles with each consecutive failure.</summary>
         public TimeSpan FeedBackoffBase { get; set; } = TimeSpan.FromMinutes(2);

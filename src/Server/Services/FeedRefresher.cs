@@ -337,9 +337,8 @@ public class FeedRefresher : IFeedRefresher
 
         // The gate bounds how many fetches are in flight; the pacer spreads their
         // starts over time (taken inside the gate so only a gate's worth of tasks
-        // ever hold a timer) and the yield inside FetchFeedAsync lets user requests
-        // go first. A tick with thousands of due feeds is therefore a trickle at
-        // SchedulerFetchesPerSecond, not a burst that pins the CPU.
+        // ever hold a timer). A tick with thousands of due feeds is therefore a
+        // trickle at SchedulerFetchesPerSecond, not a burst that pins the CPU.
         using var gate = new SemaphoreSlim(Math.Max(1, this.config.RefreshFetchConcurrency));
         var tasks = due.Select(async feed =>
         {
@@ -404,9 +403,6 @@ public class FeedRefresher : IFeedRefresher
             return 0;
         }
 
-        // User requests go first: the fetch's parse and the store's write are the
-        // CPU the refresher burns, so both wait (bounded) for the pipeline to empty.
-        await this.pacer.YieldToRequestsAsync(token);
         var result = await FetchParsedItemsAsync(url, token);
         RecordFetchResult(url, result);
 
@@ -415,7 +411,6 @@ public class FeedRefresher : IFeedRefresher
             return 0;
         }
 
-        await this.pacer.YieldToRequestsAsync(token);
         return await this.newsFeedItemStore.AddItemsAsync(result.Items);
     }
 

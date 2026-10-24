@@ -3,46 +3,41 @@ using RssApp.Config;
 namespace RssReader.Server.Services;
 
 /// <summary>
-/// Keeps the background feed refresher from competing with people for the one
-/// half-core the replica has. Two mechanisms, both consulted by <c>FeedRefresher</c>:
+/// Keeps the background feed refresher from taking the one half-core the replica has
+/// away from people. The scheduler may start at most
+/// <see cref="RssAppConfig.SchedulerFetchesPerSecond"/> fetches a second
+/// (<see cref="WaitForFetchSlotAsync"/>): due feeds are spread evenly over time instead
+/// of fetched as fast as the concurrency gate allows, so a tick with thousands of due
+/// feeds is a long trickle, not a burst. Manual refreshes do not take a slot: the person
+/// asked for them.
 ///
-/// <list type="bullet">
-/// <item><b>Budget</b> (<see cref="WaitForFetchSlotAsync"/>): the scheduler may start at
-/// most <see cref="RssAppConfig.SchedulerFetchesPerSecond"/> fetches a second. Due feeds
-/// are spread evenly over time instead of fetched as fast as the concurrency gate
-/// allows, so a tick with thousands of due feeds is a long trickle, not a burst.
-/// Manual refreshes do not take a slot: the person asked for them.</item>
-/// <item><b>Yield</b> (<see cref="YieldToRequestsAsync"/>): before each fetch and each
-/// store, if any user request is in flight (<see cref="RequestActivity"/>), wait a short
-/// poll interval and look again, for at most <see cref="RssAppConfig.RefreshYieldMaxWait"/>.
-/// The bound means refreshes still progress under sustained traffic; they just lose
-/// every race for the CPU to a request that is already waiting.</item>
-/// </list>
+/// A yield-to-live-traffic step (wait while any request is in flight) was built and
+/// measured alongside this and dropped: alone it moved p95 at 50 req/s from 513 ms to
+/// only 429 ms, because the pipeline is usually empty at the instant of the check and the
+/// parse that then starts runs to completion, and under load it held budgets below
+/// nominal. See test/load/REPORT.md, "Refresh pacing".
 ///
 /// The clock and the delay are injectable so the tests run in milliseconds.
 /// </summary>
 public class RefreshPacer
 {
     private readonly RssAppConfig config;
-    private readonly RequestActivity activity;
     private readonly Func<DateTimeOffset> now;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly object slotLock = new();
     private DateTimeOffset nextSlot = DateTimeOffset.MinValue;
 
-    public RefreshPacer(RssAppConfig config, RequestActivity activity)
-        : this(config, activity, () => DateTimeOffset.UtcNow, Task.Delay)
+    public RefreshPacer(RssAppConfig config)
+        : this(config, () => DateTimeOffset.UtcNow, Task.Delay)
     {
     }
 
     internal RefreshPacer(
         RssAppConfig config,
-        RequestActivity activity,
         Func<DateTimeOffset> now,
         Func<TimeSpan, CancellationToken, Task> delay)
     {
         this.config = config;
-        this.activity = activity;
         this.now = now;
         this.delay = delay;
     }
@@ -72,40 +67,5 @@ public class RefreshPacer
         }
 
         return wait > TimeSpan.Zero ? this.delay(wait, token) : Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Returns once no user request is in flight, or after
-    /// <see cref="RssAppConfig.RefreshYieldMaxWait"/>, whichever is first. Returns the
-    /// time spent waiting, for logging and tests.
-    /// </summary>
-    public virtual async Task<TimeSpan> YieldToRequestsAsync(CancellationToken token)
-    {
-        if (this.activity.InFlight <= 0)
-        {
-            return TimeSpan.Zero;
-        }
-
-        var maxWait = this.config.RefreshYieldMaxWait;
-        var poll = this.config.RefreshYieldPollInterval;
-        if (maxWait <= TimeSpan.Zero || poll <= TimeSpan.Zero)
-        {
-            return TimeSpan.Zero;
-        }
-
-        var started = this.now();
-        while (this.activity.InFlight > 0)
-        {
-            var waited = this.now() - started;
-            if (waited >= maxWait)
-            {
-                return waited;
-            }
-
-            var remaining = maxWait - waited;
-            await this.delay(poll < remaining ? poll : remaining, token);
-        }
-
-        return this.now() - started;
     }
 }

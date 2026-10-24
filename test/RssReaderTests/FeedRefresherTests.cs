@@ -143,8 +143,7 @@ public sealed class FeedRefresherTests
             .AddHostedService<BackgroundWorker>()
             .AddSingleton<RssDeserializer>()
             .AddSingleton<ThumbnailResolver>()
-            .AddSingleton<RequestActivity>()
-            .AddSingleton<RefreshPacer>(sp => pacer ?? new RefreshPacer(config, sp.GetRequiredService<RequestActivity>()))
+            .AddSingleton<RefreshPacer>(pacer ?? new RefreshPacer(config))
             .AddSingleton<IFeedRefresher, FeedRefresher>()
             .AddTransient<RedirectDowngradeHandler>()
             .AddHttpClient("RssClient")
@@ -578,23 +577,21 @@ public sealed class FeedRefresherTests
         Assert.IsTrue(next > DateTimeOffset.UtcNow, "the next fetch is in the future");
     }
 
-    /// <summary>Pacer on a recorded clock: slot waits and yields are counted, never slept.</summary>
+    /// <summary>Pacer whose slot waits are counted, never slept.</summary>
     private sealed class RecordingPacer : RefreshPacer
     {
         public int SlotWaits;
-        public int Yields;
-        public RecordingPacer(RssAppConfig config, RequestActivity activity) : base(config, activity, () => DateTimeOffset.UtcNow, (_, _) => Task.CompletedTask) { }
+        public RecordingPacer(RssAppConfig config) : base(config, () => DateTimeOffset.UtcNow, (_, _) => Task.CompletedTask) { }
         public override Task WaitForFetchSlotAsync(CancellationToken token) { Interlocked.Increment(ref this.SlotWaits); return Task.CompletedTask; }
-        public override Task<TimeSpan> YieldToRequestsAsync(CancellationToken token) { Interlocked.Increment(ref this.Yields); return Task.FromResult(TimeSpan.Zero); }
     }
 
     [TestMethod]
-    public async Task Scheduler_TakesABudgetSlotPerFeed_AndYieldsBeforeFetchAndStore()
+    public async Task Scheduler_TakesABudgetSlotPerFeed()
     {
         var handler = new StubHandler(_ => Ok(File.ReadAllText(Path.Combine("feeds", "vox.xml"))));
         var feedRepo = new InMemoryFeedRepository();
         for (int i = 0; i < 3; i++) feedRepo.AddFeed(new NewsFeed($"https://due{i}.example.com/feed", userId: 1));
-        var pacer = new RecordingPacer(new RssAppConfig(), new RequestActivity());
+        var pacer = new RecordingPacer(new RssAppConfig());
         var (refresher, itemRepo) = CreateRefresher(feedRepo: feedRepo, primaryHandler: handler, pacer: pacer);
         itemRepo.Setup(r => r.AddItemsAsync(It.IsAny<IEnumerable<NewsFeedItem>>())).ReturnsAsync(1);
 
@@ -602,18 +599,17 @@ public sealed class FeedRefresherTests
 
         Assert.AreEqual(3, handler.CallCount);
         Assert.AreEqual(3, pacer.SlotWaits, "one budget slot per scheduled fetch");
-        Assert.AreEqual(6, pacer.Yields, "a yield before each fetch and before each store");
     }
 
     [TestMethod]
-    public async Task ManualRefresh_IsNotPacedByTheBudget_ButStillYields()
+    public async Task ManualRefresh_IsNotPacedByTheBudget()
     {
         var url = "https://manual.example.com/feed";
         var handler = new StubHandler(_ => Ok("<rss/>"));
         var user = new RssUser("u", 1);
         var feedRepo = new InMemoryFeedRepository();
         feedRepo.AddFeed(new NewsFeed(url, user.Id));
-        var pacer = new RecordingPacer(new RssAppConfig(), new RequestActivity());
+        var pacer = new RecordingPacer(new RssAppConfig());
         var (refresher, _, provider) = CreateRefresherWithProvider(feedRepo: feedRepo, primaryHandler: handler, pacer: pacer);
 
         await refresher.RefreshAsync(user);
@@ -621,7 +617,6 @@ public sealed class FeedRefresherTests
 
         Assert.AreEqual(1, handler.CallCount);
         Assert.AreEqual(0, pacer.SlotWaits, "the person asked for this refresh; the budget is for the scheduler");
-        Assert.AreEqual(1, pacer.Yields, "but user requests still go first (no store: the feed was empty)");
     }
 
     [TestMethod]
