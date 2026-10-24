@@ -346,6 +346,28 @@ looks (each request is about 2 ms of work) and the parse it then starts runs to 
 too much for the half-core (p95 216 ms), so keep the default at 5/s and treat about 10/s as the ceiling for
 this replica size. Reproduce with `test/load/refresh-pacing.sh` (prepare, run, teardown).
 
+**Request capacity while the paced refresher runs.** Same container and data, `capacity.sh` rates of 30 s each,
+run inside one 5,000-feed cycle at the default 5/s (the cycle was between fetch 5 and 710 of 5,000 for the whole
+sweep), then the same sweep on the same image with `SchedulerEnabled=false` as the control. CPU is one
+`docker stats` sample 15 s into each rate.
+
+| Requests/s | Refresh on: achieved | p50 | p95 | failed | dropped | CPU | Refresh off: achieved | p50 | p95 | failed | dropped | CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 50 | 50 | 2 ms | 20 ms | 0% | 0 | 33% | 50 | 2 ms | 22 ms | 0% | 0 | 27% |
+| 100 | 100 | 2 ms | 69 ms | 0% | 0 | 38% | 100 | 2 ms | 12 ms | 0% | 0 | 30% |
+| 150 | 150 | 2 ms | 22 ms | 0% | 0 | 32% | 150 | 1 ms | 13 ms | 0% | 0 | 31% |
+| 200 | 200 | 137 ms | 1.0 s | 0% | 3 | 49% | 197 | 2 ms | 306 ms | 0% | 0 | 47% |
+| 300 | 266 | 899 ms | 3.7 s | 17.6% | 413 | 49% | 299 | 24 ms | 187 ms | 0% | 0 | 48% |
+| 400 | 343 | 1.8 s | 3.7 s | 63.3% | 920 | 48% | 388 | 489 ms | 1.8 s | 32.6% | 353 | 50% |
+
+The knee with the refresher running is **150 req/s** (200 queues: p95 1 s, iterations dropped); with it off it is
+**300 req/s** (400 collapses). A paced refresh therefore costs about half the request headroom while a cycle is
+in progress, but up to 150 req/s requests do not notice it (p95 20 to 69 ms against 12 to 22 ms idle), and at
+the planning rate of about 60/s the two are indistinguishable. Under load the cycle also slows (710 fetches in
+about 3.4 minutes, 3.5/s against the 5/s budget) because the yield holds fetches back while requests are in
+flight. The `docker stats` CPU sample never read above 50% because that is the cap; the 300 and 400 rows are
+the saturated core.
+
 **Next step if feed counts grow past tens of thousands.** At 5/s the budget itself becomes the limit (18,000
 feeds an hour). Past that, fetch and parse should move to a separate worker container that posts parsed items
 back to the API: the SQLite file lives on the API container's own disk and only the API can write it, so the
