@@ -23,6 +23,8 @@ x-writer: &writer
     # every live lock would look stale.
     RssAppConfig__BackupLockStaleAfter: "00:00:40"
     RssAppConfig__BackupInterval: "00:00:10"
+    # NOT A SECRET: the AccountKey below is Azurite's published well-known test key for its
+    # fake account devstoreaccount1 (see the Azurite README); it only works against the emulator.
     RssAppConfig__Durability__ConnectionString: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
     RssAppConfig__Durability__LeaseDuration: "00:00:15"
     RssAppConfig__Durability__LeaseRenewInterval: "00:00:05"

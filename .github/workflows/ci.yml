@@ -35,6 +35,8 @@ jobs:
         ports:
           - 10000:10000
     env:
+      # NOT A SECRET: the AccountKey is Azurite's published well-known test key for its
+      # fake account devstoreaccount1 (see the Azurite README); it only works against the emulator.
       RSSREADER_TEST_AZURITE_CONNECTION: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
     steps:
       - uses: actions/checkout@v4
