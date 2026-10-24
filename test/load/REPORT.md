@@ -1,5 +1,41 @@
 # Performance Optimization Report
 
+## Re-run on the shared-posts schema (2026-10-24)
+
+Everything below this section was measured on the earlier per-user schema and a small local database; it
+is kept for the history of those changes. This section is the current state.
+
+**Setup.** A Docker container built from `main` on a copy of the production database after the in-place
+migration and the legacy-table drop (321 MB, 150,356 posts, 142 feeds subscribed by the test user), on a
+12-core Windows machine shared with k6, so absolute numbers are not production's (one shared vCPU); compare
+the two builds, not the figures to the cloud. Test-user mode, scheduler off, k6 v0.54.0 against
+`http://localhost:8080`. Run it with `k6 run -e BASE_URL=http://localhost:8080 scenarios/<name>.js`.
+Raw summaries: `results/shared-posts/` (before the fix below) and `results/shared-posts-indexed/` (after).
+
+**Finding.** The whole-timeline query sorted every visible post into a temporary tree for each page: the
+planner started from the user's subscriptions and ignored the newest-first index
+(`USE TEMP B-TREE FOR ORDER BY`), 83 ms on 150,000 posts and growing with the table. Pinning
+`IX_Posts_Timeline` makes it walk the index and stop at the page size (1 ms). A plan test now guards it
+(`Timeline_WalksTheNewestFirstIndex_WithoutSortingEveryPost`).
+
+| Scenario | Build | Throughput | Avg latency | p95 | Errors | Targets |
+|---|---|---|---|---|---|---|
+| Read baseline (50 VUs, 6 min) | before | 33.9 req/s | 38.3 ms | 79.4 ms | 0 | met |
+| | after | 35.2 req/s | 10.7 ms | 78.3 ms | 0 | met |
+| Mixed workload (30 VUs, 6 min) | before | 24.5 req/s | 33.5 ms | 77.5 ms | 0 | met |
+| | after | 24.9 req/s | 7.1 ms | 10.5 ms | 0 | met |
+| Timeline scroll (200 VUs, 3m20s) | before | 197.8 req/s | 508 ms | 1,673 ms | 0 | **page load p95 2.6 s and mark-read p95 986 ms missed** |
+| | after | 798.4 req/s | 1.5 ms | 3.2 ms | 0 | met (page load p95 3.7 ms, mark-read p95 2.8 ms) |
+
+The read baseline's p95 did not move because it is set by search, the one remaining slow endpoint (about
+110 ms unloaded: a `LIKE '%word%'` fallback on titles scans every post next to the full-text match). Unloaded
+per-request medians after the fix: timeline 17 ms and feed list 16 ms (both the fixed request floor on this
+machine), new-count 5 ms, search 109 ms.
+
+**Scenario changes.** The scenarios were stale against the current API: mark-as-read is POST only (the GET
+route was removed with the cross-site guard) so all seven calls moved to `http.post`; `BASE_URL` is now read
+from the environment instead of the retired `https://localhost:9443`; the scroll scenario pages by cursor, as the app does.
+
 ## Executive Summary
 
 Under realistic high-concurrency load (200 users scrolling the timeline while marking posts

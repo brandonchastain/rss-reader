@@ -113,6 +113,64 @@ public sealed class PostsSchemaTests
     }
 
     [TestMethod]
+    public async Task Timeline_WalksTheNewestFirstIndex_WithoutSortingEveryPost()
+    {
+        // Without the index hint the planner starts from the subscriptions and sorts every
+        // visible post per page, which grows with the table. The plan, not a stopwatch,
+        // is what must not regress.
+        using var db = new TestDatabase("plan");
+        var user = db.AddUser("plan-user");
+        var order = 1000L;
+        foreach (var url in new[] { "https://a.example.com/f", "https://b.example.com/f", "https://c.example.com/f" })
+        {
+            db.Subscribe(user, url, "t");
+            await db.AddPosts(url, 200, firstOrder: order, prefix: url.Substring(8, 1));
+            order += 7;
+        }
+        db.Execute("ANALYZE;");
+
+        using var connection = db.Connections.OpenRead();
+        foreach (var (unread, cursor) in new[] { (false, false), (true, false), (false, true), (true, true) })
+        {
+            using var command = SQLiteItemRepository.BuildTimelineCommand(
+                connection, new NewsFeed("%", user.Id), unread, false, null, 0, 20,
+                cursor ? 10_000 : null, cursor ? 5_000 : null, Array.Empty<string>(), includeContent: false);
+            var plan = ExplainPlan(connection, command);
+            StringAssert.Contains(plan, "IX_Posts_Timeline", $"unread={unread} cursor={cursor}: {plan}");
+            Assert.IsFalse(plan.Contains("TEMP B-TREE", StringComparison.OrdinalIgnoreCase), $"unread={unread} cursor={cursor}: {plan}");
+        }
+
+        // The result is unchanged: newest first, 20 to a page, and the cursor continues after it.
+        var first = (await db.Items.GetItemsAsync(new NewsFeed("%", user.Id), false, false, null, 0, 20, excludeFeedUrls: Array.Empty<string>())).ToList();
+        Assert.AreEqual(20, first.Count);
+        var orders = first.Select(i => i.PublishDateOrder).ToList();
+        CollectionAssert.AreEqual(orders.OrderByDescending(o => o).ToList(), orders);
+        var last = first.Last();
+        var next = (await db.Items.GetItemsAsync(new NewsFeed("%", user.Id), false, false, null, 0, 20,
+            lastId: long.Parse(last.Id), lastPublishDateOrder: last.PublishDateOrder, excludeFeedUrls: Array.Empty<string>())).ToList();
+        Assert.AreEqual(20, next.Count);
+        Assert.IsTrue(next.All(i => i.PublishDateOrder <= last.PublishDateOrder));
+        Assert.AreEqual(0, next.Select(i => i.Id).Intersect(first.Select(i => i.Id)).Count());
+    }
+
+    private static string ExplainPlan(SqliteConnection connection, SqliteCommand command)
+    {
+        using var explain = connection.CreateCommand();
+        explain.CommandText = "EXPLAIN QUERY PLAN " + command.CommandText;
+        foreach (SqliteParameter p in command.Parameters)
+        {
+            explain.Parameters.AddWithValue(p.ParameterName, p.Value);
+        }
+        using var reader = explain.ExecuteReader();
+        var lines = new List<string>();
+        while (reader.Read())
+        {
+            lines.Add(reader.GetString(3));
+        }
+        return string.Join(" | ", lines);
+    }
+
+    [TestMethod]
     public void FeedHealth_IsSharedByEverySubscriberOfTheFeed()
     {
         using var db = new TestDatabase("health-shared");
