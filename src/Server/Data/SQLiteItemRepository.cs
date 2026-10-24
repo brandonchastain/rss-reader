@@ -144,27 +144,53 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         }
     }
 
+    /// <summary>
+    /// The search SELECT. With the full-text index the query is a phrase whose last word may be
+    /// cut short ("cloudfl" finds "cloudflare"), which the index answers directly (12 to 35 ms on
+    /// 150,000 posts). It used to be OR-ed with a title LIKE '%word%', which cannot use an index,
+    /// so every search scanned every title (about 200 ms). Words that begin mid-word are no longer
+    /// found; the LIKE scan remains only as the fallback when the index is unusable.
+    ///
+    /// With the index, the newest page of matching ids is chosen first and only then are the wide
+    /// columns (content, tags, state) read, for those few rows: a common word matches tens of
+    /// thousands of posts, and building the whole row for each of them before sorting cost 97 ms.
+    /// </summary>
+    internal static SqliteCommand BuildSearchCommand(SqliteConnection connection, string query, RssUser user, int page, int pageSize, bool useFts)
+    {
+        var command = connection.CreateCommand();
+        if (useFts)
+        {
+            command.CommandText = SelectColumns(includeContent: true) + SubscriptionJoin + """
+                WHERE p.Id IN (
+                    SELECT p2.Id FROM Posts p2
+                    JOIN Subscriptions sub2 ON sub2.FeedId = p2.FeedId AND sub2.UserId = @userId
+                    WHERE p2.Id IN (SELECT rowid FROM Posts_fts WHERE Posts_fts MATCH @query)
+                    ORDER BY p2.PublishDateOrder DESC, p2.Id DESC
+                    LIMIT @pageSize OFFSET @offset)
+                ORDER BY p.PublishDateOrder DESC, p.Id DESC
+                """;
+        }
+        else
+        {
+            command.CommandText = SelectColumns(includeContent: true) + SubscriptionJoin + """
+                WHERE (p.Title LIKE @plainQuery OR pc.Content LIKE @plainQuery)
+                ORDER BY p.PublishDateOrder DESC, p.Id DESC
+                LIMIT @pageSize OFFSET @offset
+                """;
+        }
+        if (useFts) command.Parameters.AddWithValue("@query", $"\"{query.Replace("\"", "\"\"")}\"*");
+        else command.Parameters.AddWithValue("@plainQuery", $"%{query}%");
+        command.Parameters.AddWithValue("@userId", user.Id);
+        command.Parameters.AddWithValue("@pageSize", pageSize);
+        command.Parameters.AddWithValue("@offset", page * pageSize);
+        return command;
+    }
+
     private async Task<IEnumerable<NewsFeedItem>> SearchItemsCoreAsync(string query, RssUser user, int page, int pageSize, bool useFts)
     {
         var items = new List<NewsFeedItem>();
         using var connection = await this.connections.OpenReadAsync();
-        var command = connection.CreateCommand();
-
-        // FTS for whole words plus the Title LIKE fallback for partial words.
-        var match = useFts
-            ? "(p.Id IN (SELECT rowid FROM Posts_fts WHERE Posts_fts MATCH @query) OR p.Title LIKE @plainQuery)"
-            : "(p.Title LIKE @plainQuery OR pc.Content LIKE @plainQuery)";
-
-        command.CommandText = SelectColumns(includeContent: true) + SubscriptionJoin + $"""
-            WHERE {match}
-            ORDER BY p.PublishDateOrder DESC, p.Id DESC
-            LIMIT @pageSize OFFSET @offset
-            """;
-        if (useFts) command.Parameters.AddWithValue("@query", $"\"{query.Replace("\"", "\"\"")}\"");
-        command.Parameters.AddWithValue("@plainQuery", $"%{query}%");
-        command.Parameters.AddWithValue("@userId", user.Id);
-        command.Parameters.AddWithValue("@pageSize", pageSize);
-        command.Parameters.AddWithValue("@offset", page * pageSize);
+        using var command = BuildSearchCommand(connection, query, user, page, pageSize, useFts);
 
         using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())

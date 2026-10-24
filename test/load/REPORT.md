@@ -30,7 +30,9 @@ planner started from the user's subscriptions and ignored the newest-first index
 The read baseline's p95 did not move because it is set by search, the one remaining slow endpoint (about
 110 ms unloaded: a `LIKE '%word%'` fallback on titles scans every post next to the full-text match). Unloaded
 per-request medians after the fix: timeline 17 ms and feed list 16 ms (both the fixed request floor on this
-machine), new-count 5 ms, search 109 ms.
+machine), new-count 5 ms, search 109 ms. Search was fixed afterwards (the title `LIKE '%word%'` scan was dropped
+for full-text word-start matching, and only the newest page of ids is widened into full rows): search now takes
+13 to 30 ms for ordinary words and 61 ms for a word in 91,000 posts, on the same data.
 
 **Scenario changes.** The scenarios were stale against the current API: mark-as-read is POST only (the GET
 route was removed with the cross-site guard) so all seven calls moved to `http.post`; `BASE_URL` is now read
