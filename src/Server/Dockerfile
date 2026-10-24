@@ -36,9 +36,12 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Litestream for continuous SQLite replication to Azure Blob Storage
-ADD --checksum=sha256:e8612ef5424802723e8cfa2d07a182df60f9af71839b5ff5ef1e80dff38efbdd \
-    https://github.com/benbjohnson/litestream/releases/download/v0.5.9/litestream-0.5.9-linux-x86_64.tar.gz \
+# Install Litestream for continuous SQLite replication to Azure Blob Storage.
+# 0.5.17: 0.5.9 took a full snapshot (the whole database, about 230 MB) on
+# every WAL restart around a checkpoint, every minute or two under this app's
+# write pattern (BLOB-DURABILITY-SPEC.md 11.7); 0.5.15 hardened that path.
+ADD --checksum=sha256:cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c9c006d \
+    https://github.com/benbjohnson/litestream/releases/download/v0.5.17/litestream-0.5.17-linux-x86_64.tar.gz \
     /tmp/litestream.tar.gz
 RUN tar -C /usr/local/bin -xzf /tmp/litestream.tar.gz && rm /tmp/litestream.tar.gz
 
