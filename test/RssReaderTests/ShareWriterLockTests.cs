@@ -247,7 +247,14 @@ public class ShareWriterLockTests
         var l = NewLock();
         using var cts = new CancellationTokenSource(150);
 
-        await Assert.ThrowsExceptionAsync<TaskCanceledException>(() => l.AcquireAsync(cts.Token));
+        // Either the poll delay (TaskCanceledException) or the loop's own check
+        // (OperationCanceledException) observes the token first; both are cancellation.
+        try
+        {
+            await l.AcquireAsync(cts.Token);
+            Assert.Fail("AcquireAsync returned instead of honouring cancellation");
+        }
+        catch (OperationCanceledException) { }
 
         Assert.IsFalse(l.IsHeld);
         Assert.IsTrue(File.Exists(_lockPath), "Foreign lock untouched");
