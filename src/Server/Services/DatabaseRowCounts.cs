@@ -6,9 +6,9 @@ using RssApp.Data;
 namespace RssReader.Server.Services
 {
     /// <summary>
-    /// The numbers the nightly restore drill compares (BLOB-DURABILITY-SPEC.md 9.5):
+    /// The numbers the restore check at cutover compares (BLOB-DURABILITY-SPEC.md 9.5):
     /// reported on <c>/api/healthz</c> by the live writer and computed with the same
-    /// SQL on a restore of the replica by <c>.github/workflows/restore-drill.yml</c>.
+    /// SQL on a restore of the replica, by hand.
     /// </summary>
     public sealed record DatabaseRowCounts(long Posts, long Subscriptions, long UserPostState, long MaxPostId, DateTimeOffset ReadUtc, string? Error = null)
     {

@@ -377,15 +377,20 @@ working app.
   revision's "final sync OK" and the new revision's "restored N bytes" lines.
   Absence of either fails the job, since it means a path was skipped.
 
-### 9.5 Nightly restore drill (new scheduled workflow)
+### 9.5 Restore check at cutover (by hand)
 
-Once a day, with the OIDC identity the deploy already uses: restore the
-production replica into a scratch container on the runner, run quick_check,
-and compare the counts of `Posts`, `Subscriptions`, `UserPostState` and the
-maximum post id against the live `/api/healthz` (which gains those numbers).
-A divergence beyond one sync interval's worth of writes opens an issue. This
-is the shadow-period check of rollout step 1, kept permanently: the only proof
-a backup works is a restore, and this makes one happen every day.
+Decided 2026-10-24: not a scheduled workflow. The one that was written
+(`restore-drill.yml`) was removed the same day, because for a single-writer
+service whose only consumer of the replica is the next deploy, every deploy
+is itself a restore and reports its own failure; a nightly job would add a
+role assignment, runner minutes and an issue-opening path for a check that
+is needed once. That once is the gate for rollout step 3: restore the
+production replica to a scratch location with `litestream restore`, run
+quick_check, and compare the counts of `Posts`, `Subscriptions`,
+`UserPostState` and the maximum post id against the live `/api/healthz`
+(which reports those numbers for this purpose). They must agree to within
+one sync interval's worth of writes. Repeat after any change to the
+Litestream config or binary.
 
 ### 9.6 What CI cannot cover
 
