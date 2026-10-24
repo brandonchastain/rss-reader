@@ -106,7 +106,8 @@ The marker's contents, one record per line, newest last:
 ```
 requested  2026-10-24T22:29:01Z  host=rss-reader-api--0000095-abc pid=1 revision=rss-reader-api--0000095 proto=v1
 accepted   2026-10-24T22:29:03Z  host=rss-reader-api--0000094-xyz pid=1
-released   2026-10-24T22:29:12Z  host=rss-reader-api--0000094-xyz bytes=323022848 copy_utc=2026-10-24T22:29:12Z ltx_txid=4411
+synced     2026-10-24T22:29:05Z  host=rss-reader-api--0000094-xyz ltx_txid=4411 lease=released
+released   2026-10-24T22:29:12Z  host=rss-reader-api--0000094-xyz bytes=323022848 copy_utc=2026-10-24T22:29:12Z
 ```
 
 or, instead of `accepted`/`released`:
@@ -150,19 +151,27 @@ New revision N (booting)                      Old revision O (serving, holds loc
                                               6. If Litestream is enabled: wal_checkpoint,
                                                  `litestream sync -wait`, stop the child
                                                  (BLOB-DURABILITY-SPEC 3.3 steps 3 to 4).
+                                                 Append `synced` (ltx_txid) to the marker and
+                                                 release the lease (metadata: ltx_txid). This
+                                                 is PR #179's shutdown order: the lease goes
+                                                 right after the sync so a blob-restoring N
+                                                 can start while the share copy below runs.
                                               7. Final share copy (RunBackupCycleAsync
                                                  force:true), as today's StopAsync does.
                                                  Record size and mtime of the published copy.
                                               8. Append `released` to the marker. Release
-                                                 the lock file, then the lease (metadata:
-                                                 ltx_txid). O is now a lame duck: read-only,
-                                                 serving, owning nothing.
-9. Poll sees `released` (and the lease
-   free, when enabled). Take the lock
-   and the lease. Check the share copy's
-   size against the `released` line.
-   Seed /tmp (or restore from blob,
-   PR #179). Delete the marker.
+                                                 the lock file. O is now a lame duck:
+                                                 read-only, serving, owning nothing.
+9. Blob restore on (PR #179): poll sees
+   the lease free after `synced`; take
+   it, `litestream restore`, quick_check,
+   rename. Share seed (today): poll sees
+   `released`; take the lock, check the
+   share copy's size against the line,
+   seed /tmp. Either way the lock is
+   taken before the real host (the
+   backup service does it under #179).
+   Delete the marker.
 10. Stop the gate, build the real host.
     /api/healthz -> 200. (~1 s of
     refused connections on the port;
@@ -305,23 +314,38 @@ timeout that degrades to today's behaviour.
 
 ### 3.8 Interaction with the blob lease, Litestream and the blob restore
 
-- **Lease.** Released at step 8 by the handover rather than by
-  `WriterLeaseHostedService.StopAsync`, which becomes "release if still
-  held". The `released` line's `ltx_txid` and the lease metadata carry the
-  same value (BLOB-DURABILITY-SPEC 3.3 step 5). The order O follows, lock
-  then lease, and N follows, lock then lease, is unchanged; N uses lease
-  acquisition as its primary "O is done" signal because it has no cache.
+- **Lease.** Released at step 6 by the handover, right after the Litestream
+  sync and before the share copy, which is the shutdown order PR #179
+  establishes (sync, lease release, share copy, lock release).
+  `WriterLeaseHostedService.StopAsync` becomes "release if still held". The
+  `synced` line's `ltx_txid` and the lease metadata carry the same value
+  (BLOB-DURABILITY-SPEC 3.3 step 5). N uses lease acquisition as its
+  primary "the replica is final" signal because it has no cache. Releasing
+  the lease before the lock is safe because the lease protects the replica
+  and the lock protects the share copy: a blob-restoring N opens neither
+  the share copy nor the lock until the backup service takes the lock
+  before its first cycle, by which time O has released it (or N waits).
 - **Litestream enabled on O.** Step 6 runs the same final sync as today's
   `LitestreamSupervisor.StopAsync` and then stops the child, before the
-  release, so N's `litestream replicate` never overlaps O's on the replica
-  path. A lame-duck O does not restart Litestream; an aborted handover does.
+  lease release, so N's `litestream replicate` never overlaps O's on the
+  replica path. A lame-duck O does not restart Litestream; an aborted
+  handover does, and an abort after step 6 must re-acquire the lease first
+  (if N already holds it, the abort is not possible and O stays read-only
+  as in the "N dies after release" row of 3.7, keyed on the lease rather
+  than the lock).
 - **Restore from blob on N (PR #179, flag off today).** Step 9 becomes
-  "acquire the lease, `litestream restore`" instead of "seed from the
-  share". The restore is 19 s at today's size (BLOB-DURABILITY-SPEC 11.2),
-  so the read-only window grows to about 32 s until that spec's v2 startup
-  (restore before the lease, catch up after) lands; the 503 window stays 0,
-  which is the point. The share copy at step 7 still runs while the share is
-  authoritative (that spec's steps 3 and 4) and goes when the share goes.
+  "acquire the lease, `litestream restore`" and runs concurrently with O's
+  share copy, so the copy drops out of the critical path. The restore is
+  19 s at today's size (BLOB-DURABILITY-SPEC 11.2), so the read-only window
+  is about 25 s until that spec's v2 startup (restore before the lease,
+  catch up after) lands; the 503 window stays 0, which is the point. Any
+  restore failure falls back to the share path exactly as PR #179 does
+  (wait for the lock, seed), which here means waiting for `released`.
+  The share copy at step 7 still runs while the share is authoritative
+  (that spec's steps 3 and 4) and goes when the share goes. PR #179's
+  `deploy.yml` probe (1 s poll of `/api/item/timeline`, longest 5xx run in
+  the job summary) is the metric this design drives to 0; section 9.3 adds
+  the write probe beside it.
 - **After the share is removed (that spec's step 5).** The marker needs a
   home. Substitute a blob `litestream/handover-request` written with
   `If-None-Match: *` (the same atomic create) and appended to with
@@ -408,19 +432,20 @@ At today's size (323 MB) and the share seed, from the new container's start:
 |---|---|---|
 | Gate up, lock read, marker written | +2 s | +2 s |
 | Holder notices, drains, read-only begins | +5 s | +5 s |
-| Litestream final sync (when enabled) | <1 s | <1 s |
-| Final share copy | 7 s | 7 s (while the share is kept) |
-| Release seen by the requester (lease poll) | +14 s | +14 s |
+| Litestream final sync, lease released | <1 s | <1 s (+6 s) |
+| Final share copy | 7 s | 7 s, concurrent with N's restore |
+| Release seen by the requester | +14 s (`released`, lock) | +7 s (lease poll) |
 | Seed or restore | 7 s | 19 s |
-| Real host up, probe passes | +23 s | +35 s |
-| **Read-only window** | **about 18 to 20 s** | **about 30 to 32 s** |
+| Real host up, probe passes | +23 s | +28 s |
+| **Read-only window** | **about 18 to 20 s** | **about 23 to 25 s** |
 | **503 window** | **about 0 s** | **about 0 s** |
-| Old revision receives SIGTERM | +54 s, exits in about 1 s | same |
+| Old revision receives SIGTERM | +54 s, exits in about 1 s | +59 s, same |
 
-The read-only window is bounded below by copy plus seed, which the blob
-spec's later steps shrink independently (the copy goes with the share, the
-restore drops to single digits with its v2 startup). The 503 window does not
-depend on size at all.
+The read-only window is bounded below by copy plus seed on the share path
+and by the restore alone on the blob path, both of which the blob spec's
+later steps shrink independently (the copy goes with the share, the restore
+drops to single digits with its v2 startup). The 503 window does not depend
+on size at all.
 
 ## 7. To verify before building
 
