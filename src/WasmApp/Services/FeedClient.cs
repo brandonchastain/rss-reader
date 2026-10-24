@@ -38,7 +38,19 @@ namespace WasmApp.Services
             var user = await userClient.GetFeedUserAsync();
             feed.UserId = user.Id;
 
-            await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/feed", feed);
+            var response = await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/feed", feed);
+            if (!response.IsSuccessStatusCode)
+            {
+                // A 400 carries the reason (an address the server will not fetch, for example);
+                // pass it on so the page can show it instead of failing silently.
+                var detail = response.StatusCode == System.Net.HttpStatusCode.BadRequest
+                    ? (await response.Content.ReadAsStringAsync()).Trim().Trim('"')
+                    : null;
+                throw new HttpRequestException(
+                    string.IsNullOrWhiteSpace(detail) ? $"Adding the feed failed with HTTP {(int)response.StatusCode}." : detail,
+                    null,
+                    response.StatusCode);
+            }
         }
 
         public async Task AddTagAsync(NewsFeed feed, string tag)

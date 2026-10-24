@@ -32,3 +32,49 @@ jobs:
       # someone else's server is up, which is not a signal worth blocking on.
       # Run them deliberately with --filter TestCategory=Network.
       - run: dotnet test test/RssReaderTests/RssReaderTests.csproj --filter "TestCategory!=Network" --logger "console;verbosity=minimal"
+
+  # The real API and Blazor app on a seeded database, driven by Playwright (test/e2e).
+  # Separate from the unit job so a unit failure still reports in under a minute.
+  browser:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: test/e2e/package-lock.json
+      - name: Install the test runner
+        working-directory: test/e2e
+        run: npm ci
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('test/e2e/package-lock.json') }}
+      - name: Install the browser and its system libraries
+        working-directory: test/e2e
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
+      - name: Run the browser tests
+        working-directory: test/e2e
+        run: npm test
+      - name: Keep the report and traces of a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            test/e2e/playwright-report/
+            test/e2e/test-results/
+          retention-days: 7

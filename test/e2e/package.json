@@ -1,0 +1,16 @@
+{
+  "name": "rss-reader-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser tests: the real API and Blazor app on a seeded database, driven by Playwright.",
+  "scripts": {
+    "prepare-db": "node scripts/prepare-db.mjs",
+    "test": "node scripts/prepare-db.mjs && playwright test",
+    "test:headed": "node scripts/prepare-db.mjs && playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

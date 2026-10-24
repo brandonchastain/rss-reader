@@ -152,6 +152,11 @@ else
             // this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
             await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, userId: -1));
         }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        {
+            lastError = ex.Message;
+            this.logger.LogWarning("The server refused feed {url}: {reason}", NewFeedUrl, ex.Message);
+        }
         catch (HttpRequestException ex)
         {
             lastError = "Invalid feed URL.";
