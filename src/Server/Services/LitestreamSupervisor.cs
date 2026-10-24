@@ -105,6 +105,7 @@ namespace RssReader.Server.Services
         private Process? _process;
         private Task? _supervise;
         private readonly string _socketPath;
+        private bool _disposed;
 
         public bool Enabled => _config.LitestreamEnabled;
         public bool IsRunning => _process is { HasExited: false };
@@ -238,8 +239,15 @@ namespace RssReader.Server.Services
             }
         }
 
+        /// <summary>
+        /// Idempotent: Program.cs registers the instance both as a singleton and as a hosted
+        /// service, so the container disposes it twice at shutdown. The second call is a no-op
+        /// (the first already disposed <c>_stopping</c>).
+        /// </summary>
         public async ValueTask DisposeAsync()
         {
+            if (_disposed) return;
+            _disposed = true;
             await _stopping.CancelAsync();
             // VSTHRD003: no synchronization context in ASP.NET, so awaiting the supervise
             // task cannot deadlock.
