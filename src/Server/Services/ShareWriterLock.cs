@@ -86,7 +86,7 @@ namespace RssReader.Server.Services
 
                 try
                 {
-                    if (File.Exists(LockPath))
+                    if (ProbeExists())
                     {
                         if (IsAlive(out var age)) return false;
                         _logger.LogWarning("Stale writer lock found (age={Age}) — taking over.", age);
@@ -122,6 +122,31 @@ namespace RssReader.Server.Services
         }
 
         public bool TryAcquire() => TryAcquire(out _);
+
+        /// <summary>
+        /// Whether the lock file exists, asked of the file server rather than the local
+        /// attribute cache. <see cref="File.Exists(string)"/> is a stat, and on the Azure
+        /// Files SMB mount (CIFS, actimeo=30) a stat is answered from a cache that is
+        /// refreshed only every 30 s, so a lock the old revision deleted kept "existing"
+        /// here for up to 30 s per cache period (observed as a fixed 60 s or 90 s wait in
+        /// every deploy). An open always round-trips to the server and, on ENOENT, drops
+        /// the stale directory entry, so the new revision sees the release within one
+        /// <see cref="PollInterval"/>. Any failure other than "not found" is treated as
+        /// "exists" and left to the mtime check and the CreateNew claim to sort out.
+        /// </summary>
+        private bool ProbeExists()
+        {
+            try
+            {
+                using var probe = new FileStream(LockPath, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete, bufferSize: 1, FileOptions.None);
+                return true;
+            }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+            catch (IOException) { return true; }
+            catch (UnauthorizedAccessException) { return true; }
+        }
 
         /// <summary>
         /// Wait until the lock can be taken: polls while another writer's lock is alive,
