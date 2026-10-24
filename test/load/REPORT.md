@@ -1,5 +1,67 @@
 # Performance Optimization Report
 
+## Capacity at the live size (2026-10-24)
+
+**What is deployed.** One replica, always on, 0.5 vCPU and 1 GiB, never more than one (`main.bicepparam`:
+`cpuCore 0.5`, `minReplicas 1`, `maxReplicas 1`). SQLite on the container's own disk, 322 MB, 150,356 posts,
+6 accounts, 154 feeds, 230 subscriptions, 37 tags. Re-measure with `test/load/capacity.sh`.
+
+### Request rate (local container capped at 0.5 vCPU / 1 GiB on a copy of the production data)
+
+Fixed arrival rate, mix of 55% timeline page, 20% next page by cursor, 10% feed list, 7% search, 8% mark-as-read.
+
+| Requests/s | achieved | p50 | p95 | failed | dropped |
+|---|---|---|---|---|---|
+| 25 to 100 | all | 2 ms | 12 to 13 ms | 0% | 0 |
+| 110 | 110 | 2 ms | 11 ms | 0% | 0 |
+| 125 | 98 | 1.4 s | 5.7 s | 0.2% | 382 |
+| 150 | 115 | 3.5 s | 5.9 s | 19.5% | 633 |
+| 300 | 260 | 1.8 s | 4.3 s | 53% | 914 |
+
+**About 110 requests/s sustained, then a cliff, not a slope**: past it the single vCPU queues and latency goes from
+milliseconds to seconds. Memory stayed under 530 MB. Plan for about 60/s (half, for burst and for the live box being
+somewhat slower than the local proxy).
+
+Live check, deliberately small (about 3,000 requests, unauthenticated endpoints only, health and the anonymous session
+probe): 10, 25, 50 and 100 req/s all answered with no errors, p50 6 to 7 ms, p95 7 to 9 ms up to 50/s and 62 ms at 100/s
+(the same endpoints locally: p95 4 ms at 100/s and 1 ms at 400/s). Live is therefore somewhat slower than the capped local
+container; there is no evidence of a lower ceiling up to 100/s, but the database-backed endpoints were not driven live (that
+needs a signed-in session).
+
+### What traffic looks like (Azure platform request counts, last 7 days)
+10,711 requests in the week (6,440 successful). Median hour: 3 requests. Busiest hour: 942 (0.26/s). Busiest minute: 636
+(10.6/s, a one-off burst on 2026-10-18). 923 of 10,080 minutes had any traffic; the 99th percentile active minute was 120.
+An open timeline tab polls "new posts" every 30 s (0.033 req/s) and a cold load is about 10 requests.
+
+Per-person cost, with the average reader an assumption (the data has none: the second account has 87 subscriptions and
+3 reads): the owner ("power user", 142 subscriptions, 20 tags, 4,622 read, 1,013 saved) about 0.26 req/s in a heavy hour;
+an average reader (2 sessions a day of about 8 minutes: roughly 70 requests a session, 140 a day) about 0.15 req/s while active.
+At the 60/s planning rate that is about 400 average readers reading at once (about 1,800 open idle tabs), or about
+200 power users in a heavy hour, but only about 6 if all of them burst like the 10.6/s minute together.
+
+### Data volume: the limit that arrives first
+Bytes per post, 2.14 KB: bodies 1.0 KB, full-text index 0.5 KB, rows and indexes 0.5 KB.
+New posts: about 960 a day deduplicated across 105 feeds that post (9.1 per feed per day), very uneven: the top 4 feeds are
+52% of all new posts (one deals feed alone is 267 a day).
+Growth is about 2 MB a day, and 121,609 of the stored posts (81%) were published over 30 days ago (42,770 over 180 days,
+the oldest from 2001: archives pulled in when feeds were added).
+
+The deploy handover is the ceiling. The old replica's final backup took about 55 s at 322 MB and is capped at
+`ShutdownBackupTimeout` (90 s) inside a 120 s termination grace period; a timed-out backup loses up to 15 minutes of
+writes. Backup time scales with size, so the safe limit is about **450 MB (about 210,000 posts)**.
+
+| Retention (`PostRetentionDays`) | Steady-state database | Peak before the migrated archive expires |
+|---|---|---|
+| 180 (today) | 370 MB | about 690 MB in April 2027, past the limit from about late December |
+| 90 | 185 MB | about 505 MB in January 2027 |
+| 60 | 123 MB | about 445 MB in December 2026 |
+
+Distinct feeds, the cost that scales: about 19 KB a day each at the average rate, so about 1.7 MB per feed at 90-day
+retention, roughly 250 distinct feeds inside 450 MB (about 750 at 30 days). Feeds that users share cost nothing extra.
+Subscriptions (about 0.1 KB), tags (about 0.1 KB) and per-user read or saved state (about 0.1 KB a post) are not limits:
+a million subscriptions would be about 100 MB. Not measured: CPU per refreshed feed (154 feeds an hour is small next to the
+above).
+
 ## Re-run on the shared-posts schema (2026-10-24)
 
 Everything below this section was measured on the earlier per-user schema and a small local database; it
