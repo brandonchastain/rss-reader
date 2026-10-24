@@ -40,10 +40,12 @@ export const options = {
 };
 
 export default function () {
-  // Simulate scrolling: page 0, 1, 2, 3, 4
+  // Simulate scrolling the way the app does: the first page, then each next page
+  // from the cursor (publish order and id) of the last post already shown.
+  let cursor = "";
   for (let page = 0; page < 5; page++) {
     const res = http.get(
-      `${BASE_URL}/api/item/timeline?page=${page}&pageSize=20`
+      `${BASE_URL}/api/item/timeline?pageSize=20${cursor}`
     );
 
     const ok = check(res, {
@@ -62,13 +64,15 @@ export default function () {
       try {
         const items = JSON.parse(res.body);
         if (items.length > 0) {
+          const last = items[items.length - 1];
+          cursor = `&cursorPublishDateOrder=${last.publishDateOrder}&cursorId=${last.id}`;
+        }
+        if (items.length > 0) {
           const count = 1 + Math.floor(Math.random() * 2);
           for (let i = 0; i < count && i < items.length; i++) {
             const item = items[Math.floor(Math.random() * items.length)];
             if (item.id) {
-              const mr = http.get(
-                `${BASE_URL}/api/item/markAsRead?itemId=${item.id}&isRead=true`
-              );
+              const mr = http.post(`${BASE_URL}/api/item/markAsRead?itemId=${item.id}&isRead=true`, null);
               if (mr.status === 200) {
                 markReadLatency.add(mr.timings.duration);
               }

@@ -75,7 +75,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     // Shared SELECT shape
     // -------------------------------------------------------------------------
 
-    private static string SelectColumns(bool includeContent) => $"""
+    private static string SelectColumns(bool includeContent, bool walkTimelineIndex = false) => $"""
         SELECT
             p.Id,
             f.Url AS FeedUrl,
@@ -91,7 +91,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             (SELECT group_concat(t.Name, ',') FROM SubscriptionTags st
              JOIN Tags t ON t.Id = st.TagId
              WHERE st.UserId = @userId AND st.FeedId = p.FeedId) AS Tags
-        FROM Posts p
+        FROM Posts p{(walkTimelineIndex ? " INDEXED BY IX_Posts_Timeline" : "")}
         JOIN Feeds f ON f.Id = p.FeedId
         {(includeContent ? "LEFT JOIN PostContent pc ON pc.PostId = p.Id" : "")}
         LEFT JOIN UserPostState s ON s.PostId = p.Id AND s.UserId = @userId
@@ -193,8 +193,41 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     {
         var items = new List<NewsFeedItem>();
         using var connection = await this.connections.OpenReadAsync();
+        using var command = BuildTimelineCommand(
+            connection, feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId, lastPublishDateOrder, excludeFeedUrls, includeContent);
+
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            items.Add(ReadItemFromResults(reader, feed.UserId));
+        }
+
+        return items;
+    }
+
+    /// <summary>
+    /// The timeline SELECT with its filters, cursor and paging. For the whole-timeline view the
+    /// newest-first index is pinned: left to itself the planner starts from the user's
+    /// subscriptions and sorts every visible post into a temporary tree for each page (83 ms
+    /// on 150,000 posts, growing with the table), where walking the index and stopping at the
+    /// page size takes about 1 ms.
+    /// </summary>
+    internal static SqliteCommand BuildTimelineCommand(
+        SqliteConnection connection,
+        NewsFeed feed,
+        bool isFilterUnread,
+        bool isFilterSaved,
+        string filterTag,
+        int? page,
+        int? pageSize,
+        long? lastId,
+        long? lastPublishDateOrder,
+        IEnumerable<string> excludeFeedUrls,
+        bool includeContent)
+    {
         var command = connection.CreateCommand();
-        command.CommandText = SelectColumns(includeContent) + ScopeFor(isFilterSaved);
+        var wholeTimeline = feed.Href == "%" && !isFilterSaved;
+        command.CommandText = SelectColumns(includeContent, walkTimelineIndex: wholeTimeline) + ScopeFor(isFilterSaved);
         command.Parameters.AddWithValue("@userId", feed.UserId);
 
         AppendFilters(command, feed, isFilterUnread, isFilterSaved, filterTag, excludeFeedUrls);
@@ -220,13 +253,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             command.Parameters.AddWithValue("@offset", page * pageSize);
         }
 
-        using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            items.Add(ReadItemFromResults(reader, feed.UserId));
-        }
-
-        return items;
+        return command;
     }
 
     public async Task<int> GetNewItemCountAsync(

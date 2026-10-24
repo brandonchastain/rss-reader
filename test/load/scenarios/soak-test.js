@@ -33,9 +33,7 @@ export default function () {
         if (parsed.length > 0) {
           const item = parsed[Math.floor(Math.random() * parsed.length)];
           if (item.id) {
-            const res = http.get(
-              `${BASE_URL}/api/item/markAsRead?itemId=${item.id}&isRead=true`
-            );
+            const res = http.post(`${BASE_URL}/api/item/markAsRead?itemId=${item.id}&isRead=true`, null);
             check(res, { "markRead 200": (r) => r.status === 200 });
           }
         }
