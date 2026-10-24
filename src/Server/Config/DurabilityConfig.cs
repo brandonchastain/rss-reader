@@ -81,7 +81,7 @@ namespace RssApp.Config
         /// seconds in region at 320 MB; past this the restore is abandoned and the share
         /// copy is used instead.
         /// </summary>
-        public TimeSpan RestoreTimeout { get; set; } = TimeSpan.FromSeconds(120);
+        public TimeSpan RestoreTimeout { get; set; } = TimeSpan.FromSeconds(180);
 
         /// <summary>True when startup should try the replica first (spec 3.2 step 4).</summary>
         public bool RestoreEnabled => RestoreFromBlob && LitestreamEnabled && LeaseEnabled;
@@ -99,6 +99,20 @@ namespace RssApp.Config
 
         /// <summary>Bound on stopping the feed scheduler and worker when a handoff is requested.</summary>
         public TimeSpan HandoffDrainTimeout { get; set; } = TimeSpan.FromSeconds(15);
+
+        /// <summary>
+        /// How many times the new writer starts <c>litestream restore -f</c> before giving up
+        /// and seeding from the share. A follower can die when the old writer's compaction
+        /// deletes LTX files from the replica mid-restore (seen on the first flagged deploy).
+        /// </summary>
+        public int FollowerAttempts { get; set; } = 3;
+
+        /// <summary>
+        /// How long the new writer's startup probe stays 503 after it asked for the handover
+        /// before it opens anyway. The old revision keeps serving meanwhile; the probe opening
+        /// is what makes the platform SIGTERM an old image that ignores the request.
+        /// </summary>
+        public TimeSpan HandoffProbeHold { get; set; } = TimeSpan.FromSeconds(30);
 
         /// <summary>Polling interval of <c>litestream restore -f</c> on the new writer.</summary>
         public TimeSpan FollowInterval { get; set; } = TimeSpan.FromMilliseconds(500);

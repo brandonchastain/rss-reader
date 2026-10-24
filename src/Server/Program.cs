@@ -103,24 +103,13 @@ if (config.Durability.RestoreFromBlob && !config.IsReadOnly && !litestreamSuperv
             writerIdentity,
             startupLoggerFactory.CreateLogger("Handover"));
 
+        // Any failure returns false and the gate seeds from the share (about 7 s at 320 MB).
+        // A fresh full `litestream restore` is not a fallback: it measured 80 s in production.
         restoreFromReplica = async ct =>
         {
-            if (await cooperative.RunAsync(ct)) return true;
+            var restored = await cooperative.RunAsync(ct);
             Volatile.Write(ref trafficReady[0], true);
-
-            // Fallback 1: a fresh full restore once the lease is held (3.2 steps 3 to 5).
-            // The caller falls back to the share copy when this returns false too.
-#pragma warning disable VSTHRD003
-            var leaseHeld = await leaseAcquire.WaitAsync(ct);
-#pragma warning restore VSTHRD003
-            if (!leaseHeld || !writerLease.IsHeld)
-            {
-                durabilityLogger.LogError("Startup: blob lease not held; not restoring from the replica, falling back to the share copy.");
-                return false;
-            }
-            return await BlobRestoreSeeder.RestoreFromReplicaAsync(
-                config.Durability, config.DbLocation, new LitestreamCli(config.Durability.LitestreamBinary),
-                startupLoggerFactory.CreateLogger("BlobRestore"), ct);
+            return restored;
         };
     }
 }

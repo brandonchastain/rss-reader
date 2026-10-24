@@ -15,20 +15,29 @@ namespace RssReader.Server.Services
     ///
     /// <list type="number">
     /// <item>start <c>litestream restore -f</c> into a staging file: the full restore runs
-    ///   now, overlapping the platform's delay, and the follower keeps applying the tail;</item>
-    /// <item>write the handoff request; the running writer drains, syncs, acknowledges with
-    ///   its final transaction id and releases the lease (<see cref="WriterHandover"/>);</item>
-    /// <item>the gate's probe turns 200 once the initial restore is done
-    ///   (<paramref name="readyForTraffic"/>), so traffic moves here only when a database is
-    ///   seconds away, not at the start of the restore;</item>
+    ///   now while the old revision keeps serving, and the follower then keeps applying the
+    ///   tail. A follower that dies (it races the old writer's compaction deleting LTX files
+    ///   from the replica, seen in production) is restarted up to
+    ///   <see cref="DurabilityConfig.FollowerAttempts"/> times;</item>
+    /// <item>only once the initial restore is on disk, write the handoff request, so the old
+    ///   writer is read-only for seconds rather than for the whole restore; it drains, syncs,
+    ///   acknowledges with its final transaction id and releases the lease
+    ///   (<see cref="WriterHandover"/>);</item>
+    /// <item>the gate's probe stays 503 (the old revision keeps serving reads) until the
+    ///   database is in place, so traffic moves here when the host is a second or two away.
+    ///   It opens early only to unblock the old revision: after
+    ///   <see cref="DurabilityConfig.HandoffProbeHold"/> without a finished handover (an old
+    ///   image ignores the request and releases on SIGTERM, which needs a passing probe), or
+    ///   on any failure;</item>
     /// <item>acquire the lease;</item>
     /// <item>wait until the follower has applied up to the acknowledged transaction id (with
     ///   no acknowledgement, until it goes quiet), bounded by <see cref="DurabilityConfig.CatchUpTimeout"/>;</item>
     /// <item>stop the follower, <c>PRAGMA quick_check</c>, rename over the live path.</item>
     /// </list>
     ///
-    /// Returns false, after an error log, on any failure; the caller then takes a fresh full
-    /// restore (<see cref="BlobRestoreSeeder"/>) and after that the share copy. Every phase
+    /// Returns false, after an error log, on any failure; the caller then seeds from the share
+    /// copy (about 7 s at 320 MB; a full blob restore measured 80 s in production, so it is
+    /// not used as a fallback). Every phase
     /// logs a UTC timestamp so the 503 window can be read back from Log Analytics.
     /// </summary>
     public sealed class CooperativeHandoverSeeder
@@ -82,20 +91,51 @@ namespace RssReader.Server.Services
             var activeDir = Path.GetDirectoryName(_activeDbPath);
             if (!string.IsNullOrEmpty(activeDir)) Directory.CreateDirectory(activeDir);
 
-            await using var follower = _followerFactory();
+            ILitestreamFollower? follower = null;
+            using var holdCts = new CancellationTokenSource();
             try
             {
-                try
+                // 1. Follower, with restarts: the initial restore reads LTX files that the
+                // old writer's compaction may delete underneath it.
+                var attempt = 0;
+                while (true)
                 {
-                    follower.Start();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Handover: the follower could not be started; taking the full-restore path.");
-                    Ready("follower failed to start");
+                    attempt++;
+                    if (follower != null) await follower.DisposeAsync();
+                    follower = _followerFactory();
+                    try
+                    {
+                        follower.Start();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Handover: the follower could not be started; seeding from the share.");
+                        Ready("follower failed to start");
+                        return false;
+                    }
+
+                    var restoreDeadline = DateTimeOffset.UtcNow + _config.RestoreTimeout;
+                    while (follower.ReadTxid() == null && !follower.HasExited && DateTimeOffset.UtcNow < restoreDeadline)
+                        await Task.Delay(PollInterval, cancellationToken);
+                    if (follower.ReadTxid() != null) break;
+
+                    if (follower.HasExited && attempt < _config.FollowerAttempts)
+                    {
+                        _logger.LogWarning("Handover: the follower exited (code {Code}) before the initial restore completed, attempt {Attempt} of {Max}; restarting it.",
+                            follower.ExitCode, attempt, _config.FollowerAttempts);
+                        continue;
+                    }
+                    _logger.LogError(follower.HasExited
+                            ? "Handover: the follower exited (code {Code}) on attempt {Attempt}; seeding from the share."
+                            : "Handover: the initial restore did not complete within {Timeout} (attempt {Attempt}); seeding from the share.",
+                        follower.HasExited ? follower.ExitCode : _config.RestoreTimeout, attempt);
+                    Ready("follower failed");
                     return false;
                 }
+                _logger.LogInformation("Handover: initial restore complete at {Utc}, {Ms} ms in, follower at txid {Txid}.",
+                    DateTimeOffset.UtcNow.ToString("O"), sw.ElapsedMilliseconds, follower.ReadTxid());
 
+                // 2. Ask only now, so the old writer is read-only for seconds, not for the restore.
                 var request = new HandoffRequest(Guid.NewGuid().ToString("N"), _self, DateTimeOffset.UtcNow);
                 try
                 {
@@ -104,39 +144,24 @@ namespace RssReader.Server.Services
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    // Without the request the old writer only releases on SIGTERM; still worth
-                    // following, since the lease wait below covers that path too.
-                    _logger.LogError(ex, "Handover: could not write the handoff request; the old writer will release on SIGTERM instead.");
+                    _logger.LogError(ex, "Handover: could not write the handoff request; the old writer will release on SIGTERM, so the probe opens now.");
+                    Ready("request not written");
                 }
 
-                // Initial restore: the txid sidecar appears once the snapshot plus tail is on disk.
-                var restoreDeadline = DateTimeOffset.UtcNow + _config.RestoreTimeout;
-                while (follower.ReadTxid() == null)
+                // The probe opens by itself if the handover is still unfinished after the hold:
+                // an old image ignores the request and only releases after SIGTERM.
+                _ = Task.Run(async () =>
                 {
-                    if (follower.HasExited)
-                    {
-                        _logger.LogError("Handover: the follower exited (code {Code}) before the initial restore completed; taking the full-restore path.", follower.ExitCode);
-                        Ready("follower exited");
-                        return false;
-                    }
-                    if (DateTimeOffset.UtcNow >= restoreDeadline)
-                    {
-                        _logger.LogError("Handover: the initial restore did not complete within {Timeout}; taking the full-restore path.", _config.RestoreTimeout);
-                        Ready("restore timeout");
-                        return false;
-                    }
-                    await Task.Delay(PollInterval, cancellationToken);
-                }
-                _logger.LogInformation("Handover: initial restore complete at {Utc}, {Ms} ms in, follower at txid {Txid}.",
-                    DateTimeOffset.UtcNow.ToString("O"), sw.ElapsedMilliseconds, follower.ReadTxid());
-                Ready("initial restore complete");
+                    try { await Task.Delay(_config.HandoffProbeHold, holdCts.Token); Ready("hold elapsed without a finished handover"); }
+                    catch (OperationCanceledException) { }
+                }, CancellationToken.None);
 
                 // The lease: released by the old writer at the end of its drain, or on its
                 // SIGTERM if it runs an image that does not know the marker, or by expiry.
                 var leaseHeld = await _acquireLease(cancellationToken);
                 if (!leaseHeld)
                 {
-                    _logger.LogError("Handover: blob lease not held; taking the full-restore path.");
+                    _logger.LogError("Handover: blob lease not held; seeding from the share.");
                     return false;
                 }
                 _logger.LogInformation("Handover: lease held at {Utc}, {Ms} ms in.", DateTimeOffset.UtcNow.ToString("O"), sw.ElapsedMilliseconds);
@@ -165,7 +190,7 @@ namespace RssReader.Server.Services
                 var caughtUp = await WaitForCatchUpAsync(follower.ReadTxid, () => follower.HasExited, target, _config.CatchUpTimeout, _config.CatchUpQuietPeriod, PollInterval, cancellationToken);
                 if (!caughtUp)
                 {
-                    _logger.LogError("Handover: follower at txid {Txid} did not reach {Target} within {Timeout}; taking the full-restore path.",
+                    _logger.LogError("Handover: follower at txid {Txid} did not reach {Target} within {Timeout}; seeding from the share.",
                         follower.ReadTxid()?.ToString() ?? "none", target?.ToString() ?? "quiet", _config.CatchUpTimeout);
                     return false;
                 }
@@ -175,19 +200,19 @@ namespace RssReader.Server.Services
                 var exit = await follower.StopAsync(FollowerStopTimeout, cancellationToken);
                 if (exit != 0)
                 {
-                    _logger.LogError("Handover: follower exited with code {Code}; taking the full-restore path.", exit?.ToString() ?? "none");
+                    _logger.LogError("Handover: follower exited with code {Code}; seeding from the share.", exit?.ToString() ?? "none");
                     return false;
                 }
                 if (!File.Exists(follower.OutputPath))
                 {
-                    _logger.LogError("Handover: followed copy {Output} is missing after the follower stopped; taking the full-restore path.", follower.OutputPath);
+                    _logger.LogError("Handover: followed copy {Output} is missing after the follower stopped; seeding from the share.", follower.OutputPath);
                     return false;
                 }
 
                 var (ok, check, error) = DatabaseBackupToFileService.QuickCheckDiagnostic(follower.OutputPath);
                 if (!ok)
                 {
-                    _logger.LogError("Handover: PRAGMA quick_check failed on the followed copy (result='{Result}', error='{Error}'); taking the full-restore path.", check ?? "<null>", error ?? "<none>");
+                    _logger.LogError("Handover: PRAGMA quick_check failed on the followed copy (result='{Result}', error='{Error}'); seeding from the share.", check ?? "<null>", error ?? "<none>");
                     return false;
                 }
 
@@ -206,17 +231,22 @@ namespace RssReader.Server.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Handover: failed {Ms} ms in; taking the full-restore path.", sw.ElapsedMilliseconds);
+                _logger.LogError(ex, "Handover: failed {Ms} ms in; seeding from the share.", sw.ElapsedMilliseconds);
                 Ready("handover failed");
                 return false;
             }
             finally
             {
+                holdCts.Cancel();
                 Ready("handover finished");
-                SafeDelete(follower.OutputPath);
-                SafeDelete(follower.OutputPath + "-txid");
-                SafeDelete(follower.OutputPath + "-wal");
-                SafeDelete(follower.OutputPath + "-shm");
+                if (follower != null)
+                {
+                    await follower.DisposeAsync();
+                    SafeDelete(follower.OutputPath);
+                    SafeDelete(follower.OutputPath + "-txid");
+                    SafeDelete(follower.OutputPath + "-wal");
+                    SafeDelete(follower.OutputPath + "-shm");
+                }
             }
         }
 

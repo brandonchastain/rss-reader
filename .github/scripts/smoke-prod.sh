@@ -35,7 +35,14 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 echo "Smoke check: API=$API SITE=$SITE"
 
 echo "Backend"
-"${CURL[@]}" -D "$tmp/h" -o "$tmp/b" "$API/api/healthz"
+# A deploy's startup gate answers healthz 200 with "phase":"seeding" and 503 elsewhere
+# until the new revision has a database. Wait (up to 3 minutes) for the real host.
+for _ in $(seq 1 36); do
+  "${CURL[@]}" -D "$tmp/h" -o "$tmp/b" "$API/api/healthz"
+  if [ "$(status "$tmp/h")" = "200" ] && ! grep -q '"phase":"seeding"' "$tmp/b"; then break; fi
+  echo "  ...waiting for the real host (the startup gate is still up)"
+  sleep 5
+done
 check "healthz answers 200" "$([ "$(status "$tmp/h")" = "200" ]; echo $?)"
 check "healthz reports healthy" "$(grep -q '"status":"healthy"' "$tmp/b"; echo $?)"
 
