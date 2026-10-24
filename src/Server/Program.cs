@@ -268,6 +268,26 @@ if (!builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
+// Mark the SIGTERM moment so the old revision's shutdown sequence (final DB backup,
+// lock release, lease release) can be timed from the console logs.
+{
+    var shutdownLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("RssReader.Server.Shutdown");
+    var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+    var startedAt = DateTimeOffset.UtcNow;
+    var shutdownSw = new System.Diagnostics.Stopwatch();
+    lifetime.ApplicationStopping.Register(() =>
+    {
+        shutdownSw.Start();
+        shutdownLogger.LogInformation(
+            "Shutdown: ApplicationStopping (SIGTERM) at {At:O}; host uptime {Uptime}.",
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow - startedAt);
+    });
+    lifetime.ApplicationStopped.Register(() =>
+        shutdownLogger.LogInformation(
+            "Shutdown: ApplicationStopped at {At:O}; {Ms} ms after ApplicationStopping.",
+            DateTimeOffset.UtcNow, shutdownSw.ElapsedMilliseconds));
+}
+
 // Cached-image restore from /data runs inside DatabaseBackupService.ExecuteAsync,
 // after Kestrel is listening, so it no longer sits on the cold-start path.
 

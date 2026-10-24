@@ -48,7 +48,9 @@ namespace RssReader.Server.Services
             // The backup service has run the final copy and released the lock file by now;
             // the lease is still held and goes last.
             Report("Shutdown, before lease release", expectLease: true, expectLock: false);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             await _lease.ReleaseAsync();
+            _logger.LogInformation("Shutdown: blob lease released in {Ms} ms.", sw.ElapsedMilliseconds);
             Report("Shutdown, after lease release", expectLease: false, expectLock: false);
         }
 
