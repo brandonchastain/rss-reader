@@ -130,9 +130,9 @@ docs link here.
    startup gate answers the probe and released after the lock file on
    shutdown; every acquire and release is logged beside the lock's state.
    Today nothing restores from the replica at boot and the share stays
-   authoritative; `/api/healthz` reports row counts so the restore drill
-   (`.github/workflows/restore-drill.yml`) can compare a restore with the
-   live writer. The spec's section 8 has the remaining steps.
+   authoritative; `/api/healthz` reports row counts so a restore of the
+   replica can be compared with the live writer by hand (the cutover check
+   in the spec's section 9.5). The spec's section 8 has the remaining steps.
 
 ##### Read Replicas (optional)
 
