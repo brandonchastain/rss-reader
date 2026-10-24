@@ -15,7 +15,7 @@
         @if (!loading && isAdmin)
         {
             <button type="button" class="refresh-btn" disabled="@refreshing" @onclick="RefreshNowAsync" title="Take a fresh snapshot now">
-                @(refreshing ? "Refreshing…" : "Refresh now")
+                @(refreshing ? "Refreshingâ€¦" : "Refresh now")
             </button>
         }
     </div>

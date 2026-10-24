@@ -64,8 +64,8 @@ public sealed class FeedRefresherTests
         public List<NewsFeed> Subscriptions { get; } = new();
         public int RecordCount;
 
-        public void Seed(string url, DateTimeOffset? lastFetched = null, DateTimeOffset? next = null, string etag = null, DateTimeOffset? lastModified = null)
-            => this.states[url] = new FeedFetchState(this.states.Count + 1, url, etag, lastModified, lastFetched, next, 0);
+        public void Seed(string url, DateTimeOffset? lastFetched = null, DateTimeOffset? next = null, string etag = null, DateTimeOffset? lastModified = null, int failures = 0)
+            => this.states[url] = new FeedFetchState(this.states.Count + 1, url, etag, lastModified, lastFetched, next, failures);
 
         public IEnumerable<NewsFeed> GetFeeds(RssUser user) => this.Subscriptions.Where(f => f.UserId == user.Id).ToList();
         public NewsFeed GetFeed(RssUser user, string url) => this.Subscriptions.FirstOrDefault(f => f.UserId == user.Id && f.Href == url);
@@ -347,7 +347,61 @@ public sealed class FeedRefresherTests
     }
 
     [TestMethod]
-    public async Task Fetch_NetworkFailure_StoresTheExceptionTypeAndMessage()
+    public async Task Fetch_BackoffKeepsGrowing_AcrossARestart()
+    {
+        // The feed already failed 8 times in a row before this process started (a fresh
+        // refresher has no in-memory history). The next delay must continue the climb
+        // (2 min * 2^8, capped at 6 h, jittered 0.8-1.2: at least 4.8 h), not start over at 2 min.
+        var handler = new StubHandler(_ => throw new HttpRequestException("down"));
+        var feedRepo = new InMemoryFeedRepository();
+        var (refresher, _) = CreateRefresher(feedRepo: feedRepo, primaryHandler: handler);
+        const string url = "https://dead.example.com/feed";
+        feedRepo.Seed(url, lastFetched: DateTimeOffset.UtcNow.AddHours(-7), next: DateTimeOffset.UtcNow.AddHours(-1), failures: 8);
+
+        await refresher.FetchFeedAsync(url, force: true, CancellationToken.None);
+
+        var state = feedRepo.GetFeedFetchState(url);
+        Assert.AreEqual(9, state.ConsecutiveFailures);
+        Assert.IsTrue(state.NextFetchUtc > DateTimeOffset.UtcNow.AddHours(4.5), $"next attempt {state.NextFetchUtc} is too soon for 9 failures");
+    }
+
+    [TestMethod]
+    public async Task Fetch_HonorsAPersistedBackoffWindow_AfterARestart()
+    {
+        // A refresh right after a restart must not hit a feed whose recorded backoff has not ended.
+        var handler = new StubHandler(_ => throw new HttpRequestException("down"));
+        var feedRepo = new InMemoryFeedRepository();
+        var (refresher, _) = CreateRefresher(feedRepo: feedRepo, primaryHandler: handler);
+        const string url = "https://waiting.example.com/feed";
+        feedRepo.Seed(url, lastFetched: DateTimeOffset.UtcNow.AddMinutes(-40), next: DateTimeOffset.UtcNow.AddHours(3), failures: 5);
+
+        await refresher.FetchFeedAsync(url, force: true, CancellationToken.None);
+
+        Assert.AreEqual(0, handler.CallCount, "the origin must not be contacted inside the recorded backoff");
+        Assert.AreEqual(5, feedRepo.GetFeedFetchState(url).ConsecutiveFailures, "a skipped fetch is not another failure");
+    }
+
+    [TestMethod]
+    public async Task Fetch_Failure_NamesTheInnerCause()
+    {
+        // The expired-certificate case: the outer message only says to look at the inner exception.
+        var handler = new StubHandler(_ => throw new HttpRequestException(
+            "The SSL connection could not be established, see inner exception.",
+            new System.Security.Authentication.AuthenticationException("The remote certificate is invalid because of errors in the certificate chain: NotTimeValid")));
+        var feedRepo = new InMemoryFeedRepository();
+        var (refresher, _) = CreateRefresher(feedRepo: feedRepo, primaryHandler: handler);
+        const string url = "https://expired.example.com/feed";
+        feedRepo.Seed(url);
+
+        await refresher.FetchFeedAsync(url, force: true, CancellationToken.None);
+
+        Assert.AreEqual(
+            "The SSL connection could not be established - The remote certificate is invalid because of errors in the certificate chain: NotTimeValid",
+            feedRepo.LastErrors[url]);
+    }
+
+    [TestMethod]
+    public async Task Fetch_NetworkFailure_StoresTheMessage()
     {
         var handler = new StubHandler(_ => throw new HttpRequestException("connection refused"));
         var feedRepo = new InMemoryFeedRepository();
