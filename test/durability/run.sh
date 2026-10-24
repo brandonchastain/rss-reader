@@ -236,7 +236,8 @@ scenario_cooperative() {
   local ready=$(( $(date +%s) - t0 ))
   expect_log b "Handover: acknowledged by"
   expect_log b "Handover: restored"
-  reject_log b "taking the full-restore path"
+  reject_log b "seeding from the share"
+  reject_log b "restarting it"
   reject_log b "seeding from the share copy"
   expect_log b "Blob writer lease acquired"
   local nb; nb=$(count rss-durability-writer-b-1)

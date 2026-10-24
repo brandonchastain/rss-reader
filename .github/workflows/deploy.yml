@@ -134,10 +134,12 @@ jobs:
       # fail activation and still hold all of the traffic. Ask the app itself.
       - name: Verify the backend is serving
         run: |
+          # The startup gate also answers healthz 200 ("phase":"seeding") while the new
+          # revision has no database yet; only the real host counts as serving.
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "https://api.rss.brandonchastain.com/api/healthz" || true)
-            if [ "$code" = "200" ]; then echo "healthz OK on attempt $i"; exit 0; fi
-            echo "attempt $i: HTTP $code"
+            body=$(curl -s --max-time 90 -w ' HTTP%{http_code}' "https://api.rss.brandonchastain.com/api/healthz" || true)
+            if [[ "$body" == *'HTTP200' && "$body" != *'"phase":"seeding"'* && "$body" == *'"status":"healthy"'* ]]; then echo "healthz OK on attempt $i"; exit 0; fi
+            echo "attempt $i: ${body: -7} (gate or not up yet)"
             sleep 10
           done
           echo "backend did not become healthy"

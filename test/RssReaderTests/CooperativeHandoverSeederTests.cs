@@ -73,6 +73,8 @@ public class CooperativeHandoverSeederTests
             RestoreTimeout = TimeSpan.FromSeconds(5),
             CatchUpTimeout = TimeSpan.FromSeconds(3),
             CatchUpQuietPeriod = TimeSpan.FromMilliseconds(300),
+            FollowerAttempts = 3,
+            HandoffProbeHold = TimeSpan.FromMinutes(5),
         };
     }
 
@@ -106,19 +108,20 @@ public class CooperativeHandoverSeederTests
     private sealed class Harness
     {
         public InMemoryWriterHandoffChannel Channel { get; } = new();
-        public FakeFollower Follower { get; }
+        public List<FakeFollower> Followers { get; } = new();
+        public FakeFollower Follower => Followers[0];
         public TaskCompletionSource<bool> Lease { get; } = new();
         public int ReadyCalls { get; private set; }
-        public DateTimeOffset? ReadyAt { get; private set; }
         public CooperativeHandoverSeeder Seeder { get; }
+        private int _next;
 
-        public Harness(DurabilityConfig config, string active)
+        public Harness(DurabilityConfig config, string active, int followers = 1)
         {
-            Follower = new FakeFollower(active + ".follow");
+            for (var i = 0; i < followers; i++) Followers.Add(new FakeFollower(active + ".follow"));
             Seeder = new CooperativeHandoverSeeder(
-                config, active, Channel, () => Follower,
+                config, active, Channel, () => Followers[Math.Min(_next++, Followers.Count - 1)],
                 async ct => await Lease.Task.WaitAsync(ct),
-                () => { ReadyCalls++; ReadyAt ??= DateTimeOffset.UtcNow; },
+                () => ReadyCalls++,
                 "rev-0096/replica-b", NullLogger.Instance)
             { PollInterval = TimeSpan.FromMilliseconds(20) };
         }
@@ -149,11 +152,13 @@ public class CooperativeHandoverSeederTests
         var run = h.Seeder.RunAsync(CancellationToken.None);
         await Task.Delay(100);
         Assert.AreEqual(0, h.ReadyCalls, "probe stays 503 until the initial restore is on disk");
+        Assert.AreEqual(0, h.Channel.Requests, "no request while the old writer should keep serving");
         Assert.IsFalse(run.IsCompleted);
 
         h.Follower.Restored(10, "replica@10");
         await Task.Delay(100);
-        Assert.AreEqual(1, h.ReadyCalls, "probe turns 200 once the initial restore is done");
+        Assert.AreEqual(1, h.Channel.Requests, "the request is written once the initial restore is done");
+        Assert.AreEqual(0, h.ReadyCalls, "the probe stays 503 while the handover is in progress, so traffic stays on the old revision");
         Assert.IsFalse(run.IsCompleted, "still waiting for the lease");
 
         // Old writer drains, syncs two more transactions, acknowledges at txid 12, releases.
@@ -167,6 +172,7 @@ public class CooperativeHandoverSeederTests
         h.Follower.SetTxid(12);
 
         Assert.IsTrue(await run.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.AreEqual(1, h.ReadyCalls, "the probe opens when the database is in place");
         Assert.IsTrue(h.Follower.Stopped);
         Assert.AreEqual("replica@12", ReadMarker(_active));
         Assert.IsFalse(File.Exists(_active + "-wal"));
@@ -202,17 +208,51 @@ public class CooperativeHandoverSeederTests
     }
 
     [TestMethod]
-    public async Task Run_FollowerExitsBeforeRestore_ReturnsFalseAndOpensProbe()
+    public async Task Run_FollowerExitsOnEveryAttempt_ReturnsFalse_OpensProbe_NeverAsksOldWriter()
     {
+        var h = new Harness(_config, _active, followers: 3);
+        foreach (var f in h.Followers) { f.HasExited = true; f.ExitCode = 1; }
+
+        Assert.IsFalse(await h.Seeder.RunAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.AreEqual(1, h.ReadyCalls, "the probe must open so the old revision gets its SIGTERM and the share seed can run");
+        Assert.AreEqual(0, h.Channel.Requests, "the old writer is not made read-only for a restore that failed");
+        Assert.IsTrue(h.Followers.All(f => f.Started), "all three attempts were made");
+    }
+
+    [TestMethod]
+    public async Task Run_FollowerDiesOnceThenRestores_RetriesAndSucceeds()
+    {
+        // The first-flagged-deploy failure: the follower raced the old writer's compaction.
+        var h = new Harness(_config, _active, followers: 2);
+        h.Followers[0].HasExited = true;
+        h.Followers[0].ExitCode = 1;
+        var run = h.Seeder.RunAsync(CancellationToken.None);
+        await Task.Delay(100);
+        Assert.IsTrue(h.Followers[1].Started, "a second follower was started");
+        Assert.AreEqual(0, h.ReadyCalls);
+        h.Followers[1].Restored(10, "replica@10");
+        await h.OldWriterAcknowledgesAsync(10);
+
+        Assert.IsTrue(await run.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.AreEqual("replica@10", ReadMarker(_active));
+        Assert.AreEqual(1, h.Channel.Requests);
+    }
+
+    [TestMethod]
+    public async Task Run_OldImageIgnoresRequest_ProbeOpensAfterHold_SoItGetsItsSigterm()
+    {
+        _config.HandoffProbeHold = TimeSpan.FromMilliseconds(300);
         var h = new Harness(_config, _active);
         var run = h.Seeder.RunAsync(CancellationToken.None);
-        await Task.Delay(50);
-        h.Follower.HasExited = true;
-        h.Follower.ExitCode = 1;
-
-        Assert.IsFalse(await run.WaitAsync(TimeSpan.FromSeconds(5)));
-        Assert.AreEqual(1, h.ReadyCalls, "the probe must not stay 503 when the follower is gone");
-        Assert.AreEqual(1, h.Channel.Requests, "the request was still written so the old writer drains early");
+        h.Follower.Restored(10, "replica@10");
+        await Task.Delay(150);
+        Assert.AreEqual(0, h.ReadyCalls, "still inside the hold");
+        await Task.Delay(400);
+        Assert.AreEqual(1, h.ReadyCalls, "hold elapsed with the lease still not released: open the probe");
+        Assert.IsFalse(run.IsCompleted, "the handover keeps waiting for the lease");
+        h.Lease.TrySetResult(true); // released on SIGTERM; no acknowledgement
+        Assert.IsTrue(await run.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.AreEqual(1, h.ReadyCalls);
     }
 
     [TestMethod]
