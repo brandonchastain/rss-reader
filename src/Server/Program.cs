@@ -89,6 +89,8 @@ builder.Services.AddHttpClient();
 // Outbound destination policy. Registered for every role: the feed controller
 // (present on readers too) validates a new feed's URL before storing it.
 builder.Services.AddSingleton<OutboundUrlGuard>();
+// In-flight request count, read by the feed refresher to yield to user traffic.
+builder.Services.AddSingleton<RequestActivity>();
 builder.Services.AddResponseCompression(options =>
 {
     options.EnableForHttps = true;
@@ -180,6 +182,7 @@ if (!config.IsReadOnly)
                 writerLock))
         .AddHostedService(p => p.GetRequiredService<DatabaseBackupToFileService>())
         .AddHostedService<BackgroundWorker>()
+        .AddSingleton<RefreshPacer>()
         .AddSingleton<IFeedRefresher, FeedRefresher>()
         .AddHostedService<FeedScheduler>()
         .AddHostedService<PostRetentionService>()
@@ -238,7 +241,10 @@ var b = app.Services.GetRequiredService<IUserRepository>();
 var c = app.Services.GetRequiredService<IItemRepository>();
 var d = app.Services.GetRequiredService<ISystemStatsRepository>();
 
-// Enable middleware 
+// Enable middleware
+// First, so every request is counted for its whole life (the health probe is
+// excluded inside); the feed refresher yields while the count is above zero.
+app.UseMiddleware<RequestActivityMiddleware>();
 app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 app.UseResponseCompression();
