@@ -109,6 +109,21 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # BLOB-DURABILITY-SPEC.md 9.4, "handover window": while the revision rolls, poll a
+      # real endpoint on the live hostname once a second and record the longest run of
+      # non-200 answers. Started here, read back after the health check below. Report
+      # only for now (rollout step 3 measures the window across deploys); the 30 s
+      # failure threshold comes in once the restore path is on and the baseline is known.
+      - name: Start the handover probe
+        run: |
+          nohup bash -c '
+            while [ ! -f /tmp/probe.stop ]; do
+              user=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://api.rss.brandonchastain.com/api/user" || echo 000)
+              hz=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://api.rss.brandonchastain.com/api/healthz" || echo 000)
+              echo "$(date -u +%FT%T.%3NZ) $user $hz" >> /tmp/probe.log
+              sleep 1
+            done' >/dev/null 2>&1 &
+
       # The template deploys the container app. Never `az containerapp update`,
       # which drops the scale settings the template declares.
       - name: Deploy template with the new image
@@ -127,6 +142,28 @@ jobs:
           done
           echo "backend did not become healthy"
           exit 1
+
+      # Longest run of non-200 answers on /api/user seen by the probe above, into the
+      # job summary. /api/user answers 401 without a session, which is the real host
+      # answering; only 5xx/000 count as the handover window. Rollout step 3's target
+      # is a few seconds (BLOB-DURABILITY-SPEC.md 3.2 v2); the pre-step-3 value was ~61 s.
+      - name: Report the handover window
+        if: always()
+        run: |
+          touch /tmp/probe.stop; sleep 2
+          [ -f /tmp/probe.log ] || { echo "no probe samples"; exit 0; }
+          awk '
+            { s=$2; down=(s>=500 || s=="000") }
+            down && !indown { start=$1; indown=1; n=0 }
+            down { n++; last=$1 }
+            !down && indown { if (n>max) {max=n; mstart=start; mend=last}; indown=0 }
+            END { if (indown && n>max) {max=n; mstart=start; mend=last}
+                  printf "longest non-200 run: %d samples (%s .. %s) over %d samples\n", max, mstart, mend, NR }
+          ' /tmp/probe.log | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '<details><summary>probe samples (non-200 only)</summary>' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          awk '$2!=200 && $2!=401' /tmp/probe.log | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY"
+          echo '</details>' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report active revision
         if: always()

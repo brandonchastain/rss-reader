@@ -140,16 +140,37 @@ docs link here.
    `litestream replicate` as its child (`LitestreamSupervisor`) once
    `/tmp/storage.db` is in place, replicating it to the `litestream` blob
    container every 30 s through the app's managed identity
-   (`infrastructure/litestream.yml`); on shutdown it runs `litestream sync`
-   and then stops the child, before the final share copy. With
+   (`infrastructure/litestream.yml`). With
    `RssAppConfig:Durability:BlobServiceUri` the writer also holds a 30 s blob
    lease on `litestream/writer-lease` (`BlobWriterLease`), acquired while the
-   startup gate answers the probe and released after the lock file on
-   shutdown; every acquire and release is logged beside the lock's state.
-   Today nothing restores from the replica at boot and the share stays
-   authoritative; `/api/healthz` reports row counts so a restore of the
-   replica can be compared with the live writer by hand (the cutover check
-   in the spec's section 9.5). The spec's section 8 has the remaining steps.
+   startup gate answers the probe; every acquire and release is logged beside
+   the lock's state. Shutdown order (hosted services stop in reverse
+   registration order): the feed scheduler and worker stop, `litestream sync`
+   uploads the pending WAL and the child stops, the lease is released, then
+   the final share copy runs and the lock file goes.
+   Rollout step 3, the cooperative handover, is behind
+   `RssAppConfig:Durability:RestoreFromBlob` (`enableBlobRestore` in the
+   Bicep). The new revision starts `litestream restore -f` into a staging
+   file (`LitestreamFollower`: full restore, then the LTX tail every 500 ms)
+   and writes a request on the `writer-handoff` blob
+   (`CooperativeHandoverSeeder`); its startup probe answers 503 until the
+   initial restore is on disk, so traffic moves only when the real host is
+   seconds away. The running writer polls that blob every 2 s
+   (`WriterHandoffService`) and, on a request, stops the feed scheduler,
+   worker and retention service, checkpoints, runs the final Litestream sync,
+   acknowledges with the final transaction id, releases the lease, then copies
+   to the share for rollback (`WriterHandover`); from then on it answers 503
+   to mutating requests and serves reads until the platform stops it, and its
+   SIGTERM skips the final share copy. The new writer takes the lease, waits
+   for the follower to reach the acknowledged transaction id, stops it,
+   `quick_check`s and renames the copy over `/tmp/storage.db`. Any failure
+   falls back to a full `litestream restore` after the lease
+   (`BlobRestoreSeeder`), and after that to the share copy. The file backup
+   keeps writing the share either way, so turning the flag off (or the
+   previous image) seeds from the share again. `/api/healthz` reports row
+   counts so a restore of the replica can be compared with the live writer by
+   hand (the cutover check in the spec's section 9.5). The spec's section 8
+   has the remaining steps.
 
 ##### Read Replicas (optional)
 

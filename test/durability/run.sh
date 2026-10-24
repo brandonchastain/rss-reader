@@ -12,6 +12,10 @@
 #   3. overlap   B starts while A is alive: B answers 503 from its gate and runs
 #                no Litestream; A is killed without a release; B proceeds only
 #                after the lease duration.
+#   4. cooperative  (RestoreFromBlob on) B asks on the handoff blob; A drains,
+#                syncs and hands the lease over while alive; B restores through
+#                `litestream restore -f`, serves every row, replicates on; A
+#                answers 503 to writes and its SIGTERM skips the share copy.
 #
 # Rows are written straight into the live SQLite file with the sqlite3 CLI in
 # the container (a probe table the app ignores): the property under test is the
@@ -200,7 +204,63 @@ scenario_overlap() {
   pass "overlap: B waited in the gate without replicating and proceeded ${waited}s after A died"
 }
 
+# Rollout step 3 (BLOB-DURABILITY-SPEC.md 3.2 v2): B asks on the handoff blob, A
+# drains and hands the lease over while still alive, B restores from the replica
+# through `litestream restore -f` and serves every row A acknowledged, A answers
+# 503 to writes, and A's later SIGTERM skips the final share copy.
+scenario_cooperative() {
+  log "=== scenario 4: cooperative handover (restore from blob, marker before SIGTERM)"
+  export RSS_RESTORE_FROM_BLOB=true
+  reset
+  "${COMPOSE[@]}" up -d writer-a >/dev/null
+  wait_ready $PORT_A || fail "writer A did not become ready"
+  expect_log a "Blob writer lease acquired"
+  expect_log a "Handoff watcher running"
+  start_writer rss-durability-writer-a-1
+  sleep 6
+  local t0; t0=$(date +%s)
+  "${COMPOSE[@]}" up -d writer-b >/dev/null
+  # A hands over on the marker, not on SIGTERM: it is never stopped before B is ready.
+  expect_log b "Handover: requested"
+  expect_log a "Handoff requested by"
+  # The probe writer goes straight into the file, past the app's 503 on writes; stop
+  # it where the middleware would start refusing, so its last rows precede the sync.
+  stop_writer
+  expect_log a "Handoff complete"
+  local handed=$(( $(date +%s) - t0 ))
+  local n; n=$(count rss-durability-writer-a-1)
+  log "A handed over ${handed}s after B started; A acknowledged $n rows"
+  [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 -X POST "http://localhost:$PORT_A/api/item/timeline")" == 503 ]] || fail "A should answer 503 to writes after the handoff"
+  [[ "$(status_of $PORT_A)" != 503 ]] || fail "A should keep serving reads after the handoff"
+  wait_ready $PORT_B 120 || fail "writer B did not become ready after the handoff"
+  local ready=$(( $(date +%s) - t0 ))
+  expect_log b "Handover: acknowledged by"
+  expect_log b "Handover: restored"
+  reject_log b "taking the full-restore path"
+  reject_log b "seeding from the share copy"
+  expect_log b "Blob writer lease acquired"
+  local nb; nb=$(count rss-durability-writer-b-1)
+  [[ "$nb" == "$n" ]] || fail "B serves $nb rows, A acknowledged $n"
+  # B replicates on from the followed copy: new rows reach the same replica.
+  start_writer rss-durability-writer-b-1
+  sleep $((SYNC_INTERVAL_S * 3))
+  stop_writer
+  local n2; n2=$(count rss-durability-writer-b-1)
+  docker exec rss-durability-writer-b-1 litestream sync -wait -timeout 20 -socket /tmp/litestream.sock "$DB" >/dev/null 2>&1 || fail "B's litestream sync failed"
+  local r; r=$(restore_replica)
+  log "B ready ${ready}s after start; B acknowledged $n2 rows; replica restore: $r"
+  [[ "$r" == "ok $n2" ]] || fail "replica holds '$r', expected 'ok $n2'"
+  # A's SIGTERM is now a no-op for the database.
+  "${COMPOSE[@]}" stop -t 60 writer-a >/dev/null
+  expect_log a "skipping the final share copy"
+  expect_log a "already synced and stopped at the handoff"
+  reject_log a "Shutdown: final DB backup OK"
+  reject_log a "DISAGREE"
+  unset RSS_RESTORE_FROM_BLOB
+  pass "cooperative: A handed over in ${handed}s, B ready in ${ready}s with all $n rows, B replicates on, A's SIGTERM skipped the share copy"
+}
+
 scenarios=("$@")
-[[ ${#scenarios[@]} -eq 0 ]] && scenarios=(handover crash overlap)
+[[ ${#scenarios[@]} -eq 0 ]] && scenarios=(handover crash overlap cooperative)
 for s in "${scenarios[@]}"; do "scenario_$s"; done
 log "all scenarios passed"

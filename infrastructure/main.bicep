@@ -49,6 +49,9 @@ param enableBlobReplication bool = true
 @description('Rollout step 2: blob writer lease taken and logged beside the share lock file')
 param enableBlobLease bool = true
 
+@description('Rollout step 3: at startup, restore the live database from the Litestream replica once the lease is held, instead of copying the share (needs steps 1 and 2 on; falls back to the share copy on failure)')
+param enableBlobRestore bool = false
+
 @description('Gateway secret key for API authentication')
 @secure()
 param gatewaySecretKey string
@@ -298,6 +301,15 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               // disables the lease (rollback).
               name: 'RssAppConfig__Durability__BlobServiceUri'
               value: enableBlobLease ? storageAccount.properties.primaryEndpoints.blob : ''
+            }
+            {
+              // Rollout step 3: once the lease is held, startup restores /tmp/storage.db
+              // from the Litestream replica (litestream restore + quick_check) instead of
+              // copying the share; a failed restore falls back to the share copy. The file
+              // backup keeps writing the share either way, so rollback is 'false' (or the
+              // previous image), which reads the share again.
+              name: 'RssAppConfig__Durability__RestoreFromBlob'
+              value: string(enableBlobRestore && enableBlobReplication && enableBlobLease)
             }
             {
               // Persistent SQLite backup file on the Azure Files mount.
