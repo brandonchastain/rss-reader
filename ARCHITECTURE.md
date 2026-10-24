@@ -83,7 +83,9 @@ docs link here.
 
    **Deploy handover.** A deploy overlaps the old and new revision even in
    `Single` revision mode, and anything written since the last periodic copy
-   exists only in the old replica's `/tmp`. The sequence that keeps it:
+   exists only in the old replica's `/tmp`. The sequence that keeps it
+   (DEPLOY-HANDOVER-SPEC.md proposes replacing it with one in which the old
+   revision keeps serving until the new one is ready):
 
    1. The new revision starts a throwaway listener (`WriterStartupGate`) that
       answers `/api/healthz` with 200 and everything else with 503, and waits
