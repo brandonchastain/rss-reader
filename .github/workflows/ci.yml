@@ -28,7 +28,10 @@ jobs:
     # are inconclusive, so it is set here to make them count.
     services:
       azurite:
-        image: mcr.microsoft.com/azure-storage/azurite:3.33.0
+        # `latest` on purpose: a service container cannot be given
+        # --skipApiVersionCheck, and the Azure SDK's API version moves ahead
+        # of any pinned Azurite release (3.33.0 rejected 2025-05-05).
+        image: mcr.microsoft.com/azure-storage/azurite:latest
         ports:
           - 10000:10000
     env:

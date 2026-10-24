@@ -110,7 +110,15 @@ restore_replica() {
 
 logs_a() { "${COMPOSE[@]}" logs --no-color writer-a 2>/dev/null; }
 logs_b() { "${COMPOSE[@]}" logs --no-color writer-b 2>/dev/null; }
-expect_log() { local which=$1 pattern=$2; if ! "logs_$which" | grep -q -- "$pattern"; then fail "writer-$which log lacks '$pattern'"; fi; }
+# Log lines reach `compose logs` a moment after the event; allow up to 10 s.
+expect_log() {
+  local which=$1 pattern=$2 i
+  for ((i = 0; i < 20; i++)); do
+    if "logs_$which" | grep -q -- "$pattern"; then return 0; fi
+    sleep 0.5
+  done
+  fail "writer-$which log lacks '$pattern'"
+}
 reject_log() { local which=$1 pattern=$2; if "logs_$which" | grep -q -- "$pattern"; then fail "writer-$which log contains '$pattern'"; fi; }
 
 scenario_handover() {
