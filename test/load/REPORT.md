@@ -310,3 +310,43 @@ k6 run --insecure-skip-tls-verify --summary-export results/read.json scenarios/r
 k6 run --insecure-skip-tls-verify --summary-export results/mixed.json scenarios/mixed-workload.js
 k6 run --insecure-skip-tls-verify --summary-export results/write.json scenarios/write-storm.js
 ```
+
+## Refresh pacing (2026-10-24)
+
+**Problem.** The scheduler fetched every due feed as fast as `RefreshFetchConcurrency` allowed. With 5,000
+feeds due at once on the 0.5 vCPU replica the fetch-parse-store burst took the whole core for about 80 s, and
+user requests queued behind it: at 50 req/s, p95 went from 12 ms idle to several hundred ms (352 ms in the
+capacity study above; 513 ms in this run, which overlapped a whole cycle).
+
+**Change** (`RefreshPacer`, `RequestActivity`). Two settings, documented in `RssAppConfig.cs`:
+- `SchedulerFetchesPerSecond` (default 5): the scheduler starts at most this many fetches a second, so a tick
+  with thousands of due feeds is a trickle spread over time rather than a burst. 5/s still covers about 18,000
+  distinct feeds inside the one-hour default interval. Manual refreshes are not paced.
+- `RefreshYieldMaxWait` (3 s) with `RefreshYieldPollInterval` (25 ms): before each fetch and each store the
+  refresher waits while any user request is in flight (counted by the first middleware in the pipeline, the
+  health probe excluded), for at most the maximum, so refreshes still progress under sustained traffic.
+
+**Measurement.** Local container `--cpus 0.5 --memory 1g`, copy of the production database (322 MB) with
+5,000 synthetic feeds added (eight local origins on a `11.11.0.0/24` Docker network returning a 20-item feed
+with one new item per fetch, all subscribed by the test user; real feeds parked until 2027), 1-minute refresh
+interval so the feeds are due on the first tick. k6 `scenarios/capacity.js` at 50 req/s for 60 s, started at
+the first scheduled fetch, so the whole window is inside a refresh cycle. One run each.
+
+| Build | Fetch budget | p50 | p90 | p95 | max | failed | Cycle (5,000 feeds) |
+|---|---|---|---|---|---|---|---|
+| before (`main`) | none | 87 ms | 308 ms | 513 ms | 1.8 s | 0% | about 80 s, CPU at the cap |
+| after | 5/s (default) | 2 ms | 14 ms | 30 ms | 212 ms | 0% | 1,000 s (16.7 min), CPU about 7% |
+| after | 20/s | 17 ms | 160 ms | 216 ms | 722 ms | 0% | 255 s, CPU about 25 to 35% |
+| after | off (yield only) | 167 ms | 362 ms | 429 ms | 1.0 s | 0% | 102 s, CPU at the cap |
+
+p95 at 50 req/s during a refresh cycle is 30 ms with the defaults (idle is 12 ms), against 513 ms before; the
+cycle completes, at the budgeted rate. The budget is what does the work: with it off, the yield alone only
+takes p95 from 513 to 429 ms, because at 50 req/s the pipeline is usually empty at the instant the refresher
+looks (each request is about 2 ms of work) and the parse it then starts runs to completion. 20/s is already
+too much for the half-core (p95 216 ms), so keep the default at 5/s and treat about 10/s as the ceiling for
+this replica size. Reproduce with `test/load/refresh-pacing.sh` (prepare, run, teardown).
+
+**Next step if feed counts grow past tens of thousands.** At 5/s the budget itself becomes the limit (18,000
+feeds an hour). Past that, fetch and parse should move to a separate worker container that posts parsed items
+back to the API: the SQLite file lives on the API container's own disk and only the API can write it, so the
+API would keep the single writer and lose only the fetch and parse CPU.
