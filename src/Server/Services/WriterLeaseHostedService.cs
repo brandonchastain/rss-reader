@@ -26,6 +26,7 @@ namespace RssReader.Server.Services
         private readonly BlobWriterLease? _lease;
         private readonly ShareWriterLock _lock;
         private readonly bool _shareLockDeferred;
+        private readonly WriterState? _writerState;
         private readonly ILogger _logger;
 
         /// <param name="shareLockDeferred">
@@ -33,12 +34,15 @@ namespace RssReader.Server.Services
         /// service (<see cref="DatabaseSeeder.RestoreOrSeedAsync"/>), so the lock may not be
         /// held yet when the host starts and its state is reported without a verdict.
         /// </param>
-        public WriterLeaseHostedService(BlobWriterLease? lease, ShareWriterLock writerLock, ILogger<WriterLeaseHostedService> logger, bool shareLockDeferred = false)
+        /// <param name="writerState">When set and handed over, the lease left at the handoff and shutdown has nothing to release.</param>
+        public WriterLeaseHostedService(BlobWriterLease? lease, ShareWriterLock writerLock, ILogger<WriterLeaseHostedService> logger,
+            bool shareLockDeferred = false, WriterState? writerState = null)
         {
             _lease = lease;
             _lock = writerLock;
             _logger = logger;
             _shareLockDeferred = shareLockDeferred;
+            _writerState = writerState;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
@@ -55,6 +59,12 @@ namespace RssReader.Server.Services
         public async Task StopAsync(CancellationToken cancellationToken)
         {
             if (_lease == null) return;
+            if (_writerState is { IsHandedOver: true } handed)
+            {
+                // Cooperative handoff: the lease went to the next revision at HandedOverAtUtc.
+                Report($"Shutdown, lease handed over to {handed.HandedOverTo} at {handed.HandedOverAtUtc:O}; nothing to release", expectLease: false, expectLock: true);
+                return;
+            }
             // The Litestream final sync has run by now (it stops before this service); the
             // share copy and the lock file release come after, so the lock is still held.
             Report("Shutdown, after the Litestream final sync and before lease release", expectLease: true, expectLock: true);

@@ -86,6 +86,33 @@ namespace RssApp.Config
         /// <summary>True when startup should try the replica first (spec 3.2 step 4).</summary>
         public bool RestoreEnabled => RestoreFromBlob && LitestreamEnabled && LeaseEnabled;
 
+        // Cooperative handover (spec 3.2 "v2" plus a handoff marker). All under RestoreFromBlob.
+
+        /// <summary>Blob in <see cref="LeaseContainer"/> carrying the handoff request and its acknowledgement.</summary>
+        public string HandoffBlob { get; set; } = "writer-handoff";
+
+        /// <summary>How often the running writer looks for a handoff request.</summary>
+        public TimeSpan HandoffPollInterval { get; set; } = TimeSpan.FromSeconds(2);
+
+        /// <summary>How often the new writer polls the lease while a handover is pending.</summary>
+        public TimeSpan HandoffLeasePollInterval { get; set; } = TimeSpan.FromMilliseconds(500);
+
+        /// <summary>Bound on stopping the feed scheduler and worker when a handoff is requested.</summary>
+        public TimeSpan HandoffDrainTimeout { get; set; } = TimeSpan.FromSeconds(15);
+
+        /// <summary>Polling interval of <c>litestream restore -f</c> on the new writer.</summary>
+        public TimeSpan FollowInterval { get; set; } = TimeSpan.FromMilliseconds(500);
+
+        /// <summary>
+        /// After the lease is held, how long the new writer waits for the follower to reach the
+        /// transaction id the old writer recorded (or, with no acknowledgement, to go quiet)
+        /// before giving up on the followed copy and taking a fresh full restore.
+        /// </summary>
+        public TimeSpan CatchUpTimeout { get; set; } = TimeSpan.FromSeconds(20);
+
+        /// <summary>With no acknowledgement to compare against, the follower counts as caught up once its txid has not moved for this long.</summary>
+        public TimeSpan CatchUpQuietPeriod { get; set; } = TimeSpan.FromSeconds(2);
+
         public bool LeaseEnabled => !string.IsNullOrWhiteSpace(BlobServiceUri) || !string.IsNullOrWhiteSpace(ConnectionString);
     }
 }

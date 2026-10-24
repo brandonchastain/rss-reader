@@ -48,7 +48,8 @@ namespace RssReader.Server.Services
         /// real app will use, so the platform's probe reaches it.
         /// </summary>
         public static async Task<WriterStartupGate> StartAsync(
-            string[] args, string[] allowedOrigins, string? urls, CancellationToken cancellationToken)
+            string[] args, string[] allowedOrigins, string? urls, CancellationToken cancellationToken,
+            Func<bool>? readyForTraffic = null)
         {
             var builder = WebApplication.CreateBuilder(args);
             builder.Logging.ClearProviders();
@@ -57,7 +58,15 @@ namespace RssReader.Server.Services
             if (urls != null) builder.WebHost.UseUrls(urls);
             var gate = builder.Build();
 
-            gate.MapGet("/api/healthz", () => Results.Ok(new { status = "healthy", role = "writer", phase = "seeding" }));
+            // The startup probe. With a cooperative handover (readyForTraffic given) it
+            // answers 503 until the initial restore is on disk, so the platform moves
+            // traffic here only when the real host is seconds away; the caller bounds that
+            // window well inside the probe's budget (2 s * 150). Without one, 200 at once:
+            // the old revision's SIGTERM, and so its final share copy, depends on it.
+            gate.MapGet("/api/healthz", () =>
+                readyForTraffic == null || readyForTraffic()
+                    ? Results.Ok(new { status = "healthy", role = "writer", phase = "seeding" })
+                    : Results.Json(new { status = "starting", role = "writer", phase = "restoring" }, statusCode: StatusCodes.Status503ServiceUnavailable));
             gate.MapFallback(async ctx =>
             {
                 // CORS enough for the browser to see the status rather than a network error.
@@ -103,7 +112,8 @@ namespace RssReader.Server.Services
             ILoggerFactory loggerFactory,
             string? urls = null,
             CancellationToken cancellationToken = default,
-            Func<CancellationToken, Task<bool>>? restoreFromReplica = null)
+            Func<CancellationToken, Task<bool>>? restoreFromReplica = null,
+            Func<bool>? readyForTraffic = null)
         {
             var logger = loggerFactory.CreateLogger("WriterStartupGate");
 
@@ -111,7 +121,7 @@ namespace RssReader.Server.Services
             using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx => { ctx.Cancel = true; stopping.Cancel(); });
             using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, ctx => { ctx.Cancel = true; stopping.Cancel(); });
 
-            var gate = await StartAsync(args, allowedOrigins, urls, stopping.Token);
+            var gate = await StartAsync(args, allowedOrigins, urls, stopping.Token, readyForTraffic);
             logger.LogInformation(
                 restoreFromReplica == null
                     ? "Startup gate listening: /api/healthz answers while the database is seeded from {Backup}."

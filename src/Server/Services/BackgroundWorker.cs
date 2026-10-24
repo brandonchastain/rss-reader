@@ -9,20 +9,29 @@ public class BackgroundWorker : BackgroundService
     private readonly ILogger<BackgroundWorker> _logger;
     private readonly BackgroundWorkQueue _queue;
     private readonly int _workerCount;
+    private readonly RssReader.Server.Services.WriterState? _writerState;
 
     public BackgroundWorker(
         ILogger<BackgroundWorker> logger,
         BackgroundWorkQueue queue,
-        RssAppConfig config)
+        RssAppConfig config,
+        RssReader.Server.Services.WriterState? writerState = null)
     {
         _logger = logger;
         _queue = queue;
         _workerCount = config.BackgroundWorkerCount;
+        _writerState = writerState;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken hostStopping)
     {
         _logger.LogInformation("Starting {WorkerCount} background workers", _workerCount);
+
+        // Also stops at a cooperative handoff (WriterState.WritersStopping). Exits cleanly
+        // on either token: an exception here would make the host stop itself.
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            hostStopping, _writerState?.WritersStopping ?? CancellationToken.None);
+        var stoppingToken = linked.Token;
 
         var tasks = new List<Task>();
 
@@ -31,7 +40,13 @@ public class BackgroundWorker : BackgroundService
             tasks.Add(DoWorkAsync(stoppingToken));
         }
 
-        await Task.WhenAll(tasks);
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
     }
 
     private async Task DoWorkAsync(CancellationToken stoppingToken)

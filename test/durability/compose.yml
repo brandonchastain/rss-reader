@@ -30,6 +30,10 @@ x-writer: &writer
     RssAppConfig__Durability__LeaseRenewInterval: "00:00:05"
     RssAppConfig__Durability__LitestreamEnabled: "true"
     RssAppConfig__Durability__LitestreamConfigPath: /etc/litestream-test.yml
+    # Rollout step 3 (cooperative handover): off for scenarios 1 to 3, which prove
+    # the share path; run.sh turns it on for scenario 4.
+    RssAppConfig__Durability__RestoreFromBlob: ${RSS_RESTORE_FROM_BLOB:-false}
+    RssAppConfig__Durability__HandoffPollInterval: "00:00:01"
     Logging__LogLevel__Default: Information
   depends_on:
     azurite:

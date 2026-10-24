@@ -131,18 +131,29 @@ docs link here.
    registration order): the feed scheduler and worker stop, `litestream sync`
    uploads the pending WAL and the child stops, the lease is released, then
    the final share copy runs and the lock file goes.
-   Rollout step 3 is behind `RssAppConfig:Durability:RestoreFromBlob`
-   (`enableBlobRestore` in the Bicep, default off): once the lease is held,
-   startup runs `litestream restore` into a staging file, `quick_check`s it
-   and renames it over `/tmp/storage.db` (`BlobRestoreSeeder`) instead of
-   waiting for the share lock and copying the share; a failed restore logs an
-   error and falls back to the share copy. The file backup keeps writing the
-   share either way, so turning the flag off (or the previous image) seeds
-   from the share again. With the flag off nothing restores from the replica
-   and the share stays authoritative; `/api/healthz` reports row counts so a
-   restore of the replica can be compared with the live writer by hand (the
-   cutover check in the spec's section 9.5). The spec's section 8 has the
-   remaining steps.
+   Rollout step 3, the cooperative handover, is behind
+   `RssAppConfig:Durability:RestoreFromBlob` (`enableBlobRestore` in the
+   Bicep). The new revision starts `litestream restore -f` into a staging
+   file (`LitestreamFollower`: full restore, then the LTX tail every 500 ms)
+   and writes a request on the `writer-handoff` blob
+   (`CooperativeHandoverSeeder`); its startup probe answers 503 until the
+   initial restore is on disk, so traffic moves only when the real host is
+   seconds away. The running writer polls that blob every 2 s
+   (`WriterHandoffService`) and, on a request, stops the feed scheduler,
+   worker and retention service, checkpoints, runs the final Litestream sync,
+   acknowledges with the final transaction id, releases the lease, then copies
+   to the share for rollback (`WriterHandover`); from then on it answers 503
+   to mutating requests and serves reads until the platform stops it, and its
+   SIGTERM skips the final share copy. The new writer takes the lease, waits
+   for the follower to reach the acknowledged transaction id, stops it,
+   `quick_check`s and renames the copy over `/tmp/storage.db`. Any failure
+   falls back to a full `litestream restore` after the lease
+   (`BlobRestoreSeeder`), and after that to the share copy. The file backup
+   keeps writing the share either way, so turning the flag off (or the
+   previous image) seeds from the share again. `/api/healthz` reports row
+   counts so a restore of the replica can be compared with the live writer by
+   hand (the cutover check in the spec's section 9.5). The spec's section 8
+   has the remaining steps.
 
 ##### Read Replicas (optional)
 

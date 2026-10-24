@@ -36,7 +36,7 @@ namespace RssReader.Server.Services
         /// to upload the pending WAL now and returns when the upload is done. Bounded by
         /// <paramref name="timeout"/>; the daemon side has the same budget.
         /// </summary>
-        public async Task<(LitestreamSyncResult Result, string Output)> SyncAsync(
+        public async Task<(LitestreamSyncResult Result, string Output, long? Txid)> SyncAsync(
             string dbPath, string socketPath, TimeSpan timeout, CancellationToken cancellationToken)
         {
             var seconds = Math.Max(1, (int)Math.Ceiling(timeout.TotalSeconds));
@@ -44,13 +44,25 @@ namespace RssReader.Server.Services
             cts.CancelAfter(timeout);
             try
             {
-                var (code, output) = await _run(_binary, $"sync -wait -timeout {seconds} -socket \"{socketPath}\" \"{dbPath}\"", cts.Token);
-                return (code == 0 ? LitestreamSyncResult.Ok : LitestreamSyncResult.Failed, output);
+                var (code, output) = await _run(_binary, $"sync -wait -timeout {seconds} -socket \"{socketPath}\" -json \"{dbPath}\"", cts.Token);
+                return (code == 0 ? LitestreamSyncResult.Ok : LitestreamSyncResult.Failed, output, code == 0 ? ParseSyncTxid(output) : null);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                return (LitestreamSyncResult.TimedOut, string.Empty);
+                return (LitestreamSyncResult.TimedOut, string.Empty, null);
             }
+        }
+
+        /// <summary>
+        /// The replica's transaction id from <c>sync -json</c> output
+        /// (<c>{"db_path":..., "txid": N, "replica_txid": N, "duration_ms": N}</c>, decimal in 0.5.17).
+        /// Prefers <c>replica_txid</c>, which is what a restore can reach.
+        /// </summary>
+        public static long? ParseSyncTxid(string output)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(output, @"""replica_txid""\s*:\s*""?(\d+)""?");
+            if (!m.Success) m = System.Text.RegularExpressions.Regex.Match(output, @"""txid""\s*:\s*""?(\d+)""?");
+            return m.Success && long.TryParse(m.Groups[1].Value, out var v) ? v : null;
         }
 
         /// <summary>
@@ -208,30 +220,55 @@ namespace RssReader.Server.Services
             else _logger.LogInformation("litestream: {Line}", line);
         }
 
+        private bool _finalSyncDone;
+        private long? _finalTxid;
+
         public async Task StopAsync(CancellationToken cancellationToken)
         {
             if (!Enabled) return;
+            if (_finalSyncDone)
+            {
+                _logger.LogInformation("Shutdown: Litestream already synced and stopped at the handoff; nothing to do.");
+                await _stopping.CancelAsync();
+                return;
+            }
+            await SyncAndStopAsync("Shutdown", cancellationToken);
+        }
+
+        /// <summary>
+        /// Spec 3.3 step 4, used both at host shutdown and at a cooperative handoff: one
+        /// <c>litestream sync -wait</c>, then SIGTERM to the child and wait for it. Returns the
+        /// replica transaction id the sync reported, when it did. Runs once; later calls
+        /// return the first result.
+        /// </summary>
+        public async Task<long?> SyncAndStopAsync(string phase, CancellationToken cancellationToken)
+        {
+            if (!Enabled) return null;
+            if (_finalSyncDone) return _finalTxid;
+            _finalSyncDone = true;
             await _stopping.CancelAsync();
             var process = _process;
             if (process == null || process.HasExited)
             {
-                _logger.LogWarning("Shutdown: Litestream was not running; nothing to sync.");
-                return;
+                _logger.LogWarning("{Phase}: Litestream was not running; nothing to sync.", phase);
+                return null;
             }
 
-            // Spec 3.3 step 4: upload what is pending now, bounded.
+            // Upload what is pending now, bounded.
             var sw = Stopwatch.StartNew();
-            var (result, output) = await _cli.SyncAsync(_dbPath, _socketPath, _config.FinalSyncTimeout, cancellationToken);
+            var (result, output, txid) = await _cli.SyncAsync(_dbPath, _socketPath, _config.FinalSyncTimeout, cancellationToken);
             switch (result)
             {
                 case LitestreamSyncResult.Ok:
-                    _logger.LogInformation("Shutdown: Litestream final sync OK in {Ms} ms; the blob lease is released next.", sw.ElapsedMilliseconds);
+                    _finalTxid = txid;
+                    _logger.LogInformation("{Phase}: Litestream final sync OK in {Ms} ms at {Utc} (replica txid {Txid}); the blob lease is released next.",
+                        phase, sw.ElapsedMilliseconds, DateTimeOffset.UtcNow.ToString("O"), txid?.ToString() ?? "unknown");
                     break;
                 case LitestreamSyncResult.TimedOut:
-                    _logger.LogError("Shutdown: Litestream final sync timed out after {Timeout}; up to one sync interval of writes may be missing from the replica.", _config.FinalSyncTimeout);
+                    _logger.LogError("{Phase}: Litestream final sync timed out after {Timeout}; up to one sync interval of writes may be missing from the replica.", phase, _config.FinalSyncTimeout);
                     break;
                 default:
-                    _logger.LogError("Shutdown: Litestream final sync failed: {Output}", output);
+                    _logger.LogError("{Phase}: Litestream final sync failed: {Output}", phase, output);
                     break;
             }
 
@@ -242,13 +279,14 @@ namespace RssReader.Server.Services
                 using var exitWait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 exitWait.CancelAfter(_config.FinalSyncTimeout);
                 await process.WaitForExitAsync(exitWait.Token);
-                _logger.LogInformation("Litestream exited (code {Code}) {Ms} ms into shutdown.", process.ExitCode, sw.ElapsedMilliseconds);
+                _logger.LogInformation("{Phase}: Litestream exited (code {Code}) {Ms} ms in.", phase, process.ExitCode, sw.ElapsedMilliseconds);
             }
             catch (OperationCanceledException)
             {
-                _logger.LogWarning("Litestream did not exit within {Timeout} of SIGTERM; killing it.", _config.FinalSyncTimeout);
+                _logger.LogWarning("{Phase}: Litestream did not exit within {Timeout} of SIGTERM; killing it.", phase, _config.FinalSyncTimeout);
                 try { process.Kill(entireProcessTree: true); } catch { }
             }
+            return _finalTxid;
         }
 
         private static void Signal(Process process, int signal)

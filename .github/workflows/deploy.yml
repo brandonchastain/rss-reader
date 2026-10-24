@@ -118,8 +118,9 @@ jobs:
         run: |
           nohup bash -c '
             while [ ! -f /tmp/probe.stop ]; do
-              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://api.rss.brandonchastain.com/api/item/timeline" || echo 000)
-              echo "$(date -u +%FT%T.%3NZ) $code" >> /tmp/probe.log
+              user=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://api.rss.brandonchastain.com/api/user" || echo 000)
+              hz=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://api.rss.brandonchastain.com/api/healthz" || echo 000)
+              echo "$(date -u +%FT%T.%3NZ) $user $hz" >> /tmp/probe.log
               sleep 1
             done' >/dev/null 2>&1 &
 
@@ -142,9 +143,10 @@ jobs:
           echo "backend did not become healthy"
           exit 1
 
-      # Longest run of non-200 answers seen by the probe above, into the job summary.
-      # /api/item/timeline answers 401 without a session, which is the real host
-      # answering; only 5xx/000 count as the handover window.
+      # Longest run of non-200 answers on /api/user seen by the probe above, into the
+      # job summary. /api/user answers 401 without a session, which is the real host
+      # answering; only 5xx/000 count as the handover window. Rollout step 3's target
+      # is a few seconds (BLOB-DURABILITY-SPEC.md 3.2 v2); the pre-step-3 value was ~61 s.
       - name: Report the handover window
         if: always()
         run: |

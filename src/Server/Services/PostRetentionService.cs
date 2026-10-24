@@ -20,15 +20,23 @@ public class PostRetentionService : BackgroundService
     private readonly RssAppConfig config;
     private readonly ILogger<PostRetentionService> logger;
 
-    public PostRetentionService(IDbConnections connections, RssAppConfig config, ILogger<PostRetentionService> logger)
+    private readonly RssReader.Server.Services.WriterState? writerState;
+
+    public PostRetentionService(IDbConnections connections, RssAppConfig config, ILogger<PostRetentionService> logger,
+        RssReader.Server.Services.WriterState? writerState = null)
     {
         this.connections = connections;
         this.config = config;
         this.logger = logger;
+        this.writerState = writerState;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken hostStopping)
     {
+        // Also stops at a cooperative handoff (WriterState.WritersStopping).
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            hostStopping, this.writerState?.WritersStopping ?? CancellationToken.None);
+        var stoppingToken = linked.Token;
         try
         {
             await Task.Delay(this.config.RetentionStartupDelay, stoppingToken);

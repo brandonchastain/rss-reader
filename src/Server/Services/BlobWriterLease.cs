@@ -83,13 +83,14 @@ namespace RssReader.Server.Services
         /// Build the lease from configuration, or null when <see cref="DurabilityConfig.LeaseEnabled"/>
         /// is false. A connection string (Azurite) wins over the identity-authenticated endpoint.
         /// </summary>
-        public static BlobWriterLease? Create(DurabilityConfig config, ILogger logger)
+        public static BlobWriterLease? Create(DurabilityConfig config, ILogger logger, TimeSpan? pollInterval = null)
         {
             if (!config.LeaseEnabled) return null;
             var container = CreateContainerClient(config);
             return new BlobWriterLease(container, config.LeaseBlob, config.LeaseDuration, config.LeaseRenewInterval, logger)
             {
                 GiveUpAfter = config.LeaseGiveUpAfter,
+                PollInterval = pollInterval ?? TimeSpan.FromSeconds(2),
             };
         }
 

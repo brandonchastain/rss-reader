@@ -72,6 +72,23 @@ public class WriterStartupGateTests
     }
 
     [TestMethod]
+    public async Task Gate_WithReadyCallback_Healthz503UntilReadyThen200()
+    {
+        var ready = false;
+        await using var gate = await WriterStartupGate.StartAsync(Array.Empty<string>(), Origins, "http://127.0.0.1:0", CancellationToken.None, () => ready);
+        using var http = new HttpClient { BaseAddress = new Uri(gate.Addresses.Single()) };
+
+        var res = await http.GetAsync("/api/healthz");
+        Assert.AreEqual(HttpStatusCode.ServiceUnavailable, res.StatusCode);
+        StringAssert.Contains(await res.Content.ReadAsStringAsync(), "restoring");
+
+        ready = true;
+        res = await http.GetAsync("/api/healthz");
+        Assert.AreEqual(HttpStatusCode.OK, res.StatusCode);
+        await gate.StopAsync();
+    }
+
+    [TestMethod]
     public async Task Gate_AnswersOtherPathsWith503RetryAfterAndCorsForAllowedOrigin()
     {
         await using var gate = await WriterStartupGate.StartAsync(Array.Empty<string>(), Origins, "http://127.0.0.1:0", CancellationToken.None);

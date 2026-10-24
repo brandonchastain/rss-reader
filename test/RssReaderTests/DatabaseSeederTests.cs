@@ -46,6 +46,8 @@ public class DatabaseSeederTests
         using var cmd = conn.CreateCommand();
         cmd.CommandText = $"CREATE TABLE IF NOT EXISTS m (v TEXT); DELETE FROM m; INSERT INTO m VALUES ('{marker}');";
         cmd.ExecuteNonQuery();
+        conn.Close();
+        SqliteConnection.ClearAllPools(); // Windows: a pooled handle would block the seed's open
     }
 
     private static string MarkerOf(string path)
