@@ -417,3 +417,23 @@ cycle is in progress for a sizeable part of every hour once feed counts grow.
 feeds an hour). Past that, fetch and parse should move to a separate worker container that posts parsed items
 back to the API: the SQLite file lives on the API container's own disk and only the API can write it, so the
 API would keep the single writer and lose only the fetch and parse CPU.
+
+### Users at this capacity
+
+Per-user rate: the owner's own traffic from 28 days of per-minute platform request counts with load-test bursts
+removed, last 7 days: 825 requests a day, 92 active minutes a day (46 reading, 46 an idle tab polling every 30 s),
+reading minute median 10 requests (p90 26), heaviest real hour 516 requests = 0.14 req/s. Everyone is assumed as
+intense as the owner at their heaviest hour.
+
+| Measure | At 300 req/s (the knee with refresh at 10/s) | At 150 req/s (planning, half the knee) |
+|---|---|---|
+| Users all in their heaviest hour at the same moment | ~2,100 | ~1,050 |
+| Registered users, 10% of them at peak together | ~21,000 | ~10,000 |
+| Idle open tabs polling every 30 s, if that were all the traffic | ~9,000 | ~4,500 |
+
+The planning row is the one to quote: the knee is a cliff rather than a slope, and the live box runs a little
+slower than the capped local container (public endpoints at 50 req/s: live p95 8 ms versus local 4 ms). This is
+request handling only. Database size against the deploy handover backup stays the binding limit until PR #170
+lands; after that the next limit is distinct feed count against the fetch budget, about 36,000 feeds at 10/s
+inside the one-hour interval, which is roughly 250 users bringing 143 brand-new feeds each or 550 at the owner's
+current 44% unique share.
