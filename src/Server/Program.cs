@@ -216,6 +216,21 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 // Add authn and authz: session cookie + one scheme per configured provider,
 // plus the Static Web Apps header scheme during the migration window.
+var keyBlob = DataProtectionKeyStore.CreateBlobClient(config);
+if (keyBlob != null && !config.IsReadOnly)
+{
+    // A failed import must not stop the app: it falls back to a new key ring, which
+    // signs everyone in again but loses nothing else.
+    try
+    {
+        await DataProtectionKeyStore.ImportLegacyKeysAsync(
+            keyBlob, config.Auth.DataProtectionKeysPath, startupLoggerFactory.CreateLogger("DataProtectionKeys"));
+    }
+    catch (Exception ex)
+    {
+        startupLoggerFactory.CreateLogger("DataProtectionKeys").LogError(ex, "Importing the key ring into blob failed.");
+    }
+}
 builder.Services.AddRssAuthentication(config);
 builder.Services.AddRssRateLimiting(config.Auth);
 

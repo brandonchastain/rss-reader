@@ -94,7 +94,10 @@ namespace RssReader.Server.Services
             };
         }
 
-        public static BlobContainerClient CreateContainerClient(DurabilityConfig config)
+        public static BlobContainerClient CreateContainerClient(DurabilityConfig config) =>
+            CreateContainerClient(config, config.LeaseContainer);
+
+        public static BlobContainerClient CreateContainerClient(DurabilityConfig config, string containerName)
         {
             // Lease calls are tiny and time-critical (a renewal must land inside the
             // duration), so the SDK's default retries are shortened.
@@ -103,10 +106,10 @@ namespace RssReader.Server.Services
             options.Retry.NetworkTimeout = TimeSpan.FromSeconds(10);
             options.Retry.Delay = TimeSpan.FromMilliseconds(500);
             if (!string.IsNullOrWhiteSpace(config.ConnectionString))
-                return new BlobContainerClient(config.ConnectionString, config.LeaseContainer, options);
+                return new BlobContainerClient(config.ConnectionString, containerName, options);
             // Managed identity in Container Apps; the developer's az login elsewhere.
             var service = new BlobServiceClient(new Uri(config.BlobServiceUri), new DefaultAzureCredential(), options);
-            return service.GetBlobContainerClient(config.LeaseContainer);
+            return service.GetBlobContainerClient(containerName);
         }
 
         /// <summary>

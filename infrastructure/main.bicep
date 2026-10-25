@@ -316,6 +316,14 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               name: 'RssAppConfig__Auth__DataProtectionKeysPath'
               value: '/data/keys'
             }
+            {
+              // Rollout step 4 (BLOB-DURABILITY-SPEC.md 3.6): the key ring lives in blob
+              // `dataprotection/keys.xml`. The first boot imports the share's key files
+              // above into it when the blob does not exist yet, so nobody is signed out.
+              // Empty (or the lease off) keeps the key files on the share.
+              name: 'RssAppConfig__Auth__DataProtectionKeysContainer'
+              value: enableBlobLease ? 'dataprotection' : ''
+            }
           ], loginProviderEnv)
           volumeMounts: [
             {
