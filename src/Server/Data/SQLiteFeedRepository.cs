@@ -29,7 +29,7 @@ public class SQLiteFeedRepository : IFeedRepository
                (SELECT group_concat(t.Name, ',') FROM SubscriptionTags st
                 JOIN Tags t ON t.Id = st.TagId
                 WHERE st.UserId = s.UserId AND st.FeedId = s.FeedId) AS Tags,
-               f.ConsecutiveFailures, f.LastError, f.LastFetchedUtc
+               f.ConsecutiveFailures, f.LastError, f.LastFetchedUtc, f.Title
         FROM Subscriptions s
         JOIN Feeds f ON f.Id = s.FeedId
         """;
@@ -56,7 +56,7 @@ public class SQLiteFeedRepository : IFeedRepository
         using var connection = this.connections.OpenRead();
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT f.Url, COUNT(*) AS Subscribers
+            SELECT f.Url, COUNT(*) AS Subscribers, f.Title
             FROM Subscriptions s
             JOIN Feeds f ON f.Id = s.FeedId
             WHERE f.Url LIKE 'https://%'
@@ -74,7 +74,7 @@ public class SQLiteFeedRepository : IFeedRepository
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            popular.Add(new PopularFeed { Href = reader.GetString(0), SubscriberCount = reader.GetInt32(1) });
+            popular.Add(new PopularFeed { Href = reader.GetString(0), SubscriberCount = reader.GetInt32(1), Title = reader.IsDBNull(2) ? null : reader.GetString(2) });
         }
 
         return popular;
@@ -199,6 +199,48 @@ public class SQLiteFeedRepository : IFeedRepository
         if (!feed.Tags.Contains(tag)) feed.Tags.Add(tag);
     }
 
+    public void RemoveTag(NewsFeed feed, string tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag)) return;
+        using var connection = this.connections.OpenWrite();
+        using var transaction = connection.BeginTransaction();
+        var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = """
+            DELETE FROM SubscriptionTags
+            WHERE UserId = @userId
+              AND FeedId = (SELECT Id FROM Feeds WHERE Url = @url)
+              AND TagId = (SELECT Id FROM Tags WHERE UserId = @userId AND Name = @name);
+            DELETE FROM Tags
+            WHERE UserId = @userId AND Name = @name
+              AND NOT EXISTS (SELECT 1 FROM SubscriptionTags WHERE TagId = Tags.Id);
+            """;
+        cmd.Parameters.AddWithValue("@userId", feed.UserId);
+        cmd.Parameters.AddWithValue("@url", feed.Href);
+        cmd.Parameters.AddWithValue("@name", tag.Trim());
+        cmd.ExecuteNonQuery();
+        transaction.Commit();
+        feed.Tags?.Remove(tag);
+    }
+
+    public void SetFeedTitle(string url, string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return;
+        try
+        {
+            using var connection = this.connections.OpenWrite();
+            var cmd = connection.CreateCommand();
+            cmd.CommandText = "UPDATE Feeds SET Title = @title WHERE Url = @url AND COALESCE(Title, '') <> @title";
+            cmd.Parameters.AddWithValue("@url", url);
+            cmd.Parameters.AddWithValue("@title", title);
+            cmd.ExecuteNonQuery();
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogWarning(ex, "Failed to store the title of {url}", url);
+        }
+    }
+
     private static NewsFeed ReadSingleRecord(SqliteDataReader reader)
     {
         var feedId = reader.GetInt32(0);
@@ -211,6 +253,7 @@ public class SQLiteFeedRepository : IFeedRepository
         res.LastError = reader.IsDBNull(5) ? null : reader.GetString(5);
         res.LastFetchedUtc = !reader.IsDBNull(6) && DateTimeOffset.TryParse(reader.GetString(6), null,
             System.Globalization.DateTimeStyles.RoundtripKind, out var fetched) ? fetched : null;
+        res.Title = reader.IsDBNull(7) ? null : reader.GetString(7);
         return res;
     }
 

@@ -164,6 +164,54 @@ public sealed class PostsSchemaTests
     };
 
     [TestMethod]
+    public void RemoveTag_DetachesOnlyThatTagFromThatFeed_AndDropsUnusedTags()
+    {
+        using var db = new TestDatabase("remove-tag");
+        var user = db.AddUser("tagger");
+        const string a = "https://a.example.com/feed";
+        const string b = "https://b.example.com/feed";
+        db.Subscribe(user, a);
+        db.Subscribe(user, b);
+        var feedA = db.Feeds.GetFeed(user, a);
+        var feedB = db.Feeds.GetFeed(user, b);
+        db.Feeds.AddTag(feedA, "tech");
+        db.Feeds.AddTag(feedA, "news");
+        db.Feeds.AddTag(feedB, "tech");
+
+        db.Feeds.RemoveTag(feedA, "tech");
+
+        CollectionAssert.AreEqual(new[] { "news" }, db.Feeds.GetFeed(user, a).Tags.ToArray());
+        CollectionAssert.AreEqual(new[] { "tech" }, db.Feeds.GetFeed(user, b).Tags.ToArray());
+
+        db.Feeds.RemoveTag(feedB, "tech");
+        Assert.IsFalse(db.Feeds.GetTagSettings(user).Any(t => t.Tag == "tech"));
+    }
+
+    [TestMethod]
+    public void FeedTitle_IsStoredAndShownOnTheSubscription()
+    {
+        using var db = new TestDatabase("feed-title");
+        var user = db.AddUser("titled");
+        const string url = "https://titled.example.com/feed";
+        db.Subscribe(user, url);
+        Assert.IsNull(db.Feeds.GetFeed(user, url).Title);
+
+        db.Feeds.SetFeedTitle(url, "The Titled Blog");
+
+        Assert.AreEqual("The Titled Blog", db.Feeds.GetFeed(user, url).Title);
+    }
+
+    [TestMethod]
+    public void TryGetFeedTitle_ReadsRssAndAtomTitles()
+    {
+        Assert.AreEqual("My &amp; Blog".Replace("&amp;", "&"),
+            RssApp.Serialization.RssDeserializer.TryGetFeedTitle("<rss><channel><title>My &amp; Blog</title><item><title>x</title></item></channel></rss>"));
+        Assert.AreEqual("Atom Blog",
+            RssApp.Serialization.RssDeserializer.TryGetFeedTitle("<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>Atom Blog</title><entry><title>x</title></entry></feed>"));
+        Assert.IsNull(RssApp.Serialization.RssDeserializer.TryGetFeedTitle("<html>"));
+    }
+
+    [TestMethod]
     public void FeedHealth_RoundTripsThroughTheSubscriptionList_AndResetsOnSuccess()
     {
         using var db = new TestDatabase("health");

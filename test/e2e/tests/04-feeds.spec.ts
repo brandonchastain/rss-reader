@@ -15,22 +15,24 @@ test.describe('feeds page', () => {
   });
 
   test('refuses a feed address on the servers own network', async ({ page }) => {
-    await page.goto('/feeds');
+    await page.goto('/feeds?tab=add');
     await page.locator('.feeds-url-input').fill('http://127.0.0.1/feed.xml');
-    await page.getByRole('button', { name: 'Add feed' }).click();
+    await page.getByRole('button', { name: 'Subscribe' }).click();
     await expect(page.getByText('is not a public address')).toBeVisible();
+    await page.getByRole('tab', { name: /My feeds/ }).click();
     await expect(page.locator('.feeds-row')).toHaveCount(4);
   });
 
   test('asks for an address when the field is empty', async ({ page }) => {
-    await page.goto('/feeds');
-    await page.getByRole('button', { name: 'Add feed' }).click();
+    await page.goto('/feeds?tab=add');
+    await page.getByRole('button', { name: 'Subscribe' }).click();
     await expect(page.getByText('Feed URL is empty')).toBeVisible();
   });
 
   test('exports OPML that carries each feed and its tags', async ({ page }) => {
     await page.goto('/feeds');
     await expect(page.locator('.feeds-row')).toHaveCount(4);
+    await page.getByRole('tab', { name: 'Import / Export' }).click();
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Export OPML' }).click();
     const file = await download;
@@ -44,13 +46,29 @@ test.describe('feeds page', () => {
     expect(outline('disposable.example.com')).not.toContain('category');
   });
 
+  test('adds a tag and removes it again', async ({ page }) => {
+    await page.goto('/feeds');
+    const row = feedRow(page, 'disposable.example.com');
+    await row.locator('.feeds-tag-input').fill('temp');
+    await row.locator('.feeds-tag-input').press('Enter');
+    await expect(row.locator('.post-tag')).toHaveText('temp');
+    await page.screenshot({ path: 'test-results/feeds-page.png', fullPage: true });
+
+    await row.getByRole('button', { name: 'Remove tag temp' }).click();
+    await expect(row.locator('.post-tag')).toHaveCount(0);
+
+    await page.reload();
+    await expect(feedRow(page, 'disposable.example.com').locator('.post-tag')).toHaveCount(0);
+  });
+
   // Last in the suite: it removes the feed that the earlier tests scroll down to.
-  test('deleting a feed removes it and its posts, and stays removed', async ({ page }) => {
+  test('unsubscribing from a feed removes it and its posts, and stays removed', async ({ page }) => {
     await openTimeline(page);
     await scrollToPost(page, 'Disposable 1');
 
     await page.goto('/feeds');
-    await feedRow(page, 'disposable.example.com').getByRole('button', { name: 'Delete' }).click();
+    await feedRow(page, 'disposable.example.com').getByRole('button', { name: 'Unsubscribe' }).click();
+    await feedRow(page, 'disposable.example.com').getByRole('button', { name: 'Confirm' }).click();
     await expect(feedRow(page, 'disposable.example.com')).toHaveCount(0);
     await expect(page.locator('.feeds-row')).toHaveCount(3);
 

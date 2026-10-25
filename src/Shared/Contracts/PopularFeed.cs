@@ -4,5 +4,6 @@ namespace RssApp.Contracts;
 public class PopularFeed
 {
     public string Href { get; set; } = string.Empty;
+    public string Title { get; set; }
     public int SubscriberCount { get; set; }
 }

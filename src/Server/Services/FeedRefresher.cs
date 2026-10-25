@@ -64,6 +64,7 @@ public class FeedRefresher : IFeedRefresher
         public string ETag { get; init; }
         public DateTimeOffset? LastModified { get; init; }
         public string Error { get; init; }
+        public string Title { get; init; }
     }
 
     private DateTime startupTime = DateTime.UtcNow;
@@ -405,6 +406,10 @@ public class FeedRefresher : IFeedRefresher
 
         var result = await FetchParsedItemsAsync(url, token);
         RecordFetchResult(url, result);
+        if (result.Outcome == FetchOutcome.Fetched && result.Title != null)
+        {
+            this.persistedFeeds.SetFeedTitle(url, result.Title);
+        }
 
         if (result.Outcome != FetchOutcome.Fetched || result.Items.Count == 0)
         {
@@ -599,6 +604,7 @@ public class FeedRefresher : IFeedRefresher
 
         List<NewsFeedItem> parsed = null;
         TimeSpan? advertisedInterval = null;
+        string feedTitle = null;
         TimeSpan? originRetryAfter = null;
         bool notModified = false;
         string newEtag = null;
@@ -682,6 +688,7 @@ public class FeedRefresher : IFeedRefresher
                         item.ThumbnailUrl = this.thumbnailResolver.Resolve(item);
                     }
                     parsed = items;
+                    feedTitle = RssDeserializer.TryGetFeedTitle(response);
                     advertisedInterval = TryParseAdvertisedInterval(response);
 
                     // It worked. Exit the loop.
@@ -721,6 +728,7 @@ public class FeedRefresher : IFeedRefresher
                 Outcome = FetchOutcome.Fetched,
                 Items = parsed,
                 AdvertisedInterval = advertisedInterval,
+                Title = feedTitle,
                 ETag = newEtag,
                 LastModified = newLastModified,
             };

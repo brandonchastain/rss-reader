@@ -1250,3 +1250,24 @@ a.post-domain:hover {
     padding: 0.25rem 0.75rem;
     cursor: pointer;
 }
+
+/* Feeds page: tabs, two-line rows, removable tag chips */
+.feeds-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 0.75rem; overflow-x: auto; }
+.feeds-tab { padding: 0.5rem 0.9rem; color: var(--text-muted); text-decoration: none; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.feeds-tab:hover { color: var(--text); }
+.feeds-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.feeds-tab-count { margin-left: 0.4rem; font-size: 0.8em; color: var(--text-muted); }
+.feeds-error { color: #f85149; }
+.feeds-panel { max-width: 640px; }
+.feeds-row-main { display: flex; flex-direction: column; min-width: 0; flex: 1 1 200px; }
+.feeds-row-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feeds-row-sub { color: var(--text-muted); font-size: 0.8em; display: flex; gap: 0.4rem; align-items: center; }
+.feeds-row-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; flex: 2 1 220px; cursor: default; }
+.feeds-row-actions { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; cursor: default; }
+.feeds-row-actions .feeds-delete-btn { margin-left: 0; }
+.feeds-tag-chip { display: inline-flex; align-items: center; }
+.feeds-tag-remove, .feeds-cancel-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-family: inherit; padding: 0 0.25rem; }
+.feeds-tag-remove:hover { color: #f85149; }
+.feeds-cancel-btn { font-size: 0.85em; }
+.feeds-tag-input { width: 80px; }
+.feeds-tag-input:focus { width: 140px; }

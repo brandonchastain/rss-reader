@@ -65,6 +65,14 @@ namespace WasmApp.Services
             await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/feed/tags", feed);
         }
 
+        public async Task RemoveTagAsync(NewsFeed feed, string tag)
+        {
+            var user = await userClient.GetFeedUserAsync();
+            var request = new NewsFeed(feed.Href, user.Id) { Tags = new List<string> { tag } };
+            var response = await _httpClient.PostAsJsonAsync($"{_config.ApiBaseUrl}api/feed/tags/remove", request);
+            response.EnsureSuccessStatusCode();
+        }
+
         public async Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
             pageSize = Math.Min(pageSize, 500);

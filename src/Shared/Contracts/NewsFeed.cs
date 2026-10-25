@@ -29,6 +29,8 @@ public class NewsFeed : IEquatable<NewsFeed>
 
     public int FeedId { get; set; }
     public string Href { get; set; }
+    /// <summary>The feed's own title, learned on fetch; null until the first successful fetch.</summary>
+    public string Title { get; set; }
     public int UserId { get; set; }
     public ICollection<string> Tags { get; set; }
 

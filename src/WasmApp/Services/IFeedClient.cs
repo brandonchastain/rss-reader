@@ -28,6 +28,7 @@ public interface IFeedClient : IDisposable
     // later cold start can render full posts rather than only titles.
     Task<int> PrefetchContentAsync(IEnumerable<string> itemIds);
     Task AddTagAsync(NewsFeed feed, string tag);
+    Task RemoveTagAsync(NewsFeed feed, string tag);
     Task<IEnumerable<string>> GetUserTagsAsync(RssUser user);
     Task<IEnumerable<TagSetting>> GetTagSettingsAsync();
     Task<IEnumerable<TagSetting>> SetTagHiddenAsync(string tag, bool isHidden);

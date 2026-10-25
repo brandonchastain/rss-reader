@@ -254,6 +254,26 @@ public class RssDeserializer
         return null;
     }
 
+    /// <summary>The feed's own title (RSS/RDF channel title or Atom feed title), or null if there is none.</summary>
+    public static string TryGetFeedTitle(string responseContent)
+    {
+        try
+        {
+            var root = XDocument.Parse(responseContent).Root;
+            if (root == null) return null;
+            var container = root.Name.LocalName.Equals("feed", StringComparison.OrdinalIgnoreCase)
+                ? root
+                : root.Descendants().FirstOrDefault(e => e.Name.LocalName.Equals("channel", StringComparison.OrdinalIgnoreCase));
+            var title = container?.Elements().FirstOrDefault(e => e.Name.LocalName.Equals("title", StringComparison.OrdinalIgnoreCase))?.Value;
+            title = CleanTitle(title);
+            return string.IsNullOrWhiteSpace(title) ? null : (title.Length > 200 ? title[..200] : title);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// Strips HTML tags and decodes HTML entities from feed titles.
     /// RSS feeds sometimes embed markup (e.g. &lt;i&gt;) in title elements.
