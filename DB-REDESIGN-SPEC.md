@@ -266,7 +266,7 @@ passes on the old code and must keep passing on the new.
 - New test class(es) in `test/RssReaderTests` using
   `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`),
   booting the real API in-process against a temp SQLite file, with the
-  existing test-auth header path (`StaticWebAppsAuthenticationHandler`).
+  test-only header login in `ApiTestHost` (`X-Test-User`).
 - Seed: two users; three feeds, one shared by both users; tags on both
   users' subscriptions, one hidden; a few dozen posts with mixed read/saved
   state and distinct `PublishDateOrder` values.

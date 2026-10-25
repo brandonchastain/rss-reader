@@ -13,7 +13,7 @@ namespace Server.Authentication;
 
 /// <summary>
 /// Registers the session cookie, one remote scheme per configured provider,
-/// and (behind a flag) the Static Web Apps header scheme. Which one handles a
+/// and (local test mode only) the fake-user scheme. Which one handles a
 /// request is decided per request by a policy scheme.
 /// </summary>
 public static class AuthenticationSetup
@@ -38,26 +38,23 @@ public static class AuthenticationSetup
             .AddAuthorization()
             .AddAuthentication(PolicyScheme);
 
-        // Per-request selector. The proxy's gateway header means an SWA-issued
-        // principal; the test-user mode lives in the SWA handler too. Otherwise
-        // the request is a browser call carrying (or lacking) the API cookie.
+        // Per-request selector: test-user mode short-circuits to the fake
+        // user, otherwise the request is a browser call carrying (or lacking)
+        // the API cookie.
         builder.AddPolicyScheme(PolicyScheme, PolicyScheme, options =>
         {
             options.ForwardDefaultSelector = ctx =>
             {
                 if (config.IsTestUserEnabled)
-                    return StaticWebAppsAuthenticationHandler.AuthenticationScheme;
-                if (auth.EnableStaticWebAppsHeaders && ctx.Request.Headers.ContainsKey("X-Gateway-Key"))
-                    return StaticWebAppsAuthenticationHandler.AuthenticationScheme;
+                    return TestUserAuthenticationHandler.AuthenticationScheme;
                 return CookieAuthenticationDefaults.AuthenticationScheme;
             };
         });
 
-        if (auth.EnableStaticWebAppsHeaders || config.IsTestUserEnabled)
+        if (config.IsTestUserEnabled)
         {
-            builder.AddScheme<StaticWebAppsAuthenticationOptions, StaticWebAppsAuthenticationHandler>(
-                StaticWebAppsAuthenticationHandler.AuthenticationScheme,
-                options => options.IsTestUserEnabled = config.IsTestUserEnabled);
+            builder.AddScheme<AuthenticationSchemeOptions, TestUserAuthenticationHandler>(
+                TestUserAuthenticationHandler.AuthenticationScheme, _ => { });
         }
 
         builder.AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>

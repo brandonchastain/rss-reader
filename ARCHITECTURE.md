@@ -311,7 +311,6 @@ provider id in `Users.ProviderUserId`; the resolver looks in both.
 | `SessionLifetime` | 30 d | Sliding session expiry. |
 | `LoginRateLimitPerMinute` / `AddFeedRateLimitPerMinute` | 30 / 30 | Login and logout requests per client address, and feed additions and OPML imports per user, per minute. |
 | `DataProtectionKeysPath` | empty | Directory for the cookie encryption keys; empty means in-container, which signs everyone out on restart. |
-| `EnableStaticWebAppsHeaders` | `true` | Migration only: also accept the Static Web Apps proxy's gateway header and principal. Set `false` after the cutover. |
 
 | Setting | Default | Effect |
 |---|---|---|
@@ -340,7 +339,7 @@ provider id in `Users.ProviderUserId`; the resolver looks in both.
 
 `RssWasmConfig` in `wwwroot/appsettings.json`: `ApiBaseUrl` (the API origin,
 `https://api.rss.brandonchastain.com/` in prod; empty means the page's own origin,
-for when the API serves the frontend) and `UseStaticWebAppsAuth` (legacy, off). Login,
+for when the API serves the frontend). Login,
 logout and `/auth/me` all go to `{ApiBaseUrl}auth/*`; API calls send the session
 cookie.
 

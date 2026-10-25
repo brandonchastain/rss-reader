@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -30,7 +31,7 @@ internal sealed class ApiTestHost : IDisposable
     // key) from process environment variables, so hosts are built one at a
     // time under this gate and every value is read before the gate is released.
     private static readonly object Gate = new();
-    private const string GatewayKey = "contract-tests-gateway-key";
+    private const string TestUserHeader = "X-Test-User";
 
     private readonly string dbPath;
     private readonly WebApplicationFactory<Program> factory;
@@ -49,7 +50,6 @@ internal sealed class ApiTestHost : IDisposable
 
         lock (Gate)
         {
-            Environment.SetEnvironmentVariable("RSSREADER_API_KEY", GatewayKey);
             Environment.SetEnvironmentVariable("RssAppConfig__DbLocation", this.dbPath);
             Environment.SetEnvironmentVariable("RssAppConfig__IsTestUserEnabled", isTestUserEnabled ? "true" : "false");
             Environment.SetEnvironmentVariable("RssAppConfig__SchedulerEnabled", "false");
@@ -67,6 +67,17 @@ internal sealed class ApiTestHost : IDisposable
                 if (environment != null) builder.UseEnvironment(environment);
                 builder.ConfigureTestServices(services =>
                 {
+                    // Test-only login: a request carrying X-Test-User is that user,
+                    // everything else goes through the real cookie scheme.
+                    services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, TestHeaderAuthHandler>(TestHeaderAuthHandler.Scheme, _ => { });
+                    services.PostConfigure<PolicySchemeOptions>(Server.Authentication.AuthenticationSetup.PolicyScheme, o =>
+                    {
+                        var cookieSelector = o.ForwardDefaultSelector;
+                        o.ForwardDefaultSelector = ctx => ctx.Request.Headers.ContainsKey(TestUserHeader)
+                            ? TestHeaderAuthHandler.Scheme
+                            : cookieSelector?.Invoke(ctx);
+                    });
+
                     // No feed scheduler, worker, or backup copies: tests are offline and deterministic.
                     foreach (var hosted in services.Where(d => d.ServiceType == typeof(IHostedService)).ToList())
                     {
@@ -97,19 +108,11 @@ internal sealed class ApiTestHost : IDisposable
         AllowAutoRedirect = false,
     });
 
-    /// <summary>Client authenticated as the given provider user through the SWA header path.</summary>
+    /// <summary>Client authenticated as the given provider user through the test-only header scheme.</summary>
     public HttpClient As(string userId, string displayName)
     {
         var client = this.Anonymous();
-        var principal = JsonSerializer.Serialize(new
-        {
-            identityProvider = "github",
-            userId,
-            userDetails = displayName,
-            userRoles = new[] { "authenticated" },
-        });
-        client.DefaultRequestHeaders.Add("X-Gateway-Key", GatewayKey);
-        client.DefaultRequestHeaders.Add("X-User-Id", Convert.ToBase64String(Encoding.UTF8.GetBytes(principal)));
+        client.DefaultRequestHeaders.Add(TestUserHeader, $"{userId}|{displayName}");
         return client;
     }
 
@@ -857,5 +860,30 @@ public sealed class ApiContractTestUserModeTests
         using var doc = JsonDocument.Parse(await after.Content.ReadAsStringAsync());
         Assert.AreEqual(JsonValueKind.Array, doc.RootElement.ValueKind);
         Assert.AreEqual(0, doc.RootElement.GetArrayLength());
+    }
+}
+
+/// <summary>Signs a request in as the user named in X-Test-User ("id|display name").</summary>
+internal sealed class TestHeaderAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+{
+    public const string Scheme = "TestHeader";
+
+    public TestHeaderAuthHandler(
+        Microsoft.Extensions.Options.IOptionsMonitor<AuthenticationSchemeOptions> options,
+        Microsoft.Extensions.Logging.ILoggerFactory logger,
+        System.Text.Encodings.Web.UrlEncoder encoder)
+        : base(options, logger, encoder)
+    {
+    }
+
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        var parts = Request.Headers["X-Test-User"].ToString().Split('|', 2);
+        var identity = new System.Security.Claims.ClaimsIdentity(Scheme);
+        identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, parts[0]));
+        identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, parts.Length > 1 ? parts[1] : parts[0]));
+        identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "authenticated"));
+        identity.AddClaim(new System.Security.Claims.Claim(Server.Authentication.UserIdentity.IdentityProviderClaim, "github"));
+        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new System.Security.Claims.ClaimsPrincipal(identity), Scheme)));
     }
 }

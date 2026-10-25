@@ -203,7 +203,7 @@ This catches a known Copilot CLI session-state bug where the allowed-tools list 
 ### 4. Container starts but returns HTTP 500
 - Pull logs immediately: `az containerapp logs show --name rss-reader-api --resource-group rss-container-rg`
 - Common causes:
-  - `RSSREADER_API_KEY` environment variable not set or mismatched with the SWA Function proxy
+  - A login provider's `AUTH_*_CLIENT_ID`/`SECRET` pair missing (that provider is silently disabled)
   - `DbLocation` misconfigured (should be `/tmp/storage.db` inside the container)
   - Database restore failure on startup (entrypoint will exit with FATAL if `litestream restore` fails — check container logs for "litestream restore failed")
   - Image cache restore failure (check logs for "Failed to restore cached images from /data")
@@ -226,10 +226,9 @@ Then retry `swa deploy --env production`.
 - If data is lost: check container logs for "litestream restore failed" or `litestream replicate` exit messages; verify the storage account / managed identity grants `Storage Blob Data Contributor` on the `litestream` container.
 
 ### 8. SWA frontend deploys but API calls fail (502 / CORS)
-- The SWA Functions proxy (`api/src/functions/ApiProxy.js`) forwards `/api/*` to the Container App backend.
-- Check the Function proxy env var `RSSREADER_API_URL` points to the correct Container App ingress URL.
-- Verify the Container App ingress is set to external (public) on port 8080.
-- Check `RSSREADER_API_KEY` matches in both the Function proxy and the Container App.
+- The browser calls `https://api.rss.brandonchastain.com` directly (credentialed, cross-origin); there is no proxy, and `https://rss.brandonchastain.com/api/*` answers 500 by design.
+- Check `ApiBaseUrl` in the deployed `appsettings.json` and that the frontend origin is in `RssAppConfig__Auth__AllowedFrontendOrigins` (CORS and the login return URL both use it).
+- Verify the Container App ingress is set to external (public) on port 8080 and the API's managed certificate is bound.
 
 ### 9. New revision not receiving traffic
 ```powershell
@@ -248,14 +247,12 @@ az containerapp ingress traffic set `
 ## Architecture Reminder
 
 ```
-Browser → Azure SWA (Easy Auth / AAD)
-            → /api/* → Azure Functions proxy (api/)
-                          X-Gateway-Key + X-User-Id headers
-                        → Azure Container App (rss-reader-api, port 8080)
+Browser → static frontend (Azure SWA, no API)
+        → api.rss.brandonchastain.com (session cookie issued by the API)
+            → Azure Container App (rss-reader-api, port 8080)
                               → SQLite at /tmp/storage.db
                               → Litestream replicates WAL to Azure Blob Storage
 ```
 
-- The SWA Function proxy injects `X-Gateway-Key` (shared secret) and `X-User-Id` (base64 Easy Auth principal) on every forwarded request.
-- The backend validates `X-Gateway-Key` against the `RSSREADER_API_KEY` env var. A mismatch causes HTTP 401.
+- The API authenticates browsers itself: it runs the Google/Microsoft/GitHub login and issues a `.rss.session` cookie. There is no proxy or shared gateway secret.
 - Production URL: **https://rss.brandonchastain.com**

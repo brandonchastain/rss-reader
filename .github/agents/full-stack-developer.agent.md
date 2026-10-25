@@ -29,10 +29,9 @@ production?" Wait for a clear yes. If the user says no or is unclear, do not dep
 ## Architecture
 
 ```
-Browser → Azure SWA (Easy Auth / AAD)
-            → /api/* → Azure Functions proxy  (api/src/functions/ApiProxy.js)
-                          X-Gateway-Key + X-User-Id headers
-                        → ASP.NET Core backend  (src/Server/)
+Browser → static frontend (Azure SWA, no API)
+        → api.rss.brandonchastain.com (session cookie)
+            → ASP.NET Core backend  (src/Server/)
                               → SQLite at /tmp/storage.db
                               → Litestream replicates WAL to Azure Blob Storage
 ```
@@ -56,7 +55,7 @@ Browser → Azure SWA (Easy Auth / AAD)
 - **Data access**: Repository pattern — interfaces in `src/Server/Data/`, SQLite implementations via `Microsoft.Data.Sqlite`
 - **Repositories**: `IFeedRepository`, `IItemRepository`, `IUserRepository` — registered as singletons in `Program.cs` (order matters: feed → user → item)
 - **Background work**: `BackgroundWorkQueue` + `BackgroundWorker` hosted service. Always enqueue to `BackgroundWorkQueue`; never call `FeedRefresher` directly from controllers
-- **Auth**: `StaticWebAppsAuthenticationHandler` validates `X-Gateway-Key`, then parses `X-User-Id` (base64 Easy Auth principal) to build `ClaimsPrincipal`
+- **Auth**: the API is the OIDC/OAuth relying party and issues its own `.rss.session` cookie (`src/Server/Authentication/`); `UserResolver` maps its claims to a user
 - **Config**: `RssAppConfig` in `appsettings.json` under the `RssAppConfig` key. `DbLocation` controls the SQLite path (`/tmp/storage.db` in Docker)
 - **HTTP client**: `RssClient` `HttpClient` with `RedirectDowngradeHandler` (prevents HTTPS→HTTP redirect downgrade on feed fetches)
 - **Local dev bypass**: `RssAppConfig__IsTestUserEnabled=true` uses fake test user `testuser2`
@@ -112,12 +111,6 @@ Browser → Azure SWA (Easy Auth / AAD)
 - Override Bootstrap variables via CSS custom properties (`--bs-primary: ...`), never edit Bootstrap source
 
 ---
-
-## Tech Stack — Azure Functions Proxy
-
-- **File**: `api/src/functions/ApiProxy.js` (Node.js, Azure Functions v4)
-- Extracts `x-ms-client-principal` from SWA Easy Auth, forwards to backend with `X-Gateway-Key` and `X-User-Id` headers
-- Config via `api/local.settings.json` (local only, gitignored): `RSSREADER_API_URL`, `RSSREADER_API_KEY`
 
 ---
 
