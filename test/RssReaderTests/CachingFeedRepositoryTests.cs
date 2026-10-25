@@ -29,7 +29,7 @@ internal sealed class FakeFeedRepository : IFeedRepository
         return Feeds.Where(f => f.UserId == user.Id).ToList();
     }
 
-    public IReadOnlyList<PopularFeed> GetPopularFeeds(RssUser user, int limit, int minSubscribers) => Array.Empty<PopularFeed>();
+    public IReadOnlyList<PopularFeed> GetPopularFeeds(int limit, int minSubscribers) => Array.Empty<PopularFeed>();
 
     public NewsFeed GetFeed(RssUser user, string url)
     {

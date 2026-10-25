@@ -15,9 +15,9 @@ namespace Server.Controllers
     [Route("api/[controller]")]
     public class FeedController : ControllerBase
     {
-        // A feed is only suggested once this many users follow it, so a lone
-        // user's private feed address is never shown to anyone else.
-        private const int PopularFeedMinSubscribers = 3;
+        // Minimum followers for a feed to be listed as popular. 1 = a plain top list;
+        // raise it as the user base grows so a lone user's feed is not listed.
+        private const int PopularFeedMinSubscribers = 1;
 
         private readonly IUserRepository userRepository;
         private readonly IFeedRepository feedRepository;
@@ -281,7 +281,7 @@ namespace Server.Controllers
         }
 
         // GET: api/feed/popular
-        // The most-subscribed feeds the caller is not subscribed to yet.
+        // The most-subscribed feeds overall (the page marks the ones the caller follows).
         [HttpGet]
         [Route("popular")]
         public IActionResult GetPopularFeeds([FromQuery] int limit = 10)
@@ -293,7 +293,7 @@ namespace Server.Controllers
             }
 
             limit = Math.Clamp(limit, 1, 50);
-            return Ok(this.feedRepository.GetPopularFeeds(user, limit, PopularFeedMinSubscribers));
+            return Ok(this.feedRepository.GetPopularFeeds(limit, PopularFeedMinSubscribers));
         }
 
         // GET: api/feed

@@ -35,12 +35,11 @@ public interface IFeedRepository
     void AddFeeds(RssUser user, IEnumerable<NewsFeed> feeds);
 
     /// <summary>
-    /// The most-subscribed feeds the user is not yet subscribed to. Only feeds with at
-    /// least <paramref name="minSubscribers"/> subscribers and no query string or
-    /// credentials in the address are returned, so one user's private feed URL is
-    /// never revealed to others.
+    /// The most-subscribed feeds overall, including ones the caller already follows.
+    /// Only https feeds with no query string or credentials in the address are
+    /// returned, so a private feed URL carrying a token is not revealed to others.
     /// </summary>
-    IReadOnlyList<PopularFeed> GetPopularFeeds(RssUser user, int limit, int minSubscribers);
+    IReadOnlyList<PopularFeed> GetPopularFeeds(int limit, int minSubscribers);
 
     void AddTag(NewsFeed feed, string tag);
 
