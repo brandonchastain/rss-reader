@@ -4,6 +4,7 @@ using AspNet.Security.OAuth.GitHub;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Azure.Extensions.AspNetCore.DataProtection.Blobs;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -26,7 +27,14 @@ public static class AuthenticationSetup
     {
         var auth = config.Auth;
 
-        if (!string.IsNullOrWhiteSpace(auth.DataProtectionKeysPath))
+        var keyBlob = DataProtectionKeyStore.CreateBlobClient(config);
+        if (keyBlob != null)
+        {
+            services.AddDataProtection()
+                .SetApplicationName("rss-reader")
+                .PersistKeysToAzureBlobStorage(keyBlob);
+        }
+        else if (!string.IsNullOrWhiteSpace(auth.DataProtectionKeysPath))
         {
             Directory.CreateDirectory(auth.DataProtectionKeysPath);
             services.AddDataProtection()
