@@ -9,7 +9,6 @@ public class CachingFeedRepository : IFeedRepository
     private readonly IMemoryCache _cache;
 
     private static readonly TimeSpan SlidingExpiration = TimeSpan.FromMinutes(5);
-    private const int PopularPoolSize = 200;
     private static readonly TimeSpan HealthStaleness = TimeSpan.FromMinutes(2);
 
     public CachingFeedRepository(IFeedRepository inner, IMemoryCache cache)
@@ -25,22 +24,18 @@ public class CachingFeedRepository : IFeedRepository
 
     // --- Read methods (cache-aside) ---
 
-    // Popular feeds are global and aggregate over every user, so they are cached
-    // briefly per (limit, min) rather than per user; the caller's own
-    // subscriptions are filtered out of the cached list afterwards.
-    public IReadOnlyList<PopularFeed> GetPopularFeeds(RssUser user, int limit, int minSubscribers)
+    // Popular feeds are global (the same for every user), so they are cached
+    // briefly per (limit, min).
+    public IReadOnlyList<PopularFeed> GetPopularFeeds(int limit, int minSubscribers)
     {
-        var mine = GetFeeds(user).Select(f => f.Href).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var key = $"popular:{minSubscribers}";
-        if (!_cache.TryGetValue(key, out IReadOnlyList<PopularFeed> all))
+        var key = $"popular:{limit}:{minSubscribers}";
+        if (!_cache.TryGetValue(key, out IReadOnlyList<PopularFeed> popular))
         {
-            // Fetch a fixed generous slice (no user excluded) so any user can still
-            // fill their page after their own subscriptions are removed.
-            all = _inner.GetPopularFeeds(new RssUser("", -1), PopularPoolSize, minSubscribers);
-            _cache.Set(key, all, TimeSpan.FromMinutes(10));
+            popular = _inner.GetPopularFeeds(limit, minSubscribers);
+            _cache.Set(key, popular, TimeSpan.FromMinutes(10));
         }
 
-        return all.Where(p => !mine.Contains(p.Href)).Take(limit).ToList();
+        return popular;
     }
 
     public IEnumerable<NewsFeed> GetFeeds(RssUser user)

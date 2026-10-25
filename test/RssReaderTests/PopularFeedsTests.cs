@@ -42,50 +42,48 @@ public sealed class PopularFeedsTests
         => feedRepo.AddFeeds(user, urls.Select(u => new NewsFeed(u, user.Id)));
 
     [TestMethod]
-    public void Popular_RanksBySubscribers_AndHidesOwnAndRareFeeds()
+    public void Popular_RanksBySubscribers_IncludingFeedsTheCallerFollows()
     {
-        var u = AddUsers(5);
+        var u = AddUsers(4);
         Subscribe(u[0], "https://a.example/feed", "https://b.example/feed", "https://rare.example/feed");
         Subscribe(u[1], "https://a.example/feed", "https://b.example/feed");
-        Subscribe(u[2], "https://a.example/feed", "https://b.example/feed");
-        Subscribe(u[3], "https://a.example/feed");
+        Subscribe(u[2], "https://a.example/feed");
 
-        var popular = feedRepo.GetPopularFeeds(u[4], limit: 10, minSubscribers: 3);
+        var popular = feedRepo.GetPopularFeeds(limit: 10, minSubscribers: 1);
 
+        CollectionAssert.AreEqual(
+            new[] { "https://a.example/feed", "https://b.example/feed", "https://rare.example/feed" },
+            popular.Select(p => p.Href).ToList());
+        CollectionAssert.AreEqual(new[] { 3, 2, 1 }, popular.Select(p => p.SubscriberCount).ToList());
+
+        // A higher floor hides feeds with too few followers.
         CollectionAssert.AreEqual(
             new[] { "https://a.example/feed", "https://b.example/feed" },
-            popular.Select(p => p.Href).ToList());
-        Assert.AreEqual(4, popular[0].SubscriberCount);
-
-        // Already-subscribed feeds are not offered again.
-        Subscribe(u[4], "https://a.example/feed");
-        CollectionAssert.AreEqual(
-            new[] { "https://b.example/feed" },
-            feedRepo.GetPopularFeeds(u[4], 10, 3).Select(p => p.Href).ToList());
+            feedRepo.GetPopularFeeds(10, 2).Select(p => p.Href).ToList());
     }
 
     [TestMethod]
     public void Popular_NeverRevealsUrlsWithSecrets()
     {
-        var u = AddUsers(4);
-        foreach (var user in u.Take(3))
+        var u = AddUsers(3);
+        foreach (var user in u)
         {
             Subscribe(user, "https://private.example/feed?token=abc", "http://insecure.example/feed", "https://me:pw@cred.example/feed");
         }
 
-        Assert.AreEqual(0, feedRepo.GetPopularFeeds(u[3], 10, 3).Count);
+        Assert.AreEqual(0, feedRepo.GetPopularFeeds(10, 1).Count);
     }
 
     [TestMethod]
     public void Popular_RespectsLimit()
     {
-        var u = AddUsers(4);
-        foreach (var user in u.Take(3))
+        var u = AddUsers(3);
+        foreach (var user in u)
         {
             Subscribe(user, "https://a.example/f", "https://b.example/f", "https://c.example/f");
         }
 
-        Assert.AreEqual(2, feedRepo.GetPopularFeeds(u[3], 2, 3).Count);
+        Assert.AreEqual(2, feedRepo.GetPopularFeeds(2, 1).Count);
     }
 
     [TestMethod]

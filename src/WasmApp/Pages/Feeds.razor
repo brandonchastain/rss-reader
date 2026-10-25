@@ -82,17 +82,28 @@ else
     </div>
 }
 
-@if (popularFeeds != null && popularFeeds.Any())
+@if (popularFeeds != null)
 {
     <h2 class="feeds-section-title">Popular feeds</h2>
-    <p class="feeds-section-hint">The most followed feeds on RSS Reader that you haven't added yet.</p>
+    <p class="feeds-section-hint">The most followed feeds on RSS Reader.</p>
+    @if (!popularFeeds.Any())
+    {
+        <p class="feeds-section-hint" id="popular-feeds-empty">Nothing here yet.</p>
+    }
     <div id="popular-feeds">
         @foreach (var popular in popularFeeds)
         {
             <div class="feeds-row feeds-popular-row">
                 <span class="feeds-row-hostname">@popular.Href.GetRootDomain()</span>
                 <span class="feeds-popular-count">@popular.SubscriberCount @(popular.SubscriberCount == 1 ? "subscriber" : "subscribers")</span>
+                @if (IsSubscribed(popular.Href))
+                {
+                    <span class="feeds-popular-count feeds-subscribe-btn">Subscribed</span>
+                }
+                else
+                {
                 <button class="btn btn-secondary feeds-subscribe-btn" disabled="@subscribing.Contains(popular.Href)" @onclick="() => SubscribePopularAsync(popular)">Subscribe</button>
+                }
             </div>
         }
     </div>
@@ -196,6 +207,9 @@ else
         await this.feedClient.DeleteFeedAsync(feed);
         await this.OnInitializedAsync();
     }
+
+    private bool IsSubscribed(string href)
+        => feeds != null && feeds.Any(f => string.Equals(f.Href, href, StringComparison.OrdinalIgnoreCase));
 
     private async Task SubscribePopularAsync(PopularFeed popular)
     {
