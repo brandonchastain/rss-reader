@@ -447,7 +447,8 @@ public sealed class AdminControllerLinkedIdTests
         var stats = new Moq.Mock<RssApp.Data.ISystemStatsRepository>().Object;
         var controller = new Server.Controllers.AdminController(
             stats, repo, config, resolver,
-            new RssReader.Server.Services.SystemStatsCollector(stats, config, NullLogger<RssReader.Server.Services.SystemStatsCollector>.Instance));
+            new RssReader.Server.Services.SystemStatsCollector(stats, config, NullLogger<RssReader.Server.Services.SystemStatsCollector>.Instance),
+            new RssApp.Data.AdminDetailQueries(new Moq.Mock<RssApp.Data.IDbConnections>().Object, config));
         var identity = new ClaimsIdentity("cookie");
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "microsoft:obj-1"));
         controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext

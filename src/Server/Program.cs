@@ -248,7 +248,8 @@ builder.Services
     .AddSingleton<ThumbnailResolver>()
     .AddSingleton<ISystemStatsRepository>(sb =>
         new SQLiteSystemStatsRepository(dbConnections))
-    .AddSingleton<SystemStatsCollector>();
+    .AddSingleton<SystemStatsCollector>()
+    .AddSingleton<RssApp.Data.AdminDetailQueries>();
 
 if (!config.IsReadOnly)
 {

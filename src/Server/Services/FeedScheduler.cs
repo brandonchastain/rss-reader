@@ -1,3 +1,4 @@
+using RssReader.Server.Services;
 using RssApp.Config;
 
 namespace RssApp.ComponentServices;
@@ -21,6 +22,7 @@ public class FeedScheduler : BackgroundService
     private readonly ILogger<FeedScheduler> logger;
     private readonly IFeedRefresher refresher;
     private readonly RssAppConfig config;
+    private readonly SystemStatsCollector statsCollector;
 
     private readonly RssReader.Server.Services.WriterState? writerState;
 
@@ -28,8 +30,10 @@ public class FeedScheduler : BackgroundService
         ILogger<FeedScheduler> logger,
         IFeedRefresher refresher,
         RssAppConfig config,
-        RssReader.Server.Services.WriterState? writerState = null)
+        RssReader.Server.Services.WriterState? writerState = null,
+        SystemStatsCollector statsCollector = null)
     {
+        this.statsCollector = statsCollector;
         this.logger = logger;
         this.refresher = refresher;
         this.config = config;
@@ -76,6 +80,11 @@ public class FeedScheduler : BackgroundService
             catch (Exception ex)
             {
                 this.logger.LogError(ex, "Feed scheduler pass failed; will retry after the maximum sleep.");
+            }
+
+            if (this.statsCollector != null)
+            {
+                await this.statsCollector.SampleIfDueAsync();
             }
 
             if (!await DelayAsync(SleepUntil(nextDue, DateTimeOffset.UtcNow, this.config.SchedulerTickInterval), stoppingToken))

@@ -35,4 +35,16 @@ public class AdminClient : IAdminClient
         return await _apiClient.GetFromJsonAsync<List<AdminUser>>("api/admin/users")
                ?? new List<AdminUser>();
     }
+
+    public async Task<AdminTable> GetDetailAsync(string section)
+    {
+        return await _apiClient.GetFromJsonAsync<AdminTable>($"api/admin/detail/{Uri.EscapeDataString(section)}");
+    }
+
+    public async Task DeleteAsync(string section, long id)
+    {
+        var response = await _apiClient.DeleteAsync($"api/admin/detail/{Uri.EscapeDataString(section)}/{id}");
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException(await response.Content.ReadAsStringAsync() is { Length: > 0 } m ? m : response.StatusCode.ToString());
+    }
 }

@@ -1,0 +1,134 @@
+@page "/admin/{Section}"
+@using Microsoft.AspNetCore.Authorization
+@using RssApp.Contracts
+@using WasmApp.Services
+@attribute [Authorize]
+
+@inject IAdminClient adminClient
+@inject IUserClient userClient
+@inject NavigationManager navigationManager
+
+<div class="detail-container">
+    <div class="detail-header">
+        <a href="admin" class="back-link">&larr; Dashboard</a>
+        <h1 class="detail-title">@(table?.Title ?? Section)</h1>
+    </div>
+
+    @if (loading)
+    {
+        <div class="text-center mt-5"><div class="spinner-border" role="status"></div></div>
+    }
+    else if (table == null)
+    {
+        <p class="text-muted">@(error ?? "Nothing to show.")</p>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(table.Note))
+        {
+            <p class="text-muted">@table.Note</p>
+        }
+        @if (error != null)
+        {
+            <div class="detail-error">@error</div>
+        }
+        <div class="detail-scroll">
+            <table class="detail-table">
+                <thead>
+                    <tr>
+                        @foreach (var c in table.Columns) { <th>@c</th> }
+                        @if (table.Deletable) { <th></th> }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in table.Rows)
+                    {
+                        var id = row[0];
+                        <tr>
+                            @foreach (var cell in row) { <td>@cell</td> }
+                            @if (table.Deletable)
+                            {
+                                <td>
+                                    @if (confirmId == id)
+                                    {
+                                        <button type="button" class="danger-btn" disabled="@busy" @onclick="() => DeleteAsync(id)">Confirm</button>
+                                        <button type="button" class="plain-btn" @onclick="() => confirmId = null">Cancel</button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="plain-btn" @onclick="() => confirmId = id">Delete</button>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="text-muted">@table.Rows.Count row(s)</p>
+    }
+</div>
+
+@code {
+    [Parameter] public string Section { get; set; }
+
+    private AdminTable table;
+    private bool loading = true;
+    private bool busy;
+    private string confirmId;
+    private string error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        loading = true;
+        confirmId = null;
+        try
+        {
+            var user = await userClient.GetFeedUserAsync();
+            if (!(user?.IsAdmin ?? false))
+            {
+                navigationManager.NavigateTo("/timeline");
+                return;
+            }
+            await LoadAsync();
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            table = await adminClient.GetDetailAsync(Section);
+            error = null;
+        }
+        catch (Exception ex)
+        {
+            table = null;
+            error = $"Failed to load {Section}: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteAsync(string id)
+    {
+        if (busy || !long.TryParse(id, out var n)) return;
+        busy = true;
+        try
+        {
+            await adminClient.DeleteAsync(Section, n);
+            confirmId = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            error = $"Delete failed: {ex.Message}";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}
