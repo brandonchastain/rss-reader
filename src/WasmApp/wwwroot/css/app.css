@@ -1205,3 +1205,29 @@ a.post-domain:hover {
     color: var(--accent) !important;
     border-bottom-color: var(--accent);
 }
+
+.update-banner {
+    position: fixed;
+    left: 50%;
+    bottom: 1rem;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-elevated, #161b22);
+    color: var(--text, #c9d1d9);
+    border: 1px solid var(--border, #30363d);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.update-banner button {
+    background: var(--accent, #58a6ff);
+    color: #0d1117;
+    border: 0;
+    border-radius: 0.25rem;
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
+}
