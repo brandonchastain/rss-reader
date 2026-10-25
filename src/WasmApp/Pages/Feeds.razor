@@ -82,6 +82,22 @@ else
     </div>
 }
 
+@if (popularFeeds != null && popularFeeds.Any())
+{
+    <h2 class="feeds-section-title">Popular feeds</h2>
+    <p class="feeds-section-hint">The most followed feeds on RSS Reader that you haven't added yet.</p>
+    <div id="popular-feeds">
+        @foreach (var popular in popularFeeds)
+        {
+            <div class="feeds-row feeds-popular-row">
+                <span class="feeds-row-hostname">@popular.Href.GetRootDomain()</span>
+                <span class="feeds-popular-count">@popular.SubscriberCount @(popular.SubscriberCount == 1 ? "subscriber" : "subscribers")</span>
+                <button class="btn btn-secondary feeds-subscribe-btn" disabled="@subscribing.Contains(popular.Href)" @onclick="() => SubscribePopularAsync(popular)">Subscribe</button>
+            </div>
+        }
+    </div>
+}
+
 @code {
     private static string FailureSummary(NewsFeed feed)
     {
@@ -96,6 +112,8 @@ else
     private Dictionary<string, string> newTagInputs = new Dictionary<string, string>();
     private IEnumerable<NewsFeed> feeds;
     private string lastError = null;
+    private IEnumerable<PopularFeed> popularFeeds;
+    private readonly HashSet<string> subscribing = new HashSet<string>();
 
     [SupplyParameterFromForm]
     private string NewFeedUrl { get; set; }
@@ -103,6 +121,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         feeds = await this.GetFeedUrls();
+        await LoadPopularAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -111,6 +130,7 @@ else
         if (firstRender)
         {
             feeds = await this.GetFeedUrls();
+            await LoadPopularAsync();
             this.StateHasChanged();
         }
     }
@@ -175,6 +195,39 @@ else
     {
         await this.feedClient.DeleteFeedAsync(feed);
         await this.OnInitializedAsync();
+    }
+
+    private async Task SubscribePopularAsync(PopularFeed popular)
+    {
+        if (!subscribing.Add(popular.Href)) return;
+        try
+        {
+            await this.feedClient.AddFeedAsync(new NewsFeed(popular.Href, userId: -1));
+        }
+        catch (Exception ex)
+        {
+            lastError = "Could not subscribe to that feed.";
+            this.logger.LogError(ex, "Could not subscribe to popular feed {url}", popular.Href);
+        }
+        finally
+        {
+            subscribing.Remove(popular.Href);
+        }
+
+        await this.OnInitializedAsync();
+    }
+
+    private async Task LoadPopularAsync()
+    {
+        try
+        {
+            popularFeeds = await this.feedClient.GetPopularFeedsAsync();
+        }
+        catch (Exception ex)
+        {
+            // Discovery is optional; the page works without it.
+            this.logger.LogWarning(ex, "Could not load popular feeds");
+        }
     }
 
     private async Task<IEnumerable<NewsFeed>> GetFeedUrls()

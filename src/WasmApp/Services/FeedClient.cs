@@ -33,6 +33,11 @@ namespace WasmApp.Services
             return await _httpClient.GetFromJsonAsync<IEnumerable<NewsFeed>>($"{_config.ApiBaseUrl}api/feed");
         }
 
+        public async Task<IEnumerable<PopularFeed>> GetPopularFeedsAsync(int limit = 10)
+        {
+            return await _httpClient.GetFromJsonAsync<IEnumerable<PopularFeed>>($"{_config.ApiBaseUrl}api/feed/popular?limit={limit}");
+        }
+
         public async Task AddFeedAsync(NewsFeed feed)
         {
             var user = await userClient.GetFeedUserAsync();

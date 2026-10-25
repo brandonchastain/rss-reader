@@ -12,6 +12,7 @@ public interface IFeedClient : IDisposable
 
     Task AddFeedAsync(NewsFeed feed);
     Task<IEnumerable<NewsFeed>> GetFeedsAsync();
+    Task<IEnumerable<PopularFeed>> GetPopularFeedsAsync(int limit = 10);
     Task<IEnumerable<NewsFeedItem>> GetTimelineAsync(int page, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null);
     // Cheap probe for an open timeline: how many items are newer than the client's
     // newest currently-loaded item (cursor). Honors the active filters.

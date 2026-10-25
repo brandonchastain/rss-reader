@@ -50,6 +50,38 @@ public class SQLiteFeedRepository : IFeedRepository
         return feeds;
     }
 
+    public IReadOnlyList<PopularFeed> GetPopularFeeds(RssUser user, int limit, int minSubscribers)
+    {
+        var popular = new List<PopularFeed>();
+        using var connection = this.connections.OpenRead();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT f.Url, COUNT(*) AS Subscribers
+            FROM Subscriptions s
+            JOIN Feeds f ON f.Id = s.FeedId
+            WHERE f.Url LIKE 'https://%'
+              AND f.Url NOT LIKE '%?%'
+              AND f.Url NOT LIKE '%@%'
+              AND f.ConsecutiveFailures < @failing
+              AND f.Id NOT IN (SELECT FeedId FROM Subscriptions WHERE UserId = @userId)
+            GROUP BY f.Id
+            HAVING COUNT(*) >= @min
+            ORDER BY Subscribers DESC, f.Id
+            LIMIT @limit
+            """;
+        command.Parameters.AddWithValue("@userId", user.Id);
+        command.Parameters.AddWithValue("@failing", NewsFeed.FailingThreshold);
+        command.Parameters.AddWithValue("@min", minSubscribers);
+        command.Parameters.AddWithValue("@limit", limit);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            popular.Add(new PopularFeed { Href = reader.GetString(0), SubscriberCount = reader.GetInt32(1) });
+        }
+
+        return popular;
+    }
+
     public NewsFeed GetFeed(RssUser user, string url)
     {
         using var connection = this.connections.OpenRead();
