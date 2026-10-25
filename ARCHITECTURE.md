@@ -106,11 +106,12 @@ docs link here.
    directory entry for a file the server has deleted also stays valid that
    long. The old revision's deleted lock therefore kept "existing" for the new
    one and the "Another writer holds" to "Writer lock acquired" interval was a
-   fixed 60 s or 90 s in every deploy. Two measures, both in place:
+   fixed 60 s or 90 s in every deploy. Container Apps does not accept `mountOptions`
+   (such as `actimeo=1`) for Azure Files: the deployment is refused with
+   `ContainerAppVolumeMountOptionsNotSupported`, although `az deployment group
+   validate` and what-if pass, so the cache cannot be tuned from the template. The
+   fix is in code:
 
-   - `infrastructure/main.bicep` sets `mountOptions` on the share volume to the
-     platform defaults with `actimeo=1`. The full default list is given because
-     ACA may replace rather than merge the defaults when the property is set.
    - `ShareWriterLock.TryAcquire` does not trust the cache: it probes with an
      open (`ProbeExists`, always a server round-trip), and when `CreateNew`
      still reports "exists" while the server says the file is gone, it unlinks

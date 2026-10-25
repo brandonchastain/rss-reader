@@ -47,6 +47,10 @@ env:
 
 jobs:
   # Catches a template ARM would refuse, before it reaches a deployment.
+  # Limit: validate and what-if check the ARM schema, not the Container Apps resource
+  # provider's runtime rules. 2026-10-25: volume `mountOptions` for Azure Files passed both
+  # and was refused at the real deployment (ContainerAppVolumeMountOptionsNotSupported).
+  # Treat provider-specific properties as unverified until the Backend job has run them.
   validate:
     name: Validate template
     if: github.event_name == 'pull_request'
