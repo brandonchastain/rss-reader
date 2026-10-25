@@ -52,10 +52,6 @@ param enableBlobLease bool = true
 @description('Rollout step 3: at startup, restore the live database from the Litestream replica once the lease is held, instead of copying the share (needs steps 1 and 2 on; falls back to the share copy on failure)')
 param enableBlobRestore bool = false
 
-@description('Gateway secret key for API authentication')
-@secure()
-param gatewaySecretKey string
-
 // ---------------------------------------------------------------------------
 // Login providers. Each pair lands in the container app's secrets and is
 // handed to the API as RssAppConfig__Auth__Providers__<name>__ClientId/Secret.
@@ -219,12 +215,7 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
       // No registries block: the ghcr.io/brandonchastain/rss-reader-api package
       // is public, so ACA pulls anonymously and no registry credential exists to
       // expire, leak, or be forgotten during a rotation.
-      secrets: concat([
-        {
-          name: 'gateway-secret-key'
-          value: gatewaySecretKey
-        }
-      ], loginProviderSecrets)
+      secrets: loginProviderSecrets
       ingress: {
         external: true
         targetPort: 8080
@@ -265,10 +256,6 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
             {
               name: 'ASPNETCORE_ENVIRONMENT'
               value: 'Production'
-            }
-            {
-              name: 'RSSREADER_API_KEY'
-              secretRef: 'gateway-secret-key'
             }
             {
               name: 'LITESTREAM_AZURE_ACCOUNT_NAME'
@@ -328,12 +315,6 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               // restart does not sign every user out.
               name: 'RssAppConfig__Auth__DataProtectionKeysPath'
               value: '/data/keys'
-            }
-            {
-              // Migration window: keep accepting the Static Web Apps proxy's
-              // gateway header. Flip to 'false' in the cutover's final PR.
-              name: 'RssAppConfig__Auth__EnableStaticWebAppsHeaders'
-              value: 'true'
             }
           ], loginProviderEnv)
           volumeMounts: [
@@ -445,12 +426,7 @@ resource readerApp 'Microsoft.App/containerApps@2025-01-01' = if (enableReadRepl
       // No registries block: the ghcr.io/brandonchastain/rss-reader-api package
       // is public, so ACA pulls anonymously and no registry credential exists to
       // expire, leak, or be forgotten during a rotation.
-      secrets: [
-        {
-          name: 'gateway-secret-key'
-          value: gatewaySecretKey
-        }
-      ]
+      secrets: []
       ingress: {
         external: true
         targetPort: 8080
@@ -476,10 +452,6 @@ resource readerApp 'Microsoft.App/containerApps@2025-01-01' = if (enableReadRepl
             {
               name: 'ASPNETCORE_ENVIRONMENT'
               value: 'Production'
-            }
-            {
-              name: 'RSSREADER_API_KEY'
-              secretRef: 'gateway-secret-key'
             }
             {
               name: 'LITESTREAM_AZURE_ACCOUNT_NAME'
@@ -570,17 +542,6 @@ resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = {
     buildProperties: {
       skipGithubActionWorkflowGeneration: true
     }
-  }
-}
-
-// Configure Static Web App settings for the managed API
-resource staticWebAppSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
-  name: 'appsettings'
-  parent: staticWebApp
-  properties: {
-    RSSREADER_API_URL: 'https://${containerApp.properties.configuration.ingress.fqdn}'
-    RSSREADER_API_KEY: gatewaySecretKey
-    RSSREADER_READER_API_URL: enableReadReplica ? 'https://${readerApp.properties.configuration.ingress.fqdn}' : ''
   }
 }
 

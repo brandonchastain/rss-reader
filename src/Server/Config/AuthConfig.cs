@@ -33,9 +33,6 @@ public class AuthConfig
 
     /// <summary>Feed additions and OPML imports allowed per user per minute.</summary>
     public int AddFeedRateLimitPerMinute { get; set; } = 30;
-
-    /// <summary>Legacy: still accept the X-Gateway-Key and X-User-Id headers of the retired Static Web Apps proxy.</summary>
-    public bool EnableStaticWebAppsHeaders { get; set; } = true;
 }
 
 public class AuthProviderConfig

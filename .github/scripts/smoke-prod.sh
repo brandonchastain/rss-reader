@@ -98,12 +98,16 @@ check "CORS does not admit a foreign origin" "$([ -z "$(header access-control-al
 "${CURL[@]}" -o "$tmp/b" "$API/auth/me"
 check "an anonymous session has no principal" "$(grep -q '"clientPrincipal":null' "$tmp/b"; echo $?)"
 
+echo "Retired gateway headers"
+"${CURL[@]}" -D "$tmp/h" -o /dev/null -H "X-Gateway-Key: smoke" -H "X-User-Id: e30=" "$API/api/user"
+check "the API ignores the old proxy's headers (401)" "$([ "$(status "$tmp/h")" = "401" ]; echo $?)"
+
 echo "Frontend"
 "${CURL[@]}" -D "$tmp/h" -o "$tmp/b" "$SITE/"
 check "site answers 200" "$([ "$(status "$tmp/h")" = "200" ]; echo $?)"
 "${CURL[@]}" -D "$tmp/h" -o "$tmp/b" "$SITE/appsettings.json"
 check "frontend is pointed at this API" "$(grep -q "\"ApiBaseUrl\": *\"$API/\"" "$tmp/b"; echo $?)"
-check "frontend does not use the retired Static Web Apps login" "$(grep -q '"UseStaticWebAppsAuth": *false' "$tmp/b"; echo $?)"
+check "frontend config carries no Static Web Apps login switch" "$(grep -q 'UseStaticWebApps' "$tmp/b"; [ $? -ne 0 ]; echo $?)"
 "${CURL[@]}" -D "$tmp/h" -o /dev/null "$SITE/js/admin-chart.js"
 check "frontend scripts are served" "$([ "$(status "$tmp/h")" = "200" ]; echo $?)"
 

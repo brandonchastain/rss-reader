@@ -38,6 +38,22 @@ public sealed class SecurityContractTests
     [ClassCleanup]
     public static void Teardown() => host.Dispose();
 
+    // ---------- the retired Static Web Apps gateway headers ----------
+
+    [TestMethod]
+    public async Task GatewayHeaders_NoLongerAuthenticate()
+    {
+        var principal = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+            "{\"identityProvider\":\"github\",\"userId\":\"github:carol\",\"userDetails\":\"carol\",\"userRoles\":[\"authenticated\"]}"));
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/user");
+        request.Headers.Add("X-Gateway-Key", "any-key");
+        request.Headers.Add("X-User-Id", principal);
+
+        var response = await host.Anonymous().SendAsync(request);
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode, "the proxy's headers must not sign anyone in");
+    }
+
     // ---------- CSRF: every mutating route ----------
 
     /// <summary>

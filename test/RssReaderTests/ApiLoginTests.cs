@@ -64,59 +64,6 @@ public sealed class ApiLoginTests
         Assert.AreEqual(5, identity.Claims.Count(), "provider claims must not bloat the cookie (4 app claims + the email link)");
     }
 
-    // ---------- migration link from the SWA principal ----------
-
-    private static string SwaHeader(object principal) =>
-        Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(principal)));
-
-    [TestMethod]
-    public void SwaPrincipal_WithEntraOid_YieldsMicrosoftLinkedId()
-    {
-        var header = SwaHeader(new
-        {
-            identityProvider = "aad",
-            userId = "024d97a14bc74c58b9a83e88b919a92c",
-            userDetails = "person@example.com",
-            userRoles = new[] { "anonymous", "authenticated" },
-            claims = new[]
-            {
-                new { typ = "name", val = "Person" },
-                new { typ = "http://schemas.microsoft.com/identity/claims/objectidentifier", val = "11111111-2222-3333-4444-555555555555" },
-            }
-        });
-
-        var parsed = StaticWebAppsAuthenticationHandler.ParseClientPrincipal(header)!;
-        Assert.AreEqual("024d97a14bc74c58b9a83e88b919a92c", parsed.UserId);
-        Assert.AreEqual("microsoft:11111111-2222-3333-4444-555555555555",
-            StaticWebAppsAuthenticationHandler.LinkedProviderUserId(parsed));
-    }
-
-    [TestMethod]
-    public void SwaPrincipal_WithoutClaims_LinksByEmailHash()
-    {
-        var header = SwaHeader(new
-        {
-            identityProvider = "aad",
-            userId = "abc",
-            userDetails = "Person@Example.com",
-            userRoles = new[] { "authenticated" },
-        });
-
-        var parsed = StaticWebAppsAuthenticationHandler.ParseClientPrincipal(header)!;
-        Assert.AreEqual("abc", parsed.UserId);
-        var link = StaticWebAppsAuthenticationHandler.LinkedProviderUserId(parsed)!;
-        StringAssert.StartsWith(link, "microsoft-email:");
-        Assert.AreEqual(UserIdentity.EmailLinkId("person@example.com"), link, "hash is case-insensitive and never the plaintext");
-        Assert.IsFalse(link.Contains("example.com"));
-    }
-
-    [TestMethod]
-    public void SwaPrincipal_NoEmailNoClaims_NoLink()
-    {
-        var header = SwaHeader(new { identityProvider = "aad", userId = "abc", userDetails = "x", userRoles = new[] { "authenticated" } });
-        Assert.IsNull(StaticWebAppsAuthenticationHandler.LinkedProviderUserId(StaticWebAppsAuthenticationHandler.ParseClientPrincipal(header)!));
-    }
-
     [TestMethod]
     public void UserResolver_EmailHashLink_ThenFirstDirectLogin_LinksObjectId()
     {

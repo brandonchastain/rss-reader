@@ -58,17 +58,9 @@ The `swa start rss-reader-local` config uses `dotnet watch run` (Kestrel dev ser
 
 ## Authentication Flow
 
-Authentication is a two-stage chain:
+The API is the relying party. The browser is sent to `{ApiBaseUrl}auth/login/{provider}` (Google, Microsoft or GitHub, via OpenID Connect or OAuth), the provider redirects back to `/auth/callback/{provider}`, and the API issues its own encrypted session cookie (`.rss.session`, 30 days sliding, persistent). Later calls carry that cookie; `AuthenticationSetup` registers the schemes and `UserResolver` maps the cookie's claims to a user row.
 
-1. **Azure SWA Easy Auth** authenticates the browser via AAD (login at `/.auth/login/aad`). SWA injects `x-ms-client-principal` (base64 JSON) into requests to the Function proxy — browsers cannot forge this.
-
-2. **Azure Functions proxy** (`api/src/functions/ApiProxy.js`) extracts the Easy Auth principal, then forwards requests to the backend with:
-   - `X-Gateway-Key`: a shared secret (env var `RSSREADER_API_KEY`)
-   - `X-User-Id`: the raw base64 `x-ms-client-principal` value
-
-3. **Backend** (`StaticWebAppsAuthenticationHandler`) validates `X-Gateway-Key` against `RSSREADER_API_KEY` env var, then parses `X-User-Id` to build the `ClaimsPrincipal`.
-
-For local development, set `RssAppConfig__IsTestUserEnabled=true` to bypass auth with a fake test user (`testuser2`).
+For local development, set `RssAppConfig__IsTestUserEnabled=true` to bypass auth with a fake test user (`TestUserAuthenticationHandler`). It is refused in Production.
 
 ## Key Conventions
 

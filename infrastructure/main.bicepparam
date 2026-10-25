@@ -15,7 +15,6 @@ param minReplicas = 1
 param maxReplicas = 1
 // The API's own hostname; the template creates its managed certificate.
 param apiCustomDomain = 'api.rss.brandonchastain.com'
-param gatewaySecretKey = ''  // specify at deployment time
 // BLOB-DURABILITY-SPEC.md rollout steps 1 and 2. Rollback of either: set it to
 // false and redeploy; the share path never stopped being authoritative.
 param enableBlobReplication = true

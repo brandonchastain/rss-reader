@@ -185,8 +185,7 @@ DNS: `CNAME api.rss -> <container app FQDN>` and `TXT asuid.api.rss ->
    asked to log in again there.
 6. **Point the frontend at the API** in one PR:
    - `src/WasmApp/wwwroot/appsettings.json`: `ApiBaseUrl` = `https://api.rss.brandonchastain.com/`
-     and `UseStaticWebAppsAuth` = `false` (the frontend's migration flag; until then the
-     site keeps using Easy Auth even though the API login exists).
+     (until then the site keeps using Easy Auth even though the API login exists).
    - `src/WasmApp/staticwebapp.config.json`: drop the `/api/healthz` route and the
      `/.auth/*` navigation-fallback exclusion; nothing under `/.auth` is used any more.
    - Add any admin's `microsoft:<guid>` id to `AdminAadUserIds` next to the SWA id.
@@ -195,27 +194,24 @@ DNS: `CNAME api.rss -> <container app FQDN>` and `TXT asuid.api.rss ->
    - Merge. Verify: login through each provider, timeline loads, logout returns to the
      site logged out, an existing account sees its feeds.
 7. **Retire the proxy** in a final PR once step 6 has held for a few days: delete `api/`,
-   `swa-cli.config.json`'s `apiLocation`, the `gatewaySecretKey` parameter and
-   `gateway-secret-key` secret in `main.bicep`, the `RSSREADER_*` SWA app settings, the
-   `GATEWAY_SECRET_KEY` repo secret and the `AUTH_CUTOVER` variable (make static-only
-   the only publish step); set `RssAppConfig__Auth__EnableStaticWebAppsHeaders` to
-   `false` and then remove `StaticWebAppsAuthenticationHandler`, `UseStaticWebAppsAuth`
-   with `AuthClient`'s legacy branch, and `signedout.html`. Easy Auth itself needs
-   no switching off: with no `allowedRoles` routes and no `/.auth` links, SWA never
-   challenges anyone.
+   the `gatewaySecretKey` parameter, `gateway-secret-key` secret and `RSSREADER_API_KEY`
+   env var in `main.bicep`, the `RSSREADER_*` SWA app settings, the `GATEWAY_SECRET_KEY`
+   repo secret and the `AUTH_CUTOVER` variable; remove the `EnableStaticWebAppsHeaders`
+   flag, the gateway-header handler, `UseStaticWebAppsAuth` with `AuthClient`'s legacy
+   branch, and `signedout.html`. Easy Auth itself needs no switching off: with no
+   `allowedRoles` routes and no `/.auth` links, SWA never challenges anyone.
 
-**Status:** steps 1 to 6 were done on 2026-10-17 (Microsoft only; registration "RSS
-Reader", appId `747a7699-5c86-4614-bd6b-71c44c4012d5`, in the user's Entra tenant). Step 7
-is partly done: `api/`, its deploy step and `swa-cli.config.json`'s `apiLocation` are gone
-and the workflow publishes static only. Still open: the `gatewaySecretKey` parameter and
-`gateway-secret-key` secret in `main.bicep`, the `GATEWAY_SECRET_KEY` secret, the
-`AUTH_CUTOVER` variable (now unread), `EnableStaticWebAppsHeaders` and
-`StaticWebAppsAuthenticationHandler` (the in-process API tests still authenticate through
-it), `UseStaticWebAppsAuth` with `AuthClient`'s legacy branch, and `signedout.html`.
+**Status:** all seven steps are done. Steps 1 to 6 landed on 2026-10-17 (Microsoft only;
+registration "RSS Reader", appId `747a7699-5c86-4614-bd6b-71c44c4012d5`, in the user's
+Entra tenant) and the code and template cleanup of step 7 landed on 2026-10-25. The API
+no longer accepts the `X-Gateway-Key` / `X-User-Id` headers at all; the only schemes are
+the session cookie and, for local development, the fake test user. Leftovers outside the
+repo: delete the `GATEWAY_SECRET_KEY` repo secret and `AUTH_CUTOVER` variable, and the
+`RSSREADER_*` app settings on the Static Web App (`az staticwebapp appsettings delete`).
 
-**Rollback** before step 7: revert the step 6 PR and set `AUTH_CUTOVER` back to `false`;
-the next deploy restores the proxy and the old login. The API keeps both schemes until
-step 7, so no data changes are needed either way.
+**Rollback** of step 7 is a revert of its PR plus restoring the `GATEWAY_SECRET_KEY`
+secret; rolling back past step 6 also needs the proxy redeployed, which the template no
+longer does.
 
 ## Frontend
 

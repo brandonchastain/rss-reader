@@ -70,9 +70,8 @@ Follow these phases **in order**. Each phase must complete before moving to the 
 
 - The local database starts empty on fresh containers. Add a test feed if needed:
   ```powershell
-  $headers = @{"X-Gateway-Key"="testkey123"; "X-User-Id"="testuser2"}
   $feed = '{"Href":"https://feeds.arstechnica.com/arstechnica/index","Title":"Ars Technica","UserId":1}'
-  Invoke-RestMethod -Uri "http://localhost:8080/api/feed" -Method Post -Headers $headers -Body $feed -ContentType "application/json"
+  Invoke-RestMethod -Uri "http://localhost:8080/api/feed" -Method Post -Body $feed -ContentType "application/json"
   ```
 - Auth is bypassed locally via `RssAppConfig__IsTestUserEnabled=true`.
 - Click post **thumbnails** to expand (not title links, which navigate externally).

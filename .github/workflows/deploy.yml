@@ -18,9 +18,7 @@
 #
 # Repo configuration:
 #   AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID   (identifiers)
-#   GATEWAY_SECRET_KEY                                          (the retired proxy's secret; safe to delete once the SWA header scheme is removed)
 #   AUTH_{GOOGLE,MICROSOFT,GITHUB}_CLIENT_{ID,SECRET}           (login providers; an unset pair disables that provider)
-#   vars.AUTH_CUTOVER                                           (no longer read; safe to delete)
 # The image is a public GHCR package, so nothing needs a registry credential at
 # runtime and CI pushes it with GITHUB_TOKEN.
 name: Deploy
@@ -64,10 +62,10 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Validate
         working-directory: infrastructure
-        run: az deployment group validate --resource-group "$RESOURCE_GROUP" --template-file main.bicep --parameters main.bicepparam --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" --parameters googleClientId="${{ secrets.AUTH_GOOGLE_CLIENT_ID }}" googleClientSecret="${{ secrets.AUTH_GOOGLE_CLIENT_SECRET }}" microsoftClientId="${{ secrets.AUTH_MICROSOFT_CLIENT_ID }}" microsoftClientSecret="${{ secrets.AUTH_MICROSOFT_CLIENT_SECRET }}" githubClientId="${{ secrets.AUTH_GITHUB_CLIENT_ID }}" githubClientSecret="${{ secrets.AUTH_GITHUB_CLIENT_SECRET }}" --query "properties.provisioningState" -o tsv
+        run: az deployment group validate --resource-group "$RESOURCE_GROUP" --template-file main.bicep --parameters main.bicepparam --parameters googleClientId="${{ secrets.AUTH_GOOGLE_CLIENT_ID }}" googleClientSecret="${{ secrets.AUTH_GOOGLE_CLIENT_SECRET }}" microsoftClientId="${{ secrets.AUTH_MICROSOFT_CLIENT_ID }}" microsoftClientSecret="${{ secrets.AUTH_MICROSOFT_CLIENT_SECRET }}" githubClientId="${{ secrets.AUTH_GITHUB_CLIENT_ID }}" githubClientSecret="${{ secrets.AUTH_GITHUB_CLIENT_SECRET }}" --query "properties.provisioningState" -o tsv
       - name: What-if
         working-directory: infrastructure
-        run: az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file main.bicep --parameters main.bicepparam --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" --parameters googleClientId="${{ secrets.AUTH_GOOGLE_CLIENT_ID }}" googleClientSecret="${{ secrets.AUTH_GOOGLE_CLIENT_SECRET }}" microsoftClientId="${{ secrets.AUTH_MICROSOFT_CLIENT_ID }}" microsoftClientSecret="${{ secrets.AUTH_MICROSOFT_CLIENT_SECRET }}" githubClientId="${{ secrets.AUTH_GITHUB_CLIENT_ID }}" githubClientSecret="${{ secrets.AUTH_GITHUB_CLIENT_SECRET }}"
+        run: az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file main.bicep --parameters main.bicepparam --parameters googleClientId="${{ secrets.AUTH_GOOGLE_CLIENT_ID }}" googleClientSecret="${{ secrets.AUTH_GOOGLE_CLIENT_SECRET }}" microsoftClientId="${{ secrets.AUTH_MICROSOFT_CLIENT_ID }}" microsoftClientSecret="${{ secrets.AUTH_MICROSOFT_CLIENT_SECRET }}" githubClientId="${{ secrets.AUTH_GITHUB_CLIENT_ID }}" githubClientSecret="${{ secrets.AUTH_GITHUB_CLIENT_SECRET }}"
 
   test:
     name: Build + test
@@ -132,7 +130,7 @@ jobs:
       # which drops the scale settings the template declares.
       - name: Deploy template with the new image
         working-directory: infrastructure
-        run: az deployment group create --resource-group "$RESOURCE_GROUP" --template-file main.bicep --parameters main.bicepparam --parameters gatewaySecretKey="${{ secrets.GATEWAY_SECRET_KEY }}" --parameters googleClientId="${{ secrets.AUTH_GOOGLE_CLIENT_ID }}" googleClientSecret="${{ secrets.AUTH_GOOGLE_CLIENT_SECRET }}" microsoftClientId="${{ secrets.AUTH_MICROSOFT_CLIENT_ID }}" microsoftClientSecret="${{ secrets.AUTH_MICROSOFT_CLIENT_SECRET }}" githubClientId="${{ secrets.AUTH_GITHUB_CLIENT_ID }}" githubClientSecret="${{ secrets.AUTH_GITHUB_CLIENT_SECRET }}" --parameters containerImage="$IMAGE:${{ github.sha }}" --query "properties.provisioningState" -o tsv
+        run: az deployment group create --resource-group "$RESOURCE_GROUP" --template-file main.bicep --parameters main.bicepparam --parameters googleClientId="${{ secrets.AUTH_GOOGLE_CLIENT_ID }}" googleClientSecret="${{ secrets.AUTH_GOOGLE_CLIENT_SECRET }}" microsoftClientId="${{ secrets.AUTH_MICROSOFT_CLIENT_ID }}" microsoftClientSecret="${{ secrets.AUTH_MICROSOFT_CLIENT_SECRET }}" githubClientId="${{ secrets.AUTH_GITHUB_CLIENT_ID }}" githubClientSecret="${{ secrets.AUTH_GITHUB_CLIENT_SECRET }}" --parameters containerImage="$IMAGE:${{ github.sha }}" --query "properties.provisioningState" -o tsv
 
       # ARM reporting Succeeded does not mean the app came up: a revision can
       # fail activation and still hold all of the traffic. Ask the app itself.
