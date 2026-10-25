@@ -42,7 +42,6 @@ export default defineConfig({
         ASPNETCORE_URLS: API,
         RssAppConfig__DbLocation: runDb,
         RssAppConfig__SchedulerEnabled: 'false',
-        RssAppConfig__BackupDbPath: '',
       },
     },
     {

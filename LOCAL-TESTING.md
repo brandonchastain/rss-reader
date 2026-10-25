@@ -41,7 +41,6 @@ The database is wherever `RssAppConfig:DbLocation` points in
 ```powershell
 docker build -f src/Server/Dockerfile -t rss-reader-api:local .
 docker run -d --name rss-reader-test -p 8080:8080 `
-  -v C:\dev\rssreader\docker-data:/data `
   -e ASPNETCORE_ENVIRONMENT=Development `
   -e RssAppConfig__IsTestUserEnabled=true `
   -e RssAppConfig__Auth__CookieSameSite=Lax `
@@ -49,9 +48,8 @@ docker run -d --name rss-reader-test -p 8080:8080 `
   rss-reader-api:local
 ```
 
-Add `-e RssAppConfig__BackupDbPath=/data/db/storage.db` to exercise the seed and backup
-path against the mounted folder; without it the database is thrown away with the
-container.
+The database is thrown away with the container. To keep it between runs, add
+`-v C:\dev\rssreader\docker-data:/data` and `-e RssAppConfig__DbLocation=/data/storage.db`.
 
 Confirm with:
 

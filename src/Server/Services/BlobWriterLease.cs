@@ -160,8 +160,8 @@ namespace RssReader.Server.Services
         /// <summary>
         /// Wait until the lease is held: polls while another writer holds it; gives up with a
         /// warning (returns false) after <see cref="GiveUpAfter"/> of errors that are not
-        /// contention, so an unreachable blob service does not stop the writer from booting
-        /// while the share is still the authoritative copy. Cancelling the token throws.
+        /// contention (the caller decides what a writer without a lease does; startup refuses
+        /// to restore without one). Cancelling the token throws.
         /// </summary>
         public async Task<bool> AcquireAsync(CancellationToken cancellationToken)
         {

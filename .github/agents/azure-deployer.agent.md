@@ -61,7 +61,7 @@ diagnostics — they return structured JSON that's easier to parse than `az` CLI
 | `applens resource diagnose` | Run AI-powered diagnostics on a resource (Container App, SWA) |
 | `deploy app logs get` | Get deployment logs for the last deployment operation |
 | `subscription list` | List subscriptions (confirm correct subscription is active) |
-| `storage account get` | Check the Azure Files storage account backing the DB volume |
+| `storage account get` | Check the blob-only storage account holding the Litestream replica, writer lease and session key ring |
 
 ### Example: query container app logs via MCP
 Use `monitor workspace log query` with workspace `rss-reader-logs` and a KQL query such as:
@@ -205,8 +205,7 @@ This catches a known Copilot CLI session-state bug where the allowed-tools list 
 - Common causes:
   - A login provider's `AUTH_*_CLIENT_ID`/`SECRET` pair missing (that provider is silently disabled)
   - `DbLocation` misconfigured (should be `/tmp/storage.db` inside the container)
-  - Database restore failure on startup (entrypoint will exit with FATAL if `litestream restore` fails — check container logs for "litestream restore failed")
-  - Image cache restore failure (check logs for "Failed to restore cached images from /data")
+  - Database restore failure on startup (the app throws and the container restarts if the restore from the Litestream replica fails, with no fallback copy — check container logs for the `litestream restore` error)
 
 ### 5. `swa deploy` auth failure
 ```powershell
@@ -222,8 +221,8 @@ Then retry `swa deploy --env production`.
 
 ### 7. Database not persisting across restarts
 - The SQLite DB lives at `/tmp/storage.db` (ephemeral) and is replicated to Azure Blob Storage by **Litestream** (the sole backup path).
-- On startup, `litestream restore -if-replica-exists` (in `docker-entrypoint.sh`) restores the DB from blob; the entrypoint exits with FATAL if restore fails.
-- If data is lost: check container logs for "litestream restore failed" or `litestream replicate` exit messages; verify the storage account / managed identity grants `Storage Blob Data Contributor` on the `litestream` container.
+- On startup the app (`WriterStartupGate`, with `RssAppConfig:Durability:RestoreFromBlob=true`) requests a cooperative handover on the `writer-handoff` blob, restores with `litestream restore -f`, takes the `writer-lease` blob lease and runs `PRAGMA quick_check`; a failed restore throws and the container restarts, and a restore that finds no replica fails rather than start empty.
+- If data is lost: check container logs for the `litestream restore` error or `litestream replicate` exit messages; verify the storage account / managed identity grants `Storage Blob Data Contributor` on the `litestream` container.
 
 ### 8. SWA frontend deploys but API calls fail (502 / CORS)
 - The browser calls `https://api.rss.brandonchastain.com` directly (credentialed, cross-origin); there is no proxy, and `https://rss.brandonchastain.com/api/*` answers 500 by design.

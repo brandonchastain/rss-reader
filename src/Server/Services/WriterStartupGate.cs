@@ -18,18 +18,17 @@ namespace RssReader.Server.Services
     /// The writer's boot handover (issue #136).
     ///
     /// During a deploy, Container Apps only sends the old revision SIGTERM once the new
-    /// one's startup probe passes, and the old revision writes its final database copy to
-    /// the share in response to that SIGTERM. So the new revision must answer
-    /// <c>/api/healthz</c> <em>before</em> it can seed <c>/tmp/storage.db</c>. The real app
+    /// one's startup probe passes, and the old revision hands the database over in response
+    /// (a cooperative handoff request, or its SIGTERM). So the new revision must answer
+    /// <c>/api/healthz</c> <em>before</em> it can restore <c>/tmp/storage.db</c>. The real app
     /// cannot do that: its repositories open the live database while the host is being
     /// built. This gate runs first instead: a throwaway Kestrel host on the app's port that
-    /// answers the probe with 200 and everything else with 503, while the process waits for
-    /// the old writer's lock to be released (or go stale), takes the lock, and seeds the
-    /// live database from the share. Then the gate stops and <c>Program.cs</c> builds the
-    /// real app, which keeps the lock until its own shutdown flush.
+    /// answers the probe and 503 for everything else, while the process restores the live
+    /// database from the Litestream replica once it holds the blob lease. Then the gate
+    /// stops and <c>Program.cs</c> builds the real app.
     ///
-    /// Only runs when <c>BackupDbPath</c> is set; a self-hosted single container with no
-    /// share and no revision overlap simply pays one quick local copy at boot.
+    /// Only runs when restore from the replica is configured; a self-hosted single
+    /// container with no storage account simply creates its database on first use.
     /// </summary>
     public sealed class WriterStartupGate : IAsyncDisposable
     {
@@ -62,7 +61,7 @@ namespace RssReader.Server.Services
             // answers 503 until the initial restore is on disk, so the platform moves
             // traffic here only when the real host is seconds away; the caller bounds that
             // window well inside the probe's budget (2 s * 150). Without one, 200 at once:
-            // the old revision's SIGTERM, and so its final share copy, depends on it.
+            // the old revision's SIGTERM, and so its final sync, depends on it.
             gate.MapGet("/api/healthz", () =>
                 readyForTraffic == null || readyForTraffic()
                     ? Results.Ok(new { status = "healthy", role = "writer", phase = "seeding" })
@@ -79,7 +78,7 @@ namespace RssReader.Server.Services
                 }
                 ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 ctx.Response.Headers.RetryAfter = "5";
-                await ctx.Response.WriteAsync("Starting: waiting for the previous revision's final database copy.");
+                await ctx.Response.WriteAsync("Starting: restoring the database from the replica.");
             });
 
             await gate.StartAsync(cancellationToken);
@@ -98,21 +97,18 @@ namespace RssReader.Server.Services
         }
 
         /// <summary>
-        /// Run the whole handover: start the gate, wait for the lock, seed, stop the gate.
-        /// Returns with the lock held (unless its directory is unwritable, see
-        /// <see cref="ShareWriterLock.AcquireAsync"/>) and the live DB seeded. Throws
-        /// <see cref="OperationCanceledException"/> when the process is told to stop while
-        /// waiting (the lock is released first).
+        /// Run the whole handover: start the gate, run <paramref name="restoreFromReplica"/>,
+        /// stop the gate. Throws <see cref="InvalidOperationException"/> when the restore
+        /// reports failure (the container then exits and the platform restarts it) and
+        /// <see cref="OperationCanceledException"/> when the process is told to stop meanwhile.
         /// </summary>
         public static async Task RunAsync(
             string[] args,
-            DatabaseBackupToFilePaths paths,
-            ShareWriterLock writerLock,
+            Func<CancellationToken, Task<bool>> restoreFromReplica,
             string[] allowedOrigins,
             ILoggerFactory loggerFactory,
             string? urls = null,
             CancellationToken cancellationToken = default,
-            Func<CancellationToken, Task<bool>>? restoreFromReplica = null,
             Func<bool>? readyForTraffic = null)
         {
             var logger = loggerFactory.CreateLogger("WriterStartupGate");
@@ -122,28 +118,20 @@ namespace RssReader.Server.Services
             using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, ctx => { ctx.Cancel = true; stopping.Cancel(); });
 
             var gate = await StartAsync(args, allowedOrigins, urls, stopping.Token, readyForTraffic);
-            logger.LogInformation(
-                restoreFromReplica == null
-                    ? "Startup gate listening: /api/healthz answers while the database is seeded from {Backup}."
-                    : "Startup gate listening: /api/healthz answers while the database is restored from the Litestream replica (fallback: seed from {Backup}).",
-                paths.BackupDbPath);
+            logger.LogInformation("Startup gate listening: /api/healthz answers while the database is restored from the Litestream replica.");
 
             try
             {
-                if (restoreFromReplica == null)
-                    await DatabaseSeeder.WaitForLockAndSeedAsync(paths, writerLock, logger, stopping.Token);
-                else
-                    await DatabaseSeeder.RestoreOrSeedAsync(paths, writerLock, restoreFromReplica, logger, stopping.Token);
+                if (!await restoreFromReplica(stopping.Token))
+                {
+                    throw new InvalidOperationException(
+                        "The database could not be restored from the Litestream replica (see the errors above). " +
+                        "Refusing to start; the platform restarts the container and the restore is tried again.");
+                }
             }
             catch (OperationCanceledException) when (stopping.IsCancellationRequested)
             {
-                logger.LogWarning("Stop requested while waiting to seed the database — exiting without starting.");
-                writerLock.Release();
-                throw;
-            }
-            catch
-            {
-                writerLock.Release();
+                logger.LogWarning("Stop requested while restoring the database — exiting without starting.");
                 throw;
             }
             finally

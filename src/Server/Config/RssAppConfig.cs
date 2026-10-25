@@ -19,20 +19,6 @@ namespace RssApp.Config
         /// <summary>Rebuild the full-text search index from stored posts at startup.</summary>
         public bool RebuildFtsOnStartup { get; set; }
 
-        // Backup (durable copy of the database on a mounted share)
-
-        /// <summary>Path of the backup copy on the share; empty disables backups and the startup handover.</summary>
-        public string BackupDbPath { get; set; } = string.Empty;
-
-        /// <summary>Minimum time between periodic backups; a backup only runs if the database changed.</summary>
-        public TimeSpan BackupInterval { get; set; } = TimeSpan.FromMinutes(15);
-
-        /// <summary>Age after which the writer lock file is treated as abandoned and taken over.</summary>
-        public TimeSpan BackupLockStaleAfter { get; set; } = TimeSpan.FromMinutes(3);
-
-        /// <summary>Time limit for the final backup on shutdown; must fit inside the container's termination grace period.</summary>
-        public TimeSpan ShutdownBackupTimeout { get; set; } = TimeSpan.FromSeconds(90);
-
         // Feed fetching
 
         /// <summary>Run the background scheduler that fetches each distinct feed once on its own cadence.</summary>

@@ -74,14 +74,13 @@ The backend uses interfaces (`IFeedRepository`, `IItemRepository`, `IUserReposit
 Feed refresh runs via a `BackgroundWorkQueue` + `BackgroundWorker` hosted service. Enqueue work items to `BackgroundWorkQueue`; `FeedRefresher` handles the actual HTTP fetch and parse. Don't call `FeedRefresher` directly from controllers — enqueue instead.
 
 ### Configuration
-App config is loaded into `RssAppConfig` from `appsettings.json` under the `RssAppConfig` section. The backend reads `DbLocation` for the SQLite path (`/tmp/storage.db` in Docker, copied to `/data/` for persistence). Frontend config is in `RssWasmConfig`.
+App config is loaded into `RssAppConfig` from `appsettings.json` under the `RssAppConfig` section. The backend reads `DbLocation` for the SQLite path (`/tmp/storage.db` in Docker, replicated to Azure Blob Storage by Litestream for persistence). Frontend config is in `RssWasmConfig`.
 
-### DatabaseBackupService
-A periodic image-sync + system-stats service. The SQLite database lives at `/tmp/storage.db` (ephemeral container storage) and is replicated to Azure Blob Storage by **Litestream** (the sole DB backup path). On container startup, `Program.cs` calls `RestoreFromBackupAsync` before any repository is instantiated to copy cached images from `/data/images/` (Azure Files) into `wwwroot/images/`. Every 5 minutes it then syncs new images back from `wwwroot/images/` to `/data/images/` (only new files, never overwrites) and records a system-stats snapshot via a read-only query against the active DB.
+### Database durability
+The SQLite database lives at `/tmp/storage.db` (ephemeral container storage) and is replicated to Azure Blob Storage by **Litestream** (the sole DB backup path; there is no Azure Files share). In production the app restores it from the replica at startup (`WriterStartupGate`, `CooperativeHandoverSeeder`, `BlobWriterLease`): a failed restore throws and the container restarts, with no fallback copy. Cached favicons live only on the container disk (`wwwroot/images/`) and are re-fetched after a deploy. The session-cookie key ring is the blob `dataprotection/keys.xml`.
 
-This service must NEVER write to `/tmp/storage.db` — Litestream owns the DB, and any write here would generate WAL/LTX traffic. The tests assert this contract explicitly.
+Nothing else may write a copy of `/tmp/storage.db` or modify it outside the repositories — Litestream owns the DB, and any stray write would generate WAL/LTX traffic. See ARCHITECTURE.md "Backup & Replication".
 
-### OPML Import/Export
 OPML import/export is handled by the static `OpmlSerializer` class (`src/Server/Services/Serialization/OpmlSerializer.cs`), shared between the backend and tests.
 
 - **Export** (`GET /api/feed/exportOpml?userId=...`): Fetches the user's feeds and serializes to OPML 2.0 XML. Feed tags are written as a comma-separated `category` attribute on each `<outline>` element.

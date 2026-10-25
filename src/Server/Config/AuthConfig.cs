@@ -25,7 +25,7 @@ public class AuthConfig
     /// <summary>Idle time before a session expires; activity extends it.</summary>
     public TimeSpan SessionLifetime { get; set; } = TimeSpan.FromDays(30);
 
-    /// <summary>Blob container holding the key ring (blob keys.xml) that encrypts session cookies, reached through the Durability blob settings; empty uses <see cref="DataProtectionKeysPath"/>. Keys found in that directory when the blob does not exist yet are imported into it.</summary>
+    /// <summary>Blob container holding the key ring (blob keys.xml) that encrypts session cookies, reached through the Durability blob settings; empty uses <see cref="DataProtectionKeysPath"/> (local development).</summary>
     public string DataProtectionKeysContainer { get; set; } = string.Empty;
 
     /// <summary>Directory holding the keys that encrypt session cookies; empty keeps them in the container, so restarts sign everyone out.</summary>

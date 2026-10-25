@@ -15,7 +15,7 @@
 |  |           Google / Microsoft / GitHub        |   |
 |  |  /api/*   feeds, items, users, admin         |   |
 |  |  Writer (min 1, max 1)                       |   |
-|  |  DB copied to /data every 5 min              |   |
+|  |  DB replicated to blob by Litestream (30 s)   |   |
 |  |  +-----------+                               |   |
 |  |  |  SQLite   |                               |   |
 |  |  +-----------+                               |   |
@@ -61,140 +61,90 @@ C#, ASP.NET, SQLite
 #### Database
 SQLite database to store RSS feeds, posts, and user profiles. The live file is
 `/tmp/storage.db` on the container's local disk; durability comes from the
-services below.
+Litestream blob replica described below. There is no Azure Files share.
 
 ##### Backup & Replication
 
-There is **one** durability path, plus a legacy bootstrap and an optional
-replication mode. This section is the only place that describes them; the other
+There is **one** durability path: the Litestream replica in the `litestream`
+blob container. This section is the only place that describes it; the other
 docs link here.
 
-1. **File-mount copy (the durability path).** `DatabaseBackupToFileService`
-   copies the live database to `RssAppConfig.BackupDbPath` on the Azure Files
-   mount (`/data/db/storage.db`) every `BackupInterval` (skipped when the DB
-   has not changed), and once more on shutdown. The writer holds a lock file
-   next to the copy (`storage.db.lock`) for its whole lifetime, refreshing its
-   mtime every 30 s; only the lock holder copies. On boot the app (not the
-   entrypoint) seeds `/tmp/storage.db` from the share copy, after validating it
-   with `PRAGMA quick_check`; a failed check stops the app.
-   `DatabaseBackupService` does the same for cached images (`wwwroot/images/`
-   to `/data/images/`, every 5 minutes) and records system-stats snapshots.
-   Backing up `/data` backs up everything.
-
-   **Deploy handover.** A deploy overlaps the old and new revision even in
-   `Single` revision mode, and anything written since the last periodic copy
-   exists only in the old replica's `/tmp`. The sequence that keeps it:
-
-   1. The new revision starts a throwaway listener (`WriterStartupGate`) that
-      answers `/api/healthz` with 200 and everything else with 503, and waits
-      while the old revision's lock is alive.
-   2. The startup probe passes, so Container Apps moves traffic to the new
-      revision and sends the old one SIGTERM.
-   3. The old revision stops Kestrel and the feed scheduler, then
-      `DatabaseBackupToFileService.StopAsync` runs one final copy (ignoring the
-      unchanged-DB skip, bounded by `ShutdownBackupTimeout`) and releases the
-      lock. `terminationGracePeriodSeconds` (120) covers this.
-   4. The new revision sees the lock gone, takes it, seeds `/tmp` from the
-      fresh copy, stops the gate listener and builds the real app. API requests
-      get 503 (then a few seconds of refused connections while the app boots)
-      between steps 2 and 4.
-
-   Step 4 must see the deletion promptly. Container Apps mounts Azure Files
-   with the AKS CIFS defaults, including `actimeo=30`, so a `stat` (which is
-   what `File.Exists` and `File.GetLastWriteTimeUtc` are) is answered from a
-   client-side attribute cache refreshed only every 30 s, and a positive
-   directory entry for a file the server has deleted also stays valid that
-   long. The old revision's deleted lock therefore kept "existing" for the new
-   one and the "Another writer holds" to "Writer lock acquired" interval was a
-   fixed 60 s or 90 s in every deploy. Container Apps does not accept `mountOptions`
-   (such as `actimeo=1`) for Azure Files: the deployment is refused with
-   `ContainerAppVolumeMountOptionsNotSupported`, although `az deployment group
-   validate` and what-if pass, so the cache cannot be tuned from the template. The
-   fix is in code:
-
-   - `ShareWriterLock.TryAcquire` does not trust the cache: it probes with an
-     open (`ProbeExists`, always a server round-trip), and when `CreateNew`
-     still reports "exists" while the server says the file is gone, it unlinks
-     the path (another round-trip, which drops the stale entry) and retries
-     the claim once. Lost-race versus unwritable-directory is decided with the
-     probe, not `File.Exists`. The 3-minute stale threshold is wide enough
-     that the cached mtime used by `IsAlive` needs no such treatment.
-
-   A lock whose heartbeat is older than `BackupLockStaleAfter` (3 min) belongs
-   to a replica that died without releasing it and is taken over, so a crash
-   delays the next boot by at most that long. Before publishing a copy the
-   holder re-reads the lock's owner token and discards the copy if another
-   writer took over. Scaling mode (below) still seeds in the entrypoint and has
-   no handover.
-
-2. **Litestream bootstrap (legacy, read-only).** If `BackupDbPath` does not
-   exist at boot, the entrypoint tries a one-shot `litestream restore` from the
-   `litestream` blob container that the previous architecture replicated to,
-   validates it and publishes it as the first file-mount copy.
-
-3. **Litestream replication (scaling mode, off).** With
-   `RSSREADER_ENABLE_LITESTREAM_REPLICATION=true` the writer runs under
-   `litestream replicate`, streaming WAL changes to blob storage so read
-   replicas can restore from it. It is a feed for readers, not a second backup.
-   Slated for removal (BLOB-DURABILITY-SPEC.md section 4).
-
-4. **Blob replication and the writer lease (BLOB-DURABILITY-SPEC.md, rollout
-   steps 1 and 2).** The path that will replace the share. With
-   `RssAppConfig:Durability:LitestreamEnabled` the app starts
-   `litestream replicate` as its child (`LitestreamSupervisor`) once
+1. **Blob replication.** With `RssAppConfig:Durability:LitestreamEnabled` the
+   app starts `litestream replicate` as its child (`LitestreamSupervisor`) once
    `/tmp/storage.db` is in place, replicating it to the `litestream` blob
    container every 30 s through the app's managed identity
-   (`infrastructure/litestream.yml`). With
-   `RssAppConfig:Durability:BlobServiceUri` the writer also holds a 30 s blob
-   lease on `litestream/writer-lease` (`BlobWriterLease`), acquired while the
-   startup gate answers the probe; every acquire and release is logged beside
-   the lock's state. Shutdown order (hosted services stop in reverse
-   registration order): the feed scheduler and worker stop, `litestream sync`
-   uploads the pending WAL and the child stops, the lease is released, then
-   the final share copy runs and the lock file goes.
-   Rollout step 3, the cooperative handover, is behind
-   `RssAppConfig:Durability:RestoreFromBlob` (`enableBlobRestore` in the
-   Bicep). The new revision starts `litestream restore -f` into a staging file
-   (`LitestreamFollower`: full restore, then the LTX tail every 500 ms) while
-   the old revision keeps serving; a follower that dies is restarted up to
-   three times. Only once the initial restore is on disk does it write a
-   request on the `writer-handoff` blob (`CooperativeHandoverSeeder`). Its
-   startup probe stays 503 until the database is in place, so traffic stays on
-   the old revision; after 30 s without a finished handover the probe opens
-   anyway, because an old image that ignores the request only releases the
-   lease on SIGTERM, which the platform sends once the probe passes. The
-   running writer polls that blob every 2 s (`WriterHandoffService`) and, on a
-   request, stops the feed scheduler, worker and retention service, checkpoints,
-   runs the final Litestream sync, acknowledges with the final transaction id,
-   releases the lease, then copies to the share for rollback
-   (`WriterHandover`); from then on it answers 503 to mutating requests and
-   serves reads until the platform stops it, and its SIGTERM skips the final
-   share copy. The new writer takes the lease, waits for the follower to reach
-   the acknowledged transaction id, stops it, `quick_check`s and renames the
-   copy over `/tmp/storage.db`. Any failure falls back to the share seed (about
-   7 s at 320 MB). A full `litestream restore` after the lease is not a
-   fallback: it measured 80 s when the replica chain was 4.8 GB. The file
-   backup keeps writing the share either way, so turning the flag off (or the
-   previous image) seeds from the share again. `/api/healthz` reports row
-   counts so a restore of the replica can be compared with the live writer by
-   hand (the cutover check in the spec's section 9.5). The spec's section 8
-   has the remaining steps.
+   (`infrastructure/litestream.yml`). The entrypoint does nothing but
+   `exec dotnet Server.dll` for the writer; Litestream never sees the file
+   replaced underneath it.
 
-   Measured so far (2026-10-24 to 25, `/api/user` probed once a second):
+2. **Writer lease.** With `RssAppConfig:Durability:BlobServiceUri` the writer
+   holds a 30 s blob lease on `litestream/writer-lease` (`BlobWriterLease`),
+   acquired while the startup gate answers the probe. Every acquire and release
+   is logged.
+
+3. **Startup restore and cooperative handover.** In production
+   `RssAppConfig:Durability:RestoreFromBlob` is true. A deploy overlaps the old
+   and new revision even in `Single` revision mode, and anything written since
+   the last replicated WAL exists only in the old replica's `/tmp`. The sequence
+   that keeps it:
+
+   1. The new revision starts a throwaway listener (`WriterStartupGate`) that
+      answers `/api/healthz` with 200 and everything else with 503, so the
+      startup probe passes and Container Apps moves traffic to it and sends the
+      old revision SIGTERM.
+   2. It starts `litestream restore -f` into a staging file
+      (`LitestreamFollower`: full restore, then the LTX tail every 500 ms) while
+      the old revision keeps serving; a follower that dies is restarted up to
+      three times. Only once the initial restore is on disk does it write a
+      request on the `writer-handoff` blob (`CooperativeHandoverSeeder`). Its
+      startup probe stays 503 until the database is in place, so traffic stays
+      on the old revision; after 30 s without a finished handover the probe
+      opens anyway, because an old image that ignores the request only releases
+      the lease on SIGTERM, which the platform sends once the probe passes.
+   3. The running writer polls that blob every 2 s (`WriterHandoffService`) and,
+      on a request, stops the feed scheduler, worker and retention service,
+      checkpoints, runs the final Litestream sync, acknowledges with the final
+      transaction id and releases the lease (`WriterHandover`); from then on it
+      answers 503 to mutating requests and serves reads until the platform
+      stops it.
+   4. The new writer takes the lease, waits for the follower to reach the
+      acknowledged transaction id, stops it, runs `PRAGMA quick_check` and
+      renames the copy over `/tmp/storage.db`, then stops the gate listener and
+      builds the real app. API requests get 503 (then a few seconds of refused
+      connections while the app boots) in between.
+
+   There is no fallback to a copy elsewhere. A failed restore throws, the
+   container restarts and tries again; a restore that finds no replica fails
+   rather than start with an empty database. A full `litestream restore` after
+   the lease is not a fast path: it measured 80 s when the replica chain was
+   4.8 GB. `/api/healthz` reports row counts so a restore of the replica can be
+   compared with the live writer by hand.
+
+   **Shutdown.** Hosted services stop in reverse registration order: the feed
+   scheduler and worker stop, the database is checkpointed
+   (`wal_checkpoint`), `litestream sync -wait` uploads the pending WAL
+   (`FinalSyncTimeout`, 20 s) and the child stops, then the lease is released.
+   `HostOptions.ShutdownTimeout` is 50 s and `terminationGracePeriodSeconds` 60.
+   A crash loses at most the writes since the last 30 s sync.
+
+   **First environment.** A brand-new environment has no replica to restore. Boot
+   once with `RssAppConfig__Durability__RestoreFromBlob=false`: that creates the
+   database and uploads the first replica; then turn restore back on.
+
+   **Session keys and images.** The cookie key ring is the blob
+   `dataprotection/keys.xml` (`RssAppConfig:Auth:DataProtectionKeysContainer`,
+   managed identity), so deploys keep sessions. Cached favicons live only on the
+   container disk (`wwwroot/images/`) and are re-fetched after a deploy.
+
+   Measured so far (2026-10-24 to 25, `/api/user` probed once a second; the
+   share and lock wait mentioned in the early rows no longer exist):
 
    | Deploy | 503 window | Why |
    |---|---|---|
-   | Before step 3 (PR #178) | about 61 s | Platform SIGTERM 31 s after the probe passes, old shutdown 8 s, share lock wait 17 s, seed 7 s |
-   | First flagged deploy (#179) | about 117 s | Follower died racing the old writer's compaction; fallback was an 80 s full restore of a 4.8 GB chain; probe opened at once |
+   | Before the cooperative handover (PR #178) | about 61 s | Platform SIGTERM 31 s after the probe passes, old shutdown 8 s, share lock wait 17 s, seed 7 s |
+   | First handover deploy (#179) | about 117 s | Follower died racing the old writer's compaction; fallback was an 80 s full restore of a 4.8 GB chain; probe opened at once |
    | After #184 (follower retry, request after restore, probe held) | no 5xx in the CI probe | Initial restore 17 s overlapped the old revision; old writer released the lease 2.2 s after the request; restore applied in 25 s |
    | First deploy on the fresh `storage-v2.db` replica (#186) | about 46 s | Expected: no replica yet, follower failed three times, startup seeded from the share |
-
-   Container Apps does not accept `mountOptions` (such as `actimeo=1`) for
-   Azure Files: the deployment is refused with
-   `ContainerAppVolumeMountOptionsNotSupported`, although `az deployment group
-   validate` and what-if pass. The CIFS attribute cache therefore stays at its
-   30 s default and the share lock wait is shortened only by the cache-proof
-   claim in `ShareWriterLock`.
 
    `ReplicaChainReporter` logs, a minute after start and every ten minutes,
    `Replica chain at <utc>: L0 n files X MB txid a-b newest hh:mm:ss; L1 ...; L9 ...`
@@ -211,7 +161,7 @@ docs link here.
 
 The backend supports an optional read replica mode controlled by `RssAppConfig.IsReadOnly` and the `APP_ROLE` environment variable:
 
-- **Writer** (`APP_ROLE=writer`, default) — Single replica, all background services (feed scheduler, backups, image sync), handles reads and writes.
+- **Writer** (`APP_ROLE=writer`, default) — Single replica, all background services (feed scheduler, retention, Litestream), handles reads and writes.
 - **Reader** (`APP_ROLE=reader`, `IsReadOnly=true`) — 0→N replicas, restores from the Litestream blob on startup, serves read-only traffic. No background services. Uses `NoOpFeedRefresher` so controllers still resolve.
 
 Routing reads to the reader used to be the job of the Static Web Apps Functions proxy, which the login migration removed. Nothing routes to readers today: the frontend calls the writer's hostname directly. Turning `enableReadReplica=true` back on needs a router in front of both apps (or the frontend sending read-only GETs to a second base URL) that falls back to the writer on any error. Until that exists the parameter stays `false`.
@@ -237,25 +187,23 @@ the provider secrets are supplied by the workflow, not the param file.
 | `cooldownPeriod` (inline) | `900` s | — | How long KEDA waits before scaling an idle replica away. Keep above boot time or activation fails mid-boot. |
 | `http-rule concurrentRequests` (inline) | `10` | — | Concurrent requests per replica before KEDA scales out (moot while `maxReplicas` is 1). |
 | Startup probe (inline) | `2s` period × `150` failures | — | 300s startup budget against `/api/healthz`. |
-| `enableReadReplica` | `false` | — | Deploys the reader Container App. Needs Litestream replication on. |
+| `enableReadReplica` | `false` | — | Deploys the reader Container App. It restores from the Litestream replica the writer always produces. |
 | `maxReadReplicas` | `3` | — | Reader scale ceiling (reader is 0.25 vCPU / 0.5 GiB, min 0). |
 | `staticWebAppSku` | `Free` | — | SWA tier. |
 | `customDomain` | `rss.brandonchastain.com` | — | SWA custom domain. |
 | `apiCustomDomain` | `api.rss.brandonchastain.com` | — | The API's own hostname, so a session cookie can be shared with the frontend origin. Empty removes the binding. |
 | `googleClientId`/`Secret`, `microsoftClientId`/`Secret`, `githubClientId`/`Secret` | empty | from repo secrets | Login providers. A missing pair means that provider is not offered. |
-| `shareQuota` (inline) | `5` GB | — | Azure Files share for `/data`. Must exceed 2× the DB size because a backup cycle briefly holds old and new copies. Billed by used bytes. |
-| `terminationGracePeriodSeconds` (inline) | `120` s | — | How long a stopping replica gets before it is killed. Must exceed the app's shutdown budget (`HostOptions.ShutdownTimeout` 110 s, which contains `ShutdownBackupTimeout`) or the final DB copy on deploy is cut off. |
+| `terminationGracePeriodSeconds` (inline) | `60` s | — | How long a stopping replica gets before it is killed. Must exceed the app's shutdown budget (`HostOptions.ShutdownTimeout` 50 s, which contains the 20 s `FinalSyncTimeout`) or the final Litestream sync on deploy is cut off. |
 | `location`, `*Name` params | westus2, `rss-reader-*` | — | Resource naming and region. |
 
 ### Container environment (writer env block in `main.bicep`)
 
 | Variable | Prod | Effect |
 |---|---|---|
-| `RSSREADER_ENABLE_LITESTREAM_REPLICATION` | `false` | `true` runs the writer under `litestream replicate` (scaling mode). Requires `BackupDbPath`. |
-| `RssAppConfig__BackupDbPath` | `/data/db/storage.db` | Where the DB copy lives. Empty disables backup entirely (local dev). Any `RssAppConfig__*` setting can be overridden the same way. |
+| `RssAppConfig__Durability__*` | `LitestreamEnabled`, `BlobServiceUri`, `RestoreFromBlob=true` | Blob replication, the writer lease and the startup restore. Any `RssAppConfig__*` setting can be overridden the same way. |
 | `Logging__LogLevel__Default` | `Warning` | Log volume into Log Analytics. |
 | `APP_ROLE` | `writer` | `reader` selects the read-only boot path in `docker-entrypoint.sh`. |
-| `RssAppConfig__Auth__DataProtectionKeysPath` | `/data/keys` | Session-cookie encryption keys, on the mount so deploys keep sessions. |
+| `RssAppConfig__Auth__DataProtectionKeysContainer` | `dataprotection` | Blob container holding the session-cookie key ring (`keys.xml`), so deploys keep sessions. |
 | `RssAppConfig__Auth__Providers__<name>__ClientId` / `ClientSecret` | secrets | One pair per offered provider. |
 | `LITESTREAM_AZURE_ACCOUNT_NAME` | storage account | Blob account for Litestream. |
 
@@ -281,14 +229,10 @@ Bound from `appsettings.json` section `RssAppConfig` or env vars
 | `BackgroundWorkerCount` | 1 | Keep at 1: more workers contend for SQLite's single writer lock. |
 | `BackgroundQueueCapacity` | 1000 | Bounded queue of background jobs; producers wait when it is full. |
 
-### Durability and caches
+### Caches and startup
 
 | Setting | Default | Effect |
 |---|---|---|
-| `BackupDbPath` | empty | DB copy target. Empty disables `DatabaseBackupToFileService`. |
-| `BackupInterval` | 15 min | How often the whole DB file is copied to the share when it changed. Each copy is ~1 Azure Files write op per MB. A final copy also runs on shutdown, so this is the crash-loss window, not the deploy-loss window. |
-| `BackupLockStaleAfter` | 3 min | A writer lock whose heartbeat (every 30 s) is older than this is taken over. Worst-case boot delay after a crashed replica; keep a small multiple of the heartbeat and above any SMB hiccup. Self-hosting: the lock is a plain file; if it cannot be created the app warns after `ShareWriterLock.GiveUpAfter` (10 s) and runs without it. With `BackupDbPath` empty neither lock, gate nor shutdown copy runs. |
-| `ShutdownBackupTimeout` | 90 s | Upper bound for the final DB copy on SIGTERM. Must fit inside `HostOptions.ShutdownTimeout` (110 s) and `terminationGracePeriodSeconds`. |
 | `CacheReloadInterval` | 5 min | Cooldown between one user's manual refreshes; inside it the refresh endpoint reports "up to date" without fetching. |
 | `CacheReloadStartupDelay` | 0 s | Grace period after boot during which user refreshes are served from cache. |
 | `RebuildFtsOnStartup` | `false` | Rebuild the full-text index at boot (slow; use after a schema change). |
@@ -310,7 +254,7 @@ provider id in `Users.ProviderUserId`; the resolver looks in both.
 | `CookieName` / `CookieDomain` / `CookieSameSite` | `.rss.session` / empty / `None` | Session cookie. `None` implies `Secure`; Development uses `Lax`. |
 | `SessionLifetime` | 30 d | Sliding session expiry. |
 | `LoginRateLimitPerMinute` / `AddFeedRateLimitPerMinute` | 30 / 30 | Login and logout requests per client address, and feed additions and OPML imports per user, per minute. |
-| `DataProtectionKeysPath` | empty | Directory for the cookie encryption keys; empty means in-container, which signs everyone out on restart. |
+| `DataProtectionKeysContainer` / `DataProtectionKeysPath` | empty | Blob container (managed identity) or directory for the cookie encryption keys. The container wins; with both empty the keys stay in the container, which signs everyone out on restart. The directory form is for local and self-hosted use. |
 
 | Setting | Default | Effect |
 |---|---|---|
@@ -318,22 +262,21 @@ provider id in `Users.ProviderUserId`; the resolver looks in both.
 | `IsTestUserEnabled` | `false` | Every request is the test user; no provider needed. Refused in Production unless `AllowTestUserInProduction`. |
 | `AllowTestUserInProduction` | `false` | Lets `IsTestUserEnabled` run in Production, for a private single-user box with no login. |
 | `AdminAadUserIds` | empty | Comma-separated login ids (`provider:subject`, or a bare subject) that may use `/admin`. |
-| `DbLocation` | — | Path of the live SQLite file (`/tmp/storage.db` in prod). |
+| `DbLocation` | — | Path of the live SQLite file (`/tmp/storage.db` in prod). Self-hosted without Azure, point it at a mounted volume; with no `Durability` settings SQLite just opens the file. |
 
 ### Hardcoded (for now)
 
 | Constant | Value | Where |
 |---|---|---|
-| Image cache sync interval | 5 min | `DatabaseBackupService._syncInterval` |
-| Backup lock heartbeat | 30 s | `DatabaseBackupToFilePaths.HeartbeatInterval` |
-| Lock wait poll interval | 2 s | `ShareWriterLock.PollInterval` |
-| Host shutdown timeout | 110 s | `Program.cs` (`HostOptions.ShutdownTimeout`) |
+| Handover request poll interval | 2 s | `WriterHandoffService` |
+| Writer lease duration | 30 s | `BlobWriterLease` |
+| Host shutdown timeout | 50 s | `Program.cs` (`HostOptions.ShutdownTimeout`) |
 | Outbound feed HTTP timeout | 20 s | `Program.cs` (`RssClient`) |
 | In-memory feed/item cache | 5 min sliding | `CachingFeedRepository`, `CachingItemRepository` |
 | In-memory post body cache | 1 h absolute | `CachingItemRepository.ContentExpiration` |
 | Content batch size | 50 ids | `ItemController.MaxContentBatchSize` |
 | Page size ceiling | 500 | `FeedClient` clamps `pageSize` before calling feed / search endpoints |
-| Litestream `sync-interval` / `snapshot-interval` | 30 s / 1 h | `infrastructure/litestream.yml` (scaling mode only) |
+| Litestream `sync-interval` / `snapshot-interval` | 30 s / 1 h | `infrastructure/litestream.yml` |
 
 ## Frontend (`src/WasmApp`)
 

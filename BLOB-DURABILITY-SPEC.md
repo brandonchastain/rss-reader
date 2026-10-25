@@ -1,6 +1,13 @@
 # Durability on blob storage: Litestream replication, a blob lease, no file share
 
 Status: chosen direction, 2026-10-24, pending the section 7 verifications.
+Update 2026-10-25: rollout steps 1 to 5 are built. The key ring moved to blob
+(`dataprotection/keys.xml`, imported once from the share) in #195; the share
+backup, lock file, seed-from-share fallback, favicon write-through, volume and
+mount are removed in the step 5 change. The replica is now the only durable
+copy, and a restore that fails stops the container instead of falling back.
+Not done: the reader app and `IsReadOnly` (section 4), deleting the share and
+the old `storage.db/` replica prefix by hand, and `allowSharedKeyAccess=false`.
 Considered against PR #170 (a block delta on shutdown over the existing share),
 which fixes the handover but keeps the share, the storage key on the environment,
 SMB under SQLite and a 15-minute crash recovery point; the owner chose this

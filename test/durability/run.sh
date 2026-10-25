@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
 #
 # Durability integration test, BLOB-DURABILITY-SPEC.md 9.2. Runs the real image
-# against Azurite (blob) and a shared volume (the share). Three scenarios:
+# against Azurite (blob). The replica is the only durable copy, so every writer
+# restores from it at startup. Each scenario first bootstraps a replica (one
+# writer with restore off, as a new environment would be given one by hand).
 #
-#   1. handover  writer A gets SIGTERM while B waits in its gate; B serves every
-#                row A acknowledged, the replica holds every row, A's final sync
-#                and lease release are logged, B's lease acquire is logged.
+#   1. handover  A ignores the handoff marker (an old image) and gets SIGTERM
+#                while B waits in its gate; B serves every row A acknowledged,
+#                the replica holds every row, A's final sync and lease release
+#                are logged, B's lease acquire is logged.
 #   2. crash     A gets SIGKILL; a restore of the replica passes quick_check and
 #                is missing at most the rows acknowledged inside the last sync
 #                interval.
 #   3. overlap   B starts while A is alive: B answers 503 from its gate and runs
 #                no Litestream; A is killed without a release; B proceeds only
 #                after the lease duration.
-#   4. cooperative  (RestoreFromBlob on) B asks on the handoff blob; A drains,
-#                syncs and hands the lease over while alive; B restores through
-#                `litestream restore -f`, serves every row, replicates on; A
-#                answers 503 to writes and its SIGTERM skips the share copy.
+#   4. cooperative  B asks on the handoff blob; A drains, syncs and hands the
+#                lease over while alive; B restores through `litestream restore
+#                -f`, serves every row, replicates on; A answers 503 to writes
+#                and its SIGTERM has nothing left to sync.
 #
 # Rows are written straight into the live SQLite file with the sqlite3 CLI in
 # the container (a probe table the app ignores): the property under test is the
@@ -63,11 +66,15 @@ reset() {
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
   : > "$ACK"
   "${COMPOSE[@]}" up -d azurite >/dev/null
-  "${COMPOSE[@]}" create writer-a >/dev/null 2>&1   # creates the data volume under compose's name
-  # A brand-new share: the entrypoint expects a database there (or a replica to
-  # bootstrap from), as a new environment would be given one by hand.
-  docker run --rm -v rss-durability_data:/data --entrypoint sh "$RSS_IMAGE" -c \
-    'mkdir -p /data/db && sqlite3 /data/db/storage.db "CREATE TABLE IF NOT EXISTS Bootstrap (x); DROP TABLE Bootstrap;"'
+  # A brand-new environment: one writer with restore off creates the container, the
+  # database and the first replica, then stops after its final sync.
+  RSS_RESTORE_FROM_BLOB=false "${COMPOSE[@]}" up -d writer-a >/dev/null
+  wait_ready $PORT_A || fail "bootstrap writer did not become ready"
+  expect_log a "Litestream replicate started"
+  sleep $((SYNC_INTERVAL_S * 3))
+  "${COMPOSE[@]}" stop -t 60 writer-a >/dev/null
+  expect_log a "Litestream final sync OK"
+  "${COMPOSE[@]}" rm -sf writer-a >/dev/null
 }
 
 sql() { docker exec "$1" sqlite3 "$DB" "$2"; }
@@ -128,7 +135,7 @@ reject_log() { local which=$1 pattern=$2; if "logs_$which" | grep -q -- "$patter
 scenario_handover() {
   log "=== scenario 1: handover (SIGTERM)"
   reset
-  "${COMPOSE[@]}" up -d writer-a >/dev/null
+  RSS_HANDOFF_POLL=01:00:00 "${COMPOSE[@]}" up -d writer-a >/dev/null
   wait_ready $PORT_A || fail "writer A did not become ready"
   expect_log a "Blob writer lease acquired"
   expect_log a "Litestream replicate started"
@@ -136,7 +143,7 @@ scenario_handover() {
   sleep 6
   "${COMPOSE[@]}" up -d writer-b >/dev/null
   sleep 4
-  [[ "$(healthz $PORT_B)" == *seeding* ]] || fail "writer B should be in its gate while A is alive"
+  [[ "$(healthz $PORT_B)" == *restoring* ]] || fail "writer B should be in its gate while A is alive"
   [[ "$(status_of $PORT_B)" == 503 ]] || fail "writer B's gate should answer 503"
   sleep 1
   stop_writer
@@ -145,17 +152,15 @@ scenario_handover() {
   "${COMPOSE[@]}" stop -t 60 writer-a >/dev/null
   expect_log a "Litestream final sync OK"
   expect_log a "Blob writer lease released"
-  expect_log a "Shutdown: final DB backup OK"
-  reject_log a "DISAGREE"
   wait_ready $PORT_B 120 || fail "writer B did not become ready after A stopped"
   local nb; nb=$(count rss-durability-writer-b-1)
   [[ "$nb" == "$n" ]] || fail "B serves $nb rows, A acknowledged $n"
   expect_log b "Blob writer lease acquired"
-  reject_log b "DISAGREE"
+  expect_log b "Handover: restored"
   local r; r=$(restore_replica)
   log "replica restore: $r"
   [[ "$r" == "ok $n" ]] || fail "replica holds '$r', expected 'ok $n'"
-  pass "handover: B serves all $n rows; replica holds all $n; lease and lock agree"
+  pass "handover: B serves all $n rows; replica holds all $n; the lease moved on SIGTERM"
 }
 
 scenario_crash() {
@@ -183,13 +188,14 @@ scenario_crash() {
 scenario_overlap() {
   log "=== scenario 3: overlap (B while A alive, then A dies without a release)"
   reset
-  "${COMPOSE[@]}" up -d writer-a >/dev/null
+  RSS_HANDOFF_POLL=01:00:00 "${COMPOSE[@]}" up -d writer-a >/dev/null
   wait_ready $PORT_A || fail "writer A did not become ready"
   "${COMPOSE[@]}" up -d writer-b >/dev/null
   sleep 6
-  [[ "$(healthz $PORT_B)" == *seeding* ]] || fail "writer B should be held in its gate"
+  [[ "$(healthz $PORT_B)" == *restoring* ]] || fail "writer B should be held in its gate"
   [[ "$(status_of $PORT_B)" == 503 ]] || fail "writer B's gate should answer 503"
-  if docker exec rss-durability-writer-b-1 sh -c "grep -lq ^litestream /proc/[0-9]*/comm" 2>/dev/null; then fail "writer B started Litestream while A was alive"; fi
+  # B's follower (`litestream restore -f`) is expected to run; replication must not.
+  reject_log b "Litestream replicate started"
   expect_log b "Another writer holds the blob lease"
   local t0; t0=$(date +%s)
   docker kill rss-durability-writer-a-1 >/dev/null
@@ -199,18 +205,16 @@ scenario_overlap() {
   (( waited >= LEASE_S - 3 )) || fail "B proceeded after $waited s, before the ${LEASE_S}s lease could expire"
   (( waited <= LEASE_S + 45 )) || fail "B took $waited s to proceed"
   expect_log b "Blob writer lease acquired"
-  expect_log b "Stale writer lock found"
-  docker exec rss-durability-writer-b-1 sh -c "grep -lq ^litestream /proc/[0-9]*/comm" 2>/dev/null || fail "writer B did not start Litestream after taking over"
+  expect_log b "Litestream replicate started"
   pass "overlap: B waited in the gate without replicating and proceeded ${waited}s after A died"
 }
 
-# Rollout step 3 (BLOB-DURABILITY-SPEC.md 3.2 v2): B asks on the handoff blob, A
-# drains and hands the lease over while still alive, B restores from the replica
-# through `litestream restore -f` and serves every row A acknowledged, A answers
-# 503 to writes, and A's later SIGTERM skips the final share copy.
+# BLOB-DURABILITY-SPEC.md 3.2 v2: B asks on the handoff blob, A drains and hands
+# the lease over while still alive, B restores from the replica through
+# `litestream restore -f` and serves every row A acknowledged, A answers 503 to
+# writes, and A's later SIGTERM has nothing left to sync.
 scenario_cooperative() {
   log "=== scenario 4: cooperative handover (restore from blob, marker before SIGTERM)"
-  export RSS_RESTORE_FROM_BLOB=true
   reset
   "${COMPOSE[@]}" up -d writer-a >/dev/null
   wait_ready $PORT_A || fail "writer A did not become ready"
@@ -236,9 +240,8 @@ scenario_cooperative() {
   local ready=$(( $(date +%s) - t0 ))
   expect_log b "Handover: acknowledged by"
   expect_log b "Handover: restored"
-  reject_log b "seeding from the share"
   reject_log b "restarting it"
-  reject_log b "seeding from the share copy"
+  reject_log b "Handover: failed"
   expect_log b "Blob writer lease acquired"
   local nb; nb=$(count rss-durability-writer-b-1)
   [[ "$nb" == "$n" ]] || fail "B serves $nb rows, A acknowledged $n"
@@ -253,12 +256,8 @@ scenario_cooperative() {
   [[ "$r" == "ok $n2" ]] || fail "replica holds '$r', expected 'ok $n2'"
   # A's SIGTERM is now a no-op for the database.
   "${COMPOSE[@]}" stop -t 60 writer-a >/dev/null
-  expect_log a "skipping the final share copy"
   expect_log a "already synced and stopped at the handoff"
-  reject_log a "Shutdown: final DB backup OK"
-  reject_log a "DISAGREE"
-  unset RSS_RESTORE_FROM_BLOB
-  pass "cooperative: A handed over in ${handed}s, B ready in ${ready}s with all $n rows, B replicates on, A's SIGTERM skipped the share copy"
+  pass "cooperative: A handed over in ${handed}s, B ready in ${ready}s with all $n rows, B replicates on, A's SIGTERM had nothing left to sync"
 }
 
 scenarios=("$@")

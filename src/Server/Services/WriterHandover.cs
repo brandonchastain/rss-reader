@@ -18,7 +18,7 @@ namespace RssReader.Server.Services
     /// <item><c>litestream sync -wait</c> and stop the Litestream child (final transaction id from the sync);</item>
     /// <item>acknowledge on the handoff blob with that transaction id;</item>
     /// <item>release the blob lease, stamping the transaction id on it (spec 3.3 step 5);</item>
-    /// <item>then, off the critical path, one last copy to the share for rollback.</item>
+    /// <item>then, off the critical path, any <see cref="Steps.AfterReleaseAsync"/> work (none in production).</item>
     /// </list>
     ///
     /// The steps are delegates so the order can be unit-tested with every side effect faked.

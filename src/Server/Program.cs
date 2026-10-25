@@ -30,29 +30,13 @@ if (config.IsTestUserEnabled && builder.Environment.IsProduction() && !config.Al
 }
 var dbConnections = new SqliteDbConnections(config.DbLocation, config.IsReadOnly);
 
-// Writer durability: the live DB is seeded from the share copy and the backup
-// service copies it back. The lock on the share is held for the whole process
-// lifetime (taken here, released after the final backup on shutdown).
-var backupPaths = new DatabaseBackupToFilePaths(
-    ActiveDbPath: config.DbLocation,
-    BackupDbPath: config.BackupDbPath ?? string.Empty,
-    Interval: config.BackupInterval,
-    LockStaleThreshold: config.BackupLockStaleAfter,
-    ShutdownBackupTimeout: config.ShutdownBackupTimeout);
+// Writer durability (BLOB-DURABILITY-SPEC.md): the live DB on local disk is restored from the
+// Litestream replica at startup and replicated back by a Litestream child of this process.
 var startupLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole().SetMinimumLevel(LogLevel.Information));
-var writerLock = new ShareWriterLock(
-    backupPaths.LockPath, backupPaths.LockStaleThreshold, backupPaths.HeartbeatInterval,
-    startupLoggerFactory.CreateLogger<ShareWriterLock>());
 
-// Under `litestream replicate` the entrypoint still seeds /tmp before exec, because
-// Litestream must not see the file replaced underneath it (scaling mode, off).
-var litestreamSupervised = string.Equals(
-    Environment.GetEnvironmentVariable("RSSREADER_ENABLE_LITESTREAM_REPLICATION"), "true", StringComparison.OrdinalIgnoreCase);
-
-// Blob writer lease (BLOB-DURABILITY-SPEC.md 3.4), rollout step 2: taken beside the
-// lock file and logged, nothing depends on it yet. Acquired while the gate below is
-// answering the startup probe, because the old revision only releases it after it has
-// been told to stop, and it is only told to stop once this revision's probe passes.
+// Blob writer lease (spec 3.4). Acquired while the gate below is answering the startup
+// probe, because the old revision only releases it after it has been told to stop, and it
+// is only told to stop once this revision's probe passes.
 var processStartedUtc = DateTimeOffset.UtcNow;
 var writerIdentity = $"{Environment.GetEnvironmentVariable("CONTAINER_APP_REVISION") ?? "local"}/{Environment.MachineName}";
 var writerState = new WriterState();
@@ -65,94 +49,65 @@ var leaseAcquire = writerLease == null
     ? Task.FromResult(false)
     : Task.Run(() => writerLease.AcquireAsync(leaseAcquireCts.Token));
 
-// Rollout step 3 (spec 3.2 steps 3 to 5), behind RssAppConfig:Durability:RestoreFromBlob:
-// once the lease is held, restore /tmp from the Litestream replica instead of copying the
-// share. The delegate returns false (after an error log) whenever the lease was not
-// obtained or the restore fails, and the gate falls back to the share copy.
-var durabilityLogger = startupLoggerFactory.CreateLogger("Durability");
-Func<CancellationToken, Task<bool>>? restoreFromReplica = null;
-Func<bool>? readyForTraffic = null;
-if (config.Durability.RestoreFromBlob && !config.IsReadOnly && !litestreamSupervised)
+// Spec 3.2 steps 3 to 5, behind RssAppConfig:Durability:RestoreFromBlob: once the lease is
+// held, restore /tmp from the Litestream replica. Without it (local development, the e2e
+// suite, a self-hosted box) there is no gate and SQLite creates the database on first use.
+if (config.Durability.RestoreFromBlob && !config.IsReadOnly)
 {
     if (!config.Durability.RestoreEnabled || writerLease == null)
     {
-        durabilityLogger.LogError(
-            "Durability:RestoreFromBlob is on but needs LitestreamEnabled={Litestream} and the blob lease (configured={Lease}); seeding from the share instead.",
-            config.Durability.LitestreamEnabled, writerLease != null);
+        throw new InvalidOperationException(
+            "RssAppConfig:Durability:RestoreFromBlob is on but needs LitestreamEnabled and the blob lease " +
+            $"(LitestreamEnabled={config.Durability.LitestreamEnabled}, lease configured={writerLease != null}).");
     }
-    else
-    {
-        // Cooperative handover first (spec 3.2 v2): follow the replica while the old
-        // writer drains on request, so the lease wait is seconds rather than the
-        // platform's SIGTERM delay. The gate's probe answers 503 until the follower's
-        // initial restore is on disk (trafficReady), then 200.
-        var trafficReady = new bool[1];
-        readyForTraffic = () => Volatile.Read(ref trafficReady[0]);
-        var handoffChannel = new BlobWriterHandoffChannel(BlobWriterLease.CreateContainerClient(config.Durability), config.Durability.HandoffBlob);
-        var cooperative = new CooperativeHandoverSeeder(
-            config.Durability, config.DbLocation, handoffChannel,
-            () => new LitestreamFollower(config.Durability, config.DbLocation, config.DbLocation + ".follow", startupLoggerFactory.CreateLogger("LitestreamFollower")),
-            async ct =>
-            {
-#pragma warning disable VSTHRD003
-                var held = await leaseAcquire.WaitAsync(ct);
-#pragma warning restore VSTHRD003
-                return held && writerLease.IsHeld;
-            },
-            () => Volatile.Write(ref trafficReady[0], true),
-            writerIdentity,
-            startupLoggerFactory.CreateLogger("Handover"));
 
-        // Any failure returns false and the gate seeds from the share (about 7 s at 320 MB).
-        // A fresh full `litestream restore` is not a fallback: it measured 80 s in production.
-        restoreFromReplica = async ct =>
+    // Cooperative handover first (spec 3.2 v2): follow the replica while the old writer
+    // drains on request, so the lease wait is seconds rather than the platform's SIGTERM
+    // delay. The gate's probe answers 503 until the follower's initial restore is on disk
+    // (trafficReady), then 200.
+    var trafficReady = new bool[1];
+    var handoffChannel = new BlobWriterHandoffChannel(BlobWriterLease.CreateContainerClient(config.Durability), config.Durability.HandoffBlob);
+    var cooperative = new CooperativeHandoverSeeder(
+        config.Durability, config.DbLocation, handoffChannel,
+        () => new LitestreamFollower(config.Durability, config.DbLocation, config.DbLocation + ".follow", startupLoggerFactory.CreateLogger("LitestreamFollower")),
+        async ct =>
         {
-            var restored = await cooperative.RunAsync(ct);
-            Volatile.Write(ref trafficReady[0], true);
-            return restored;
-        };
-    }
-}
+#pragma warning disable VSTHRD003
+            var held = await leaseAcquire.WaitAsync(ct);
+#pragma warning restore VSTHRD003
+            return held && writerLease.IsHeld;
+        },
+        () => Volatile.Write(ref trafficReady[0], true),
+        writerIdentity,
+        startupLoggerFactory.CreateLogger("Handover"));
 
-if (!config.IsReadOnly && !string.IsNullOrEmpty(backupPaths.BackupDbPath) && !litestreamSupervised)
-{
-    // Before the repositories below open the live DB: answer the startup probe, then
-    // either (restore on) wait for the lease and restore from the replica, or wait for
-    // the previous revision's final copy, take the lock, and seed /tmp from the share.
+    // Any failure returns false and startup throws: the container restarts and restores again.
     try
     {
         await WriterStartupGate.RunAsync(
-            args, backupPaths, writerLock,
+            args,
+            async ct =>
+            {
+                var restored = await cooperative.RunAsync(ct);
+                Volatile.Write(ref trafficReady[0], true);
+                return restored;
+            },
             config.Auth.AllowedFrontendOrigins.Select(ReturnUrlValidator.NormalizeOrigin).ToArray(),
             startupLoggerFactory,
-            restoreFromReplica: restoreFromReplica,
-            readyForTraffic: readyForTraffic);
+            readyForTraffic: () => Volatile.Read(ref trafficReady[0]));
     }
     catch (OperationCanceledException)
     {
         leaseAcquireCts.Cancel();
-        if (writerLease != null) await writerLease.ReleaseAsync();
+        await writerLease.ReleaseAsync();
         return;
     }
-}
-
-var shareLockDeferred = false;
-if (writerLease != null)
-{
-    // The gate returned with the share lock held (or given up on). The lease normally
-    // arrives within seconds of it: the old writer releases its lock first, then its lease.
-    // VSTHRD003 guards against JoinableTaskFactory deadlocks when awaiting a task
-    // started elsewhere; ASP.NET has no synchronization context, so none is possible.
-#pragma warning disable VSTHRD003
-    try { await leaseAcquire; }
-#pragma warning restore VSTHRD003
-    catch (OperationCanceledException) { }
-    shareLockDeferred = restoreFromReplica != null && !writerLock.IsHeld;
-    durabilityLogger.LogInformation(
-        "Startup: blob lease held={LeaseHeld}, share lock held={LockHeld}; {Verdict}.",
-        writerLease.IsHeld, writerLock.IsHeld,
-        shareLockDeferred ? "restored from the replica, share lock left to the backup service"
-            : writerLease.IsHeld == writerLock.IsHeld ? "agree" : "DISAGREE");
+    catch
+    {
+        leaseAcquireCts.Cancel();
+        await writerLease.ReleaseAsync();
+        throw;
+    }
 }
 
 // One-shot schema migration (DB-REDESIGN-SPEC.md section 7) before any
@@ -216,21 +171,6 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 // Add authn and authz: session cookie + one scheme per configured provider,
 // plus the Static Web Apps header scheme during the migration window.
-var keyBlob = DataProtectionKeyStore.CreateBlobClient(config);
-if (keyBlob != null && !config.IsReadOnly)
-{
-    // A failed import must not stop the app: it falls back to a new key ring, which
-    // signs everyone in again but loses nothing else.
-    try
-    {
-        await DataProtectionKeyStore.ImportLegacyKeysAsync(
-            keyBlob, config.Auth.DataProtectionKeysPath, startupLoggerFactory.CreateLogger("DataProtectionKeys"));
-    }
-    catch (Exception ex)
-    {
-        startupLoggerFactory.CreateLogger("DataProtectionKeys").LogError(ex, "Importing the key ring into blob failed.");
-    }
-}
 builder.Services.AddRssAuthentication(config);
 builder.Services.AddRssRateLimiting(config.Auth);
 
@@ -258,7 +198,6 @@ builder.Services
         return new CachingItemRepository(inner, sb.GetRequiredService<IMemoryCache>(), sb.GetRequiredService<ItemsChangeStamp>());
     })
     .AddSingleton<IUserResolver, UserResolver>()
-    .AddSingleton(new DatabaseBackupPaths())
     .AddSingleton<FaviconService>()
     .AddSingleton<ThumbnailResolver>()
     .AddSingleton<ISystemStatsRepository>(sb =>
@@ -268,33 +207,18 @@ builder.Services
 
 if (!config.IsReadOnly)
 {
-    // Write-mode services: background feed refresh, database backup, RSS fetching
+    // Write-mode services: background feed refresh, RSS fetching, replication
     builder.Services
         .AddSingleton<RssDeserializer>()
         .AddSingleton<BackgroundWorkQueue>()
-        .AddSingleton<DatabaseBackupService>(sb =>
-            new DatabaseBackupService(
-                sb.GetRequiredService<ILogger<DatabaseBackupService>>(),
-                sb.GetRequiredService<DatabaseBackupPaths>(),
-                sb))
-        .AddHostedService(p => p.GetRequiredService<DatabaseBackupService>())
-        .AddSingleton(writerLock)
         // Hosted services stop in reverse registration order, so the shutdown sequence of
         // BLOB-DURABILITY-SPEC.md 3.3 is this list read bottom-up: the retention service,
         // feed scheduler and worker stop first (nothing writes after this); Litestream runs
         // the final sync; the blob lease is released (the next writer may now restore from
-        // the replica); the share copy runs and the lock file is released. The share copy
-        // comes last because only a rollback to the previous image reads it.
+        // the replica).
         .AddSingleton(writerState)
-        .AddSingleton<DatabaseBackupToFileService>(sb =>
-            new DatabaseBackupToFileService(
-                sb.GetRequiredService<ILogger<DatabaseBackupToFileService>>(),
-                backupPaths,
-                writerLock,
-                writerState))
-        .AddHostedService(p => p.GetRequiredService<DatabaseBackupToFileService>())
         .AddSingleton(sb => new WriterLeaseHostedService(
-            writerLease, writerLock, sb.GetRequiredService<ILogger<WriterLeaseHostedService>>(), shareLockDeferred, writerState))
+            writerLease, sb.GetRequiredService<ILogger<WriterLeaseHostedService>>(), writerState))
         .AddHostedService(p => p.GetRequiredService<WriterLeaseHostedService>())
         .AddSingleton(sb => new LitestreamSupervisor(
             config.Durability, config.DbLocation, sb.GetRequiredService<ILogger<LitestreamSupervisor>>()))
@@ -308,7 +232,7 @@ if (!config.IsReadOnly)
         .AddHostedService<PostRetentionService>()
         // Cooperative handover, the running writer's side (spec 3.2 v2): when the next
         // revision asks on the handoff blob, stop the writers above, checkpoint, final
-        // sync, acknowledge, release the lease, then copy to the share for rollback.
+        // sync, acknowledge, release the lease.
         // Registered last so it is the first to stop and never races the shutdown order.
         .AddHostedService(sb => new WriterHandoffService(
             sb.GetService<WriterHandover>(), () => writerLease?.IsHeld == true, config.Durability.HandoffPollInterval,
@@ -337,17 +261,17 @@ else
     builder.Services.AddSingleton<IFeedRefresher, NoOpFeedRefresher>();
 }
 
-// Shutdown budget: Kestrel drains, the feed scheduler and worker stop, then the
-// backup service's final copy runs (ShutdownBackupTimeout). The default 30 s is
-// not enough for the copy; terminationGracePeriodSeconds in main.bicep is 120.
-builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(110));
+// Shutdown budget: Kestrel drains, the feed scheduler and worker stop, then the final
+// Litestream sync (FinalSyncTimeout 20 s, then the child's own 30 s safety net) and the
+// lease release run. Must stay below terminationGracePeriodSeconds in main.bicep (60).
+builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(50));
 
 if (config.Durability.RestoreEnabled && writerLease != null)
 {
     // Cooperative handover, the running writer's side (spec 3.2 v2): when the next
     // revision asks on the handoff blob, stop the feed scheduler, worker and retention
     // service, checkpoint, final Litestream sync, acknowledge with the transaction id,
-    // release the lease, then copy to the share for rollback. WriterHandoffService polls.
+    // release the lease. WriterHandoffService polls.
     builder.Services.AddSingleton(sb => new WriterHandover(
         writerState,
         new BlobWriterHandoffChannel(BlobWriterLease.CreateContainerClient(config.Durability), config.Durability.HandoffBlob),
@@ -381,7 +305,6 @@ if (config.Durability.RestoreEnabled && writerLease != null)
             },
             FinalSyncAsync = ct => sb.GetRequiredService<LitestreamSupervisor>().SyncAndStopAsync("Handoff", ct),
             ReleaseLeaseAsync = metadata => writerLease.ReleaseAsync(metadata),
-            AfterReleaseAsync = ct => sb.GetRequiredService<DatabaseBackupToFileService>().RunHandoverCopyAsync(ct),
         },
         writerIdentity, processStartedUtc, config.Durability.HandoffDrainTimeout,
         sb.GetRequiredService<ILogger<WriterHandover>>()));
@@ -402,8 +325,8 @@ if (!builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-// Mark the SIGTERM moment so the old revision's shutdown sequence (final DB backup,
-// lock release, lease release) can be timed from the console logs.
+// Mark the SIGTERM moment so the old revision's shutdown sequence (final sync,
+// lease release) can be timed from the console logs.
 {
     var shutdownLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("RssReader.Server.Shutdown");
     var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
@@ -421,9 +344,6 @@ var app = builder.Build();
             "Shutdown: ApplicationStopped at {At:O}; {Ms} ms after ApplicationStopping.",
             DateTimeOffset.UtcNow, shutdownSw.ElapsedMilliseconds));
 }
-
-// Cached-image restore from /data runs inside DatabaseBackupService.ExecuteAsync,
-// after Kestrel is listening, so it no longer sits on the cold-start path.
 
 // Writer: instantiate repos to create database tables in order.
 // Reader: repos are still instantiated (singletons), but skip schema init

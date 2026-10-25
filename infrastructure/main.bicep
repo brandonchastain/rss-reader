@@ -41,17 +41,6 @@ param customDomain string = 'rss.brandonchastain.com'
 param apiCustomDomain string = 'api.rss.brandonchastain.com'
 
 
-// BLOB-DURABILITY-SPEC.md section 8. Each is a rollout step with its rollback:
-// redeploy with the parameter false and the previous behaviour is back.
-@description('Rollout step 1: Litestream replication of the live database to blob, beside the file backup')
-param enableBlobReplication bool = true
-
-@description('Rollout step 2: blob writer lease taken and logged beside the share lock file')
-param enableBlobLease bool = true
-
-@description('Rollout step 3: at startup, restore the live database from the Litestream replica once the lease is held, instead of copying the share (needs steps 1 and 2 on; falls back to the share copy on failure)')
-param enableBlobRestore bool = false
-
 // ---------------------------------------------------------------------------
 // Login providers. Each pair lands in the container app's secrets and is
 // handed to the API as RssAppConfig__Auth__Providers__<name>__ClientId/Secret.
@@ -104,7 +93,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   }
 }
 
-// Storage Account for persistent SQLite database
+// Storage Account: the Litestream replica, the writer lease and the key ring (blob only)
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
@@ -115,18 +104,6 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   properties: {
     accessTier: 'Hot'
     minimumTlsVersion: 'TLS1_2'
-  }
-}
-
-// File Share for SQLite database (legacy, kept for DatabaseBackupService safety net)
-resource fileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
-  name: '${storageAccount.name}/default/rss-data'
-  properties: {
-    // A backup cycle briefly holds the old backup AND the new copy on the share
-    // (plus the images folder), so the quota must exceed 2x the DB size. At 1 GB
-    // a ~530 MB DB crossed that line on 2026-10-02: the copy was truncated and
-    // the app refused to boot off it. Azure Files bills used bytes, not quota.
-    shareQuota: 5
   }
 }
 
@@ -146,8 +123,7 @@ resource litestreamContainer 'Microsoft.Storage/storageAccounts/blobServices/con
   }
 }
 
-// Data-protection key ring, used from rollout step 4 (spec 3.6). Created now so
-// the switch is a configuration change only.
+// Data-protection key ring (spec 3.6): blob keys.xml, the session-cookie keys.
 resource dataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   name: 'dataprotection'
   parent: blobServices
@@ -184,20 +160,6 @@ resource apiCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2
   }
 }
 
-// Storage mount for Container App Environment
-resource storage 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
-  name: 'rss-data-storage'
-  parent: environment
-  properties: {
-    azureFile: {
-      accountName: storageAccount.name
-      accountKey: storageAccount.listKeys().keys[0].value
-      shareName: 'rss-data'
-      accessMode: 'ReadWrite'
-    }
-  }
-}
-
 // Container App
 resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
   name: containerAppName
@@ -209,8 +171,8 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
     environmentId: environment.id
     configuration: {
       // Single-revision mode minimizes old/new revision overlap during deploy.
-      // Two writer revisions running concurrently would race on /data/storage.db
-      // (mitigated by the BackupToFile lock file, but Single is the proper fix).
+      // The blob writer lease keeps two writer revisions from replicating to the
+      // same replica path; Single is the first line of defence.
       activeRevisionsMode: 'Single'
       // No registries block: the ghcr.io/brandonchastain/rss-reader-api package
       // is public, so ACA pulls anonymously and no registry credential exists to
@@ -238,12 +200,11 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
       }
     }
     template: {
-      // Deploy handover (issue #136): on SIGTERM the old revision copies the live
-      // SQLite file to the share one last time before it exits, and the new
-      // revision waits for that copy before it seeds /tmp. The app's own budget is
-      // HostOptions.ShutdownTimeout 110 s (ShutdownBackupTimeout 90 s inside it);
-      // this must stay above both or the platform kills the copy mid-write.
-      terminationGracePeriodSeconds: 120
+      // Deploy handover (issue #136): on SIGTERM the old revision runs its final Litestream
+      // sync (FinalSyncTimeout 20 s, then the child's own 30 s safety net) and releases the
+      // blob lease. The app's budget is HostOptions.ShutdownTimeout 50 s; this must stay
+      // above it or the platform kills the sync mid-upload.
+      terminationGracePeriodSeconds: 60
       containers: [
         {
           name: 'rss-reader-api'
@@ -267,70 +228,31 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               value: 'Warning'
             }
             {
-              // Default off: file-mount backup is sole durability. Set to 'true'
-              // only when rolling out scaling mode (read replicas), per the
-              // sequenced rollout in plan.md. (Scaling mode is slated for removal,
-              // BLOB-DURABILITY-SPEC.md section 4; untouched in rollout steps 1-2.)
-              name: 'RSSREADER_ENABLE_LITESTREAM_REPLICATION'
-              value: 'false'
-            }
-            {
-              // BLOB-DURABILITY-SPEC.md rollout step 1: Litestream replicates the
-              // live database to the `litestream` blob container beside the file
-              // backup. The app starts it after the seed. Nothing restores from
-              // it at boot yet; the share stays authoritative. Rollback: 'false'.
+              // Litestream replicates the live database to the `litestream` blob
+              // container; the app starts it once the database is restored.
               name: 'RssAppConfig__Durability__LitestreamEnabled'
-              value: string(enableBlobReplication)
+              value: 'true'
             }
             {
-              // Rollout step 2: the blob writer lease, taken beside the lock file
-              // through the app's managed identity and logged with it. Empty
-              // disables the lease (rollback).
+              // The blob writer lease and the key ring, through the app's managed
+              // identity.
               name: 'RssAppConfig__Durability__BlobServiceUri'
-              value: enableBlobLease ? storageAccount.properties.primaryEndpoints.blob : ''
+              value: storageAccount.properties.primaryEndpoints.blob
             }
             {
-              // Rollout step 3: once the lease is held, startup restores /tmp/storage.db
-              // from the Litestream replica (litestream restore + quick_check) instead of
-              // copying the share; a failed restore falls back to the share copy. The file
-              // backup keeps writing the share either way, so rollback is 'false' (or the
-              // previous image), which reads the share again.
+              // Startup restores /tmp/storage.db from the Litestream replica once the
+              // lease is held; a failed restore stops the container, which restarts and
+              // tries again.
               name: 'RssAppConfig__Durability__RestoreFromBlob'
-              value: string(enableBlobRestore && enableBlobReplication && enableBlobLease)
+              value: 'true'
             }
             {
-              // Persistent SQLite backup file on the Azure Files mount.
-              // The DatabaseBackupToFileService writes here every BackupInterval
-              // and once more on SIGTERM; the app seeds /tmp/storage.db from this
-              // on cold start, after the previous revision's final copy lands.
-              //
-              // NOTE: Path is intentionally inside a NEW subdirectory `/data/db/`
-              // so that any pre-existing `/data/storage.db` (left over from a
-              // previous architecture) cannot be silently trusted as a seed.
-              name: 'RssAppConfig__BackupDbPath'
-              value: '/data/db/storage.db'
-            }
-            {
-              // Session-cookie encryption keys. On the mount so a deploy or a
-              // restart does not sign every user out.
-              name: 'RssAppConfig__Auth__DataProtectionKeysPath'
-              value: '/data/keys'
-            }
-            {
-              // Rollout step 4 (BLOB-DURABILITY-SPEC.md 3.6): the key ring lives in blob
-              // `dataprotection/keys.xml`. The first boot imports the share's key files
-              // above into it when the blob does not exist yet, so nobody is signed out.
-              // Empty (or the lease off) keeps the key files on the share.
+              // Session-cookie key ring: blob `dataprotection/keys.xml` (spec 3.6), so a
+              // deploy or a restart does not sign every user out.
               name: 'RssAppConfig__Auth__DataProtectionKeysContainer'
-              value: enableBlobLease ? 'dataprotection' : ''
+              value: 'dataprotection'
             }
           ], loginProviderEnv)
-          volumeMounts: [
-            {
-              volumeName: 'rss-data-volume'
-              mountPath: '/data'
-            }
-          ]
           probes: [
             {
               type: 'Liveness'
@@ -381,23 +303,8 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
           }
         ]
       }
-      volumes: [
-        {
-          name: 'rss-data-volume'
-          storageType: 'AzureFile'
-          storageName: 'rss-data-storage'
-          // No mountOptions: Container Apps rejects them for Azure Files at deployment time
-          // (ContainerAppVolumeMountOptionsNotSupported, 2026-10-25, even though `az deployment
-          // group validate` and what-if accept them), so the CIFS attribute cache stays at the
-          // platform default (actimeo=30). The writer lock does not depend on it: see
-          // ShareWriterLock.TryAcquire (ARCHITECTURE.md "Deploy handover").
-        }
-      ]
     }
   }
-  dependsOn: [
-    storage
-  ]
 }
 
 // Grant the Container App's managed identity Storage Blob Data Contributor on the storage account

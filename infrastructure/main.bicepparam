@@ -15,11 +15,3 @@ param minReplicas = 1
 param maxReplicas = 1
 // The API's own hostname; the template creates its managed certificate.
 param apiCustomDomain = 'api.rss.brandonchastain.com'
-// BLOB-DURABILITY-SPEC.md rollout steps 1 and 2. Rollback of either: set it to
-// false and redeploy; the share path never stopped being authoritative.
-param enableBlobReplication = true
-param enableBlobLease = true
-// Rollout step 3: cooperative handover and restore from the replica at startup
-// instead of copying the share. Rollback is false (the share is still written every
-// cycle, at the handoff and on shutdown, so the next boot seeds from it as before).
-param enableBlobRestore = true

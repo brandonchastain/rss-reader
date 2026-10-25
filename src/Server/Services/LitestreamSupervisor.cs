@@ -122,14 +122,14 @@ namespace RssReader.Server.Services
     /// Stop order (spec 3.3; hosted services stop in reverse registration order, see the
     /// registrations in Program.cs): the feed scheduler, worker and retention service stop
     /// first, so nothing is writing during the final sync; this service stops next; then
-    /// the blob lease is released; then the share copy runs and the lock file goes. First
+    /// the blob lease is released. First
     /// <c>litestream sync -wait</c> uploads the pending WAL (logged as "final sync OK"),
     /// then the child gets SIGTERM and performs its own shutdown sync as a safety net
     /// (11.4) before exiting. The next writer restores from the replica only once it holds
     /// the lease, so everything this sync uploaded is in that restore.
     ///
-    /// An exited child is restarted with backoff; replication is a shadow of the share in
-    /// rollout steps 1 and 2, so a Litestream failure is logged, never fatal.
+    /// An exited child is restarted with backoff; a Litestream failure is logged, never fatal,
+    /// and the recovery point grows until it is back (the replica is the only durable copy).
     /// </summary>
     public sealed class LitestreamSupervisor : IHostedService, IAsyncDisposable
     {
@@ -189,7 +189,7 @@ namespace RssReader.Server.Services
 
                 if (_stopping.IsCancellationRequested) break;
                 Restarts++;
-                _logger.LogError("Litestream exited unexpectedly (code {Code}); restarting in {Backoff}. Replication is paused meanwhile; the share backup still runs.", process.ExitCode, backoff);
+                _logger.LogError("Litestream exited unexpectedly (code {Code}); restarting in {Backoff}. Replication is paused meanwhile; writes since the last sync are only on the container disk.", process.ExitCode, backoff);
                 try { await Task.Delay(backoff, _stopping.Token); } catch (OperationCanceledException) { break; }
                 backoff = TimeSpan.FromSeconds(Math.Min(60, backoff.TotalSeconds * 2));
             }

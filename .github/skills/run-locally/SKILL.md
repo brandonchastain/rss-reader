@@ -38,24 +38,17 @@ docker build -f src/Server/Dockerfile -t rss-reader-api:local .
 
 This may take a few minutes on first build.
 
-## Step 4: Create the persistent data directory
-
-```powershell
-New-Item -ItemType Directory -Path "C:\dev\rssreader\docker-data" -Force
-```
-
-## Step 5: Run the backend container
+## Step 4: Run the backend container
 
 ```powershell
 docker run -d --name rss-reader-test -p 8080:8080 `
-  -v C:\dev\rssreader\docker-data:/data `
   -e ASPNETCORE_ENVIRONMENT=Development `
   -e RssAppConfig__Auth__AllowedFrontendOrigins__0=http://localhost:8443 `
   -e RssAppConfig__IsTestUserEnabled=true `
   rss-reader-api:local
 ```
 
-## Step 6: Verify the backend is healthy
+## Step 5: Verify the backend is healthy
 
 Poll `http://localhost:8080/api/healthz` every 3 seconds for up to 30 seconds until it returns HTTP 200. Use:
 
@@ -66,7 +59,7 @@ Invoke-WebRequest -Uri "http://localhost:8080/api/healthz" -UseBasicParsing
 If healthy, report: "✅ Backend API is running at http://localhost:8080"
 If not healthy after 30 seconds, run `docker logs rss-reader-test` and report the failure with logs.
 
-## Step 7: Build the Blazor WASM frontend (**DEBUG build — MANDATORY**)
+## Step 6: Build the Blazor WASM frontend (**DEBUG build — MANDATORY**)
 
 > ⛔ **NEVER use `dotnet publish -c release` for local development.** A release publish excludes `appsettings.Development.json` (`CopyToPublishDirectory = Never`), which is the file that enables `EnableTestAuth: true`. Without it, SWA Easy Auth is enforced and all API calls return 401. **Always use the Debug build.**
 
@@ -79,9 +72,9 @@ dotnet build -c Debug WasmApp.csproj
 
 This may take a minute or two. If the build fails, report the error and stop.
 
-> **Note:** the API refuses to start with the test user enabled unless `ASPNETCORE_ENVIRONMENT` is `Development` (a fake administrator in Production would be a full bypass), which is why Step 5 sets it. The image does not carry `appsettings.Development.json`, so the allowed frontend origin (`http://localhost:8443`, for CORS) is passed as an environment variable; test-user mode ignores cookies.
+> **Note:** the API refuses to start with the test user enabled unless `ASPNETCORE_ENVIRONMENT` is `Development` (a fake administrator in Production would be a full bypass), which is why Step 4 sets it. The image does not carry `appsettings.Development.json`, so the allowed frontend origin (`http://localhost:8443`, for CORS) is passed as an environment variable; test-user mode ignores cookies.
 
-## Step 8: Start the Blazor dev server
+## Step 7: Start the Blazor dev server
 
 The Static Web Apps emulator and the Azure Functions proxy are retired; the frontend talks to the API directly (`ApiBaseUrl` in `appsettings.Development.json` is `http://localhost:8080/`). From the repository root start the dev server **detached**:
 
