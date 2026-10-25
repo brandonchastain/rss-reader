@@ -75,6 +75,7 @@ public sealed class FeedRefresherTests
             this.states.TryAdd(feed.Href, new FeedFetchState(this.states.Count + 1, feed.Href, null, null, null, null, 0));
         }
         public void AddFeeds(RssUser user, IEnumerable<NewsFeed> feeds) { foreach (var f in feeds) { f.UserId = user.Id; AddFeed(f); } }
+        public IReadOnlyList<PopularFeed> GetPopularFeeds(RssUser user, int limit, int minSubscribers) => Array.Empty<PopularFeed>();
         public void AddTag(NewsFeed feed, string tag) { }
         public void DeleteFeed(RssUser user, string url) => this.Subscriptions.RemoveAll(f => f.UserId == user.Id && f.Href == url);
         public IEnumerable<TagSetting> GetTagSettings(RssUser user) => Array.Empty<TagSetting>();

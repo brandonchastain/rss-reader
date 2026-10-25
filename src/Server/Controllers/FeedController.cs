@@ -15,6 +15,10 @@ namespace Server.Controllers
     [Route("api/[controller]")]
     public class FeedController : ControllerBase
     {
+        // A feed is only suggested once this many users follow it, so a lone
+        // user's private feed address is never shown to anyone else.
+        private const int PopularFeedMinSubscribers = 3;
+
         private readonly IUserRepository userRepository;
         private readonly IFeedRepository feedRepository;
         private readonly IFeedRefresher feedRefresher;
@@ -274,6 +278,22 @@ namespace Server.Controllers
             this.feedRepository.SetTagHidden(user, setting.Tag, setting.IsHidden);
             var settings = this.feedRepository.GetTagSettings(user);
             return Ok(settings);
+        }
+
+        // GET: api/feed/popular
+        // The most-subscribed feeds the caller is not subscribed to yet.
+        [HttpGet]
+        [Route("popular")]
+        public IActionResult GetPopularFeeds([FromQuery] int limit = 10)
+        {
+            var user = this.userResolver.ResolveUser(User);
+            if (user == null)
+            {
+                return NotFound($"Authenticated user not found.");
+            }
+
+            limit = Math.Clamp(limit, 1, 50);
+            return Ok(this.feedRepository.GetPopularFeeds(user, limit, PopularFeedMinSubscribers));
         }
 
         // GET: api/feed

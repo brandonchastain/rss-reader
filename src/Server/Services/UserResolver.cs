@@ -31,10 +31,13 @@ public class UserResolver : IUserResolver
     private readonly IUserRepository _userRepository;
     private readonly ILogger<UserResolver> _logger;
 
-    public UserResolver(IUserRepository userRepository, ILogger<UserResolver> logger)
+    private readonly IFeedRepository? _feedRepository;
+
+    public UserResolver(IUserRepository userRepository, ILogger<UserResolver> logger, IFeedRepository? feedRepository = null)
     {
         _userRepository = userRepository;
         _logger = logger;
+        _feedRepository = feedRepository;
     }
 
     public RssUser? ResolveUser(ClaimsPrincipal principal)
@@ -125,7 +128,23 @@ public class UserResolver : IUserResolver
         {
             _logger.LogWarning(ex, "Failed to link identity on newly created user {UserId}; will retry on next login", newUser.Id);
         }
+        SubscribeToStarterFeeds(newUser);
         _logger.LogInformation("Created anonymous user {UserId} with login id", newUser.Id);
         return newUser;
+    }
+
+    // A new account starts with a small introductory set so the first timeline is
+    // not empty. Failing here must never block sign-in.
+    private void SubscribeToStarterFeeds(RssUser user)
+    {
+        if (_feedRepository == null) return;
+        try
+        {
+            _feedRepository.AddFeeds(user, StarterFeeds.Urls.Select(url => new NewsFeed(url, user.Id)));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to add starter feeds for new user {UserId}", user.Id);
+        }
     }
 }
