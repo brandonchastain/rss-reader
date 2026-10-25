@@ -43,6 +43,12 @@ public interface IFeedRepository
 
     void AddTag(NewsFeed feed, string tag);
 
+    /// <summary>Detach a tag from the subscription; the tag itself is dropped once no feed uses it.</summary>
+    void RemoveTag(NewsFeed feed, string tag);
+
+    /// <summary>Stores the title the feed advertises, so lists can show it instead of the address.</summary>
+    void SetFeedTitle(string url, string title);
+
     /// <summary>Unsubscribe. The shared feed row and its posts stay.</summary>
     void DeleteFeed(RssUser user, string url);
 

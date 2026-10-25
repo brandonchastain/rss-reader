@@ -216,6 +216,40 @@ namespace Server.Controllers
         }
 
 
+        [HttpPost]
+        [Route("tags/remove")]
+        public IActionResult RemoveTagAsync([FromBody] NewsFeed feed)
+        {
+            if (feed == null || string.IsNullOrWhiteSpace(feed.Href) || feed.UserId <= 0)
+            {
+                return BadRequest("Feed data is required.");
+            }
+
+            var authenticatedUser = this.userResolver.ResolveUser(User);
+            if (authenticatedUser == null)
+            {
+                return NotFound($"Authenticated user not found.");
+            }
+
+            if (feed.UserId != authenticatedUser.Id)
+            {
+                return StatusCode(403, "You can only remove tags from your own feeds.");
+            }
+
+            var existingFeed = this.feedRepository.GetFeed(authenticatedUser, feed.Href);
+            if (existingFeed == null)
+            {
+                return NotFound($"Feed with URL '{feed.Href}' not found.");
+            }
+
+            foreach (var tag in (feed.Tags ?? new List<string>()).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct())
+            {
+                this.feedRepository.RemoveTag(existingFeed, tag);
+            }
+
+            return Ok();
+        }
+
         [HttpGet]
         [Route("tags")]
         public async Task<IActionResult> GetUserTagsAsync(int userId)

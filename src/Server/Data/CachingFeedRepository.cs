@@ -111,6 +111,16 @@ public class CachingFeedRepository : IFeedRepository
         _cache.Remove(FeedKey(feed.UserId, feed.Href));
     }
 
+    public void RemoveTag(NewsFeed feed, string tag)
+    {
+        _inner.RemoveTag(feed, tag);
+        _cache.Remove(FeedsKey(feed.UserId));
+        _cache.Remove(FeedKey(feed.UserId, feed.Href));
+    }
+
+    // Titles are shared across users; cached lists pick them up when they expire.
+    public void SetFeedTitle(string url, string title) => _inner.SetFeedTitle(url, title);
+
     // --- Tag settings (pass-through, no caching) ---
 
     public IEnumerable<TagSetting> GetTagSettings(RssUser user)

@@ -77,6 +77,8 @@ public sealed class FeedRefresherTests
         public void AddFeeds(RssUser user, IEnumerable<NewsFeed> feeds) { foreach (var f in feeds) { f.UserId = user.Id; AddFeed(f); } }
         public IReadOnlyList<PopularFeed> GetPopularFeeds(int limit, int minSubscribers) => Array.Empty<PopularFeed>();
         public void AddTag(NewsFeed feed, string tag) { }
+        public void RemoveTag(NewsFeed feed, string tag) { }
+        public void SetFeedTitle(string url, string title) { }
         public void DeleteFeed(RssUser user, string url) => this.Subscriptions.RemoveAll(f => f.UserId == user.Id && f.Href == url);
         public IEnumerable<TagSetting> GetTagSettings(RssUser user) => Array.Empty<TagSetting>();
         public void SetTagHidden(RssUser user, string tag, bool isHidden) { }

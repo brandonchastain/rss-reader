@@ -13,59 +13,145 @@
 @attribute [Authorize]
 @inject ILogger<Feeds> logger
 @inject IJSRuntime jsRuntime
+@inject NavigationManager navigation
 @rendermode InteractiveWebAssembly
 
 <PageTitle>Feeds</PageTitle>
 <SectionContent SectionName="page-title">Feeds</SectionContent>
 
-<form method="post" @onsubmit="SubmitAsync" @formname="newfeed">
-    <AntiforgeryToken />
-    <div class="feeds-form-row">
-        <InputText @bind-Value="NewFeedUrl" placeholder="https://example.com/feed.rss" class="feeds-url-input" />
-        <button type="submit" class="btn btn-primary">Add feed</button>
-        <button type="button" class="btn btn-secondary" @onclick="ExportOpml">Export OPML</button>
-        <InputFile OnChange="ImportOpml" accept=".opml,.xml" id="opmlImportInput" hidden/>
-        <label for="opmlImportInput" class="btn btn-secondary">Import OPML</label>
-    </div>
-</form>
+<div class="feeds-tabs" role="tablist">
+    <a role="tab" class="feeds-tab @TabClass("subscriptions")" href="feeds" aria-selected="@(CurrentTab == "subscriptions")">
+        My feeds @if (feeds != null)
+        {
+            <span class="feeds-tab-count">@feeds.Count()</span>
+        }
+    </a>
+    <a role="tab" class="feeds-tab @TabClass("popular")" href="feeds?tab=popular" aria-selected="@(CurrentTab == "popular")">Popular</a>
+    <a role="tab" class="feeds-tab @TabClass("add")" href="feeds?tab=add" aria-selected="@(CurrentTab == "add")">Add a feed</a>
+    <a role="tab" class="feeds-tab @TabClass("transfer")" href="feeds?tab=transfer" aria-selected="@(CurrentTab == "transfer")">Import / Export</a>
+</div>
 
 @if (lastError != null)
 {
-    <p style="color: red;">@lastError</p>
+    <p class="feeds-error" role="alert">@lastError</p>
 }
 
-@if (feeds == null)
+@if (CurrentTab == "add")
+{
+    <section class="feeds-panel">
+        <h2 class="feeds-section-title">Subscribe to a feed</h2>
+        <p class="feeds-section-hint">Paste the address of a blog or site feed (RSS or Atom). New posts will show up in your timeline.</p>
+        <form method="post" @onsubmit="SubmitAsync" @formname="newfeed">
+            <AntiforgeryToken />
+            <div class="feeds-form-row">
+                <InputText @bind-Value="NewFeedUrl" placeholder="https://example.com/feed.rss" class="feeds-url-input" aria-label="Feed address" />
+                <button type="submit" class="btn btn-primary">Subscribe</button>
+            </div>
+        </form>
+        <p class="feeds-section-hint">Looking for ideas? See the <a href="feeds?tab=popular">popular feeds</a>.</p>
+    </section>
+}
+else if (CurrentTab == "transfer")
+{
+    <section class="feeds-panel">
+        <h2 class="feeds-section-title">Move your subscriptions</h2>
+        <p class="feeds-section-hint">OPML is the standard file format other feed readers use. Tags are included.</p>
+        <div class="feeds-form-row">
+            <button type="button" class="btn btn-secondary" @onclick="ExportOpml">Export OPML</button>
+            <InputFile OnChange="ImportOpml" accept=".opml,.xml" id="opmlImportInput" hidden />
+            <label for="opmlImportInput" class="btn btn-secondary">Import OPML</label>
+        </div>
+    </section>
+}
+else if (CurrentTab == "popular")
+{
+    @if (popularFeeds == null)
+    {
+        <p><em>Loading...</em></p>
+    }
+    else
+    {
+        <p class="feeds-section-hint">The most followed feeds on RSS Reader.</p>
+        @if (!popularFeeds.Any())
+        {
+            <p class="feeds-section-hint" id="popular-feeds-empty">Nothing here yet.</p>
+        }
+        <div id="popular-feeds">
+            @foreach (var popular in popularFeeds)
+            {
+                <div class="feeds-row feeds-popular-row">
+                    <div class="feeds-row-main">
+                        <span class="feeds-row-title">@DisplayName(popular.Title, popular.Href)</span>
+                        <span class="feeds-row-sub">@HostOf(popular.Href) · @popular.SubscriberCount @(popular.SubscriberCount == 1 ? "subscriber" : "subscribers")</span>
+                    </div>
+                    @if (IsSubscribed(popular.Href))
+                    {
+                        <span class="feeds-popular-count feeds-subscribe-btn">Subscribed</span>
+                    }
+                    else
+                    {
+                        <button class="btn btn-secondary feeds-subscribe-btn" disabled="@subscribing.Contains(popular.Href)" @onclick="() => SubscribePopularAsync(popular)">Subscribe</button>
+                    }
+                </div>
+            }
+        </div>
+    }
+}
+else if (feeds == null)
 {
     <p><em>Loading...</em></p>
 }
+else if (!feeds.Any())
+{
+    <p class="feeds-section-hint">You are not subscribed to anything yet. <a href="feeds?tab=add">Add a feed</a> or pick from the <a href="feeds?tab=popular">popular feeds</a>.</p>
+}
 else
 {
-    <div id="post-table" class="">
-        @foreach (NewsFeed feed in feeds.OrderBy(f => f.Href.GetRootDomain()))
+    <div id="post-table">
+        @foreach (NewsFeed feed in feeds.OrderBy(f => DisplayName(f.Title, f.Href), StringComparer.OrdinalIgnoreCase))
         {
             <div class="feeds-row" @onclick="() => ToggleFeed(feed.Href)">
-                <span class="feeds-row-hostname">@feed.Href.GetRootDomain()</span>
-                @if (feed.IsFailing)
-                {
-                    <span class="feeds-health-badge" title="@FailureSummary(feed)">not updating</span>
-                }
-                <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)" class="feeds-row-link" @onclick:stopPropagation="true">View feed</a>
-                @if (feed.Tags != null && feed.Tags.Any())
-                {
-                    @foreach (var tag in feed.Tags)
+                <div class="feeds-row-main">
+                    <span class="feeds-row-title">@DisplayName(feed.Title, feed.Href)</span>
+                    <span class="feeds-row-sub">
+                        @HostOf(feed.Href)
+                        @if (feed.IsFailing)
+                        {
+                            <span class="feeds-health-badge" title="@FailureSummary(feed)">not updating</span>
+                        }
+                    </span>
+                </div>
+                <div class="feeds-row-tags" @onclick:stopPropagation="true">
+                    @if (feed.Tags != null)
                     {
-                        <span class="post-tag">@tag</span>
+                        @foreach (var tag in feed.Tags)
+                        {
+                            <span class="feeds-tag-chip">
+                                <span class="post-tag">@tag</span><button type="button" class="feeds-tag-remove" title="Remove tag @tag" aria-label="Remove tag @tag" @onclick="() => RemoveTagAsync(feed, tag)">&times;</button>
+                            </span>
+                        }
                     }
-                }
-                <input type="text"
-                    class="feeds-tag-input"
-                    value="@newTagInputs[feed.Href]"
-                    placeholder="Add tag (Space or Enter)"
-                    @oninput="e => HandleTagInput(feed, e.Value.ToString())"
-                    @onkeydown="e => HandleTagKeyDown(e, feed)"
-                    @onclick:stopPropagation="true"
-                    @onkeydown:stopPropagation="true" />
-                <button class="feeds-delete-btn" @onclick="() => DeleteAsync(feed.Href)" @onclick:stopPropagation="true">Delete</button>
+                    <input type="text"
+                        class="feeds-tag-input"
+                        value="@newTagInputs[feed.Href]"
+                        placeholder="+ tag"
+                        aria-label="Add a tag to @DisplayName(feed.Title, feed.Href)"
+                        @oninput="e => HandleTagInput(feed, e.Value.ToString())"
+                        @onkeydown="e => HandleTagKeyDown(e, feed)"
+                        @onkeydown:stopPropagation="true" />
+                </div>
+                <div class="feeds-row-actions" @onclick:stopPropagation="true">
+                    <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)" class="feeds-row-link">View posts</a>
+                    @if (confirmUnsubscribe == feed.Href)
+                    {
+                        <button class="feeds-delete-btn" @onclick="() => DeleteAsync(feed.Href)">Confirm</button>
+                        <button class="feeds-cancel-btn" @onclick="() => confirmUnsubscribe = null">Cancel</button>
+                    }
+                    else
+                    {
+                        <button class="feeds-delete-btn" @onclick="() => confirmUnsubscribe = feed.Href">Unsubscribe</button>
+                    }
+                </div>
             </div>
             <div class="feeds-expanded" hidden=@(openFeed != feed.Href)>
                 <div class="col">
@@ -80,33 +166,7 @@ else
             </div>
         }
     </div>
-}
-
-@if (popularFeeds != null)
-{
-    <h2 class="feeds-section-title">Popular feeds</h2>
-    <p class="feeds-section-hint">The most followed feeds on RSS Reader.</p>
-    @if (!popularFeeds.Any())
-    {
-        <p class="feeds-section-hint" id="popular-feeds-empty">Nothing here yet.</p>
-    }
-    <div id="popular-feeds">
-        @foreach (var popular in popularFeeds)
-        {
-            <div class="feeds-row feeds-popular-row">
-                <span class="feeds-row-hostname">@popular.Href.GetRootDomain()</span>
-                <span class="feeds-popular-count">@popular.SubscriberCount @(popular.SubscriberCount == 1 ? "subscriber" : "subscribers")</span>
-                @if (IsSubscribed(popular.Href))
-                {
-                    <span class="feeds-popular-count feeds-subscribe-btn">Subscribed</span>
-                }
-                else
-                {
-                <button class="btn btn-secondary feeds-subscribe-btn" disabled="@subscribing.Contains(popular.Href)" @onclick="() => SubscribePopularAsync(popular)">Subscribe</button>
-                }
-            </div>
-        }
-    </div>
+    <p class="feeds-section-hint">Tip: type a tag and press Space or Enter. Tags group feeds in your timeline filter; hide a tag from the <a href="tags">Tags</a> page.</p>
 }
 
 @code {
@@ -116,9 +176,29 @@ else
         var last = feed.LastFetchedUtc.HasValue
             ? $", last tried {feed.LastFetchedUtc.Value.ToLocalTime():g}"
             : string.Empty;
-        return $"Last {feed.ConsecutiveFailures} fetch{(feed.ConsecutiveFailures == 1 ? "" : "es")} failed: {error}{last}. If the feed moved, delete it and add its new address.";
+        return $"Last {feed.ConsecutiveFailures} fetch{(feed.ConsecutiveFailures == 1 ? "" : "es")} failed: {error}{last}. If the feed moved, unsubscribe and add its new address.";
     }
 
+    private static string HostOf(string href)
+        => Uri.TryCreate(href, UriKind.Absolute, out var uri) ? uri.Host : href;
+
+    private static string DisplayName(string title, string href)
+        => !string.IsNullOrWhiteSpace(title) ? title : Uri.TryCreate(href, UriKind.Absolute, out var uri) ? uri.Host : href;
+
+    [SupplyParameterFromQuery(Name = "tab")]
+    private string Tab { get; set; }
+
+    private string CurrentTab => Tab switch
+    {
+        "popular" => "popular",
+        "add" => "add",
+        "transfer" => "transfer",
+        _ => "subscriptions",
+    };
+
+    private string TabClass(string tab) => CurrentTab == tab ? "active" : string.Empty;
+
+    private string confirmUnsubscribe = null;
     private string openFeed = null;
     private Dictionary<string, string> newTagInputs = new Dictionary<string, string>();
     private IEnumerable<NewsFeed> feeds;
@@ -160,9 +240,10 @@ else
     }
 
     private async Task SubmitAsync()
-    {        
+    {
         try
         {
+            lastError = null;
             if (string.IsNullOrWhiteSpace(NewFeedUrl))
             {
                 lastError = "Feed URL is empty";
@@ -180,30 +261,35 @@ else
                 NewFeedUrl = "https://" + NewFeedUrl;
             }
 
-            // this.feedStore.AddFeed(new NewsFeed(NewFeedUrl, this.CurrentUser.Id));
             await this.feedClient.AddFeedAsync(new NewsFeed(NewFeedUrl, userId: -1));
+            NewFeedUrl = string.Empty;
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
         {
             lastError = ex.Message;
             this.logger.LogWarning("The server refused feed {url}: {reason}", NewFeedUrl, ex.Message);
+            return;
         }
         catch (HttpRequestException ex)
         {
             lastError = "Invalid feed URL.";
             this.logger.LogError(ex, "Invalid feed url, got HTTP exception from {url}", NewFeedUrl);
+            return;
         }
         catch (Exception ex)
         {
             lastError = "Could not add feed.";
             this.logger.LogError(ex, "Could not add feed {url}", NewFeedUrl);
+            return;
         }
 
         await this.OnInitializedAsync();
+        navigation.NavigateTo("feeds");
     }
 
     private async Task DeleteAsync(string feed)
     {
+        confirmUnsubscribe = null;
         await this.feedClient.DeleteFeedAsync(feed);
         await this.OnInitializedAsync();
     }
@@ -279,17 +365,31 @@ else
             this.logger.LogWarning("Tag input is empty for feed {Href}", feed.Href);
             return;
         }
-        
+
         var tag = newTagInputs[feed.Href];
         await this.feedClient.AddTagAsync(feed, tag);
         newTagInputs[feed.Href] = string.Empty;
         this.OnInitialized();
     }
 
+    private async Task RemoveTagAsync(NewsFeed feed, string tag)
+    {
+        try
+        {
+            await this.feedClient.RemoveTagAsync(feed, tag);
+            feed.Tags?.Remove(tag);
+        }
+        catch (Exception ex)
+        {
+            lastError = "Could not remove that tag.";
+            logger.LogError(ex, "Could not remove tag {tag} from {url}", tag, feed.Href);
+        }
+    }
+
     private async Task ExportOpml()
     {
         var opmlContent = await this.feedClient.ExportOpmlAsync();
-        
+
         if (string.IsNullOrWhiteSpace(opmlContent))
         {
             this.logger.LogWarning("No feeds to export to OPML.");
@@ -313,11 +413,13 @@ else
             using var reader = new StreamReader(stream);
             var opmlContent = await reader.ReadToEndAsync();
             await this.feedClient.ImportOpmlAsync(opmlContent);
-            StateHasChanged();
+            await this.OnInitializedAsync();
+            navigation.NavigateTo("feeds");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error importing OPML file");
+            lastError = "Could not import that file.";
         }
     }
 }
