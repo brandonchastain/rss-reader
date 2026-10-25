@@ -21,6 +21,13 @@ public class SystemStatsCollector
 {
     public static readonly TimeSpan MinInterval = TimeSpan.FromHours(1);
 
+    /// <summary>
+    /// Cadence of the samples taken while the app is awake (see <see cref="SampleIfDueAsync"/>).
+    /// Snapshots are real measurements, so a stretch with no snapshots means the
+    /// app was scaled to zero then, and the chart shows it as a gap.
+    /// </summary>
+    public static readonly TimeSpan SampleInterval = TimeSpan.FromMinutes(5);
+
     private readonly ISystemStatsRepository _statsRepo;
     private readonly string _dbPath;
     private readonly ILogger<SystemStatsCollector> _logger;
@@ -52,6 +59,25 @@ public class SystemStatsCollector
         {
             _logger?.LogError(ex, "Failed to capture system stats snapshot");
             return latest ?? new SystemStatsSnapshot { Timestamp = DateTime.UtcNow };
+        }
+    }
+
+    /// <summary>
+    /// Records a snapshot if the latest is older than <see cref="SampleInterval"/>.
+    /// Called from the feed scheduler's tick, so the history fills in whenever the
+    /// app is running, not only when someone opens the dashboard. Never throws.
+    /// </summary>
+    public async Task SampleIfDueAsync()
+    {
+        try
+        {
+            var latest = _statsRepo.GetLatestSnapshot();
+            if (latest != null && DateTime.UtcNow - latest.Timestamp < SampleInterval) return;
+            await CaptureNowAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Periodic stats sample failed");
         }
     }
 

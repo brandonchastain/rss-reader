@@ -6,7 +6,7 @@
 // sparse data into a few pixels next to a dense day. Dates are formatted here
 // so no date adapter has to be loaded.
 window.AdminChart = {
-    render: function(canvasId, timestampsMs, datasets, range) {
+    render: function(canvasId, timestampsMs, datasets, range, windowMs) {
         const ctx = document.getElementById(canvasId);
         if (!ctx) return;
 
@@ -14,9 +14,11 @@ window.AdminChart = {
             ctx._chartInstance.destroy();
         }
 
-        const first = timestampsMs.length ? timestampsMs[0] : Date.now();
-        const last = timestampsMs.length ? timestampsMs[timestampsMs.length - 1] : Date.now();
-        const span = Math.max(1, last - first);
+        // The axis always covers the selected window ending now, so a short range
+        // with few snapshots shows where they sit instead of stretching them out.
+        const last = Date.now();
+        const first = last - windowMs;
+        const span = windowMs;
         const tickFormat = AdminChart.tickFormatter(range, span);
 
         ctx._chartInstance = new Chart(ctx, {
@@ -27,8 +29,9 @@ window.AdminChart = {
                     borderColor: ds.borderColor,
                     backgroundColor: ds.backgroundColor,
                     data: ds.data.map((y, i) => ({ x: timestampsMs[i], y: y })),
-                    tension: 0.3,
-                    pointRadius: timestampsMs.length <= 3 ? 3 : 0,
+                    stepped: 'before',
+                    yAxisID: ds.label === 'Posts' ? 'y' : 'y2',
+                    pointRadius: timestampsMs.length <= 60 ? 3 : 0,
                     borderWidth: 2
                 }))
             },
@@ -41,7 +44,7 @@ window.AdminChart = {
                     x: {
                         type: 'linear',
                         min: first,
-                        max: last === first ? first + 60000 : last,
+                        max: last,
                         ticks: {
                             color: '#8b949e',
                             maxTicksLimit: 8,
@@ -51,8 +54,16 @@ window.AdminChart = {
                         grid: { color: '#1e2636' }
                     },
                     y: {
+                        title: { display: true, text: 'Posts', color: '#79b8ff' },
                         ticks: { color: '#8b949e' },
                         grid: { color: '#1e2636' }
+                    },
+                    y2: {
+                        position: 'right',
+                        beginAtZero: true,
+                        title: { display: true, text: 'Feeds / Users', color: '#3fb950' },
+                        ticks: { color: '#8b949e', precision: 0 },
+                        grid: { drawOnChartArea: false }
                     }
                 },
                 plugins: {

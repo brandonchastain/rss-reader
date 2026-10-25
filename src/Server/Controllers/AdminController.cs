@@ -19,14 +19,20 @@ public class AdminController : ControllerBase
     private readonly RssAppConfig _config;
     private readonly IUserResolver _userResolver;
     private readonly SystemStatsCollector _statsCollector;
+    private readonly AdminDetailQueries _details;
+    private readonly ILogger<AdminController> _logger;
 
     public AdminController(
         ISystemStatsRepository statsRepo,
         IUserRepository userRepo,
         RssAppConfig config,
         IUserResolver userResolver,
-        SystemStatsCollector statsCollector)
+        SystemStatsCollector statsCollector,
+        AdminDetailQueries details,
+        ILogger<AdminController> logger = null)
     {
+        _logger         = logger;
+        _details        = details        ?? throw new ArgumentNullException(nameof(details));
         _statsRepo      = statsRepo      ?? throw new ArgumentNullException(nameof(statsRepo));
         _userRepo       = userRepo       ?? throw new ArgumentNullException(nameof(userRepo));
         _config         = config         ?? throw new ArgumentNullException(nameof(config));
@@ -72,6 +78,44 @@ public class AdminController : ControllerBase
 
         var history = _statsRepo.GetHistory(window).ToList();
         return Ok(RssReader.Server.Services.StatsHistoryRange.Thin(history));
+    }
+
+    // GET /api/admin/detail/{users|feeds|posts|db}: the table behind a stat card.
+    [HttpGet("detail/{section}")]
+    public IActionResult GetDetail(string section)
+    {
+        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
+            return Forbid();
+
+        var table = _details.Get(section);
+        return table == null ? NotFound() : Ok(table);
+    }
+
+    // DELETE /api/admin/detail/{users|feeds|posts}/{id}
+    // An admin cannot delete themself, so the dashboard can never be locked out.
+    [HttpDelete("detail/{section}/{id:long}")]
+    public IActionResult DeleteDetail(string section, long id)
+    {
+        var caller = _userResolver.ResolveUser(User);
+        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, caller))
+            return Forbid();
+
+        if (string.Equals(section, "users", StringComparison.OrdinalIgnoreCase) && caller != null && caller.Id == id)
+            return BadRequest("You cannot delete your own admin user.");
+
+        if (string.Equals(section, "users", StringComparison.OrdinalIgnoreCase))
+        {
+            // Through the user repository so its cache drops the user too.
+            if (!_userRepo.GetAllUsers().Any(u => u.Id == id)) return NotFound();
+            _userRepo.DeleteUser((int)id);
+        }
+        else if (!_details.Delete(section, id))
+        {
+            return NotFound();
+        }
+
+        _logger?.LogWarning("Admin deleted {Section} {Id}", section, id);
+        return NoContent();
     }
 
     // GET /api/admin/users

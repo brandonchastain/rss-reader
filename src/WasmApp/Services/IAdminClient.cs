@@ -12,4 +12,8 @@ public interface IAdminClient
     /// <summary>Takes a fresh snapshot now (admin only) and returns it.</summary>
     Task<SystemStatsSnapshot> RefreshStatsAsync();
     Task<List<AdminUser>> GetUsersAsync();
+    /// <summary>The table behind a stat card: users, feeds, posts or db.</summary>
+    Task<AdminTable> GetDetailAsync(string section);
+    /// <summary>Deletes a user, feed or post by id (admin only).</summary>
+    Task DeleteAsync(string section, long id);
 }
