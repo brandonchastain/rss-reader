@@ -154,27 +154,58 @@ docs link here.
    the final share copy runs and the lock file goes.
    Rollout step 3, the cooperative handover, is behind
    `RssAppConfig:Durability:RestoreFromBlob` (`enableBlobRestore` in the
-   Bicep). The new revision starts `litestream restore -f` into a staging
-   file (`LitestreamFollower`: full restore, then the LTX tail every 500 ms)
-   and writes a request on the `writer-handoff` blob
-   (`CooperativeHandoverSeeder`); its startup probe answers 503 until the
-   initial restore is on disk, so traffic moves only when the real host is
-   seconds away. The running writer polls that blob every 2 s
-   (`WriterHandoffService`) and, on a request, stops the feed scheduler,
-   worker and retention service, checkpoints, runs the final Litestream sync,
-   acknowledges with the final transaction id, releases the lease, then copies
-   to the share for rollback (`WriterHandover`); from then on it answers 503
-   to mutating requests and serves reads until the platform stops it, and its
-   SIGTERM skips the final share copy. The new writer takes the lease, waits
-   for the follower to reach the acknowledged transaction id, stops it,
-   `quick_check`s and renames the copy over `/tmp/storage.db`. Any failure
-   falls back to a full `litestream restore` after the lease
-   (`BlobRestoreSeeder`), and after that to the share copy. The file backup
-   keeps writing the share either way, so turning the flag off (or the
+   Bicep). The new revision starts `litestream restore -f` into a staging file
+   (`LitestreamFollower`: full restore, then the LTX tail every 500 ms) while
+   the old revision keeps serving; a follower that dies is restarted up to
+   three times. Only once the initial restore is on disk does it write a
+   request on the `writer-handoff` blob (`CooperativeHandoverSeeder`). Its
+   startup probe stays 503 until the database is in place, so traffic stays on
+   the old revision; after 30 s without a finished handover the probe opens
+   anyway, because an old image that ignores the request only releases the
+   lease on SIGTERM, which the platform sends once the probe passes. The
+   running writer polls that blob every 2 s (`WriterHandoffService`) and, on a
+   request, stops the feed scheduler, worker and retention service, checkpoints,
+   runs the final Litestream sync, acknowledges with the final transaction id,
+   releases the lease, then copies to the share for rollback
+   (`WriterHandover`); from then on it answers 503 to mutating requests and
+   serves reads until the platform stops it, and its SIGTERM skips the final
+   share copy. The new writer takes the lease, waits for the follower to reach
+   the acknowledged transaction id, stops it, `quick_check`s and renames the
+   copy over `/tmp/storage.db`. Any failure falls back to the share seed (about
+   7 s at 320 MB). A full `litestream restore` after the lease is not a
+   fallback: it measured 80 s when the replica chain was 4.8 GB. The file
+   backup keeps writing the share either way, so turning the flag off (or the
    previous image) seeds from the share again. `/api/healthz` reports row
    counts so a restore of the replica can be compared with the live writer by
    hand (the cutover check in the spec's section 9.5). The spec's section 8
    has the remaining steps.
+
+   Measured so far (2026-10-24 to 25, `/api/user` probed once a second):
+
+   | Deploy | 503 window | Why |
+   |---|---|---|
+   | Before step 3 (PR #178) | about 61 s | Platform SIGTERM 31 s after the probe passes, old shutdown 8 s, share lock wait 17 s, seed 7 s |
+   | First flagged deploy (#179) | about 117 s | Follower died racing the old writer's compaction; fallback was an 80 s full restore of a 4.8 GB chain; probe opened at once |
+   | After #184 (follower retry, request after restore, probe held) | no 5xx in the CI probe | Initial restore 17 s overlapped the old revision; old writer released the lease 2.2 s after the request; restore applied in 25 s |
+   | First deploy on the fresh `storage-v2.db` replica (#186) | about 46 s | Expected: no replica yet, follower failed three times, startup seeded from the share |
+
+   Container Apps does not accept `mountOptions` (such as `actimeo=1`) for
+   Azure Files: the deployment is refused with
+   `ContainerAppVolumeMountOptionsNotSupported`, although `az deployment group
+   validate` and what-if pass. The CIFS attribute cache therefore stays at its
+   30 s default and the share lock wait is shortened only by the cache-proof
+   claim in `ShareWriterLock`.
+
+   `ReplicaChainReporter` logs, a minute after start and every ten minutes,
+   `Replica chain at <utc>: L0 n files X MB txid a-b newest hh:mm:ss; L1 ...; L9 ...`
+   and `A restore would read N files, X MB`. Read it as the restore bill: a
+   healthy chain is one snapshot (L9) plus a short tail, so the plan is a few
+   hundred MB at most. Levels 2 and 3 should hold files after 5 minutes and 1
+   hour; each level briefly holds a copy of the initial full-database file
+   until compaction trims the lower levels. The hourly snapshot and 24 h
+   retention in `infrastructure/litestream.yml` bound the chain; after every
+   restart Litestream uploads one full-database file, so chain size grows by
+   about one database per restart until the next snapshot.
 
 ##### Read Replicas (optional)
 
