@@ -283,6 +283,8 @@ if (!config.IsReadOnly)
         .AddSingleton(sb => new LitestreamSupervisor(
             config.Durability, config.DbLocation, sb.GetRequiredService<ILogger<LitestreamSupervisor>>()))
         .AddHostedService(p => p.GetRequiredService<LitestreamSupervisor>())
+        .AddHostedService(sb => new ReplicaChainReporter(
+            config.Durability, config.DbLocation, sb.GetRequiredService<ILogger<ReplicaChainReporter>>()))
         .AddHostedService<BackgroundWorker>()
         .AddSingleton<RefreshPacer>()
         .AddSingleton<IFeedRefresher, FeedRefresher>()
