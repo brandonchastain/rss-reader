@@ -48,6 +48,14 @@ dbs:
       type: abs
       account-name: ${LITESTREAM_AZURE_ACCOUNT_NAME}
       bucket: litestream
-      path: storage.db
+      # storage-v2.db: a fresh replica path (2026-10-25). The old `storage.db` prefix held a
+      # 4.8 GB chain (172 L1 files, 21 full-database copies) and level 2 and 3 never wrote a
+      # file; the stale April files in its ltx/2 and ltx/3 are the suspect (Litestream compacts
+      # into level N starting after that level's newest file and returns "nothing to do"
+      # silently when nothing lies beyond it). The old prefix stays as a recovery copy and can
+      # be deleted after the new chain has run for a few days. The first deploy on the new path
+      # finds no replica, so its follower fails and it seeds from the share (the 7 s path);
+      # replication then starts the new chain with a snapshot.
+      path: storage-v2.db
       # Recovery point. 1 s (the default) was the 2026-05 write-operation cost.
       sync-interval: 30s

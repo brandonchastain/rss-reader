@@ -93,24 +93,27 @@ namespace RssReader.Server.Services
                         File.Delete(LockPath);
                     }
 
-                    // CreateNew is the atomic claim: of two writers racing for a missing
-                    // or stale lock, exactly one creates the file.
-                    using (var fs = new FileStream(LockPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
-                    using (var writer = new StreamWriter(fs))
-                    {
-                        writer.WriteLine($"{Environment.MachineName}:{Environment.ProcessId}:{DateTimeOffset.UtcNow:O}");
-                    }
+                    if (TryCreate()) return true;
 
-                    IsHeld = true;
-                    StartHeartbeat();
-                    return true;
+                    // CreateNew said "exists" but the server says otherwise: the CIFS
+                    // client still holds a positive directory entry for the file the
+                    // old holder deleted (it is kept for actimeo). An unlink round-trips
+                    // to the server and drops that entry (ENOENT, nothing is deleted), so
+                    // one retry claims the lock within this poll instead of the next
+                    // cache refresh. A foreign lock created in the window between the
+                    // probe and the unlink is the same race CreateNew already closes:
+                    // the retry then fails and the next poll sees it.
+                    if (ProbeExists()) return false;
+                    try { File.Delete(LockPath); } catch (IOException) { }
+                    return TryCreate();
                 }
                 catch (IOException ex)
                 {
                     // Lost the race when the file now exists (another container created
                     // it between our check and our create); otherwise the directory
-                    // itself is the problem.
-                    if (!File.Exists(LockPath)) error = ex;
+                    // itself is the problem. Decide with the server-side probe, not
+                    // File.Exists, which answers from the attribute cache.
+                    if (!ProbeExists()) error = ex;
                     return false;
                 }
                 catch (UnauthorizedAccessException ex)
@@ -119,6 +122,32 @@ namespace RssReader.Server.Services
                     return false;
                 }
             }
+        }
+
+        /// <summary>
+        /// The atomic claim: of two writers racing for a missing or stale lock, exactly
+        /// one creates the file. Returns false when the file already exists, by the
+        /// cached stat (a stale directory entry counts) or by the server; any other
+        /// failure propagates.
+        /// </summary>
+        private bool TryCreate()
+        {
+            try
+            {
+                using (var fs = new FileStream(LockPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+                using (var writer = new StreamWriter(fs))
+                {
+                    writer.WriteLine($"{Environment.MachineName}:{Environment.ProcessId}:{DateTimeOffset.UtcNow:O}");
+                }
+            }
+            catch (IOException) when (File.Exists(LockPath) || ProbeExists())
+            {
+                return false;
+            }
+
+            IsHeld = true;
+            StartHeartbeat();
+            return true;
         }
 
         public bool TryAcquire() => TryAcquire(out _);

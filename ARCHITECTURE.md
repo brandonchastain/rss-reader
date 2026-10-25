@@ -102,19 +102,22 @@ docs link here.
    Step 4 must see the deletion promptly. Container Apps mounts Azure Files
    with the AKS CIFS defaults, including `actimeo=30`, so a `stat` (which is
    what `File.Exists` and `File.GetLastWriteTimeUtc` are) is answered from a
-   client-side attribute cache refreshed only every 30 s; a lock the old
-   revision had already deleted kept "existing" for the new one, and the
-   "Another writer holds" to "Writer lock acquired" interval was a fixed
-   60 s or 90 s in every deploy. `ShareWriterLock.TryAcquire` therefore probes
-   with an open (`ProbeExists`), which always round-trips to the server and
-   drops the stale directory entry on not-found, so the release is seen within
-   one 2 s poll. The alternative, `template.volumes[].mountOptions` in
-   `infrastructure/main.bicep` with a lower `actimeo` (or `actimeo=0`), was
-   considered and not taken: it would also make every stat on the share a
-   round-trip, including the heartbeat and backup paths that do not need it,
-   and it depends on the platform honouring the option, whereas the open probe
-   works on any mount. The 3-minute stale threshold is wide enough that the
-   cached mtime used by `IsAlive` needs no such treatment.
+   client-side attribute cache refreshed only every 30 s, and a positive
+   directory entry for a file the server has deleted also stays valid that
+   long. The old revision's deleted lock therefore kept "existing" for the new
+   one and the "Another writer holds" to "Writer lock acquired" interval was a
+   fixed 60 s or 90 s in every deploy. Two measures, both in place:
+
+   - `infrastructure/main.bicep` sets `mountOptions` on the share volume to the
+     platform defaults with `actimeo=1`. The full default list is given because
+     ACA may replace rather than merge the defaults when the property is set.
+   - `ShareWriterLock.TryAcquire` does not trust the cache: it probes with an
+     open (`ProbeExists`, always a server round-trip), and when `CreateNew`
+     still reports "exists" while the server says the file is gone, it unlinks
+     the path (another round-trip, which drops the stale entry) and retries
+     the claim once. Lost-race versus unwritable-directory is decided with the
+     probe, not `File.Exists`. The 3-minute stale threshold is wide enough
+     that the cached mtime used by `IsAlive` needs no such treatment.
 
    A lock whose heartbeat is older than `BackupLockStaleAfter` (3 min) belongs
    to a replica that died without releasing it and is taken over, so a crash

@@ -397,6 +397,12 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
           name: 'rss-data-volume'
           storageType: 'AzureFile'
           storageName: 'rss-data-storage'
+          // The AKS/ACA CIFS defaults, with the attribute cache cut from actimeo=30 to
+          // 1 s. The writer handover polls /data/db/storage.db.lock every 2 s and a
+          // 30 s stat cache made it see the old revision's deleted lock 30-90 s late
+          // (ARCHITECTURE.md "Deploy handover"). The full default list is repeated
+          // because ACA may replace, not merge, the defaults when mountOptions is set.
+          mountOptions: 'dir_mode=0777,file_mode=0777,mfsymlinks,cache=strict,nosharesock,actimeo=1'
         }
       ]
     }
