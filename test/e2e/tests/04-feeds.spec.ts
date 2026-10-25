@@ -7,32 +7,43 @@ const feedRow = (page: Page, host: string) =>
 
 test.describe('feeds page', () => {
   test('lists the subscribed feeds with their tags', async ({ page }) => {
-    await page.goto('/feeds');
+    await page.goto('/feeds/mine');
     await expect(page.locator('.feeds-row')).toHaveCount(4);
     await expect(feedRow(page, 'tech.example.com').locator('.post-tag')).toHaveText('tech');
     await expect(feedRow(page, 'world.example.com').locator('.post-tag')).toHaveText('news');
     await expect(feedRow(page, 'disposable.example.com').locator('.post-tag')).toHaveCount(0);
   });
 
+  test('the hub links to every feeds view', async ({ page }) => {
+    await page.goto('/feeds');
+    for (const name of ['My feeds', 'Popular feeds', 'Subscribe to a feed', 'Import / Export', 'Tags']) {
+      await expect(page.locator('.feeds-card', { hasText: name })).toBeVisible();
+    }
+    await page.locator('.feeds-card', { hasText: 'My feeds' }).click();
+    await expect(page).toHaveURL(/\/feeds\/mine$/);
+    await expect(page.locator('.feeds-row')).toHaveCount(4);
+  });
+
   test('refuses a feed address on the servers own network', async ({ page }) => {
-    await page.goto('/feeds?tab=add');
+    await page.goto('/feeds/add');
     await page.locator('.feeds-url-input').fill('http://127.0.0.1/feed.xml');
     await page.getByRole('button', { name: 'Subscribe' }).click();
     await expect(page.getByText('is not a public address')).toBeVisible();
-    await page.getByRole('tab', { name: /My feeds/ }).click();
+    await page.goto('/feeds/mine');
     await expect(page.locator('.feeds-row')).toHaveCount(4);
   });
 
   test('asks for an address when the field is empty', async ({ page }) => {
-    await page.goto('/feeds?tab=add');
+    await page.goto('/feeds/add');
     await page.getByRole('button', { name: 'Subscribe' }).click();
     await expect(page.getByText('Feed URL is empty')).toBeVisible();
   });
 
   test('exports OPML that carries each feed and its tags', async ({ page }) => {
-    await page.goto('/feeds');
+    await page.goto('/feeds/mine');
     await expect(page.locator('.feeds-row')).toHaveCount(4);
-    await page.getByRole('tab', { name: 'Import / Export' }).click();
+    await page.getByRole('link', { name: '← Feeds' }).click();
+    await page.getByRole('link', { name: /Import \/ Export/ }).click();
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Export OPML' }).click();
     const file = await download;
@@ -47,7 +58,7 @@ test.describe('feeds page', () => {
   });
 
   test('adds a tag and removes it again', async ({ page }) => {
-    await page.goto('/feeds');
+    await page.goto('/feeds/mine');
     const row = feedRow(page, 'disposable.example.com');
     await row.locator('.feeds-tag-input').fill('temp');
     await row.locator('.feeds-tag-input').press('Enter');
@@ -66,7 +77,7 @@ test.describe('feeds page', () => {
     await openTimeline(page);
     await scrollToPost(page, 'Disposable 1');
 
-    await page.goto('/feeds');
+    await page.goto('/feeds/mine');
     await feedRow(page, 'disposable.example.com').getByRole('button', { name: 'Unsubscribe' }).click();
     await feedRow(page, 'disposable.example.com').getByRole('button', { name: 'Confirm' }).click();
     await expect(feedRow(page, 'disposable.example.com')).toHaveCount(0);

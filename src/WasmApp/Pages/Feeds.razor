@@ -1,4 +1,5 @@
 @page "/feeds"
+@page "/feeds/{Section}"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.IO
@@ -19,24 +20,47 @@
 <PageTitle>Feeds</PageTitle>
 <SectionContent SectionName="page-title">Feeds</SectionContent>
 
-<div class="feeds-tabs" role="tablist">
-    <a role="tab" class="feeds-tab @TabClass("subscriptions")" href="feeds" aria-selected="@(CurrentTab == "subscriptions")">
-        My feeds @if (feeds != null)
-        {
-            <span class="feeds-tab-count">@feeds.Count()</span>
-        }
-    </a>
-    <a role="tab" class="feeds-tab @TabClass("popular")" href="feeds?tab=popular" aria-selected="@(CurrentTab == "popular")">Popular</a>
-    <a role="tab" class="feeds-tab @TabClass("add")" href="feeds?tab=add" aria-selected="@(CurrentTab == "add")">Add a feed</a>
-    <a role="tab" class="feeds-tab @TabClass("transfer")" href="feeds?tab=transfer" aria-selected="@(CurrentTab == "transfer")">Import / Export</a>
-</div>
+@if (CurrentTab == null)
+{
+    <p class="feeds-section-hint">Everything about your subscriptions, in one place.</p>
+    <div class="feeds-hub">
+        <a class="feeds-card" href="/feeds/mine">
+            <span class="feeds-card-title">My feeds</span>
+            <span class="feeds-card-text">See what you follow, tag feeds, or unsubscribe.</span>
+            <span class="feeds-card-meta">@(feeds == null ? "" : $"{feeds.Count()} subscribed")</span>
+        </a>
+        <a class="feeds-card" href="/feeds/popular">
+            <span class="feeds-card-title">Popular feeds</span>
+            <span class="feeds-card-text">Discover the most followed feeds on RSS Reader.</span>
+        </a>
+        <a class="feeds-card" href="/feeds/add">
+            <span class="feeds-card-title">Subscribe to a feed</span>
+            <span class="feeds-card-text">Paste the address of a blog or site feed.</span>
+        </a>
+        <a class="feeds-card" href="/feeds/transfer">
+            <span class="feeds-card-title">Import / Export</span>
+            <span class="feeds-card-text">Move subscriptions to or from another reader with an OPML file.</span>
+        </a>
+        <a class="feeds-card" href="/tags">
+            <span class="feeds-card-title">Tags</span>
+            <span class="feeds-card-text">Choose which tags show in your timeline.</span>
+        </a>
+    </div>
+}
+else
+{
+    <a class="feeds-back" href="/feeds">&larr; Feeds</a>
+}
 
 @if (lastError != null)
 {
     <p class="feeds-error" role="alert">@lastError</p>
 }
 
-@if (CurrentTab == "add")
+@if (CurrentTab == null)
+{
+}
+else if (CurrentTab == "add")
 {
     <section class="feeds-panel">
         <h2 class="feeds-section-title">Subscribe to a feed</h2>
@@ -48,7 +72,7 @@
                 <button type="submit" class="btn btn-primary">Subscribe</button>
             </div>
         </form>
-        <p class="feeds-section-hint">Looking for ideas? See the <a href="feeds?tab=popular">popular feeds</a>.</p>
+        <p class="feeds-section-hint">Looking for ideas? See the <a href="/feeds/popular">popular feeds</a>.</p>
     </section>
 }
 else if (CurrentTab == "transfer")
@@ -71,6 +95,7 @@ else if (CurrentTab == "popular")
     }
     else
     {
+        <h2 class="feeds-section-title">Popular feeds</h2>
         <p class="feeds-section-hint">The most followed feeds on RSS Reader.</p>
         @if (!popularFeeds.Any())
         {
@@ -103,10 +128,11 @@ else if (feeds == null)
 }
 else if (!feeds.Any())
 {
-    <p class="feeds-section-hint">You are not subscribed to anything yet. <a href="feeds?tab=add">Add a feed</a> or pick from the <a href="feeds?tab=popular">popular feeds</a>.</p>
+    <p class="feeds-section-hint">You are not subscribed to anything yet. <a href="/feeds/add">Add a feed</a> or pick from the <a href="/feeds/popular">popular feeds</a>.</p>
 }
 else
 {
+    <h2 class="feeds-section-title">My feeds</h2>
     <div id="post-table">
         @foreach (NewsFeed feed in feeds.OrderBy(f => DisplayName(f.Title, f.Href), StringComparer.OrdinalIgnoreCase))
         {
@@ -166,7 +192,7 @@ else
             </div>
         }
     </div>
-    <p class="feeds-section-hint">Tip: type a tag and press Space or Enter. Tags group feeds in your timeline filter; hide a tag from the <a href="tags">Tags</a> page.</p>
+    <p class="feeds-section-hint">Tip: type a tag and press Space or Enter. Tags group feeds in your timeline filter; hide a tag from the <a href="/tags">Tags</a> page.</p>
 }
 
 @code {
@@ -185,18 +211,18 @@ else
     private static string DisplayName(string title, string href)
         => !string.IsNullOrWhiteSpace(title) ? title : Uri.TryCreate(href, UriKind.Absolute, out var uri) ? uri.Host : href;
 
-    [SupplyParameterFromQuery(Name = "tab")]
-    private string Tab { get; set; }
+    [Parameter]
+    public string Section { get; set; }
 
-    private string CurrentTab => Tab switch
+    // null is the hub; otherwise the subpage being shown.
+    private string CurrentTab => Section?.ToLowerInvariant() switch
     {
+        "mine" => "subscriptions",
         "popular" => "popular",
         "add" => "add",
         "transfer" => "transfer",
-        _ => "subscriptions",
+        _ => null,
     };
-
-    private string TabClass(string tab) => CurrentTab == tab ? "active" : string.Empty;
 
     private string confirmUnsubscribe = null;
     private string openFeed = null;
@@ -284,7 +310,7 @@ else
         }
 
         await this.OnInitializedAsync();
-        navigation.NavigateTo("feeds");
+        navigation.NavigateTo("/feeds/mine");
     }
 
     private async Task DeleteAsync(string feed)
@@ -414,7 +440,7 @@ else
             var opmlContent = await reader.ReadToEndAsync();
             await this.feedClient.ImportOpmlAsync(opmlContent);
             await this.OnInitializedAsync();
-            navigation.NavigateTo("feeds");
+            navigation.NavigateTo("/feeds/mine");
         }
         catch (Exception ex)
         {
