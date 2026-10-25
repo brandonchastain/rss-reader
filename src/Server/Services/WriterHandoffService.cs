@@ -59,7 +59,7 @@ namespace RssReader.Server.Services
             await base.StopAsync(cancellationToken);
             if (_handover?.AfterReleaseTask is { } after && !after.IsCompleted)
             {
-                _logger.LogInformation("Shutdown: waiting for the post-handoff share copy to finish.");
+                _logger.LogInformation("Shutdown: waiting for the post-handoff work to finish.");
                 try { await after.WaitAsync(cancellationToken); } catch (OperationCanceledException) { }
             }
         }

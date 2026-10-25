@@ -35,9 +35,9 @@ namespace RssReader.Server.Services
     /// <item>stop the follower, <c>PRAGMA quick_check</c>, rename over the live path.</item>
     /// </list>
     ///
-    /// Returns false, after an error log, on any failure; the caller then seeds from the share
-    /// copy (about 7 s at 320 MB; a full blob restore measured 80 s in production, so it is
-    /// not used as a fallback). Every phase
+    /// Returns false, after an error log, on any failure; the caller then refuses to start and
+    /// the platform restarts the container, which restores again from the replica (the old
+    /// writer's final sync is already in it). Every phase
     /// logs a UTC timestamp so the 503 window can be read back from Log Analytics.
     /// </summary>
     public sealed class CooperativeHandoverSeeder
@@ -109,7 +109,7 @@ namespace RssReader.Server.Services
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Handover: the follower could not be started; seeding from the share.");
+                        _logger.LogError(ex, "Handover: the follower could not be started.");
                         Ready("follower failed to start");
                         return false;
                     }
@@ -126,8 +126,8 @@ namespace RssReader.Server.Services
                         continue;
                     }
                     _logger.LogError(follower.HasExited
-                            ? "Handover: the follower exited (code {Code}) on attempt {Attempt}; seeding from the share."
-                            : "Handover: the initial restore did not complete within {Timeout} (attempt {Attempt}); seeding from the share.",
+                            ? "Handover: the follower exited (code {Code}) on attempt {Attempt}."
+                            : "Handover: the initial restore did not complete within {Timeout} (attempt {Attempt}).",
                         follower.HasExited ? follower.ExitCode : _config.RestoreTimeout, attempt);
                     Ready("follower failed");
                     return false;
@@ -161,7 +161,7 @@ namespace RssReader.Server.Services
                 var leaseHeld = await _acquireLease(cancellationToken);
                 if (!leaseHeld)
                 {
-                    _logger.LogError("Handover: blob lease not held; seeding from the share.");
+                    _logger.LogError("Handover: blob lease not held.");
                     return false;
                 }
                 _logger.LogInformation("Handover: lease held at {Utc}, {Ms} ms in.", DateTimeOffset.UtcNow.ToString("O"), sw.ElapsedMilliseconds);
@@ -190,7 +190,7 @@ namespace RssReader.Server.Services
                 var caughtUp = await WaitForCatchUpAsync(follower.ReadTxid, () => follower.HasExited, target, _config.CatchUpTimeout, _config.CatchUpQuietPeriod, PollInterval, cancellationToken);
                 if (!caughtUp)
                 {
-                    _logger.LogError("Handover: follower at txid {Txid} did not reach {Target} within {Timeout}; seeding from the share.",
+                    _logger.LogError("Handover: follower at txid {Txid} did not reach {Target} within {Timeout}.",
                         follower.ReadTxid()?.ToString() ?? "none", target?.ToString() ?? "quiet", _config.CatchUpTimeout);
                     return false;
                 }
@@ -200,19 +200,19 @@ namespace RssReader.Server.Services
                 var exit = await follower.StopAsync(FollowerStopTimeout, cancellationToken);
                 if (exit != 0)
                 {
-                    _logger.LogError("Handover: follower exited with code {Code}; seeding from the share.", exit?.ToString() ?? "none");
+                    _logger.LogError("Handover: follower exited with code {Code}.", exit?.ToString() ?? "none");
                     return false;
                 }
                 if (!File.Exists(follower.OutputPath))
                 {
-                    _logger.LogError("Handover: followed copy {Output} is missing after the follower stopped; seeding from the share.", follower.OutputPath);
+                    _logger.LogError("Handover: followed copy {Output} is missing after the follower stopped.", follower.OutputPath);
                     return false;
                 }
 
-                var (ok, check, error) = DatabaseBackupToFileService.QuickCheckDiagnostic(follower.OutputPath);
+                var (ok, check, error) = DatabaseIntegrity.QuickCheck(follower.OutputPath);
                 if (!ok)
                 {
-                    _logger.LogError("Handover: PRAGMA quick_check failed on the followed copy (result='{Result}', error='{Error}'); seeding from the share.", check ?? "<null>", error ?? "<none>");
+                    _logger.LogError("Handover: PRAGMA quick_check failed on the followed copy (result='{Result}', error='{Error}').", check ?? "<null>", error ?? "<none>");
                     return false;
                 }
 
@@ -231,7 +231,7 @@ namespace RssReader.Server.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Handover: failed {Ms} ms in; seeding from the share.", sw.ElapsedMilliseconds);
+                _logger.LogError(ex, "Handover: failed {Ms} ms in.", sw.ElapsedMilliseconds);
                 Ready("handover failed");
                 return false;
             }

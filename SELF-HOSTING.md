@@ -33,7 +33,7 @@ docker pull ghcr.io/brandonchastain/rss-reader-api:latest
 docker run -d --name rss-reader \
   -p 8080:8080 \
   -v /srv/rss-reader/data:/data \
-  -e RssAppConfig__BackupDbPath=/data/db/storage.db \
+  -e RssAppConfig__DbLocation=/data/storage.db \
   -e RssAppConfig__Auth__DataProtectionKeysPath=/data/keys \
   -e RssAppConfig__Auth__AllowedFrontendOrigins__0=https://rss.example.com \
   -e RssAppConfig__Auth__Providers__github__ClientId=... \
@@ -43,19 +43,20 @@ docker run -d --name rss-reader \
 
 (Build it yourself with `docker build -f src/Server/Dockerfile -t rss-reader-api .`.)
 
-- `/data` is the durability surface: the live database is `/tmp/storage.db`
-  inside the container, copied to `BackupDbPath` every 5 minutes and restored
-  from it at boot; cached feed images live under `/data/images/`; the session
-  cookie's encryption keys under `/data/keys/` so a restart does not sign
-  everyone out. Back up `/data` and you have everything. Leave `BackupDbPath`
-  unset and the container runs in throwaway mode.
-- The deploy handover that production uses (a lock file next to the copy, a
-  final copy on SIGTERM, a boot that waits for the previous container's lock)
-  is plain file operations and needs nothing from Azure. On a single Docker
-  host it costs one local copy at boot and one at `docker stop`; with
-  `BackupDbPath` unset none of it runs. If the lock file cannot be created
-  (directory missing or read-only) the app logs a warning after about ten
-  seconds and starts without it. See ARCHITECTURE.md "Backup & Replication".
+- `/data` is a Docker volume that holds everything worth keeping: the SQLite
+  database (`DbLocation`) and the session cookie's encryption keys under
+  `/data/keys/` so a restart does not sign everyone out. Cached feed images live
+  in the container and are re-fetched after the container is replaced.
+- **Behavior change from earlier versions:** there is no whole-file backup any
+  more. The old `BackupDbPath` flow (periodic copy to `/data/db/storage.db`,
+  restore at boot, lock file, final copy on `docker stop`) is gone, and the
+  setting is ignored. Without `DbLocation` on a volume the database lives at
+  its default location inside the container and is lost with it.
+- With no `Durability` settings there is no startup gate, no lease and no
+  replication: SQLite just opens the file at `DbLocation`. Back up `/data`
+  yourself. Stop the container first for a plain copy, or take a consistent
+  copy while it runs with `sqlite3 /srv/rss-reader/data/storage.db ".backup
+  '/srv/backups/storage.db'"`.
 - `AllowedFrontendOrigins` is the list of origins the API accepts credentialed
   calls from and will send a user back to after login. For a one-box setup it
   is the API's own public origin. Index further origins as `__1`, `__2`.
@@ -118,7 +119,7 @@ browsers' third-party-cookie rules out of the way.
 ## Azure (what production runs on)
 
 `infrastructure/main.bicep` builds the Container Apps environment, the API app
-with its Azure Files volume, and the Static Web App. First-time steps:
+with its blob-only storage account (the Litestream replica, the writer lease and the session key ring), and the Static Web App. First-time steps:
 
 1. `az group create --name rss-container-rg --location westus2`.
 2. Get an image into `ghcr.io/<user>/rss-reader-api` (run the Deploy workflow
@@ -134,9 +135,11 @@ with its Azure Files volume, and the Static Web App. First-time steps:
    its DNS records first (`CNAME` to the container app's FQDN and the `asuid`
    `TXT` record with the environment's `customDomainVerificationId`); the
    template then binds it and Azure issues the managed certificate.
-4. On a brand-new environment pre-create an empty database at
-   `/data/db/storage.db` on the file share (or copy one from a Docker run); the
-   entrypoint refuses to boot without one.
+4. A brand-new environment has no Litestream replica yet, and a restore that
+   finds none fails rather than start empty. Seed it with a first boot that
+   creates the database: deploy once with
+   `RssAppConfig__Durability__RestoreFromBlob=false` (the first boot creates the
+   database and uploads the first replica), then set it back to `true`.
 5. Hand deploys to CI: `gh secret set` for `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
    `AZURE_SUBSCRIPTION_ID` (an OIDC-federated managed identity with deploy
    rights on the resource group) and the `AUTH_*_CLIENT_ID/SECRET` pairs. From

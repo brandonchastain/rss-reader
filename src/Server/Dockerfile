@@ -45,8 +45,6 @@ ADD --checksum=sha256:cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c
     /tmp/litestream.tar.gz
 RUN tar -C /usr/local/bin -xzf /tmp/litestream.tar.gz && rm /tmp/litestream.tar.gz
 
-# Create directory for SQLite database (will be mounted from Azure Files)
-RUN mkdir -p /data
 
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080

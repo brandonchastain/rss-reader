@@ -86,30 +86,23 @@ window, sign in with each provider, and sign out.
 
 ## Troubleshooting
 
-**App refuses to boot after a deploy.** The app seeds `/tmp/storage.db` from
-`/data/db/storage.db` and runs `PRAGMA quick_check` on it; a failed check stops the app
-rather than let the backup service overwrite the share with bad data. Logs show
-`PRAGMA quick_check failed on the seeded database`. Restore a known-good copy to the share and redeploy.
+**App refuses to boot after a deploy.** At startup the app restores `/tmp/storage.db` from
+the Litestream blob replica and runs `PRAGMA quick_check` on it; a failed check or a failed
+restore stops the app, the container restarts and tries again. There is no fallback to a
+copy elsewhere, and a restore that finds no replica fails rather than start empty. Logs
+show `PRAGMA quick_check failed` or the `litestream restore` error. Check that the managed
+identity has `Storage Blob Data Contributor` on the storage account and that the
+`litestream` container holds a replica (ARCHITECTURE.md "Backup & Replication").
 
-**New revision sits at "waiting for it to release" and the API answers 503.** The new
-revision is waiting for the previous one's lock on the share (`/data/db/storage.db.lock`)
-while that one writes its final DB copy on SIGTERM. Normal for up to a minute or two.
-If the old replica died without releasing, the lock is taken over once its heartbeat
-is older than `BackupLockStaleAfter` (3 min); nothing to do but wait.
+**New revision sits at "waiting" and the API answers 503.** The new revision is waiting
+for the previous one to finish its final Litestream sync and release the `writer-lease`
+blob after the `writer-handoff` request. Normal for up to a minute. If the old replica
+died without releasing, the 30 s lease expires on its own; nothing to do but wait.
 
-**`FATAL: Parent of backup directory '/data' does not exist`.** The Azure Files volume
-mount is missing from the revision. Check the template's `volumeMounts`; this is the
-symptom of a hand-run `az containerapp update`.
-
-**Share quota.** A backup cycle briefly holds the old copy and the new one, so the
-`rss-data` share quota must exceed twice the database size. At 1 GB a 530 MB database
-crossed that line on 2026-10-02 and the truncated copy was refused at boot. The template
-sets 5 GB; raise it in `main.bicep` before the database approaches 2.5 GB.
-
-**Verify the mount.**
+**Check the replica.**
 
 ```bash
-az containerapp exec --name rss-reader-api --resource-group rss-container-rg --command "ls -la /data/db /data/images"
+az storage blob list --account-name <storage account> --container-name litestream --auth-mode login --query "length(@)"
 ```
 
 ## API custom domain
@@ -132,8 +125,8 @@ When `enableReadReplica=true`, a second Container App `rss-reader-api-reader` sc
 routes traffic to it since the Functions proxy went away (see
 [ARCHITECTURE.md](ARCHITECTURE.md#backend-web-api)), so leave it off until a router
 exists. Readers restore their database from
-the Litestream blob replica at startup, so the writer must run with
-`RSSREADER_ENABLE_LITESTREAM_REPLICATION=true`. Enable both in `main.bicepparam` and merge.
+the Litestream blob replica at startup, which the writer always produces. Enable
+`enableReadReplica` in `main.bicepparam` and merge.
 
 ```bash
 az containerapp show --name rss-reader-api-reader --resource-group rss-container-rg --query properties.runningStatus
