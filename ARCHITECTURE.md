@@ -99,6 +99,27 @@ docs link here.
       get 503 (then a few seconds of refused connections while the app boots)
       between steps 2 and 4.
 
+   Step 4 must see the deletion promptly. Container Apps mounts Azure Files
+   with the AKS CIFS defaults, including `actimeo=30`, so a `stat` (which is
+   what `File.Exists` and `File.GetLastWriteTimeUtc` are) is answered from a
+   client-side attribute cache refreshed only every 30 s, and a positive
+   directory entry for a file the server has deleted also stays valid that
+   long. The old revision's deleted lock therefore kept "existing" for the new
+   one and the "Another writer holds" to "Writer lock acquired" interval was a
+   fixed 60 s or 90 s in every deploy. Container Apps does not accept `mountOptions`
+   (such as `actimeo=1`) for Azure Files: the deployment is refused with
+   `ContainerAppVolumeMountOptionsNotSupported`, although `az deployment group
+   validate` and what-if pass, so the cache cannot be tuned from the template. The
+   fix is in code:
+
+   - `ShareWriterLock.TryAcquire` does not trust the cache: it probes with an
+     open (`ProbeExists`, always a server round-trip), and when `CreateNew`
+     still reports "exists" while the server says the file is gone, it unlinks
+     the path (another round-trip, which drops the stale entry) and retries
+     the claim once. Lost-race versus unwritable-directory is decided with the
+     probe, not `File.Exists`. The 3-minute stale threshold is wide enough
+     that the cached mtime used by `IsAlive` needs no such treatment.
+
    A lock whose heartbeat is older than `BackupLockStaleAfter` (3 min) belongs
    to a replica that died without releasing it and is taken over, so a crash
    delays the next boot by at most that long. Before publishing a copy the
@@ -109,14 +130,82 @@ docs link here.
 2. **Litestream bootstrap (legacy, read-only).** If `BackupDbPath` does not
    exist at boot, the entrypoint tries a one-shot `litestream restore` from the
    `litestream` blob container that the previous architecture replicated to,
-   validates it and publishes it as the first file-mount copy. Nothing writes to
-   that blob container in the default mode.
+   validates it and publishes it as the first file-mount copy.
 
 3. **Litestream replication (scaling mode, off).** With
    `RSSREADER_ENABLE_LITESTREAM_REPLICATION=true` the writer runs under
    `litestream replicate`, streaming WAL changes to blob storage so read
    replicas can restore from it. It is a feed for readers, not a second backup.
-   Config: `infrastructure/litestream.yml`.
+   Slated for removal (BLOB-DURABILITY-SPEC.md section 4).
+
+4. **Blob replication and the writer lease (BLOB-DURABILITY-SPEC.md, rollout
+   steps 1 and 2).** The path that will replace the share. With
+   `RssAppConfig:Durability:LitestreamEnabled` the app starts
+   `litestream replicate` as its child (`LitestreamSupervisor`) once
+   `/tmp/storage.db` is in place, replicating it to the `litestream` blob
+   container every 30 s through the app's managed identity
+   (`infrastructure/litestream.yml`). With
+   `RssAppConfig:Durability:BlobServiceUri` the writer also holds a 30 s blob
+   lease on `litestream/writer-lease` (`BlobWriterLease`), acquired while the
+   startup gate answers the probe; every acquire and release is logged beside
+   the lock's state. Shutdown order (hosted services stop in reverse
+   registration order): the feed scheduler and worker stop, `litestream sync`
+   uploads the pending WAL and the child stops, the lease is released, then
+   the final share copy runs and the lock file goes.
+   Rollout step 3, the cooperative handover, is behind
+   `RssAppConfig:Durability:RestoreFromBlob` (`enableBlobRestore` in the
+   Bicep). The new revision starts `litestream restore -f` into a staging file
+   (`LitestreamFollower`: full restore, then the LTX tail every 500 ms) while
+   the old revision keeps serving; a follower that dies is restarted up to
+   three times. Only once the initial restore is on disk does it write a
+   request on the `writer-handoff` blob (`CooperativeHandoverSeeder`). Its
+   startup probe stays 503 until the database is in place, so traffic stays on
+   the old revision; after 30 s without a finished handover the probe opens
+   anyway, because an old image that ignores the request only releases the
+   lease on SIGTERM, which the platform sends once the probe passes. The
+   running writer polls that blob every 2 s (`WriterHandoffService`) and, on a
+   request, stops the feed scheduler, worker and retention service, checkpoints,
+   runs the final Litestream sync, acknowledges with the final transaction id,
+   releases the lease, then copies to the share for rollback
+   (`WriterHandover`); from then on it answers 503 to mutating requests and
+   serves reads until the platform stops it, and its SIGTERM skips the final
+   share copy. The new writer takes the lease, waits for the follower to reach
+   the acknowledged transaction id, stops it, `quick_check`s and renames the
+   copy over `/tmp/storage.db`. Any failure falls back to the share seed (about
+   7 s at 320 MB). A full `litestream restore` after the lease is not a
+   fallback: it measured 80 s when the replica chain was 4.8 GB. The file
+   backup keeps writing the share either way, so turning the flag off (or the
+   previous image) seeds from the share again. `/api/healthz` reports row
+   counts so a restore of the replica can be compared with the live writer by
+   hand (the cutover check in the spec's section 9.5). The spec's section 8
+   has the remaining steps.
+
+   Measured so far (2026-10-24 to 25, `/api/user` probed once a second):
+
+   | Deploy | 503 window | Why |
+   |---|---|---|
+   | Before step 3 (PR #178) | about 61 s | Platform SIGTERM 31 s after the probe passes, old shutdown 8 s, share lock wait 17 s, seed 7 s |
+   | First flagged deploy (#179) | about 117 s | Follower died racing the old writer's compaction; fallback was an 80 s full restore of a 4.8 GB chain; probe opened at once |
+   | After #184 (follower retry, request after restore, probe held) | no 5xx in the CI probe | Initial restore 17 s overlapped the old revision; old writer released the lease 2.2 s after the request; restore applied in 25 s |
+   | First deploy on the fresh `storage-v2.db` replica (#186) | about 46 s | Expected: no replica yet, follower failed three times, startup seeded from the share |
+
+   Container Apps does not accept `mountOptions` (such as `actimeo=1`) for
+   Azure Files: the deployment is refused with
+   `ContainerAppVolumeMountOptionsNotSupported`, although `az deployment group
+   validate` and what-if pass. The CIFS attribute cache therefore stays at its
+   30 s default and the share lock wait is shortened only by the cache-proof
+   claim in `ShareWriterLock`.
+
+   `ReplicaChainReporter` logs, a minute after start and every ten minutes,
+   `Replica chain at <utc>: L0 n files X MB txid a-b newest hh:mm:ss; L1 ...; L9 ...`
+   and `A restore would read N files, X MB`. Read it as the restore bill: a
+   healthy chain is one snapshot (L9) plus a short tail, so the plan is a few
+   hundred MB at most. Levels 2 and 3 should hold files after 5 minutes and 1
+   hour; each level briefly holds a copy of the initial full-database file
+   until compaction trims the lower levels. The hourly snapshot and 24 h
+   retention in `infrastructure/litestream.yml` bound the chain; after every
+   restart Litestream uploads one full-database file, so chain size grows by
+   about one database per restart until the next snapshot.
 
 ##### Read Replicas (optional)
 
@@ -187,6 +276,7 @@ Bound from `appsettings.json` section `RssAppConfig` or env vars
 | `FeedRefreshIntervalMax` | 6 h | Never wait longer than this. |
 | `RefreshFetchConcurrency` | 8 | Feeds fetched and parsed concurrently inside one refresh. DB writes stay serialized. |
 | `MaxConcurrentFetchesPerHost` | 2 | In-flight fetches to one origin host across all refreshes. |
+| `SchedulerFetchesPerSecond` | 10 | Budget: the scheduler starts at most this many fetches a second, spreading due feeds over time instead of bursting (about 36,000 distinct feeds fit in the one-hour default interval). Manual refreshes are not paced. 0 disables. A yield-to-live-traffic step was measured and dropped (test/load/REPORT.md, "Refresh pacing"). |
 | `FeedBackoffBase` / `FeedBackoffMax` | 2 min / 6 h | Exponential backoff after a failed fetch (base × 2^(failures−1), jittered). `Retry-After` wins. In-memory only. |
 | `BackgroundWorkerCount` | 1 | Keep at 1: more workers contend for SQLite's single writer lock. |
 | `BackgroundQueueCapacity` | 1000 | Bounded queue of background jobs; producers wait when it is full. |

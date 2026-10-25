@@ -247,7 +247,14 @@ public class ShareWriterLockTests
         var l = NewLock();
         using var cts = new CancellationTokenSource(150);
 
-        await Assert.ThrowsExceptionAsync<TaskCanceledException>(() => l.AcquireAsync(cts.Token));
+        // Either the poll delay (TaskCanceledException) or the loop's own check
+        // (OperationCanceledException) observes the token first; both are cancellation.
+        try
+        {
+            await l.AcquireAsync(cts.Token);
+            Assert.Fail("AcquireAsync returned instead of honouring cancellation");
+        }
+        catch (OperationCanceledException) { }
 
         Assert.IsFalse(l.IsHeld);
         Assert.IsTrue(File.Exists(_lockPath), "Foreign lock untouched");
@@ -311,6 +318,27 @@ public class ShareWriterLockTests
             (ra ? a : b).Release();
             Assert.IsFalse(File.Exists(_lockPath));
         }
+    }
+
+    [TestMethod]
+    public void TryAcquire_SucceedsImmediatelyAfterAnotherHolderReleases()
+    {
+        // Existence is probed with an open, not a stat, so a release is visible to the
+        // next TryAcquire with no poll or cache delay in between (on the Azure Files
+        // CIFS mount a stat is answered from a 30 s attribute cache; see ProbeExists).
+        var first = NewLock();
+        var second = NewLock();
+        Assert.IsTrue(first.TryAcquire());
+        Assert.IsFalse(second.TryAcquire(out var error), "Fresh foreign lock blocks");
+        Assert.IsNull(error);
+
+        first.Release();
+
+        Assert.IsTrue(second.TryAcquire(out error), "Released lock is claimable at once");
+        Assert.IsNull(error);
+        Assert.IsTrue(second.IsHeld);
+        Assert.IsFalse(first.IsHeld);
+        Assert.IsTrue(File.Exists(_lockPath));
     }
 
     [TestMethod]

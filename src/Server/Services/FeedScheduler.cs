@@ -24,20 +24,30 @@ public class FeedScheduler : BackgroundService
     private readonly RssAppConfig config;
     private readonly SystemStatsCollector statsCollector;
 
+    private readonly RssReader.Server.Services.WriterState? writerState;
+
     public FeedScheduler(
         ILogger<FeedScheduler> logger,
         IFeedRefresher refresher,
         RssAppConfig config,
+        RssReader.Server.Services.WriterState? writerState = null,
         SystemStatsCollector statsCollector = null)
     {
         this.statsCollector = statsCollector;
         this.logger = logger;
         this.refresher = refresher;
         this.config = config;
+        this.writerState = writerState;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken hostStopping)
     {
+        // Also stops at a cooperative handoff (WriterState.WritersStopping), before the
+        // database leaves this process; the loop below exits cleanly on either token.
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            hostStopping, this.writerState?.WritersStopping ?? CancellationToken.None);
+        var stoppingToken = linked.Token;
+
         if (!this.config.SchedulerEnabled)
         {
             this.logger.LogInformation("Feed scheduler is disabled (SchedulerEnabled=false).");

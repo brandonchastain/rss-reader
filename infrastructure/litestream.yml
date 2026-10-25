@@ -1,20 +1,61 @@
-# Litestream configuration for Azure Blob Storage replication
-# Environment variables used:
-#   LITESTREAM_AZURE_ACCOUNT_NAME - Azure Storage account name
-#   LITESTREAM_AZURE_ACCOUNT_KEY  - Azure Storage account key
+# Litestream 0.5.9 configuration: continuous replication of the live SQLite
+# database to Azure Blob Storage (BLOB-DURABILITY-SPEC.md 3.5, verified in 11.5).
+#
+# Started by the app (LitestreamSupervisor) once /tmp/storage.db is in place.
+# Rollout steps 1 and 2: a shadow of the Azure Files backup. Rollout step 3
+# (RssAppConfig:Durability:RestoreFromBlob, default off) restores from this
+# replica at boot with `litestream restore -config /etc/litestream.yml`.
+#
+# Auth, in Litestream's order: LITESTREAM_AZURE_SAS_TOKEN, then account-key /
+# LITESTREAM_AZURE_ACCOUNT_KEY, then the default Azure credential chain, which
+# in Container Apps is the app's system-assigned managed identity (11.1). No
+# key is set here on purpose.
+#
+# Key names are the 0.5 ones. 0.5.9 ignores unknown keys silently (11.5), so a
+# replica-level `retention` or `snapshot-interval` would be a no-op.
+
+# Control socket for `litestream sync -wait` from the app on shutdown (3.3 step 4).
+socket:
+  enabled: true
+  path: /tmp/litestream.sock
+
+# Full snapshot hourly; keep snapshots (and so point-in-time restore) for 24 h.
+# Why hourly: after every restart Litestream's first upload is a full-database file
+# (it has no position in the replica), and each compaction level merges ranges that
+# contain it. A restore reads the newest snapshot plus every file since, so with a
+# daily snapshot and one restart per deploy the chain grew to ~4.8 GB for a 323 MB
+# database (172 L1 files, 21 of them full copies) and a restore took 80 s on
+# 2026-10-24. An hourly snapshot bounds the chain to one snapshot plus the restarts
+# of the last hour. Cost: ~220 MB uploaded per hour and ~5 GB retained.
+snapshot:
+  interval: 1h
+  retention: 24h
+
+# LTX compaction levels (defaults made explicit): L1 every 30 s, L2 every 5 min,
+# L3 hourly. L0 files are kept 5 min (l0-retention default). A restore reads the
+# newest snapshot plus the L3/L2/L1 tail.
+levels:
+  - interval: 30s
+  - interval: 5m
+  - interval: 1h
+
+# Litestream's own final sync when it is told to stop: retry for up to 30 s.
+shutdown-sync-timeout: 30s
 
 dbs:
   - path: /tmp/storage.db
-    replicas:
-      - type: abs
-        account-name: ${LITESTREAM_AZURE_ACCOUNT_NAME}
-        bucket: litestream
-        path: storage.db
-        # Batch WAL frame uploads to reduce blob storage transaction costs.
-        # Trade-off: up to 30s RPO if the container dies between syncs.
-        sync-interval: 30s
-        # Take a full snapshot every hour. Default is 24h, which lets the LTX
-        # chain accumulate ~24h of writes — observed to grow to ~1GB on cold
-        # start, slowing container boot. Hourly snapshots cap the chain at
-        # ~1h of writes at the cost of one extra full-DB upload per hour.
-        snapshot-interval: 1h
+    replica:
+      type: abs
+      account-name: ${LITESTREAM_AZURE_ACCOUNT_NAME}
+      bucket: litestream
+      # storage-v2.db: a fresh replica path (2026-10-25). The old `storage.db` prefix held a
+      # 4.8 GB chain (172 L1 files, 21 full-database copies) and level 2 and 3 never wrote a
+      # file; the stale April files in its ltx/2 and ltx/3 are the suspect (Litestream compacts
+      # into level N starting after that level's newest file and returns "nothing to do"
+      # silently when nothing lies beyond it). The old prefix stays as a recovery copy and can
+      # be deleted after the new chain has run for a few days. The first deploy on the new path
+      # finds no replica, so its follower fails and it seeds from the share (the 7 s path);
+      # replication then starts the new chain with a snapshot.
+      path: storage-v2.db
+      # Recovery point. 1 s (the default) was the 2026-05 write-operation cost.
+      sync-interval: 30s

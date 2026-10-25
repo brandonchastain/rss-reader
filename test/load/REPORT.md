@@ -310,3 +310,130 @@ k6 run --insecure-skip-tls-verify --summary-export results/read.json scenarios/r
 k6 run --insecure-skip-tls-verify --summary-export results/mixed.json scenarios/mixed-workload.js
 k6 run --insecure-skip-tls-verify --summary-export results/write.json scenarios/write-storm.js
 ```
+
+## Refresh pacing (2026-10-24)
+
+**Problem.** The scheduler fetched every due feed as fast as `RefreshFetchConcurrency` allowed. With 5,000
+feeds due at once on the 0.5 vCPU replica the fetch-parse-store burst took the whole core for about 80 s, and
+user requests queued behind it: at 50 req/s, p95 went from 12 ms idle to several hundred ms (352 ms in the
+capacity study above; 513 ms in this run, which overlapped a whole cycle).
+
+**Change** (`RefreshPacer`). One setting, documented in `RssAppConfig.cs`: `SchedulerFetchesPerSecond`
+(default 10): the scheduler starts at most this many fetches a second, so a tick with thousands of due feeds is a
+trickle spread over time rather than a burst. 10/s covers about 36,000 distinct feeds inside the one-hour default
+interval. Manual refreshes are not paced.
+
+**Measured and dropped: a yield to live traffic.** The first version also waited, before each fetch and each
+store, while any user request was in flight (an in-flight counter kept by a first middleware, polled every 25 ms,
+bounded at 3 s). Measured alone it moved p95 at 50 req/s from 513 ms to only 429 ms, because at that rate the
+pipeline is usually empty at the instant of the check (each request is about 2 ms of work) and the parse that
+then starts runs to completion; and under load it held every budget below nominal (4.7/s at 5, 9/s at 10, 13/s
+at 20). It was removed from the branch. **All tables in this section were taken with the yield present**; the
+budget is what produced the numbers, so they stand for the budget-only build, but the cycle times under load will
+be nearer the nominal budget without it.
+
+**Measurement.** Local container `--cpus 0.5 --memory 1g`, copy of the production database (322 MB) with
+5,000 synthetic feeds added (eight local origins on a `11.11.0.0/24` Docker network returning a 20-item feed
+with one new item per fetch, all subscribed by the test user; real feeds parked until 2027), 1-minute refresh
+interval so the feeds are due on the first tick. k6 `scenarios/capacity.js` at 50 req/s for 60 s, started at
+the first scheduled fetch, so the whole window is inside a refresh cycle. One run each.
+
+| Build | Fetch budget | p50 | p90 | p95 | max | failed | Cycle (5,000 feeds) |
+|---|---|---|---|---|---|---|---|
+| before (`main`) | none | 87 ms | 308 ms | 513 ms | 1.8 s | 0% | about 80 s, CPU at the cap |
+| after | 5/s | 2 ms | 14 ms | 30 ms | 212 ms | 0% | 1,000 s (16.7 min), CPU about 7% |
+| after | 20/s | 17 ms | 160 ms | 216 ms | 722 ms | 0% | 255 s, CPU about 25 to 35% |
+| after | off (yield only) | 167 ms | 362 ms | 429 ms | 1.0 s | 0% | 102 s, CPU at the cap |
+
+p95 at 50 req/s during a refresh cycle is 30 ms at 5/s (idle is 12 ms), against 513 ms before; the cycle
+completes, at the budgeted rate. The budget is what does the work (the yield-only row is the dropped mechanism
+on its own). 20/s is already too much for the half-core (p95 216 ms). Reproduce with
+`test/load/refresh-pacing.sh` (prepare, run, teardown).
+
+**Request capacity while the paced refresher runs, by budget.** Same container and data (a fresh copy of the
+prepared database for each budget; the eight origins and the network stayed up). `capacity.sh` rates of 30 s
+each, started at the first scheduled fetch so every rate ran inside one 5,000-feed cycle, then the same sweep on
+the same image with `SchedulerEnabled=false` as the control. CPU is one `docker stats` sample 15 s into each rate
+(the 0.5 vCPU cap reads as 50%). Knee: the first rate where p95 exceeds 500 ms, failures exceed 1% or
+iterations drop. One run per budget except 5/s, which was run twice (b is the repeat). Summaries in
+`results/refresh-pacing/sweep-*.json`.
+
+Control, scheduler off. Knee **400 req/s**.
+
+| Requests/s | achieved | p50 | p95 | failed | dropped | CPU |
+|---|---|---|---|---|---|---|
+| 50 | 50 | 2 ms | 22 ms | 0% | 0 | 27% |
+| 100 | 100 | 2 ms | 12 ms | 0% | 0 | 30% |
+| 150 | 150 | 1 ms | 13 ms | 0% | 0 | 31% |
+| 200 | 197 | 2 ms | 306 ms | 0% | 0 | 47% |
+| 300 | 299 | 24 ms | 187 ms | 0% | 0 | 48% |
+| 400 | 388 | 489 ms | 1.8 s | 32.6% | 353 | 50% |
+
+Budget 5/s. Knee **200 req/s** in both runs. Cycle 1,053 s under load (999 s idle).
+
+| Requests/s | achieved | p50 | p95 | failed | dropped | CPU | run b: p50 | p95 | failed | dropped |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 50 | 50 | 2 ms | 20 ms | 0% | 0 | 33% | 3 ms | 61 ms | 0% | 0 |
+| 100 | 100 | 2 ms | 69 ms | 0% | 0 | 38% | 4 ms | 255 ms | 0% | 0 |
+| 150 | 150 | 2 ms | 22 ms | 0% | 0 | 32% | 2 ms | 55 ms | 0% | 0 |
+| 200 | 200 | 137 ms | 1.0 s | 0% | 3 | 49% | 60 ms | 914 ms | 0% | 71 |
+| 300 | 266 | 899 ms | 3.7 s | 17.6% | 413 | 49% | 436 ms | 3.6 s | 1.1% | 234 |
+| 400 | 343 | 1.8 s | 3.7 s | 63.3% | 920 | 48% | 678 ms | 4.1 s | 29.5% | 299 |
+
+Budget 10/s (the default). Knee **300 req/s**. Cycle 555 s under load.
+
+| Requests/s | achieved | p50 | p95 | failed | dropped | CPU |
+|---|---|---|---|---|---|---|
+| 50 | 50 | 2 ms | 32 ms | 0% | 0 | 32% |
+| 100 | 100 | 14 ms | 194 ms | 0% | 0 | 50% |
+| 150 | 150 | 1 ms | 21 ms | 0% | 0 | 34% |
+| 200 | 200 | 3 ms | 67 ms | 0% | 0 | 45% |
+| 300 | 283 | 783 ms | 5.9 s | 12.9% | 367 | 49% |
+| 400 | 379 | 987 ms | 2.6 s | 47.5% | 596 | 52% |
+
+Budget 20/s. Knee **150 req/s**. Cycle 380 s under load (255 s idle).
+
+| Requests/s | achieved | p50 | p95 | failed | dropped | CPU |
+|---|---|---|---|---|---|---|
+| 50 | 50 | 2 ms | 86 ms | 0% | 0 | 40% |
+| 100 | 100 | 57 ms | 248 ms | 0% | 0 | 48% |
+| 150 | 127 | 1.5 s | 9.7 s | 8.8% | 468 | 51% |
+| 200 | 165 | 2.0 s | 7.6 s | 31.7% | 610 | 51% |
+| 300 | 245 | 1.7 s | 4.3 s | 50.2% | 679 | 50% |
+| 400 | 378 | 971 ms | 2.4 s | 53.8% | 618 | 51% |
+
+**Reading it.** Knees: control 400, budget 5/s 200 (twice), 10/s 300, 20/s 150. The 10/s run beating 5/s at
+200 req/s is one 30 s sample against two and should be read as "5 and 10 are the same within run-to-run
+variance", not as 10 being cheaper: both keep every rate up to 150 req/s inside p95 70 ms (one 10/s point at
+100 req/s read 194 ms, one 5/s point 255 ms), and both lose the 300 req/s step the control still passes. 20/s
+is clearly too much: p95 86 ms already at 50 req/s and a collapse at 150. Under load every budget runs slower
+than nominal (the yield holds fetches back): 4.7/s at 5, 9/s at 10, 13/s at 20.
+
+**Default: 10 fetches/s.** Same request impact as 5/s in these runs, the 5,000-feed cycle in 9 minutes
+instead of 17, and room for about 36,000 distinct feeds inside the one-hour default interval. Whatever the budget, plan request capacity at the 150 req/s knee, not the 300 req/s the idle box shows, since a
+cycle is in progress for a sizeable part of every hour once feed counts grow.
+
+**Next step if feed counts grow past tens of thousands.** At 10/s the budget itself becomes the limit (36,000
+feeds an hour). Past that, fetch and parse should move to a separate worker container that posts parsed items
+back to the API: the SQLite file lives on the API container's own disk and only the API can write it, so the
+API would keep the single writer and lose only the fetch and parse CPU.
+
+### Users at this capacity
+
+Per-user rate: the owner's own traffic from 28 days of per-minute platform request counts with load-test bursts
+removed, last 7 days: 825 requests a day, 92 active minutes a day (46 reading, 46 an idle tab polling every 30 s),
+reading minute median 10 requests (p90 26), heaviest real hour 516 requests = 0.14 req/s. Everyone is assumed as
+intense as the owner at their heaviest hour.
+
+| Measure | At 300 req/s (the knee with refresh at 10/s) | At 150 req/s (planning, half the knee) |
+|---|---|---|
+| Users all in their heaviest hour at the same moment | ~2,100 | ~1,050 |
+| Registered users, 10% of them at peak together | ~21,000 | ~10,000 |
+| Idle open tabs polling every 30 s, if that were all the traffic | ~9,000 | ~4,500 |
+
+The planning row is the one to quote: the knee is a cliff rather than a slope, and the live box runs a little
+slower than the capped local container (public endpoints at 50 req/s: live p95 8 ms versus local 4 ms). This is
+request handling only. Database size against the deploy handover backup stays the binding limit until PR #170
+lands; after that the next limit is distinct feed count against the fetch budget, about 36,000 feeds at 10/s
+inside the one-hour interval, which is roughly 250 users bringing 143 brand-new feeds each or 550 at the owner's
+current 44% unique share.

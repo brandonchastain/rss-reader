@@ -21,3 +21,17 @@
 * [SELF-HOSTING.md](SELF-HOSTING.md) — host it yourself, on Docker or on Azure
 * [DEPLOY.md](DEPLOY.md) — how production deploys from CI, and the runbook
 * [OPML-FORMAT.md](OPML-FORMAT.md) — the import/export format
+
+# Running costs
+Blob replication (BLOB-DURABILITY-SPEC.md) costs about $0.10 a day in storage
+operations, most of it the writer lease renewing every 10 s. Two config
+changes halve that, at the price of a slower crash recovery:
+
+* `RssAppConfig:Durability:LeaseDuration` 30 s → 60 s and `LeaseRenewInterval`
+  10 s → 20 s (a crashed writer's lease then takes 60 s to expire, not 30).
+* `sync-interval` in `infrastructure/litestream.yml` 30 s → 60 s (up to a
+  minute of writes lost in a crash instead of 30 s).
+
+Each deploy also uploads one full copy of the database (about 230 MB) while
+Litestream re-establishes its position; that is inherent, so fewer deploys is
+the only lever there.

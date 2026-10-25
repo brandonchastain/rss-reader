@@ -86,31 +86,34 @@ namespace RssReader.Server.Services
 
                 try
                 {
-                    if (File.Exists(LockPath))
+                    if (ProbeExists())
                     {
                         if (IsAlive(out var age)) return false;
                         _logger.LogWarning("Stale writer lock found (age={Age}) — taking over.", age);
                         File.Delete(LockPath);
                     }
 
-                    // CreateNew is the atomic claim: of two writers racing for a missing
-                    // or stale lock, exactly one creates the file.
-                    using (var fs = new FileStream(LockPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
-                    using (var writer = new StreamWriter(fs))
-                    {
-                        writer.WriteLine($"{Environment.MachineName}:{Environment.ProcessId}:{DateTimeOffset.UtcNow:O}");
-                    }
+                    if (TryCreate()) return true;
 
-                    IsHeld = true;
-                    StartHeartbeat();
-                    return true;
+                    // CreateNew said "exists" but the server says otherwise: the CIFS
+                    // client still holds a positive directory entry for the file the
+                    // old holder deleted (it is kept for actimeo). An unlink round-trips
+                    // to the server and drops that entry (ENOENT, nothing is deleted), so
+                    // one retry claims the lock within this poll instead of the next
+                    // cache refresh. A foreign lock created in the window between the
+                    // probe and the unlink is the same race CreateNew already closes:
+                    // the retry then fails and the next poll sees it.
+                    if (ProbeExists()) return false;
+                    try { File.Delete(LockPath); } catch (IOException) { }
+                    return TryCreate();
                 }
                 catch (IOException ex)
                 {
                     // Lost the race when the file now exists (another container created
                     // it between our check and our create); otherwise the directory
-                    // itself is the problem.
-                    if (!File.Exists(LockPath)) error = ex;
+                    // itself is the problem. Decide with the server-side probe, not
+                    // File.Exists, which answers from the attribute cache.
+                    if (!ProbeExists()) error = ex;
                     return false;
                 }
                 catch (UnauthorizedAccessException ex)
@@ -121,7 +124,58 @@ namespace RssReader.Server.Services
             }
         }
 
+        /// <summary>
+        /// The atomic claim: of two writers racing for a missing or stale lock, exactly
+        /// one creates the file. Returns false when the file already exists, by the
+        /// cached stat (a stale directory entry counts) or by the server; any other
+        /// failure propagates.
+        /// </summary>
+        private bool TryCreate()
+        {
+            try
+            {
+                using (var fs = new FileStream(LockPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+                using (var writer = new StreamWriter(fs))
+                {
+                    writer.WriteLine($"{Environment.MachineName}:{Environment.ProcessId}:{DateTimeOffset.UtcNow:O}");
+                }
+            }
+            catch (IOException) when (File.Exists(LockPath) || ProbeExists())
+            {
+                return false;
+            }
+
+            IsHeld = true;
+            StartHeartbeat();
+            return true;
+        }
+
         public bool TryAcquire() => TryAcquire(out _);
+
+        /// <summary>
+        /// Whether the lock file exists, asked of the file server rather than the local
+        /// attribute cache. <see cref="File.Exists(string)"/> is a stat, and on the Azure
+        /// Files SMB mount (CIFS, actimeo=30) a stat is answered from a cache that is
+        /// refreshed only every 30 s, so a lock the old revision deleted kept "existing"
+        /// here for up to 30 s per cache period (observed as a fixed 60 s or 90 s wait in
+        /// every deploy). An open always round-trips to the server and, on ENOENT, drops
+        /// the stale directory entry, so the new revision sees the release within one
+        /// <see cref="PollInterval"/>. Any failure other than "not found" is treated as
+        /// "exists" and left to the mtime check and the CreateNew claim to sort out.
+        /// </summary>
+        private bool ProbeExists()
+        {
+            try
+            {
+                using var probe = new FileStream(LockPath, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete, bufferSize: 1, FileOptions.None);
+                return true;
+            }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+            catch (IOException) { return true; }
+            catch (UnauthorizedAccessException) { return true; }
+        }
 
         /// <summary>
         /// Wait until the lock can be taken: polls while another writer's lock is alive,
