@@ -12,16 +12,12 @@ public class SQLiteFeedRepository : IFeedRepository
 
     public SQLiteFeedRepository(
         IDbConnections connections,
-        ILogger<SQLiteFeedRepository> logger,
-        bool isReadOnly = false)
+        ILogger<SQLiteFeedRepository> logger)
     {
         this.connections = connections;
         this.logger = logger;
-        if (!isReadOnly)
-        {
-            using var connection = this.connections.OpenWrite();
-            DatabaseSchema.EnsureCreated(connection);
-        }
+        using var connection = this.connections.OpenWrite();
+        DatabaseSchema.EnsureCreated(connection);
     }
 
     private const string SubscriptionSelect = """

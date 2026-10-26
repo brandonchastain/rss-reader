@@ -40,7 +40,7 @@ public sealed class E2eFixtureBuilder
             File.Delete(path + suffix);
         }
 
-        var connections = new SqliteDbConnections(path, isReadOnly: false);
+        var connections = new SqliteDbConnections(path);
         var users = new SQLiteUserRepository(connections, NullLogger<SQLiteUserRepository>.Instance);
         var feeds = new SQLiteFeedRepository(connections, NullLogger<SQLiteFeedRepository>.Instance);
         var items = new SQLiteItemRepository(connections, NullLogger<SQLiteItemRepository>.Instance, feeds, users);

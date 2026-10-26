@@ -144,6 +144,3 @@ with its blob-only storage account (the Litestream replica, the writer lease and
    `AZURE_SUBSCRIPTION_ID` (an OIDC-federated managed identity with deploy
    rights on the resource group) and the `AUTH_*_CLIENT_ID/SECRET` pairs. From
    here, merge to `main`; see [DEPLOY.md](DEPLOY.md).
-
-Optional read replicas (`enableReadReplica`) are described in
-[DEPLOY.md](DEPLOY.md#read-replicas-optional-off).

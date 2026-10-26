@@ -136,7 +136,7 @@ public sealed class LegacyMigrationTests
     public async Task Migration_MovesEverything_Deterministically_AndRecordsItself()
     {
         SeedLegacy();
-        var connections = new SqliteDbConnections(path, isReadOnly: false);
+        var connections = new SqliteDbConnections(path);
 
         var state = LegacyMigration.RunIfNeeded(connections, NullLogger.Instance);
 
@@ -256,7 +256,7 @@ public sealed class LegacyMigrationTests
     [TestMethod]
     public void Migration_FreshDatabase_IsNotNeeded()
     {
-        var connections = new SqliteDbConnections(path, isReadOnly: false);
+        var connections = new SqliteDbConnections(path);
         var state = LegacyMigration.RunIfNeeded(connections, NullLogger.Instance);
         Assert.AreEqual("not-needed", state.Status);
 
@@ -274,7 +274,7 @@ public sealed class LegacyMigrationTests
         {
             Run(c, "ALTER TABLE FeedValidators RENAME TO Legacy_FeedValidators");
         }
-        var connections = new SqliteDbConnections(path, isReadOnly: false);
+        var connections = new SqliteDbConnections(path);
         Assert.ThrowsException<InvalidOperationException>(() => LegacyMigration.RunIfNeeded(connections, NullLogger.Instance));
     }
 
@@ -289,7 +289,7 @@ public sealed class LegacyMigrationTests
             Run(c, "CREATE TABLE Tags (Bogus TEXT)");
         }
 
-        var connections = new SqliteDbConnections(path, isReadOnly: false);
+        var connections = new SqliteDbConnections(path);
         Assert.ThrowsException<SqliteException>(() => LegacyMigration.RunIfNeeded(connections, NullLogger.Instance));
 
         using (var c = OpenRaw())

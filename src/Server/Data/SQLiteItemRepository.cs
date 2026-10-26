@@ -27,14 +27,13 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         ILogger<SQLiteItemRepository> logger,
         IFeedRepository feedStore,
         IUserRepository userStore,
-        bool isReadOnly = false,
         bool rebuildFtsOnStartup = false)
     {
         this.connections = connections;
         this.logger = logger;
         this.feedStore = feedStore;
         this.userStore = userStore;
-        if (!isReadOnly) this.InitializeDatabase(rebuildFtsOnStartup);
+        this.InitializeDatabase(rebuildFtsOnStartup);
     }
 
     private void InitializeDatabase(bool rebuildFtsOnStartup)

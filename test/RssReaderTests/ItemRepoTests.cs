@@ -26,7 +26,7 @@ public sealed class ItemRepoTests
         Directory.CreateDirectory(Path.Combine("wwwroot", "images"));
 
         var config = new RssAppConfig { DbLocation = "tests.db" };
-        var dbConnections = new SqliteDbConnections("tests.db", isReadOnly: false);
+        var dbConnections = new SqliteDbConnections("tests.db");
 
         var userRepo = new SQLiteUserRepository(
             dbConnections,
@@ -133,7 +133,7 @@ public sealed class ItemRepoTests
         if (File.Exists(dbName)) File.Delete(dbName);
         Directory.CreateDirectory(Path.Combine("wwwroot", "images"));
 
-        var dbConnections = new SqliteDbConnections(dbName, isReadOnly: false);
+        var dbConnections = new SqliteDbConnections(dbName);
         var userRepo = new SQLiteUserRepository(dbConnections, new NullLogger<SQLiteUserRepository>());
         userRepo.AddUser("testUser", 0);
         var feedRepo = new SQLiteFeedRepository(dbConnections, new NullLogger<SQLiteFeedRepository>());
@@ -360,7 +360,7 @@ public sealed class ItemRepoTests
         // Register a second feed so a duplicate Href can exist (Posts is unique per
         // (FeedId, Href), so the same Href needs a different feed).
         var feedRepo2 = new SQLiteFeedRepository(
-            new SqliteDbConnections("new_count_dedup_test.db", isReadOnly: false),
+            new SqliteDbConnections("new_count_dedup_test.db"),
             new NullLogger<SQLiteFeedRepository>());
         var feed2 = new NewsFeed(2, "https://feeds.example.org/test2", 0);
         feedRepo2.AddFeed(feed2);
@@ -387,7 +387,7 @@ public sealed class ItemRepoTests
 
         // Tags are per subscription: a second feed carries the near-miss tag.
         var feedRepo2 = new SQLiteFeedRepository(
-            new SqliteDbConnections("new_count_tag_exact_test.db", isReadOnly: false),
+            new SqliteDbConnections("new_count_tag_exact_test.db"),
             new NullLogger<SQLiteFeedRepository>());
         var feed2 = new NewsFeed(2, "https://feeds.example.org/newsletter", 0);
         feedRepo2.AddFeed(feed2);

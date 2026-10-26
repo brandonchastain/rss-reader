@@ -53,7 +53,6 @@ internal sealed class ApiTestHost : IDisposable
             Environment.SetEnvironmentVariable("RssAppConfig__DbLocation", this.dbPath);
             Environment.SetEnvironmentVariable("RssAppConfig__IsTestUserEnabled", isTestUserEnabled ? "true" : "false");
             Environment.SetEnvironmentVariable("RssAppConfig__SchedulerEnabled", "false");
-            Environment.SetEnvironmentVariable("RssAppConfig__IsReadOnly", "false");
             Environment.SetEnvironmentVariable("RssAppConfig__Auth__LoginRateLimitPerMinute", loginRateLimit?.ToString());
             Environment.SetEnvironmentVariable("RssAppConfig__Auth__AddFeedRateLimitPerMinute", addFeedRateLimit?.ToString());
             Environment.SetEnvironmentVariable("RssAppConfig__AllowTestUserInProduction", allowTestUserInProduction ? "true" : null);

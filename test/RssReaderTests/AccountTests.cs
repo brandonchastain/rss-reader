@@ -21,7 +21,7 @@ public sealed class AccountTests
     public void Setup()
     {
         testDbFile = $"account-{Guid.NewGuid():N}.db";
-        var dbConnections = new SqliteDbConnections(testDbFile, isReadOnly: false);
+        var dbConnections = new SqliteDbConnections(testDbFile);
 
         Directory.CreateDirectory(Path.Combine("wwwroot", "images"));
         // Pre-create favicon to skip network download in AddItemsAsync

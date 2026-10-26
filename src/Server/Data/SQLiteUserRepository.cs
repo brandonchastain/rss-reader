@@ -13,16 +13,12 @@ public class SQLiteUserRepository : IUserRepository
 
     public SQLiteUserRepository(
         IDbConnections connections,
-        ILogger<SQLiteUserRepository> logger,
-        bool isReadOnly = false)
+        ILogger<SQLiteUserRepository> logger)
     {
         this.connections = connections;
         this.logger = logger;
-        if (!isReadOnly)
-        {
-            using var connection = this.connections.OpenWrite();
-            DatabaseSchema.EnsureCreated(connection);
-        }
+        using var connection = this.connections.OpenWrite();
+        DatabaseSchema.EnsureCreated(connection);
     }
 
     public RssUser GetUserByName(string username)

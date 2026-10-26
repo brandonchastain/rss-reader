@@ -16,7 +16,7 @@ public sealed class PopularFeedsTests
     public void Setup()
     {
         testDbFile = $"popularfeeds-{Guid.NewGuid():N}.db";
-        var connections = new SqliteDbConnections(testDbFile, isReadOnly: false);
+        var connections = new SqliteDbConnections(testDbFile);
         userRepo = new SQLiteUserRepository(connections, new NullLogger<SQLiteUserRepository>());
         feedRepo = new SQLiteFeedRepository(connections, new NullLogger<SQLiteFeedRepository>());
     }
