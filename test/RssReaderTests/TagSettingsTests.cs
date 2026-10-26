@@ -23,7 +23,7 @@ public sealed class TagSettingsTests
     public void Setup()
     {
         testDbFile = $"tagsettings-{Guid.NewGuid():N}.db";
-        var dbConnections = new SqliteDbConnections(testDbFile, isReadOnly: false);
+        var dbConnections = new SqliteDbConnections(testDbFile);
 
         Directory.CreateDirectory(Path.Combine("wwwroot", "images"));
 

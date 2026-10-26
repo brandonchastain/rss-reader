@@ -95,7 +95,7 @@ public sealed class AdminTests
     // ── stats recording and retrieval ─────────────────────────────────────────
 
     private SQLiteSystemStatsRepository CreateRepo(string db)
-        => new SQLiteSystemStatsRepository(new SqliteDbConnections(db, isReadOnly: false));
+        => new SQLiteSystemStatsRepository(new SqliteDbConnections(db));
 
     [TestMethod]
     public void RecordSnapshot_ThenGetLatest_ReturnsCorrectData()

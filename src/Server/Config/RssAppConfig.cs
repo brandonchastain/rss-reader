@@ -13,9 +13,6 @@ namespace RssApp.Config
         /// <summary>Path of the live SQLite database file.</summary>
         public string DbLocation { get; set; }
 
-        /// <summary>Serve reads only and refuse every write; for read replicas.</summary>
-        public bool IsReadOnly { get; set; }
-
         /// <summary>Rebuild the full-text search index from stored posts at startup.</summary>
         public bool RebuildFtsOnStartup { get; set; }
 

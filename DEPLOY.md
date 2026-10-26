@@ -42,7 +42,7 @@ container app config.
 
 ## Changing infrastructure
 
-Edit `infrastructure/main.bicepparam` (sizing, replica counts, read replicas) or
+Edit `infrastructure/main.bicepparam` (sizing, replica counts) or
 `main.bicep` and merge. Every parameter and env var is listed under
 [Knobs](ARCHITECTURE.md#knobs). Cost consequences are noted there too; the always-on
 replica and the Litestream blob traffic are the two lines that show up on the bill.
@@ -117,23 +117,6 @@ DNS lives in the `brchasta` subscription, zone `brandonchastain.com`: a CNAME
 `api.rss` to the app's FQDN and a TXT `asuid.api.rss` holding the app's
 `customDomainVerificationId`. Both records must exist before a deploy that adds a
 new hostname, or certificate issuance fails.
-
-## Read replicas (optional, off)
-
-When `enableReadReplica=true`, a second Container App `rss-reader-api-reader` scales
-0 to N and can serve the read-heavy GETs (timeline, feeds, search, content). Nothing
-routes traffic to it since the Functions proxy went away (see
-[ARCHITECTURE.md](ARCHITECTURE.md#backend-web-api)), so leave it off until a router
-exists. Readers restore their database from
-the Litestream blob replica at startup, which the writer always produces. Enable
-`enableReadReplica` in `main.bicepparam` and merge.
-
-```bash
-az containerapp show --name rss-reader-api-reader --resource-group rss-container-rg --query properties.runningStatus
-az containerapp logs show --name rss-reader-api-reader --resource-group rss-container-rg --type console --tail 20
-```
-
-A healthy reader logs `Starting in READER mode (read-only replica with follow-mode restore).`
 
 ## Login cutover (Static Web Apps Easy Auth -> API login)
 

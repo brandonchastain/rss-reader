@@ -8,18 +8,15 @@ public class RepositoryFactory
 {
     private readonly IDbConnections connections;
     private readonly IServiceProvider serviceProvider;
-    private readonly bool isReadOnly;
     private readonly bool rebuildFtsOnStartup;
 
     public RepositoryFactory(
         IDbConnections connections,
         IServiceProvider serviceProvider,
-        bool isReadOnly = false,
         bool rebuildFtsOnStartup = false)
     {
         this.connections = connections;
         this.serviceProvider = serviceProvider;
-        this.isReadOnly = isReadOnly;
         this.rebuildFtsOnStartup = rebuildFtsOnStartup;
     }
 
@@ -27,16 +24,14 @@ public class RepositoryFactory
     {
         return new SQLiteUserRepository(
             this.connections,
-            this.serviceProvider.GetRequiredService<ILogger<SQLiteUserRepository>>(),
-            this.isReadOnly);
+            this.serviceProvider.GetRequiredService<ILogger<SQLiteUserRepository>>());
     }
 
     public IFeedRepository CreateFeedRepository()
     {
         return new SQLiteFeedRepository(
             this.connections,
-            this.serviceProvider.GetRequiredService<ILogger<SQLiteFeedRepository>>(),
-            this.isReadOnly);
+            this.serviceProvider.GetRequiredService<ILogger<SQLiteFeedRepository>>());
     }
 
     public IItemRepository CreateItemRepository()
@@ -46,7 +41,6 @@ public class RepositoryFactory
             this.serviceProvider.GetRequiredService<ILogger<SQLiteItemRepository>>(),
             this.serviceProvider.GetRequiredService<IFeedRepository>(),
             this.serviceProvider.GetRequiredService<IUserRepository>(),
-            this.isReadOnly,
             this.rebuildFtsOnStartup);
     }
 }

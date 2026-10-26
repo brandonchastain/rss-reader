@@ -20,7 +20,6 @@
 |  |  |  SQLite   |                               |   |
 |  |  +-----------+                               |   |
 |  +----------------------------------------------+   |
-|  (optional read replicas: see DEPLOY.md)            |
 +-----------------------------------------------------+
 ```
 
@@ -161,15 +160,6 @@ docs link here.
    grows by about one database per restart until retention trims it. The
    point-in-time window is therefore three to four hours.
 
-##### Read Replicas (optional)
-
-The backend supports an optional read replica mode controlled by `RssAppConfig.IsReadOnly` and the `APP_ROLE` environment variable:
-
-- **Writer** (`APP_ROLE=writer`, default) — Single replica, all background services (feed scheduler, retention, Litestream), handles reads and writes.
-- **Reader** (`APP_ROLE=reader`, `IsReadOnly=true`) — 0→N replicas, restores from the Litestream blob on startup, serves read-only traffic. No background services. Uses `NoOpFeedRefresher` so controllers still resolve.
-
-Routing reads to the reader used to be the job of the Static Web Apps Functions proxy, which the login migration removed. Nothing routes to readers today: the frontend calls the writer's hostname directly. Turning `enableReadReplica=true` back on needs a router in front of both apps (or the frontend sending read-only GETs to a second base URL) that falls back to the writer on any error. Until that exists the parameter stays `false`.
-
 
 # Knobs
 
@@ -191,8 +181,6 @@ the provider secrets are supplied by the workflow, not the param file.
 | `cooldownPeriod` (inline) | `900` s | — | How long KEDA waits before scaling an idle replica away. Keep above boot time or activation fails mid-boot. |
 | `http-rule concurrentRequests` (inline) | `10` | — | Concurrent requests per replica before KEDA scales out (moot while `maxReplicas` is 1). |
 | Startup probe (inline) | `2s` period × `150` failures | — | 300s startup budget against `/api/healthz`. |
-| `enableReadReplica` | `false` | — | Deploys the reader Container App. It restores from the Litestream replica the writer always produces. |
-| `maxReadReplicas` | `3` | — | Reader scale ceiling (reader is 0.25 vCPU / 0.5 GiB, min 0). |
 | `staticWebAppSku` | `Free` | — | SWA tier. |
 | `customDomain` | `rss.brandonchastain.com` | — | SWA custom domain. |
 | `apiCustomDomain` | `api.rss.brandonchastain.com` | — | The API's own hostname, so a session cookie can be shared with the frontend origin. Empty removes the binding. |
@@ -206,7 +194,6 @@ the provider secrets are supplied by the workflow, not the param file.
 |---|---|---|
 | `RssAppConfig__Durability__*` | `LitestreamEnabled`, `BlobServiceUri`, `RestoreFromBlob=true` | Blob replication, the writer lease and the startup restore. Any `RssAppConfig__*` setting can be overridden the same way. |
 | `Logging__LogLevel__Default` | `Warning` | Log volume into Log Analytics. |
-| `APP_ROLE` | `writer` | `reader` selects the read-only boot path in `docker-entrypoint.sh`. |
 | `RssAppConfig__Auth__DataProtectionKeysContainer` | `dataprotection` | Blob container holding the session-cookie key ring (`keys.xml`), so deploys keep sessions. |
 | `RssAppConfig__Auth__Providers__<name>__ClientId` / `ClientSecret` | secrets | One pair per offered provider. |
 | `LITESTREAM_AZURE_ACCOUNT_NAME` | storage account | Blob account for Litestream. |
@@ -262,7 +249,6 @@ provider id in `Users.ProviderUserId`; the resolver looks in both.
 
 | Setting | Default | Effect |
 |---|---|---|
-| `IsReadOnly` | `false` | Reader mode: no background services, writes rejected. |
 | `IsTestUserEnabled` | `false` | Every request is the test user; no provider needed. Refused in Production unless `AllowTestUserInProduction`. |
 | `AllowTestUserInProduction` | `false` | Lets `IsTestUserEnabled` run in Production, for a private single-user box with no login. |
 | `AdminAadUserIds` | empty | Comma-separated login ids (`provider:subject`, or a bare subject) that may use `/admin`. |

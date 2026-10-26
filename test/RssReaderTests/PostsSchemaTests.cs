@@ -21,7 +21,7 @@ internal sealed class TestDatabase : IDisposable
     public TestDatabase(string prefix = "schema")
     {
         Path = $"{prefix}-{Guid.NewGuid():N}.db";
-        Connections = new SqliteDbConnections(Path, isReadOnly: false);
+        Connections = new SqliteDbConnections(Path);
         Users = new SQLiteUserRepository(Connections, NullLogger<SQLiteUserRepository>.Instance);
         Feeds = new SQLiteFeedRepository(Connections, NullLogger<SQLiteFeedRepository>.Instance);
         Items = new SQLiteItemRepository(Connections, NullLogger<SQLiteItemRepository>.Instance, Feeds, Users);

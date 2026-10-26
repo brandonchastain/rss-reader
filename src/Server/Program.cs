@@ -4,7 +4,6 @@ using Microsoft.Extensions.Caching.Memory;
 using RssApp.ComponentServices;
 using RssApp.Config;
 using RssApp.Data;
-using RssApp.Filters;
 using RssApp.RssClient;
 using RssApp.Serialization;
 using RssReader.Server.Services;
@@ -28,7 +27,7 @@ if (config.IsTestUserEnabled && builder.Environment.IsProduction() && !config.Al
         "That setting authenticates every request as a fake administrator; turn it off, " +
         "or set RssAppConfig:AllowTestUserInProduction=true for a private single-user box with no login.");
 }
-var dbConnections = new SqliteDbConnections(config.DbLocation, config.IsReadOnly);
+var dbConnections = new SqliteDbConnections(config.DbLocation);
 
 // Writer durability (BLOB-DURABILITY-SPEC.md): the live DB on local disk is restored from the
 // Litestream replica at startup and replicated back by a Litestream child of this process.
@@ -40,10 +39,8 @@ var startupLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole().SetMinimum
 var processStartedUtc = DateTimeOffset.UtcNow;
 var writerIdentity = $"{Environment.GetEnvironmentVariable("CONTAINER_APP_REVISION") ?? "local"}/{Environment.MachineName}";
 var writerState = new WriterState();
-var writerLease = config.IsReadOnly
-    ? null
-    : BlobWriterLease.Create(config.Durability, startupLoggerFactory.CreateLogger<BlobWriterLease>(),
-        config.Durability.RestoreEnabled ? config.Durability.HandoffLeasePollInterval : null);
+var writerLease = BlobWriterLease.Create(config.Durability, startupLoggerFactory.CreateLogger<BlobWriterLease>(),
+    config.Durability.RestoreEnabled ? config.Durability.HandoffLeasePollInterval : null);
 using var leaseAcquireCts = new CancellationTokenSource();
 var leaseAcquire = writerLease == null
     ? Task.FromResult(false)
@@ -52,7 +49,7 @@ var leaseAcquire = writerLease == null
 // Spec 3.2 steps 3 to 5, behind RssAppConfig:Durability:RestoreFromBlob: once the lease is
 // held, restore /tmp from the Litestream replica. Without it (local development, the e2e
 // suite, a self-hosted box) there is no gate and SQLite creates the database on first use.
-if (config.Durability.RestoreFromBlob && !config.IsReadOnly)
+if (config.Durability.RestoreFromBlob)
 {
     if (!config.Durability.RestoreEnabled || writerLease == null)
     {
@@ -113,11 +110,7 @@ if (config.Durability.RestoreFromBlob && !config.IsReadOnly)
 // One-shot schema migration (DB-REDESIGN-SPEC.md section 7) before any
 // repository opens the database. Runs inside one transaction and refuses to
 // start on failure; the legacy tables stay as Legacy_* until dropped by hand.
-MigrationState migrationState = new(DatabaseSchema.MigrationId, "skipped-reader", null, null, null);
-if (!config.IsReadOnly)
-{
-    migrationState = LegacyMigration.RunIfNeeded(dbConnections, startupLoggerFactory.CreateLogger("LegacyMigration"));
-}
+var migrationState = LegacyMigration.RunIfNeeded(dbConnections, startupLoggerFactory.CreateLogger("LegacyMigration"));
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
@@ -127,12 +120,11 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 });
 
 builder.Services.AddMemoryCache();
-// Base IHttpClientFactory for all roles (readers included) so services like
-// FaviconService resolve. The writer additionally configures the named
-// "RssClient" below; on readers CreateClient("RssClient") falls back to a default.
+// Base IHttpClientFactory so services like FaviconService resolve; the named
+// "RssClient" is configured below.
 builder.Services.AddHttpClient();
-// Outbound destination policy. Registered for every role: the feed controller
-// (present on readers too) validates a new feed's URL before storing it.
+// Outbound destination policy: the feed controller validates a new feed's URL
+// before storing it.
 builder.Services.AddSingleton<OutboundUrlGuard>();
 builder.Services.AddResponseCompression(options =>
 {
@@ -180,7 +172,7 @@ builder.Services.AddRssRateLimiting(config.Auth);
 builder.Services
     .AddSingleton<RssAppConfig>(_ => config)
     .AddSingleton<IDbConnections>(_ => dbConnections)
-    .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbConnections, sb, config.IsReadOnly, config.RebuildFtsOnStartup))
+    .AddSingleton<RepositoryFactory>(sb => new RepositoryFactory(dbConnections, sb, config.RebuildFtsOnStartup))
     .AddSingleton<IFeedRepository>(sb =>
     {
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateFeedRepository();
@@ -205,61 +197,53 @@ builder.Services
     .AddSingleton<SystemStatsCollector>()
     .AddSingleton<RssApp.Data.AdminDetailQueries>();
 
-if (!config.IsReadOnly)
-{
-    // Write-mode services: background feed refresh, RSS fetching, replication
-    builder.Services
-        .AddSingleton<RssDeserializer>()
-        .AddSingleton<BackgroundWorkQueue>()
-        // Hosted services stop in reverse registration order, so the shutdown sequence of
-        // BLOB-DURABILITY-SPEC.md 3.3 is this list read bottom-up: the retention service,
-        // feed scheduler and worker stop first (nothing writes after this); Litestream runs
-        // the final sync; the blob lease is released (the next writer may now restore from
-        // the replica).
-        .AddSingleton(writerState)
-        .AddSingleton(sb => new WriterLeaseHostedService(
-            writerLease, sb.GetRequiredService<ILogger<WriterLeaseHostedService>>(), writerState))
-        .AddHostedService(p => p.GetRequiredService<WriterLeaseHostedService>())
-        .AddSingleton(sb => new LitestreamSupervisor(
-            config.Durability, config.DbLocation, sb.GetRequiredService<ILogger<LitestreamSupervisor>>()))
-        .AddHostedService(p => p.GetRequiredService<LitestreamSupervisor>())
-        .AddHostedService(sb => new ReplicaChainReporter(
-            config.Durability, config.DbLocation, sb.GetRequiredService<ILogger<ReplicaChainReporter>>()))
-        .AddHostedService<BackgroundWorker>()
-        .AddSingleton<RefreshPacer>()
-        .AddSingleton<IFeedRefresher, FeedRefresher>()
-        .AddHostedService<FeedScheduler>()
-        .AddHostedService<PostRetentionService>()
-        // Cooperative handover, the running writer's side (spec 3.2 v2): when the next
-        // revision asks on the handoff blob, stop the writers above, checkpoint, final
-        // sync, acknowledge, release the lease.
-        // Registered last so it is the first to stop and never races the shutdown order.
-        .AddHostedService(sb => new WriterHandoffService(
-            sb.GetService<WriterHandover>(), () => writerLease?.IsHeld == true, config.Durability.HandoffPollInterval,
-            sb.GetRequiredService<ILogger<WriterHandoffService>>()))
-        .AddTransient<RedirectDowngradeHandler>()
-        .AddTransient<OutboundUrlGuardHandler>()
-        // Per-request timeout so a single slow/hung feed can't stall the whole
-        // parallel refresh batch (the default HttpClient timeout is 100s).
-        .AddHttpClient("RssClient", c => c.Timeout = TimeSpan.FromSeconds(20))
-        .AddHttpMessageHandler<RedirectDowngradeHandler>()
-        // Inside the redirect handler on purpose: every hop it follows passes
-        // through the guard, so a public feed cannot 302 us to 169.254.169.254.
-        .AddHttpMessageHandler<OutboundUrlGuardHandler>()
-        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            // Resolves and filters at connect time, so a DNS answer that changes
-            // between the guard's check and the socket open still cannot reach
-            // a private address.
-            ConnectCallback = GuardedConnect.ConnectAsync
-        });
-}
-else
-{
-    // Read-only mode: register no-op IFeedRefresher so controllers can still resolve it
-    builder.Services.AddSingleton<IFeedRefresher, NoOpFeedRefresher>();
-}
+// Background feed refresh, RSS fetching, replication
+builder.Services
+    .AddSingleton<RssDeserializer>()
+    .AddSingleton<BackgroundWorkQueue>()
+    // Hosted services stop in reverse registration order, so the shutdown sequence of
+    // BLOB-DURABILITY-SPEC.md 3.3 is this list read bottom-up: the retention service,
+    // feed scheduler and worker stop first (nothing writes after this); Litestream runs
+    // the final sync; the blob lease is released (the next writer may now restore from
+    // the replica).
+    .AddSingleton(writerState)
+    .AddSingleton(sb => new WriterLeaseHostedService(
+        writerLease, sb.GetRequiredService<ILogger<WriterLeaseHostedService>>(), writerState))
+    .AddHostedService(p => p.GetRequiredService<WriterLeaseHostedService>())
+    .AddSingleton(sb => new LitestreamSupervisor(
+        config.Durability, config.DbLocation, sb.GetRequiredService<ILogger<LitestreamSupervisor>>()))
+    .AddHostedService(p => p.GetRequiredService<LitestreamSupervisor>())
+    .AddHostedService(sb => new ReplicaChainReporter(
+        config.Durability, config.DbLocation, sb.GetRequiredService<ILogger<ReplicaChainReporter>>()))
+    .AddHostedService<BackgroundWorker>()
+    .AddSingleton<RefreshPacer>()
+    .AddSingleton<IFeedRefresher, FeedRefresher>()
+    .AddHostedService<FeedScheduler>()
+    .AddHostedService<PostRetentionService>()
+    // Cooperative handover, the running writer's side (spec 3.2 v2): when the next
+    // revision asks on the handoff blob, stop the writers above, checkpoint, final
+    // sync, acknowledge, release the lease.
+    // Registered last so it is the first to stop and never races the shutdown order.
+    .AddHostedService(sb => new WriterHandoffService(
+        sb.GetService<WriterHandover>(), () => writerLease?.IsHeld == true, config.Durability.HandoffPollInterval,
+        sb.GetRequiredService<ILogger<WriterHandoffService>>()))
+    .AddTransient<RedirectDowngradeHandler>()
+    .AddTransient<OutboundUrlGuardHandler>()
+    // Per-request timeout so a single slow/hung feed can't stall the whole
+    // parallel refresh batch (the default HttpClient timeout is 100s).
+    .AddHttpClient("RssClient", c => c.Timeout = TimeSpan.FromSeconds(20))
+    .AddHttpMessageHandler<RedirectDowngradeHandler>()
+    // Inside the redirect handler on purpose: every hop it follows passes
+    // through the guard, so a public feed cannot 302 us to 169.254.169.254.
+    .AddHttpMessageHandler<OutboundUrlGuardHandler>()
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        // Resolves and filters at connect time, so a DNS answer that changes
+        // between the guard's check and the socket open still cannot reach
+        // a private address.
+        ConnectCallback = GuardedConnect.ConnectAsync
+    });
 
 // Shutdown budget: Kestrel drains, the feed scheduler and worker stop, then the final
 // Litestream sync (FinalSyncTimeout 20 s, then the child's own 30 s safety net) and the
@@ -310,13 +294,7 @@ if (config.Durability.RestoreEnabled && writerLease != null)
         sb.GetRequiredService<ILogger<WriterHandover>>()));
 }
 
-builder.Services.AddControllers(options =>
-{
-    if (config.IsReadOnly)
-    {
-        options.Filters.Add<ReadOnlyActionFilter>();
-    }
-});
+builder.Services.AddControllers();
 
 if (!builder.Environment.IsDevelopment())
 {
@@ -345,9 +323,7 @@ var app = builder.Build();
             DateTimeOffset.UtcNow, shutdownSw.ElapsedMilliseconds));
 }
 
-// Writer: instantiate repos to create database tables in order.
-// Reader: repos are still instantiated (singletons), but skip schema init
-// because the DB is restored from Litestream with tables already in place.
+// Instantiate repos to create database tables in order.
 var a = app.Services.GetRequiredService<IFeedRepository>();
 var b = app.Services.GetRequiredService<IUserRepository>();
 var c = app.Services.GetRequiredService<IItemRepository>();
@@ -397,7 +373,7 @@ app.MapGet("/api/healthz", async () =>
     return Results.Ok(new
     {
         status = "healthy",
-        role = config.IsReadOnly ? "reader" : "writer",
+        role = "writer",
         handedOver = writerState.IsHandedOver ? new { to = writerState.HandedOverTo, atUtc = writerState.HandedOverAtUtc } : null,
         migration = new
         {

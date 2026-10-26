@@ -6,8 +6,10 @@ Update 2026-10-25: rollout steps 1 to 5 are built. The key ring moved to blob
 backup, lock file, seed-from-share fallback, favicon write-through, volume and
 mount are removed in the step 5 change. The replica is now the only durable
 copy, and a restore that fails stops the container instead of falling back.
-Not done: the reader app and `IsReadOnly` (section 4), deleting the share and
-the old `storage.db/` replica prefix by hand, and `allowSharedKeyAccess=false`.
+Update 2026-10-26: the reader app, `APP_ROLE`, `IsReadOnly`, `NoOpFeedRefresher`
+and the read-only branch are removed too (section 4), the share and the old
+`storage.db/` replica prefix are deleted, and `allowSharedKeyAccess` is false.
+The rollout is complete as of 2026-10-26.
 Considered against PR #170 (a block delta on shutdown over the existing share),
 which fixes the handover but keeps the share, the storage key on the environment,
 SMB under SQLite and a 15-minute crash recovery point; the owner chose this

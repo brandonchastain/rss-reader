@@ -28,7 +28,7 @@ public class DatabaseRowCountsTests
                 cmd.ExecuteNonQuery();
             }
 
-            var counts = await DatabaseRowCounts.ReadAsync(new SqliteDbConnections(path, isReadOnly: false));
+            var counts = await DatabaseRowCounts.ReadAsync(new SqliteDbConnections(path));
             Assert.AreEqual(3, counts.Posts);
             Assert.AreEqual(2, counts.Subscriptions);
             Assert.AreEqual(1, counts.UserPostState);
