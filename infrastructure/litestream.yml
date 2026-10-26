@@ -19,17 +19,23 @@ socket:
   enabled: true
   path: /tmp/litestream.sock
 
-# Full snapshot hourly; keep snapshots (and so point-in-time restore) for 24 h.
+# Full snapshot hourly; keep snapshots (and so point-in-time restore) for 3 h.
 # Why hourly: after every restart Litestream's first upload is a full-database file
 # (it has no position in the replica), and each compaction level merges ranges that
-# contain it. A restore reads the newest snapshot plus every file since, so with a
-# daily snapshot and one restart per deploy the chain grew to ~4.8 GB for a 323 MB
-# database (172 L1 files, 21 of them full copies) and a restore took 80 s on
-# 2026-10-24. An hourly snapshot bounds the chain to one snapshot plus the restarts
-# of the last hour. Cost: ~220 MB uploaded per hour and ~5 GB retained.
+# contain it. A restore reads the newest snapshot plus every file since, so an hourly
+# snapshot bounds the chain to one snapshot plus the restarts of the last hour.
+# Why 3 h retention: everything older than the oldest kept snapshot is deleted, and each
+# snapshot and each restart's full copy is a whole database (~230 MB). At 24 h retention
+# the replica held 23 snapshots and 9 restart copies, 8.7 GB for a 326 MB database
+# (2026-10-26); at 3 h it holds about three snapshots (the newest is always kept, older
+# ones go once past retention, db.go EnforceSnapshotRetention) plus the tail since the
+# last deleted snapshot, roughly 0.9 to 1.4 GB. The cost is the recovery window: an
+# operator can restore to any point in the last three to four hours, not the last day. There is no other copy of the
+# database since the Azure Files share went away, so take a manual copy (`VACUUM INTO`
+# through `az containerapp exec`) before a risky migration.
 snapshot:
   interval: 1h
-  retention: 24h
+  retention: 3h
 
 # LTX compaction levels (defaults made explicit): L1 every 30 s, L2 every 5 min,
 # L3 hourly. L0 files are kept 5 min (l0-retention default). A restore reads the

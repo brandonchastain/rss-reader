@@ -45,7 +45,7 @@ container app config.
 Edit `infrastructure/main.bicepparam` (sizing, replica counts, read replicas) or
 `main.bicep` and merge. Every parameter and env var is listed under
 [Knobs](ARCHITECTURE.md#knobs). Cost consequences are noted there too; the always-on
-replica and the 5-minute backup copy are the two lines that show up on the bill.
+replica and the Litestream blob traffic are the two lines that show up on the bill.
 
 ## Monitoring
 
