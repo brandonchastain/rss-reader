@@ -27,8 +27,9 @@ socket:
 # Why 1 h retention: everything older than the oldest kept snapshot is deleted, and each
 # snapshot and each restart's full copy is a whole database (~230 MB). At 24 h retention
 # the replica held 23 snapshots and 9 restart copies, 8.7 GB for a 326 MB database
-# (2026-10-26); at 1 h it holds two or three snapshots plus the last hour's restarts,
-# roughly 0.5 to 0.7 GB. The cost is the recovery window: an operator can restore to any
+# (2026-10-26); at 1 h it holds one or two snapshots (the newest is always kept, older
+# ones go once past retention, db.go EnforceSnapshotRetention) plus the tail since the
+# last deleted snapshot, roughly 0.4 to 0.7 GB. The cost is the recovery window: an operator can restore to any
 # point in the last one to two hours, not the last day. There is no other copy of the
 # database since the Azure Files share went away, so take a manual copy (`VACUUM INTO`
 # through `az containerapp exec`) before a risky migration.

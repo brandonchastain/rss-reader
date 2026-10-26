@@ -154,8 +154,9 @@ docs link here.
    hour; each level briefly holds a copy of the initial full-database file
    until compaction trims the lower levels. The hourly snapshot and 1 h
    retention in `infrastructure/litestream.yml` bound the chain: everything
-   older than the oldest kept snapshot is deleted, so the replica holds two or
-   three snapshots plus the last hour's tail (about 0.5 to 0.7 GB at 326 MB).
+   older than the oldest kept snapshot is deleted (the newest snapshot is always
+   kept), so the replica holds one or two snapshots plus the tail since the
+   last deleted one (about 0.4 to 0.7 GB at 326 MB).
    After every restart Litestream uploads one full-database file, so the chain
    grows by about one database per restart until retention trims it. The
    point-in-time window is therefore one to two hours.
