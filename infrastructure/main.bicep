@@ -104,6 +104,12 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   properties: {
     accessTier: 'Hot'
     minimumTlsVersion: 'TLS1_2'
+    // Entra ID only (BLOB-DURABILITY-SPEC.md section 4): the app, Litestream and the
+    // lease all use the container app's managed identity, and the Azure Files share that
+    // needed the account key is gone. Account keys and SAS tokens signed with one stop
+    // working, including `az storage ...` data-plane calls made with a key; use
+    // `--auth-mode login` with a Storage Blob Data role. Rollback: true.
+    allowSharedKeyAccess: false
   }
 }
 
