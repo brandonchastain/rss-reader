@@ -152,14 +152,14 @@ docs link here.
    healthy chain is one snapshot (L9) plus a short tail, so the plan is a few
    hundred MB at most. Levels 2 and 3 should hold files after 5 minutes and 1
    hour; each level briefly holds a copy of the initial full-database file
-   until compaction trims the lower levels. The hourly snapshot and 1 h
+   until compaction trims the lower levels. The hourly snapshot and 3 h
    retention in `infrastructure/litestream.yml` bound the chain: everything
    older than the oldest kept snapshot is deleted (the newest snapshot is always
-   kept), so the replica holds one or two snapshots plus the tail since the
-   last deleted one (about 0.4 to 0.7 GB at 326 MB).
+   kept), so the replica holds about three snapshots plus the tail since the
+   last deleted one (about 0.9 to 1.4 GB at 326 MB).
    After every restart Litestream uploads one full-database file, so the chain
    grows by about one database per restart until retention trims it. The
-   point-in-time window is therefore one to two hours.
+   point-in-time window is therefore three to four hours.
 
 ##### Read Replicas (optional)
 
