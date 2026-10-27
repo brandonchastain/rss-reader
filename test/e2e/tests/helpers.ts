@@ -15,7 +15,7 @@ export { expect };
 export function postRow(page: Page, title: string): Locator {
   return page
     .locator('.row[data-post-id]')
-    .filter({ has: page.locator('a[data-article-link]', { hasText: new RegExp(`^${title}$`) }) });
+    .filter({ has: page.locator('a.post-headline', { hasText: new RegExp(`^${title}$`) }) });
 }
 
 export async function openTimeline(page: Page) {
@@ -49,4 +49,4 @@ export async function setFilter(page: Page, name: '[unread]' | '[saved]', on: bo
   await expect(button).toHaveClass(on ? /toolbar-active/ : /^((?!toolbar-active).)*$/);
 }
 
-export const titles = (page: Page) => page.locator('a[data-article-link]').allTextContents();
+export const titles = (page: Page) => page.locator('a.post-headline').allTextContents();

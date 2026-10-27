@@ -73,7 +73,14 @@ else if (_showUpToDate)
             var entry = _flatEntries[i];
             @if (entry.DayKey != null)
             {
-                <div @key="@entry.DayKey" class="day-separator @(entry.IsFirstHeader ? "day-separator-first" : "")">@GetDayLabel(entry.HeaderDate)</div>
+                <div @key="@entry.DayKey" class="day-separator @(entry.IsFirstHeader ? "day-separator-first" : "")">
+                    <span>@GetDayLabel(entry.HeaderDate)</span>
+                    @if (DayHasUnread(i))
+                    {
+                        var day = entry.HeaderDate;
+                        <button class="link day-mark-read" title="Mark this day's loaded posts as read" @onclick="async () => await MarkDayReadAsync(day)">[mark all read]</button>
+                    }
+                </div>
             }
             <PostDetail @key="entry.Post.Id"
                 Post="@entry.Post"
@@ -583,6 +590,57 @@ else if (_showUpToDate)
 
         await InvokeAsync(StateHasChanged);
         return _windowStart;
+    }
+
+    // --- Mark a day read ---
+
+    // Whether the day starting at entry index `start` has an unread post the
+    // reader can see. Scans to the next day's header, so the whole list costs
+    // one pass per render.
+    private bool DayHasUnread(int start)
+    {
+        for (int i = start; i < _flatEntries.Count; i++)
+        {
+            if (i > start && _flatEntries[i].DayKey != null) break;
+            var post = _flatEntries[i].Post;
+            if (!post.IsRead && IsShown(post)) return true;
+        }
+        return false;
+    }
+
+    // Rows hidden by the tag filter are left alone, matching what is on screen.
+    private bool IsShown(NewsFeedItem post)
+        => string.IsNullOrWhiteSpace(filterTag) || post.FeedTags.Contains(filterTag);
+
+    // Marks the loaded posts of one day read: all rows flip at once, then the
+    // writes go out one by one through the same path as a single mark-read
+    // (queued for replay if the API is unreachable). Posts of that day not yet
+    // paged in are untouched.
+    private async Task MarkDayReadAsync(DateTime day)
+    {
+        var posts = Posts
+            .Where(p => (p.ParsedDate?.ToLocalTime().Date ?? DateTime.MinValue) == day)
+            .Where(p => !p.IsRead && IsShown(p))
+            .ToList();
+        if (posts.Count == 0) return;
+
+        foreach (var post in posts)
+        {
+            post.IsRead = true;
+        }
+        StateHasChanged();
+
+        foreach (var post in posts)
+        {
+            try
+            {
+                await FeedClient.MarkAsReadAsync(post, true);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Mark-read for post {PostId} failed.", post.Id);
+            }
+        }
     }
 
     private async Task ToggleUnreadFilterAsync()

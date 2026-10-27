@@ -1273,3 +1273,145 @@ a.post-domain:hover {
 .feeds-cancel-btn { font-size: 0.85em; }
 .feeds-tag-input { width: 80px; }
 .feeds-tag-input:focus { width: 140px; }
+
+/* ── Reader UX: headline, reading view, keyboard ─────────────── */
+
+/* Demoted "open original" link next to the headline. */
+a.post-external {
+    margin-left: 0.4em;
+    color: var(--text-muted) !important;
+    font-weight: 400 !important;
+    text-decoration: none;
+}
+
+a.post-external:hover {
+    color: var(--link) !important;
+}
+
+/* The keyboard's current post (rssApp.keys); rows keep their read/unread
+   left border, so the mark is an inset ring. scroll-margin keeps a row
+   scrolled into view clear of the 48px sticky header. */
+#post-table .row[data-post-id] {
+    scroll-margin-top: 56px;
+}
+
+#post-table .row[data-current] {
+    box-shadow: inset 0 0 0 1px var(--link);
+    background-color: var(--bg-hover);
+}
+
+/* Reading view: one meta line above the body, one action line below it. */
+.postContent .reader-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.9rem;
+    margin-bottom: 0.75rem;
+    color: var(--text-muted) !important;
+    font-size: 0.85em;
+}
+
+.reader-settings {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.5rem;
+    flex-basis: 100%;
+}
+
+.reader-settings-label {
+    margin-left: 0.4rem;
+}
+
+.reader-settings-label:first-child {
+    margin-left: 0;
+}
+
+.postContent button.link.reader-setting-active {
+    color: var(--text) !important;
+    font-weight: 600;
+}
+
+.postContent button.link:disabled {
+    opacity: 0.4;
+    cursor: default;
+    text-decoration: none;
+}
+
+.reader-body {
+    font-size: calc(1em * var(--reader-scale, 1));
+}
+
+:root[data-reader-font="serif"] .reader-body {
+    font-family: Charter, 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    line-height: 1.6;
+}
+
+:root[data-reader-font="sans"] .reader-body {
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.6;
+}
+
+/* Code in the body stays monospace whatever the body font. */
+.reader-body pre,
+.reader-body code {
+    font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+}
+
+.reader-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    margin-top: 1rem;
+    font-size: 0.85em;
+}
+
+/* "[mark all read]" sits after the divider line (the ::after flex item). */
+.day-separator .day-mark-read {
+    order: 1;
+    text-transform: none;
+    letter-spacing: normal;
+    margin-right: 0;
+}
+
+/* Keyboard shortcut list (MainLayout, opened by "?"). */
+.kb-help {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--bg-elevated);
+    color: var(--text);
+    padding: 1rem 1.25rem;
+    font-size: 0.9rem;
+    max-width: calc(100vw - 32px);
+}
+
+.kb-help::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.kb-help-title {
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+}
+
+.kb-help dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.3rem 1.25rem;
+    margin: 0 0 0.75rem 0;
+}
+
+.kb-help dt {
+    color: var(--link);
+    font-weight: 400;
+}
+
+.kb-help dd {
+    margin: 0;
+    color: var(--text-muted);
+}
+
+.kb-help form {
+    margin: 0;
+    text-align: right;
+}

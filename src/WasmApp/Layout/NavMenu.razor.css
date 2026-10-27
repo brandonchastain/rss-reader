@@ -115,3 +115,29 @@ button.nav-link {
     background-color: var(--bg-hover);
 }
 
+/* Desktop: the toolbar keeps its full width and the nav links give way
+   instead (tighter padding and no Privacy link below 1200px, clipped as a
+   last resort). With both at flex: 1 the toolbar overflowed its share
+   leftwards and drew over the links at laptop widths. */
+@media (min-width: 641px) {
+    .toolbar-container {
+        flex: 0 0 auto;
+        margin-left: auto;
+    }
+
+    .desktop-nav-links {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+    }
+}
+
+@media (min-width: 641px) and (max-width: 1199px) {
+    .desktop-nav-links ::deep .desktop-nav-link {
+        padding: 0 0.4rem;
+    }
+
+    .desktop-nav-links ::deep .desktop-nav-link-wide {
+        display: none;
+    }
+}

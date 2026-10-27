@@ -33,6 +33,8 @@
             }
         </div>
     </div>
+
+    <button class="btn-link desktop-only" title="Keyboard shortcuts (?)" @onclick="ShowShortcutsAsync">[?]</button>
 </div>
 
 @code {
@@ -82,6 +84,12 @@
     {
         if (IsRefreshing) return;
         await OnRefreshRequested.InvokeAsync();
+    }
+
+    private async Task ShowShortcutsAsync()
+    {
+        try { await JS.InvokeVoidAsync("rssApp.keys.help"); }
+        catch (JSException) { }
     }
 
     private async Task ToggleShowFilters()

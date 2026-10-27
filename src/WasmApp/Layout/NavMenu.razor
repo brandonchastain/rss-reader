@@ -32,7 +32,8 @@
                 <NavLink class="desktop-nav-link" href="/feeds" Match="NavLinkMatch.Prefix">Feeds</NavLink>
                 <NavLink class="desktop-nav-link" href="/tags" Match="NavLinkMatch.Prefix">Tags</NavLink>
                 <NavLink class="desktop-nav-link" href="/account" Match="NavLinkMatch.Prefix">Account</NavLink>
-                <NavLink class="desktop-nav-link" href="/privacy" Match="NavLinkMatch.Prefix">Privacy</NavLink>
+                @* Dropped from the bar on narrow desktops; Account links to it. *@
+                <NavLink class="desktop-nav-link desktop-nav-link-wide" href="/privacy" Match="NavLinkMatch.Prefix">Privacy</NavLink>
                 @if (feedUser?.IsAdmin == true)
                 {
                     <NavLink class="desktop-nav-link" href="/admin" Match="NavLinkMatch.Prefix">Admin</NavLink>
@@ -105,7 +106,7 @@
                 </div>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="/privacy">
-                        Privacy Policy
+                        Privacy
                     </NavLink>
                 </div>
                 @if (feedUser?.IsAdmin == true)
@@ -130,7 +131,7 @@
                 </div>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="/privacy">
-                        Privacy Policy
+                        Privacy
                     </NavLink>
                 </div>
             </NotAuthorized>
