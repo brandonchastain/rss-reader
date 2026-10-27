@@ -45,10 +45,13 @@
             {
                 <span class="post-tag">@tag</span>
             }
-            <a tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" data-article-link data-post-id="@Post.Id" data-mark-read-url="@MarkReadUrl(Post)" @onclick:stopPropagation="true" @onclick="() => OnArticleLinkClick(Post)">@CleanTitle(Post.Title)</a>
+            @* A plain click opens the in-app reader (app.js cancels the
+               navigation); a modified or middle click still opens the original,
+               which is why this stays a real link. *@
+            <a class="post-headline" tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" data-post-id="@Post.Id" data-mark-read-url="@MarkReadUrl(Post)" @onclick:stopPropagation="true" @onclick="async e => await OnHeadlineClick(e, Post)">@CleanTitle(Post.Title)</a><a class="post-external" href="@Post.Href" data-article-link data-post-id="@Post.Id" data-mark-read-url="@MarkReadUrl(Post)" title="Open original" aria-label="Open original article" @onclick:stopPropagation="true" @onclick="() => OnArticleLinkClick(Post)">↗</a>
         </p>
         <div class="post-actions">
-            <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await MarkAsReadAsync(Post, !Post.IsRead)">[mark @(!Post.IsRead ? "read" : "unread")]</button><button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)">[@(!Post.IsSaved ? "save" : "unsave")]</button>
+            <button class="link" data-action="toggle-read" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await MarkAsReadAsync(Post, !Post.IsRead)">[mark @(!Post.IsRead ? "read" : "unread")]</button><button class="link" data-action="toggle-save" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)">[@(!Post.IsSaved ? "save" : "unsave")]</button>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
                 <a class="link" href="@Post.CommentsHref" data-article-link data-post-id="@Post.Id" @onclick:stopPropagation="true">[comments]</a>
@@ -61,36 +64,41 @@
 {
 <div class="postContent">
     <div class="">
-        <p>
-            Published on @FormatDate(Post.ParsedDate)
-        </p>
+        <div class="reader-meta">
+            <span>Published @FormatDate(Post.ParsedDate)</span>
+            @if (!_isLoadingContent)
+            {
+                @if (_isSpeaking)
+                {
+                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => StopSpeaking()"><i class="fa-solid fa-stop"></i> [stop]</button>
+                }
+                else
+                {
+                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)"><i class="fa-solid fa-volume-high"></i> [speak]</button>
+                }
+            }
+            <ReaderSettings />
+        </div>
         @if (_isLoadingContent)
         {
             <p><em>Loading content…</em></p>
         }
         else
         {
-            <p>
-                @if (_isSpeaking)
-                {
-                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => StopSpeaking()"><i class="fa-solid fa-stop"></i> [stop speaking]</button>
-                }
-                else
-                {
-                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)"><i class="fa-solid fa-volume-high"></i> [speak this text]</button>
-                }
-            </p>
             @if (ShouldShowHero(Post))
             {
                 <figure class="post-hero"><img src="@Post.GetThumbnailUrl()" alt="" loading="lazy" decoding="async" /></figure>
             }
-            <p>
+            <div class="reader-body">
                 @((MarkupString)HtmlSanitizer.Sanitize(Post.Content ?? ""))
-            </p>
+            </div>
         }
-        <p>
-            <button class="btn-link" @onclick="async () => await HandleClick(Post)">Collapse</button>
-        </p>
+        @* Always offered: many feeds carry only an excerpt, and telling a
+           truncated body from a complete one is guesswork. *@
+        <div class="reader-footer">
+            <a class="link" href="@Post.Href" data-article-link data-post-id="@Post.Id" data-mark-read-url="@MarkReadUrl(Post)" @onclick="() => OnArticleLinkClick(Post)">[open original ↗]</a>
+            <button class="link" @onclick="async () => await HandleClick(Post)">[collapse]</button>
+        </div>
     </div>
 </div>
 }
@@ -201,6 +209,20 @@
         post.IsRead = true;
     }
 
+    // A plain click had its navigation cancelled by app.js and opens the
+    // reader. A modified click (new tab or window) lets the browser open the
+    // original, and app.js has already sent the mark-read for it.
+    private async Task OnHeadlineClick(MouseEventArgs e, NewsFeedItem post)
+    {
+        if (e.CtrlKey || e.MetaKey || e.ShiftKey || e.AltKey)
+        {
+            OnArticleLinkClick(post);
+            return;
+        }
+
+        await HandleClick(post);
+    }
+
     private async Task OnCommentsLinkClick(string commentsHref)
     {
         // Kept for backward compatibility — current markup no longer wires this up.
@@ -290,10 +312,15 @@
     {
         if (!preview || _isLoadingContent) return;
 
-        // Update read state immediately in the UI, then fire the API call
-        // without blocking content loading. During feed refresh, MarkAsRead
-        // competes for the SQLite write lock and can hang for seconds.
-        _ = MarkAsReadAsync(post, true);
+        // Opening marks the post read; collapsing leaves it alone, so a post
+        // marked unread while open stays unread. Update read state immediately
+        // in the UI, then fire the API call without blocking content loading.
+        // During feed refresh, MarkAsRead competes for the SQLite write lock
+        // and can hang for seconds.
+        if (!post.IsBeingPreviewed)
+        {
+            _ = MarkAsReadAsync(post, true);
+        }
 
         // Lazy-load content on first expand
         if (!post.IsBeingPreviewed && post.Content == null)

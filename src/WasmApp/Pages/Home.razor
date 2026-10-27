@@ -18,6 +18,7 @@
         <div class="shell-banner">
             <span><span class="comment-slash">// </span><span class="comment-text">rssreader [v1.1]</span></span>
             <span><span class="comment-slash">// </span><span class="comment-text">read what matters to you.</span></span>
+            <span><span class="comment-slash">// </span><span class="comment-text">your feeds, clean and readable, everywhere.</span></span>
         </div>
         <div class="shell-line"><span class="shell-prompt">&gt;</span> Initializing</div>
         <div class="shell-line"><span class="shell-prompt">&gt;</span> Loading configuration...</div>
@@ -25,6 +26,8 @@
         <div class="shell-line" style="margin-top: 1rem;"><span class="shell-prompt">&gt;</span> subscribe to RSS and Atom feeds</div>
         <div class="shell-line"><span class="shell-prompt">&gt;</span> infinite-scroll timeline</div>
         <div class="shell-line"><span class="shell-prompt">&gt;</span> save posts for later</div>
+        <div class="shell-line"><span class="shell-prompt">&gt;</span> works on phone and desktop</div>
+        <div class="shell-line desktop-only"><span class="shell-prompt">&gt;</span> vim-style keys: j / k to move, l to read, ? for the rest</div>
         <AuthorizeView>
             <NotAuthorized>
                 @if (_providers == null)
@@ -37,11 +40,13 @@
                 }
                 else if (!_showChooser && _providers.Count == 1)
                 {
+                    @* Say who the sign-in is with before ENTER leaves the page for it. *@
+                    <div class="shell-line" style="margin-top: 1.5rem;"><span class="shell-prompt">&gt;</span> [auth] @ProviderLabel(_providers[0]) sign-in required to sync your feeds</div>
                     @* Desktop: keyboard prompt *@
-                    <div class="shell-line shell-cmd desktop-only" style="margin-top: 1.5rem;">$ press [ENTER] to continue<span class="shell-cursor">█</span></div>
+                    <div class="shell-line shell-cmd desktop-only" style="margin-top: 0.5rem;">$ press [ENTER] to sign in with @ProviderLabel(_providers[0])<span class="shell-cursor">█</span></div>
                     @* Mobile: button *@
-                    <div class="mobile-only" style="margin-top: 1.5rem;">
-                        <a href="@LoginUrl(_providers[0])" class="btn btn-outline-success btn-sm" style="font-family: inherit; letter-spacing: 0.05em;">Login / Sign Up</a>
+                    <div class="mobile-only" style="margin-top: 0.75rem;">
+                        <a href="@LoginUrl(_providers[0])" class="btn btn-outline-success btn-sm" style="font-family: inherit; letter-spacing: 0.05em;">Sign in with @ProviderLabel(_providers[0])</a>
                     </div>
                 }
                 else

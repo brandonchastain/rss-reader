@@ -145,6 +145,31 @@ window.rssApp = {
             return window.rssApp.theme.set(next);
         }
     },
+    // Reading-view font and text size, persisted like the theme and applied
+    // as data-reader-font and --reader-scale on <html>. The pre-boot script in
+    // index.html applies the saved choice before first paint; keep the two in
+    // step.
+    reader: {
+        fonts: ['mono', 'serif', 'sans'],
+        get: function () {
+            var font = 'mono', size = 100;
+            try {
+                var saved = JSON.parse(localStorage.getItem('rssApp.reader') || '{}');
+                if (window.rssApp.reader.fonts.indexOf(saved.font) >= 0) font = saved.font;
+                if (saved.size >= 80 && saved.size <= 160) size = saved.size;
+            } catch (e) {}
+            return { font: font, size: size };
+        },
+        set: function (font, size) {
+            window.rssApp.reader.apply(font, size);
+            try { localStorage.setItem('rssApp.reader', JSON.stringify({ font: font, size: size })); } catch (e) {}
+        },
+        apply: function (font, size) {
+            var root = document.documentElement;
+            root.setAttribute('data-reader-font', font);
+            root.style.setProperty('--reader-scale', String(size / 100));
+        }
+    },
     _loadedItemCount: 0,
     setLoadedItemCount: function(count) {
         window.rssApp._loadedItemCount = count;
@@ -658,6 +683,153 @@ function articleLinkActivated(e) {
 }
 document.addEventListener('click', articleLinkActivated, true);
 document.addEventListener('auxclick', articleLinkActivated, true);
+
+// The post headline is a real link to the original so that ctrl/cmd/shift-
+// click and middle-click still open it, but a plain click opens the in-app
+// reader instead: cancel the navigation here and let the Blazor handler on the
+// link expand the post. The opening-the-original cases are marked read the
+// same way as any other article link.
+function headlineActivated(e) {
+    var link = e.target.closest('a.post-headline');
+    if (!link) return;
+    var opensOriginal = e.type === 'auxclick'
+        ? e.button === 1
+        : e.ctrlKey || e.metaKey || e.shiftKey || e.altKey;
+    if (opensOriginal) {
+        window.rssApp.saveScrollStateForLink(link.getAttribute('data-post-id'), link.getAttribute('data-mark-read-url'));
+    } else if (e.type === 'click') {
+        e.preventDefault();
+    }
+}
+document.addEventListener('click', headlineActivated, true);
+document.addEventListener('auxclick', headlineActivated, true);
+
+// Keyboard shortcuts for post lists (vim style). They act on a "current"
+// post and work by clicking the row's own controls, so every path through
+// Blazor is the same one a mouse takes. The current row is marked with a
+// data-current attribute rather than a class: Blazor rewrites the row's class
+// whenever its read state changes, and the list window re-creates rows it
+// restores, so current() puts the mark back on whichever element holds the id.
+//   j / k        next / previous post
+//   l, o, Enter  open in the reader
+//   h            close the reader
+//   O            open the original
+//   m            toggle read
+//   s            toggle saved
+//   ?            show these
+window.rssApp.keys = {
+    _currentId: null,
+
+    rows: function () {
+        return Array.prototype.filter.call(
+            document.querySelectorAll('#post-table .row[data-post-id]'),
+            function (row) { return !row.hidden; });
+    },
+
+    current: function () {
+        var id = window.rssApp.keys._currentId;
+        if (!id) return null;
+        var row = document.querySelector('#post-table .row[data-post-id="' + id + '"]');
+        if (!row || row.hidden) return null;
+        row.setAttribute('data-current', '');
+        return row;
+    },
+
+    select: function (row, block) {
+        var keys = window.rssApp.keys;
+        var previous = keys.current();
+        if (previous) previous.removeAttribute('data-current');
+        keys._currentId = row.getAttribute('data-post-id');
+        row.setAttribute('data-current', '');
+        row.scrollIntoView({ behavior: 'instant', block: block || 'nearest' });
+    },
+
+    // The first row whose top is inside the viewport, below the sticky header.
+    firstInView: function (rows) {
+        for (var i = 0; i < rows.length; i++) {
+            if (rows[i].getBoundingClientRect().bottom > 56) return rows[i];
+        }
+        return rows[0] || null;
+    },
+
+    move: function (step) {
+        var keys = window.rssApp.keys;
+        var rows = keys.rows();
+        if (rows.length === 0) return;
+        var current = keys.current();
+        if (!current) {
+            keys.select(keys.firstInView(rows));
+            return;
+        }
+        var index = rows.indexOf(current) + step;
+        if (index >= 0 && index < rows.length) keys.select(rows[index]);
+    },
+
+    isOpen: function (row) {
+        var next = row.nextElementSibling;
+        return !!next && next.classList.contains('postContent');
+    },
+
+    setOpen: function (open) {
+        var keys = window.rssApp.keys;
+        var row = keys.current();
+        if (!row) {
+            var rows = keys.rows();
+            if (rows.length === 0) return;
+            row = keys.firstInView(rows);
+            keys.select(row);
+        }
+        if (keys.isOpen(row) === open) return;
+        if (open) row.scrollIntoView({ behavior: 'instant', block: 'start' });
+        row.click();
+    },
+
+    clickInCurrent: function (selector) {
+        var row = window.rssApp.keys.current();
+        var target = row && row.querySelector(selector);
+        if (target) target.click();
+    },
+
+    help: function () {
+        var dialog = document.getElementById('kb-help');
+        if (!dialog) return;
+        if (dialog.open) dialog.close(); else dialog.showModal();
+    },
+
+    onKeyDown: function (e) {
+        if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+        var target = e.target;
+        if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+        if (!document.getElementById('post-table')) return;
+
+        var keys = window.rssApp.keys;
+        var dialog = document.getElementById('kb-help');
+        if (dialog && dialog.open) {
+            if (e.key === '?') { dialog.close(); e.preventDefault(); }
+            return;
+        }
+
+        switch (e.key) {
+            case 'j': keys.move(1); break;
+            case 'k': keys.move(-1); break;
+            case 'l':
+            case 'o': keys.setOpen(true); break;
+            case 'Enter':
+                // Leave Enter on a focused link or button to the browser.
+                if (target && target.closest && target.closest('a, button')) return;
+                keys.setOpen(true);
+                break;
+            case 'h': keys.setOpen(false); break;
+            case 'O': keys.clickInCurrent('a.post-external'); break;
+            case 'm': keys.clickInCurrent('[data-action="toggle-read"]'); break;
+            case 's': keys.clickInCurrent('[data-action="toggle-save"]'); break;
+            case '?': keys.help(); break;
+            default: return;
+        }
+        e.preventDefault();
+    }
+};
+document.addEventListener('keydown', window.rssApp.keys.onKeyDown);
 
 // Back/forward-cache restore: the page comes back exactly as it was frozen,
 // without reloading, so nothing would otherwise replay the outbox or refresh

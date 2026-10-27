@@ -1,0 +1,71 @@
+@inject IJSRuntime JS
+
+@* Reading-view type controls. The choice is global and lives in localStorage
+   (rssApp.reader in app.js); it is applied as attributes on <html>, so every
+   open reader changes at once and the saved choice is in place before the
+   first paint (see the pre-boot script in index.html). *@
+<button class="link" title="Text options" aria-expanded="@(_open ? "true" : "false")" @onclick:stopPropagation="true" @onclick="ToggleAsync">[Aa]</button>
+@if (_open)
+{
+    <div class="reader-settings" @onclick:stopPropagation="true">
+        <span class="reader-settings-label">font:</span>
+        @foreach (var font in Fonts)
+        {
+            <button class="link @(_font == font ? "reader-setting-active" : "")" aria-pressed="@(_font == font ? "true" : "false")" @onclick="() => SetFontAsync(font)">[@font]</button>
+        }
+        <span class="reader-settings-label">size:</span>
+        <button class="link" title="Smaller text" disabled="@(_size <= MinSize)" @onclick="() => StepSizeAsync(-1)">[-]</button>
+        <span class="reader-size-value">@(_size)%</span>
+        <button class="link" title="Larger text" disabled="@(_size >= MaxSize)" @onclick="() => StepSizeAsync(1)">[+]</button>
+    </div>
+}
+
+@code {
+    private static readonly string[] Fonts = { "mono", "serif", "sans" };
+    private const int MinSize = 80;
+    private const int MaxSize = 160;
+    private const int SizeStep = 10;
+
+    private bool _open;
+    private string _font = "mono";
+    private int _size = 100;
+
+    private async Task ToggleAsync()
+    {
+        _open = !_open;
+        if (_open)
+        {
+            try
+            {
+                var settings = await JS.InvokeAsync<ReaderPrefs>("rssApp.reader.get");
+                _font = settings.Font;
+                _size = settings.Size;
+            }
+            catch (JSException) { }
+        }
+    }
+
+    private async Task SetFontAsync(string font)
+    {
+        _font = font;
+        await SaveAsync();
+    }
+
+    private async Task StepSizeAsync(int direction)
+    {
+        _size = Math.Clamp(_size + direction * SizeStep, MinSize, MaxSize);
+        await SaveAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        try { await JS.InvokeVoidAsync("rssApp.reader.set", _font, _size); }
+        catch (JSException) { }
+    }
+
+    private sealed class ReaderPrefs
+    {
+        public string Font { get; set; } = "mono";
+        public int Size { get; set; } = 100;
+    }
+}

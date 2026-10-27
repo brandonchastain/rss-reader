@@ -91,6 +91,6 @@ test.describe('feeds page', () => {
     await expect(postRow(page, 'Tech 30')).toBeVisible();
     await page.mouse.wheel(0, 20000);
     await page.waitForTimeout(1500);
-    await expect(page.locator('a[data-article-link]', { hasText: /^Disposable/ })).toHaveCount(0);
+    await expect(page.locator('a.post-headline', { hasText: /^Disposable/ })).toHaveCount(0);
   });
 });

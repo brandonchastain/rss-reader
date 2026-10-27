@@ -26,6 +26,16 @@
             } catch (e) {
                 document.documentElement.setAttribute('data-theme', 'dark');
             }
+            // Reading-view font and size; mirrors window.rssApp.reader.
+            try {
+                var reader = JSON.parse(localStorage.getItem('rssApp.reader') || '{}');
+                if (['serif', 'sans'].indexOf(reader.font) >= 0) {
+                    document.documentElement.setAttribute('data-reader-font', reader.font);
+                }
+                if (reader.size >= 80 && reader.size <= 160) {
+                    document.documentElement.style.setProperty('--reader-scale', String(reader.size / 100));
+                }
+            } catch (e) {}
         })();
     </script>
 </head>

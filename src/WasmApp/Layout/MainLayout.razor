@@ -12,6 +12,21 @@
                     @Body
         </article>
     </main>
+
+    @* Opened by "?" in a post list or the toolbar's [?] (rssApp.keys in app.js). *@
+    <dialog id="kb-help" class="kb-help" aria-labelledby="kb-help-title">
+        <div class="kb-help-title" id="kb-help-title">$ rssreader --keys</div>
+        <dl>
+            <dt>j / k</dt><dd>next / previous post</dd>
+            <dt>l / o / Enter</dt><dd>open in the reader</dd>
+            <dt>h</dt><dd>close the reader</dd>
+            <dt>O</dt><dd>open the original</dd>
+            <dt>m</dt><dd>mark read / unread</dd>
+            <dt>s</dt><dd>save / unsave</dd>
+            <dt>?</dt><dd>show this list</dd>
+        </dl>
+        <form method="dialog"><button class="link">[close]</button></form>
+    </dialog>
 </div>
 
 @code {
