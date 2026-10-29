@@ -744,12 +744,16 @@ public sealed class ApiContractTests
     [TestMethod]
     public async Task AddFeed_AlreadySubscribedByAnotherUser_SeesExistingPostsImmediately()
     {
-        var response = await bob.PostAsJsonAsync("/api/feed", new NewsFeed(AliceFeed, bobId));
+        // A user of its own: subscribing Bob to alpha would let a concurrent
+        // search test see Alice's zebrafish post in Bob's results.
+        using var erin = host.As("github:erin", "erin");
+        var erinId = await RegisterAsync(erin);
+        var response = await erin.PostAsJsonAsync("/api/feed", new NewsFeed(AliceFeed, erinId));
         Assert.AreEqual(HttpStatusCode.Created, response.StatusCode);
 
-        var items = await GetItemsAsync(bob, $"/api/item/feed?href={Feed(AliceFeed)}&pageSize=100");
-        Assert.AreEqual(AliceFeedCount, items.Count, "Bob sees the posts Alice's subscription already fetched");
-        Assert.IsTrue(items.All(i => !i.IsRead), "but with his own, fresh read state");
+        var items = await GetItemsAsync(erin, $"/api/item/feed?href={Feed(AliceFeed)}&pageSize=100");
+        Assert.AreEqual(AliceFeedCount, items.Count, "Erin sees the posts Alice's subscription already fetched");
+        Assert.IsTrue(items.All(i => !i.IsRead), "but with their own, fresh read state");
     }
 
     // ---------- tags ----------
