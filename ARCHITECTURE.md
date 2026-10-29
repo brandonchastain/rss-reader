@@ -56,6 +56,9 @@ C#, ASP.NET, SQLite
 * `/api/feed/*` - Retrieve, refresh, and import/export RSS feeds
 * `/api/item/*` - Retrieve, search, and save RSS posts
 * `/api/user/*` - Retrieve user info and login/register
+* `/api/healthz` - Anonymous liveness, writer role and row counts (minimal API in `Program.cs`)
+* `/api/health/feeds` - Anonymous feed freshness for the home Health Service:
+  `{ newestItemAgeHours, feedsFailing, lastRefreshUtc }`, aggregates only (`FeedFreshness`)
 
 #### Database
 SQLite database to store RSS feeds, posts, and user profiles. The live file is
