@@ -358,6 +358,50 @@ public sealed class ApiContractTests
     }
 
     [TestMethod]
+    public async Task HealthFeeds_IsAnonymous_AndReportsOnlyAggregates()
+    {
+        using var client = host.Anonymous();
+        var response = await client.GetAsync("/api/health/feeds");
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.IsTrue(response.Headers.CacheControl?.NoStore ?? false, "a monitor must not read a cached answer");
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = await ReadJsonAsync(response);
+
+        // Exactly these fields: anything added here is readable by anyone.
+        CollectionAssert.AreEquivalent(
+            new[] { "newestItemAgeHours", "feedsFailing", "lastRefreshUtc" },
+            doc.RootElement.EnumerateObject().Select(p => p.Name).ToList(),
+            body);
+        AssertShape(doc.RootElement, new (string, JsonValueKind[])[]
+        {
+            ("newestItemAgeHours", [JsonValueKind.Number]),
+            ("feedsFailing", [JsonValueKind.Number]),
+            ("lastRefreshUtc", [JsonValueKind.String, JsonValueKind.Null]),
+        });
+        // Posts were seeded moments ago and no fetch has failed.
+        Assert.IsTrue(doc.RootElement.GetProperty("newestItemAgeHours").GetDouble() < 1, body);
+        Assert.AreEqual(0, doc.RootElement.GetProperty("feedsFailing").GetInt64());
+        foreach (var leak in new[] { "example.com", "alice", "bob", "alpha", "shared" })
+        {
+            Assert.IsFalse(body.Contains(leak, StringComparison.OrdinalIgnoreCase), $"'{leak}' in {body}");
+        }
+    }
+
+    [TestMethod]
+    public async Task HealthFeeds_OpensNoOtherApiRoute()
+    {
+        using var client = host.Anonymous();
+        foreach (var path in new[] { "/api/user", "/api/user/report", "/api/feed", "/api/item/timeline", "/api/admin/stats", "/api/admin/users" })
+        {
+            Assert.AreEqual(HttpStatusCode.Unauthorized, (await client.GetAsync(path)).StatusCode, path);
+        }
+        foreach (var path in new[] { "/api/health", "/api/health/feeds/x", "/api/health/users" })
+        {
+            Assert.AreEqual(HttpStatusCode.NotFound, (await client.GetAsync(path)).StatusCode, path);
+        }
+    }
+
+    [TestMethod]
     public async Task AuthMe_Authenticated_ReturnsClientPrincipalEnvelope()
     {
         var response = await alice.GetAsync("/auth/me");

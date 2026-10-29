@@ -386,6 +386,14 @@ app.MapGet("/api/healthz", async () =>
         rows = counts,
     });
 }).AllowAnonymous();
+// Polled every 15 minutes by the home Health Service, which alerts when no post has
+// arrived for hours. Anonymous on purpose (a monitor credential would be one more
+// secret to expire); aggregates only, see FeedFreshness.
+app.MapGet("/api/health/feeds", async (HttpContext context) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(await FeedFreshness.ReadAsync(dbConnections, DateTimeOffset.UtcNow));
+}).AllowAnonymous();
 app.MapAuthEndpoints(config.Auth);
 
 if (config.IsTestUserEnabled)
