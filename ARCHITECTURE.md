@@ -177,9 +177,9 @@ the provider secrets are supplied by the workflow, not the param file.
 
 | Parameter | Default | Prod | Effect |
 |---|---|---|---|
-| `cpuCore` | `1.0` | `0.5` | vCPU per writer replica. Billed per second, active or idle. |
-| `memorySize` | `1.0Gi` | `1.0Gi` | Memory per writer replica. Idle memory is the larger half of the always-on bill. |
-| `minReplicas` | `0` | `1` | `0` scales the writer to zero after `cooldownPeriod` (45s cold start). `1` keeps one warm (~$15/month idle at 0.5 vCPU / 1 GiB). |
+| `cpuCore` | `1.0` | `0.25` | vCPU per writer replica. Billed per second, active or idle. |
+| `memorySize` | `1.0Gi` | `0.5Gi` | Memory per writer replica. Idle memory is the larger half of the always-on bill. |
+| `minReplicas` | `0` | `1` | `0` scales the writer to zero after `cooldownPeriod` (45s cold start). `1` keeps one warm (the smallest Consumption size, 0.25 vCPU / 0.5 GiB, since 2026-11). |
 | `maxReplicas` | `1` | `1` | Must stay `1`: SQLite has one writer. |
 | `cooldownPeriod` (inline) | `900` s | — | How long KEDA waits before scaling an idle replica away. Keep above boot time or activation fails mid-boot. |
 | `http-rule concurrentRequests` (inline) | `10` | — | Concurrent requests per replica before KEDA scales out (moot while `maxReplicas` is 1). |

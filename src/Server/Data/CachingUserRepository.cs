@@ -83,7 +83,7 @@ public sealed class CachingUserRepository : IUserRepository
 
         // Materialize to List<RssUser> before caching — prevents caching a dead lazy enumerator.
         var result = _inner.GetAllUsers().ToList();
-        SetWithEvictionToken(AllUsersKey, result);
+        SetWithEvictionToken(AllUsersKey, result, RepositoryCache.SizeOfEntries(result.Count));
         return result;
     }
 
@@ -141,7 +141,7 @@ public sealed class CachingUserRepository : IUserRepository
         oldCts.Dispose();
     }
 
-    private void SetWithEvictionToken<T>(string key, T value)
+    private void SetWithEvictionToken<T>(string key, T value, long size = RepositoryCache.SmallEntryBytes)
     {
         // Capture the token under the lock so we always pair the entry with the
         // currently-active CTS, even if another thread swaps it out immediately
@@ -152,7 +152,7 @@ public sealed class CachingUserRepository : IUserRepository
             token = _evictionCts.Token;
         }
 
-        _cache.Set(key, value, new MemoryCacheEntryOptions()
+        _cache.Set(key, value, new MemoryCacheEntryOptions { Size = size }
             .AddExpirationToken(new CancellationChangeToken(token)));
     }
 }

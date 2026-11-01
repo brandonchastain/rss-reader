@@ -110,7 +110,7 @@ internal sealed class FakeUserRepository : IUserRepository
 
 file static class UserCacheFactory
 {
-    public static IMemoryCache Create() => new MemoryCache(new MemoryCacheOptions());
+    public static IMemoryCache Create() => RssApp.Data.RepositoryCache.Create();
 }
 
 // ---------------------------------------------------------------------------

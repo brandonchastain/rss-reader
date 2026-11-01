@@ -84,7 +84,7 @@ file static class TestData
     public static NewsFeedItem Item()    => new("99", 42, "Title", "https://example.com/post", null, null, null, null) { FeedUrl = "https://feed.example.com" };
     public static NewsFeed     Feed()    => new(1, "https://feed.example.com", 42);
     public static IMemoryCache NewCache()
-        => new MemoryCache(new MemoryCacheOptions());
+        => RssApp.Data.RepositoryCache.Create();
 }
 
 // ---------------------------------------------------------------------------

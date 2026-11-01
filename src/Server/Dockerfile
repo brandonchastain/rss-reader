@@ -1,5 +1,5 @@
 # Build stage
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy csproj files and restore dependencies
@@ -16,7 +16,7 @@ RUN dotnet build "Server.csproj" -c Release -o /app/build
 # Publish stage
 FROM build AS publish
 # ReadyToRun precompiles the app and its dependencies to native code so the
-# single 0.5 vCPU replica spends less of every cold start in the JIT. A RID is
+# single 0.25 vCPU replica spends less of every cold start in the JIT. A RID is
 # required for R2R; the image stays framework-dependent. The durability test
 # in CI (test/durability) passes READY_TO_RUN=false: it measures handover
 # behaviour, not cold-start time, and R2R is most of the image build.
@@ -24,7 +24,7 @@ ARG READY_TO_RUN=true
 RUN dotnet publish "Server.csproj" -c Release -r linux-x64 --self-contained false     -o /app/publish /p:UseAppHost=false /p:PublishReadyToRun=${READY_TO_RUN}
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 
 # Links the published GHCR package to this repository, which is what lets the
 # workflow's GITHUB_TOKEN push it -- no personal access token involved.
