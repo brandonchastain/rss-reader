@@ -169,6 +169,9 @@ builder.Services.AddRssRateLimiting(config.Auth);
 // Register services for DI
 // Repositories: SQLite implementations wrapped with caching decorators.
 // Creation order matters — feed and user repos must exist before item repo.
+// The decorators share one size-limited cache (RepositoryCache), kept apart from
+// the framework's IMemoryCache so nothing else has to give its entries a size.
+var repositoryCache = RepositoryCache.Create();
 builder.Services
     .AddSingleton<RssAppConfig>(_ => config)
     .AddSingleton<IDbConnections>(_ => dbConnections)
@@ -176,18 +179,18 @@ builder.Services
     .AddSingleton<IFeedRepository>(sb =>
     {
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateFeedRepository();
-        return new CachingFeedRepository(inner, sb.GetRequiredService<IMemoryCache>());
+        return new CachingFeedRepository(inner, repositoryCache);
     })
     .AddSingleton<IUserRepository>(sb =>
     {
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateUserRepository();
-        return new CachingUserRepository(inner, sb.GetRequiredService<IMemoryCache>());
+        return new CachingUserRepository(inner, repositoryCache);
     })
     .AddSingleton<ItemsChangeStamp>()
     .AddSingleton<IItemRepository>(sb =>
     {
         var inner = sb.GetRequiredService<RepositoryFactory>().CreateItemRepository();
-        return new CachingItemRepository(inner, sb.GetRequiredService<IMemoryCache>(), sb.GetRequiredService<ItemsChangeStamp>());
+        return new CachingItemRepository(inner, repositoryCache, sb.GetRequiredService<ItemsChangeStamp>());
     })
     .AddSingleton<IUserResolver, UserResolver>()
     .AddSingleton<FaviconService>()

@@ -32,7 +32,11 @@ public class CachingFeedRepository : IFeedRepository
         if (!_cache.TryGetValue(key, out IReadOnlyList<PopularFeed> popular))
         {
             popular = _inner.GetPopularFeeds(limit, minSubscribers);
-            _cache.Set(key, popular, TimeSpan.FromMinutes(10));
+            _cache.Set(key, popular, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
+                Size = RepositoryCache.SizeOfEntries(popular.Count)
+            });
         }
 
         return popular;
@@ -52,7 +56,8 @@ public class CachingFeedRepository : IFeedRepository
             SlidingExpiration = SlidingExpiration,
             // Fetch health (failures, last error) changes in the background and
             // is not invalidated by user writes, so cap how stale a list can get.
-            AbsoluteExpirationRelativeToNow = HealthStaleness
+            AbsoluteExpirationRelativeToNow = HealthStaleness,
+            Size = RepositoryCache.SizeOfEntries(result.Count)
         });
 
         return result;
@@ -70,7 +75,8 @@ public class CachingFeedRepository : IFeedRepository
         {
             _cache.Set(key, result, new MemoryCacheEntryOptions
             {
-                SlidingExpiration = SlidingExpiration
+                SlidingExpiration = SlidingExpiration,
+                Size = RepositoryCache.SmallEntryBytes
             });
         }
 

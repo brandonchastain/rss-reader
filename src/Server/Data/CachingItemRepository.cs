@@ -48,7 +48,8 @@ public sealed class CachingItemRepository : IItemRepository
         {
             _cache.Set(key, content, new MemoryCacheEntryOptions
             {
-                AbsoluteExpirationRelativeToNow = ContentExpiration
+                AbsoluteExpirationRelativeToNow = ContentExpiration,
+                Size = RepositoryCache.SizeOf(content)
             });
         }
 
@@ -70,7 +71,8 @@ public sealed class CachingItemRepository : IItemRepository
         {
             _cache.Set(key, item, new MemoryCacheEntryOptions
             {
-                SlidingExpiration = ItemExpiration
+                SlidingExpiration = ItemExpiration,
+                Size = RepositoryCache.SizeOf(item)
             });
         }
 
@@ -92,7 +94,8 @@ public sealed class CachingItemRepository : IItemRepository
         {
             _cache.Set(key, item, new MemoryCacheEntryOptions
             {
-                SlidingExpiration = ItemExpiration
+                SlidingExpiration = ItemExpiration,
+                Size = RepositoryCache.SizeOf(item)
             });
         }
 
@@ -137,27 +140,15 @@ public sealed class CachingItemRepository : IItemRepository
     // -------------------------------------------------------------------------
 
     /// <inheritdoc/>
-    /// After delegating to the inner repository, pre-warm the content cache
-    /// so expanding freshly-refreshed posts hits cache instead of the database.
+    /// No content pre-warm: a refresh hands over every post in each feed, not just
+    /// the new ones, so caching all of their content for an hour filled memory with
+    /// posts nobody had opened. Content is cached when a reader asks for it.
     public async Task<int> AddItemsAsync(IEnumerable<NewsFeedItem> items)
     {
-        var itemList = items.ToList();
-        var inserted = await _inner.AddItemsAsync(itemList);
+        var inserted = await _inner.AddItemsAsync(items);
         if (inserted > 0)
         {
             _stamp.Bump();
-        }
-
-        // Pre-warm: cache each item's content so reads during refresh don't hit SQLite.
-        foreach (var item in itemList)
-        {
-            if (!string.IsNullOrEmpty(item.Content))
-            {
-                _cache.Set(ContentKey(item), item.Content, new MemoryCacheEntryOptions
-                {
-                    AbsoluteExpirationRelativeToNow = ContentExpiration
-                });
-            }
         }
 
         return inserted;

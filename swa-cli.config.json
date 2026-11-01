@@ -3,15 +3,15 @@
   "configurations": {
     "rss-reader-cloud": {
       "appLocation": "src\\WasmApp",
-      "outputLocation": "bin/release/net9.0/publish/wwwroot",
-      "appBuildCommand": "dotnet publish -c release WasmApp.csproj --output bin/release/net9.0/publish",
+      "outputLocation": "bin/release/net10.0/publish/wwwroot",
+      "appBuildCommand": "dotnet publish -c release WasmApp.csproj --output bin/release/net10.0/publish",
       "run": "dotnet watch run",
       "appName": "rss-reader-swa",
       "resourceGroup": "rss-container-rg"
     },
     "rss-reader-local": {
       "appLocation": "src\\WasmApp",
-      "outputLocation": "bin/debug/net9.0/wwwroot",
+      "outputLocation": "bin/debug/net10.0/wwwroot",
       "appBuildCommand": "dotnet build -c Debug WasmApp.csproj",
       "run": "dotnet watch run",
       "appDevserverUrl": "http://localhost:8443",

@@ -90,7 +90,7 @@ internal sealed class FakeFeedRepository : IFeedRepository
 
 file static class CacheFactory
 {
-    public static IMemoryCache Create() => new MemoryCache(new MemoryCacheOptions());
+    public static IMemoryCache Create() => RssApp.Data.RepositoryCache.Create();
 }
 
 // ---------------------------------------------------------------------------

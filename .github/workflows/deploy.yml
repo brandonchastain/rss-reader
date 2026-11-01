@@ -75,7 +75,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
       # Excludes tests that fetch live third-party feeds: they fail on whether
       # someone else's server is up, which is not a signal worth blocking a
       # deploy on. Run them deliberately with --filter TestCategory=Network.
@@ -183,7 +183,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Publish the Blazor app
         run: dotnet publish src/WasmApp/WasmApp.csproj -c Release -o publish
