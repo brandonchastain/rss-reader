@@ -18,8 +18,8 @@ namespace RssReader.Server.Services
     /// owner's az user has no blob data-plane access): files, MB and txid range per level from
     /// <c>litestream ltx -level all -json</c>, and what a restore would read from
     /// <c>litestream restore -dry-run</c>. Runs a minute after start and every ten minutes.
-    /// BLOB-DURABILITY-SPEC.md rollout step 3: the restore chain must stay one snapshot plus a
-    /// few minutes of tail, and levels 2 and 3 must write files.
+    /// BLOB-DURABILITY-SPEC.md rollout step 3: the restore chain must stay one snapshot plus at
+    /// most an hour of L1 tail (L2 and L3 are off, see infrastructure/litestream.yml).
     /// </summary>
     public sealed class ReplicaChainReporter : BackgroundService
     {

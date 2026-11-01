@@ -8,6 +8,8 @@ socket:
 snapshot:
   interval: 24h
   retention: 72h
+levels:
+  - interval: 30s
 shutdown-sync-timeout: 30s
 dbs:
   - path: /tmp/storage.db

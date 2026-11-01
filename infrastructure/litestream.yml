@@ -37,13 +37,18 @@ snapshot:
   interval: 1h
   retention: 3h
 
-# LTX compaction levels (defaults made explicit): L1 every 30 s, L2 every 5 min,
-# L3 hourly. L0 files are kept 5 min (l0-retention default). A restore reads the
-# newest snapshot plus the L3/L2/L1 tail.
+# LTX compaction: L1 only, every 30 s. L0 files are kept 5 min (l0-retention
+# default). A restore reads the newest snapshot plus the L1 files since it, and the
+# hourly snapshot keeps that tail to an hour.
+#
+# No L2 (5 min) or L3 (1 h): they never worked on Azure in 0.5.17. Its blob listing
+# uses the seek txid as a name prefix, so a compaction reads at most the one L1 file
+# whose name starts with exactly that txid, and nothing once retention has deleted
+# it (litestream#1456, fixed on main by #1461, not in a release yet). Here L2 and
+# L3 crawled one txid per run from 2026-10-25 and stopped for good at txid 299 and
+# 35 on 2026-10-26 02:30 UTC. Add them back once the release with #1461 ships.
 levels:
   - interval: 30s
-  - interval: 5m
-  - interval: 1h
 
 # Litestream's own final sync when it is told to stop: retry for up to 30 s.
 shutdown-sync-timeout: 30s
@@ -56,10 +61,9 @@ dbs:
       bucket: litestream
       # storage-v2.db: a fresh replica path (2026-10-25). The old `storage.db` prefix held a
       # 4.8 GB chain (172 L1 files, 21 full-database copies) and level 2 and 3 never wrote a
-      # file; the stale April files in its ltx/2 and ltx/3 are the suspect (Litestream compacts
-      # into level N starting after that level's newest file and returns "nothing to do"
-      # silently when nothing lies beyond it). The old prefix stays as a recovery copy and can
-      # be deleted after the new chain has run for a few days. The first deploy on the new path
+      # file. The suspect was stale April files in its ltx/2 and ltx/3; the real cause is the
+      # listing bug under `levels` above, which the new path did not escape. The old prefix
+      # has since been deleted. The first deploy on the new path
       # finds no replica, so its follower fails and it seeds from the share (the 7 s path);
       # replication then starts the new chain with a snapshot.
       path: storage-v2.db
