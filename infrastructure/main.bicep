@@ -229,6 +229,14 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               value: storageAccount.name
             }
             {
+              // Go runtime soft memory limit for Litestream (the only Go process; .NET
+              // ignores it). Makes Litestream release memory sooner during the hourly
+              // snapshot, which took the 0.5 GiB replica from 170 to 460 MB on
+              // 2026-11-01. Soft limit: the worst case is a slower snapshot, not a crash.
+              name: 'GOMEMLIMIT'
+              value: '150MiB'
+            }
+            {
               // Reduce log volume in production. App still emits Warning+ levels.
               name: 'Logging__LogLevel__Default'
               value: 'Warning'
