@@ -34,6 +34,7 @@ public class RssDeserializer
             responseContent = Regex.Replace(responseContent, "<[^>]*darkreader[^>]*>", string.Empty, RegexOptions.IgnoreCase);
             responseContent = Regex.Replace(responseContent, "<[^>]*dark-theme[^>]*>", string.Empty, RegexOptions.IgnoreCase);
             responseContent = Regex.Replace(responseContent, "<[^>]*darker-dark-theme[^>]*>", string.Empty, RegexOptions.IgnoreCase);
+            responseContent = RepairRootAttributes(responseContent);
 
             var xmlDoc = XDocument.Parse(responseContent);
             var root = xmlDoc.Root;
@@ -254,12 +255,35 @@ public class RssDeserializer
         return null;
     }
 
+    private static readonly Regex RootStartTag = new(@"<(rss|feed|rdf:RDF)\b[^>]*>", RegexOptions.IgnoreCase);
+    private static readonly Regex AttributeWithoutTrailingSpace = new(@"=\s*(""[^""]*""|'[^']*')(?=[A-Za-z_:])");
+
+    /// <summary>
+    /// Inserts the whitespace a broken root start tag left out between two attributes
+    /// (science.nasa.gov's APOD feed emits <c>xmlns:apod="..."xmlns:media="..."</c>), which
+    /// the XML parser rejects outright. Only the root tag is touched: that is where feeds
+    /// declare namespaces, and a well-formed tag never has a value followed by a name.
+    /// </summary>
+    internal static string RepairRootAttributes(string responseContent)
+    {
+        var tag = RootStartTag.Match(responseContent);
+        if (!tag.Success)
+        {
+            return responseContent;
+        }
+
+        var repaired = AttributeWithoutTrailingSpace.Replace(tag.Value, m => m.Value + " ");
+        return repaired == tag.Value
+            ? responseContent
+            : string.Concat(responseContent.AsSpan(0, tag.Index), repaired, responseContent.AsSpan(tag.Index + tag.Length));
+    }
+
     /// <summary>The feed's own title (RSS/RDF channel title or Atom feed title), or null if there is none.</summary>
     public static string TryGetFeedTitle(string responseContent)
     {
         try
         {
-            var root = XDocument.Parse(responseContent).Root;
+            var root = XDocument.Parse(RepairRootAttributes(responseContent)).Root;
             if (root == null) return null;
             var container = root.Name.LocalName.Equals("feed", StringComparison.OrdinalIgnoreCase)
                 ? root
