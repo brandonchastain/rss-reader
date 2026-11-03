@@ -48,6 +48,8 @@ RUN tar -C /usr/local/bin -xzf /tmp/litestream.tar.gz && rm /tmp/litestream.tar.
 
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
+# Litestream upload cadence (sync-interval in /etc/litestream.yml); override per deployment.
+ENV LITESTREAM_SYNC_INTERVAL=1h
 
 COPY --from=publish /app/publish .
 COPY infrastructure/litestream.yml /etc/litestream.yml
