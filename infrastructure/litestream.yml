@@ -41,7 +41,7 @@ snapshot:
 # default). A restore reads the newest snapshot plus the L0 and L1 files since it,
 # and the hourly snapshot keeps that tail to an hour.
 #
-# L1 stays at 30 s although uploads are hourly (sync-interval below): with the
+# L1 stays at 30 s although uploads are every 30 min (sync-interval below): with the
 # listing bug described next, each L1 compaction takes exactly one L0 file, so L1
 # must run more often than new transactions arrive (about one a minute) or it falls
 # behind for good and L0 is never cleaned up. With nothing new uploaded, a run is
@@ -57,7 +57,7 @@ levels:
   - interval: 30s
 
 # How often old L0 files are looked for and deleted (default 15 s). Each check
-# lists the replica; with hourly uploads there is rarely anything to delete.
+# lists the replica; with 30-minute uploads there is rarely anything to delete.
 l0-retention-check-interval: 5m
 
 # Litestream's own final sync when it is told to stop: retry for up to 30 s.
@@ -81,8 +81,9 @@ dbs:
       # up to this much of the latest writes is lost. Deploys and platform replica moves
       # lose nothing either way, because the old writer runs a final sync before it hands
       # over. Set by LITESTREAM_SYNC_INTERVAL (image default in src/Server/Dockerfile,
-      # production value in infrastructure/main.bicep). 1 h since 2026-11-02, for cost:
-      # at 30 s the replica made about 21,000 blob listings a day (~$3/month) and was
+      # production value in infrastructure/main.bicep). 30 min since 2026-11-03 (1 h for a
+      # day before that), for cost: at
+      # 30 s the replica made about 21,000 blob listings a day (~$3/month) and was
       # rarely idle for Container Apps billing. 1 s (the default) was the 2026-05
       # write-operation cost.
       sync-interval: ${LITESTREAM_SYNC_INTERVAL}

@@ -241,7 +241,7 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               // lose nothing: the old writer syncs before it hands over). Shorter costs
               // blob operations and idle-rate billing; see infrastructure/litestream.yml.
               name: 'LITESTREAM_SYNC_INTERVAL'
-              value: '1h'
+              value: '30m'
             }
             {
               // How often the running writer checks for a deploy's handover request

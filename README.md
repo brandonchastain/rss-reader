@@ -27,7 +27,7 @@ Background work is what keeps the always-on replica off Container Apps' cheaper 
 rate, and every blob call is billed, so the cadences are settings in
 `infrastructure/main.bicep`, each a trade of dollars against recovery:
 
-* `LITESTREAM_SYNC_INTERVAL` (1 h): how much a hard crash can lose. At 30 s it cost
+* `LITESTREAM_SYNC_INTERVAL` (30 min): how much a hard crash can lose. At 30 s it cost
   about $3/month in blob listings alone.
 * `RssAppConfig__Durability__LeaseDuration` / `LeaseRenewInterval` (60 s / 20 s): how
   long a crashed writer's lease blocks the next one.
