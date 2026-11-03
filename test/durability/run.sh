@@ -57,7 +57,7 @@ dump_logs() {
 cleanup() {
   stop_writer
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
-  rm -f "$ACK"
+  rm -f "$ACK" "$ACK.stop"
 }
 trap cleanup EXIT
 
@@ -94,11 +94,15 @@ wait_ready() {
 }
 
 # Writes a row every ~150 ms and records the time of each acknowledged write.
+# stop_writer asks the loop to stop and waits for it: killing the loop instead left
+# an in-flight `docker exec` INSERT to commit after the caller had counted the rows
+# (the handover scenario then saw B serve one row more than A acknowledged).
 start_writer() {
   local c=$1
   sql "$c" "CREATE TABLE IF NOT EXISTS DurabilityProbe (n INTEGER PRIMARY KEY, t TEXT)"
+  rm -f "$ACK.stop"
   (
-    while true; do
+    while [[ ! -f "$ACK.stop" ]]; do
       if docker exec "$c" sqlite3 "$DB" "INSERT INTO DurabilityProbe (t) VALUES (strftime('%Y-%m-%dT%H:%M:%fZ','now'))" 2>/dev/null; then
         date -u +%s.%N >> "$ACK"
       fi
@@ -108,7 +112,7 @@ start_writer() {
   WRITER_PID=$!
 }
 stop_writer() {
-  if [[ -n "$WRITER_PID" ]]; then kill "$WRITER_PID" 2>/dev/null || true; wait "$WRITER_PID" 2>/dev/null || true; WRITER_PID=""; fi
+  if [[ -n "$WRITER_PID" ]]; then touch "$ACK.stop"; wait "$WRITER_PID" 2>/dev/null || true; WRITER_PID=""; fi
 }
 
 # Restores the replica from Azurite with the same Litestream binary and prints
