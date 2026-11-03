@@ -15,7 +15,7 @@
 |  |           Google / Microsoft / GitHub        |   |
 |  |  /api/*   feeds, items, users, admin         |   |
 |  |  Writer (min 1, max 1)                       |   |
-|  |  DB replicated to blob by Litestream (1 h)    |   |
+|  |  DB replicated to blob by Litestream (30 min) |   |
 |  |  +-----------+                               |   |
 |  |  |  SQLite   |                               |   |
 |  |  +-----------+                               |   |
@@ -74,7 +74,7 @@ docs link here.
 1. **Blob replication.** With `RssAppConfig:Durability:LitestreamEnabled` the
    app starts `litestream replicate` as its child (`LitestreamSupervisor`) once
    `/tmp/storage.db` is in place, replicating it to the `litestream` blob
-   container every hour (`LITESTREAM_SYNC_INTERVAL`) through the app's managed
+   container every 30 min (`LITESTREAM_SYNC_INTERVAL`) through the app's managed
    identity (`infrastructure/litestream.yml`). The entrypoint does nothing but
    `exec dotnet Server.dll` for the writer; Litestream never sees the file
    replaced underneath it.
@@ -128,7 +128,7 @@ docs link here.
    (`FinalSyncTimeout`, 20 s) and the child stops, then the lease is released.
    `HostOptions.ShutdownTimeout` is 50 s and `terminationGracePeriodSeconds` 60.
    A hard crash (OOM kill, node loss) loses at most the writes since the last
-   hourly sync; a deploy or a platform replica move loses nothing.
+   30-minute sync; a deploy or a platform replica move loses nothing.
 
    **First environment.** A brand-new environment has no replica to restore. Boot
    once with `RssAppConfig__Durability__RestoreFromBlob=false`: that creates the
@@ -270,7 +270,7 @@ provider id in `Users.ProviderUserId`; the resolver looks in both.
 | In-memory post body cache | 1 h absolute | `CachingItemRepository.ContentExpiration` |
 | Content batch size | 50 ids | `ItemController.MaxContentBatchSize` |
 | Page size ceiling | 500 | `FeedClient` clamps `pageSize` before calling feed / search endpoints |
-| Litestream `sync-interval` / `snapshot-interval` | 1 h / 1 h | `LITESTREAM_SYNC_INTERVAL` in `infrastructure/main.bicep`; `infrastructure/litestream.yml` |
+| Litestream `sync-interval` / `snapshot-interval` | 30 min / 1 h | `LITESTREAM_SYNC_INTERVAL` in `infrastructure/main.bicep`; `infrastructure/litestream.yml` |
 | Writer lease / renewal, handover poll | 60 s / 20 s, 10 s | `infrastructure/main.bicep` (code defaults 30 s / 10 s, 2 s) |
 
 ## Frontend (`src/WasmApp`)

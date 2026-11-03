@@ -52,7 +52,7 @@ Goals
 
 1. Deploy handover in single-digit seconds, independent of database size.
 2. Recovery point of 30 s or better at all times, including crashes. (Relaxed on
-   2026-11-02 to 1 h on a hard crash, for cost; deploys still lose nothing. See
+   2026-11-02 to 1 h, then 30 min, on a hard crash, for cost; deploys still lose nothing. See
    `infrastructure/litestream.yml`.)
 3. No database size ceiling from the durability path.
 4. One storage surface (blob), reached through managed identity, no key on
