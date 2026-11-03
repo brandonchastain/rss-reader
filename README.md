@@ -23,14 +23,18 @@
 * [OPML-FORMAT.md](OPML-FORMAT.md) — the import/export format
 
 # Running costs
-Blob replication (BLOB-DURABILITY-SPEC.md) costs about $0.10 a day in storage
-operations, most of it the writer lease renewing every 10 s. Two config
-changes halve that, at the price of a slower crash recovery:
+Background work is what keeps the always-on replica off Container Apps' cheaper idle
+rate, and every blob call is billed, so the cadences are settings in
+`infrastructure/main.bicep`, each a trade of dollars against recovery:
 
-* `RssAppConfig:Durability:LeaseDuration` 30 s → 60 s and `LeaseRenewInterval`
-  10 s → 20 s (a crashed writer's lease then takes 60 s to expire, not 30).
-* `sync-interval` in `infrastructure/litestream.yml` 30 s → 60 s (up to a
-  minute of writes lost in a crash instead of 30 s).
+* `LITESTREAM_SYNC_INTERVAL` (1 h): how much a hard crash can lose. At 30 s it cost
+  about $3/month in blob listings alone.
+* `RssAppConfig__Durability__LeaseDuration` / `LeaseRenewInterval` (60 s / 20 s): how
+  long a crashed writer's lease blocks the next one.
+* `RssAppConfig__Durability__HandoffPollInterval` (10 s): how long a deploy waits
+  before the handover starts.
+* `RssAppConfig__FeedRefreshInterval` (1 h): how fresh posts are. It runs as one
+  short burst an hour, so it costs little.
 
 Each deploy also uploads one full copy of the database (about 230 MB) while
 Litestream re-establishes its position; that is inherent, so fewer deploys is

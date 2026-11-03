@@ -237,6 +237,32 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               value: '150MiB'
             }
             {
+              // Litestream upload cadence = the recovery point on a hard crash (deploys
+              // lose nothing: the old writer syncs before it hands over). Shorter costs
+              // blob operations and idle-rate billing; see infrastructure/litestream.yml.
+              name: 'LITESTREAM_SYNC_INTERVAL'
+              value: '1h'
+            }
+            {
+              // How often the running writer checks for a deploy's handover request
+              // (default 2 s). A deploy waits up to this long before the handover starts
+              // while the old revision keeps serving; must stay well under
+              // HandoffProbeHold (30 s). Each check is a blob read.
+              name: 'RssAppConfig__Durability__HandoffPollInterval'
+              value: '00:00:10'
+            }
+            {
+              // Writer lease 60 s renewed every 20 s (defaults 30 s / 10 s): a third of
+              // the blob renewals. Only after a hard crash does it matter: the next
+              // writer waits up to 60 s for the dead one's lease to expire.
+              name: 'RssAppConfig__Durability__LeaseDuration'
+              value: '00:01:00'
+            }
+            {
+              name: 'RssAppConfig__Durability__LeaseRenewInterval'
+              value: '00:00:20'
+            }
+            {
               // Reduce log volume in production. App still emits Warning+ levels.
               name: 'Logging__LogLevel__Default'
               value: 'Warning'

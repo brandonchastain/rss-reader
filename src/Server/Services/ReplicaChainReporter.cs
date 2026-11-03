@@ -17,9 +17,10 @@ namespace RssReader.Server.Services
     /// Logs the shape of the Litestream replica so it can be read from Log Analytics (the
     /// owner's az user has no blob data-plane access): files, MB and txid range per level from
     /// <c>litestream ltx -level all -json</c>, and what a restore would read from
-    /// <c>litestream restore -dry-run</c>. Runs a minute after start and every ten minutes.
+    /// <c>litestream restore -dry-run</c>. Runs a minute after start and then every
+    /// <see cref="DurabilityConfig.ReplicaReportInterval"/> (an hour).
     /// BLOB-DURABILITY-SPEC.md rollout step 3: the restore chain must stay one snapshot plus at
-    /// most an hour of L1 tail (L2 and L3 are off, see infrastructure/litestream.yml).
+    /// most an hour of L0/L1 tail (L2 and L3 are off, see infrastructure/litestream.yml).
     /// </summary>
     public sealed class ReplicaChainReporter : BackgroundService
     {

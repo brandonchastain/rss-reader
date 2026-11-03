@@ -59,6 +59,9 @@ namespace RssApp.Config
         /// <summary>Litestream configuration file (replica, sync interval, retention).</summary>
         public string LitestreamConfigPath { get; set; } = "/etc/litestream.yml";
 
+        /// <summary>How often <c>ReplicaChainReporter</c> logs the replica's shape; each report lists the whole replica.</summary>
+        public TimeSpan ReplicaReportInterval { get; set; } = TimeSpan.FromHours(1);
+
         /// <summary>
         /// Upper bound for the final replica sync on shutdown (spec 3.3 step 4). Litestream's
         /// own shutdown sync retries for up to its <c>shutdown-sync-timeout</c> (30 s default)
