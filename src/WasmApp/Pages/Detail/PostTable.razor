@@ -52,6 +52,13 @@ else if (_showUpToDate)
             <div class="spinner"></div>
         </div>
     }
+    else if (LoadFailed && (Posts == null || Posts.Count == 0))
+    {
+        <div class="no-posts-message load-failed-message">
+            <p>Couldn't load posts. Check your connection and try again.</p>
+            <button class="btn btn-outline-primary" @onclick="OnRefreshComplete">Retry</button>
+        </div>
+    }
     else if (Posts == null || Posts.Count == 0)
     {
         <div class="no-posts-message">
@@ -106,6 +113,11 @@ else if (_showUpToDate)
 
     [CascadingParameter(Name = "IsLoading")]
     public bool IsLoading { get; set; }
+
+    // The host's last load failed with nothing to show: offer a retry rather
+    // than claiming there are no posts.
+    [CascadingParameter(Name = "LoadFailed")]
+    public bool LoadFailed { get; set; }
 
     [Parameter]
     public EventCallback<int> OnPageChanged { get; set; }

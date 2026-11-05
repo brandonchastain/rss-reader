@@ -21,7 +21,12 @@ namespace Server.Controllers
         private readonly IUserResolver userResolver;
         private readonly ILogger<UserController> logger;
         private readonly RssAppConfig config;
-        private readonly SemaphoreSlim locker = new SemaphoreSlim(1, 1);
+        // Static: controllers are created per request, so an instance lock never
+        // serialized anything. A new user's first page load registers from
+        // several places at once (nav menu, toolbar tags, the timeline's retry
+        // after a 404), and two concurrent creates would both pass the "existing"
+        // check and the second would fail on Users.Username UNIQUE with a 500.
+        private static readonly SemaphoreSlim locker = new SemaphoreSlim(1, 1);
 
         public UserController(
             IUserRepository userRepository,

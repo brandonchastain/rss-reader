@@ -30,6 +30,24 @@
 
     public bool IsLoading => !_hasLoadedOnce || _isRefreshing;
 
+    // True when the last load failed with nothing on screen. PostTable then
+    // offers a retry instead of "No posts found", which read as an empty
+    // account when the request had simply not gone through.
+    public bool LoadFailed { get; private set; }
+
+    // Waits between attempts when a load fails with nothing on screen (a cold
+    // start timing out, a network blip). The spinner stays up throughout, so
+    // the reader sees one slightly longer load rather than an error that a
+    // second later would have been a list. Loads over existing rows (paging,
+    // the reconcile over a hydrated cache) are not retried: the rows stay, and
+    // the next scroll or probe tries again anyway.
+    protected virtual IReadOnlyList<TimeSpan> EmptyLoadRetryDelays => DefaultEmptyLoadRetryDelays;
+    private static readonly TimeSpan[] DefaultEmptyLoadRetryDelays =
+    {
+        TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4),
+    };
+    private readonly CancellationTokenSource _disposeCts = new();
+
     protected class ScrollState
     {
         public string PostId { get; set; }
@@ -41,6 +59,8 @@
 
     public void Dispose()
     {
+        _disposeCts.Cancel();
+        _disposeCts.Dispose();
         this.Items.Clear();
         _pageRestoredRef?.Dispose();
     }
@@ -181,7 +201,7 @@
             List<NewsFeedItem> newPageRes = null;
             try
             {
-                newPageRes = await this.GetPostsAsync(pageSize);
+                newPageRes = await this.FetchPostsAsync(pageSize);
             }
             catch (Exception ex)
             {
@@ -199,6 +219,8 @@
                     UpdateCursorFromItems(Items);
                 }
             }
+
+            LoadFailed = newPageRes == null && Items.Count == 0;
 
             if (newPageRes != null)
             {
@@ -260,6 +282,61 @@
         {
             _pendingRequest = null;
             await RefreshItems(pending);
+        }
+    }
+
+    // A brand-new account does not exist on the server until something calls
+    // api/user/register, and nothing makes the first page fetch wait for that:
+    // the nav menu and the toolbar's tag load register in parallel with it. If
+    // the fetch wins the race, the list endpoints answer 404 ("Authenticated
+    // user not found"), and the reader saw "No posts found" until they reloaded,
+    // by which time the account (and its starter feeds) existed. So on a 404,
+    // register and ask once more. Existing users never take this path, so their
+    // first load costs no extra round trip.
+    private bool _registeredAfterNotFound;
+
+    private async Task<List<NewsFeedItem>> FetchPostsAsync(int pageSize)
+    {
+        var delays = Items.Count == 0 ? EmptyLoadRetryDelays : Array.Empty<TimeSpan>();
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await FetchPostsRegisteringAsync(pageSize);
+            }
+            catch (Exception ex) when (attempt < delays.Count && IsTransient(ex))
+            {
+                logger.LogWarning(ex, "Post fetch failed (attempt {Attempt}); retrying in {Delay}.", attempt + 1, delays[attempt]);
+                await Task.Delay(delays[attempt], _disposeCts.Token);
+            }
+        }
+    }
+
+    // Failures another attempt can fix: no response at all, a timeout, or the
+    // server saying it is overloaded or broken. A 4xx other than those is an
+    // answer, and asking again gets the same one.
+    private bool IsTransient(Exception ex) => ex switch
+    {
+        HttpRequestException { StatusCode: null } => true,
+        HttpRequestException { StatusCode: var code } => (int)code >= 500
+            || code == System.Net.HttpStatusCode.RequestTimeout
+            || code == System.Net.HttpStatusCode.TooManyRequests,
+        TaskCanceledException => !_disposeCts.IsCancellationRequested,
+        _ => false,
+    };
+
+    private async Task<List<NewsFeedItem>> FetchPostsRegisteringAsync(int pageSize)
+    {
+        try
+        {
+            return await this.GetPostsAsync(pageSize);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound && !_registeredAfterNotFound)
+        {
+            _registeredAfterNotFound = true;
+            logger.LogInformation("Post fetch returned 404; registering the user and retrying once.");
+            await this.userClient.GetFeedUserAsync();
+            return await this.GetPostsAsync(pageSize);
         }
     }
 
