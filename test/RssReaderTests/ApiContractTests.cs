@@ -449,6 +449,46 @@ public sealed class ApiContractTests
         Assert.AreEqual(aliceId, doc.RootElement.GetProperty("id").GetInt32());
     }
 
+    [TestMethod]
+    public async Task DeleteAccount_RemovesTheUser_AndEndsTheSession()
+    {
+        using var carol = host.As("github:carol-deletes", "carol");
+        var carolId = await RegisterAsync(carol);
+        Assert.AreEqual(HttpStatusCode.OK, (await carol.GetAsync("/api/user")).StatusCode);
+
+        var delete = await carol.DeleteAsync("/api/user");
+        Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode);
+
+        // The session cookie is expired in the same response, so the reload
+        // that follows is anonymous instead of re-registering the login.
+        var cookieName = host.Services.GetRequiredService<RssApp.Config.RssAppConfig>().Auth.CookieName;
+        Assert.IsTrue(delete.Headers.TryGetValues("Set-Cookie", out var cookies), "no Set-Cookie on the delete response");
+        var cleared = cookies.FirstOrDefault(c => c.StartsWith(cookieName + "=", StringComparison.Ordinal));
+        Assert.IsNotNull(cleared, $"the {cookieName} cookie was not cleared");
+        StringAssert.Contains(cleared.ToLowerInvariant(), "expires=thu, 01 jan 1970");
+
+        Assert.AreEqual(HttpStatusCode.NotFound, (await carol.GetAsync("/api/user")).StatusCode);
+        Assert.IsNull(host.Services.GetRequiredService<IUserRepository>().GetUserById(carolId));
+    }
+
+    [TestMethod]
+    public async Task DeleteAccount_ForAnAdmin_Is403_AndKeepsTheAccount()
+    {
+        // The Development settings the in-process host runs with list this id as admin.
+        using var admin = host.As("024d97a14bc74c58b9a83e88b919a92c", "admin");
+        var adminId = await RegisterAsync(admin);
+
+        var delete = await admin.DeleteAsync("/api/user");
+        Assert.AreEqual(HttpStatusCode.Forbidden, delete.StatusCode);
+        StringAssert.Contains(await delete.Content.ReadAsStringAsync(), "Admin accounts cannot be deleted");
+
+        var me = await admin.GetAsync("/api/user");
+        Assert.AreEqual(HttpStatusCode.OK, me.StatusCode);
+        using var doc = await ReadJsonAsync(me);
+        Assert.AreEqual(adminId, doc.RootElement.GetProperty("id").GetInt32());
+        Assert.IsTrue(doc.RootElement.GetProperty("isAdmin").GetBoolean());
+    }
+
     // ---------- timeline ----------
 
     [TestMethod]

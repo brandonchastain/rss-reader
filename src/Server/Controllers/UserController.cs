@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using RssApp.Data;
 using RssApp.Contracts;
 using RssApp.ComponentServices;
@@ -117,16 +119,29 @@ namespace Server.Controllers
         }
 
         // DELETE: api/user
+        // An admin can never delete their own account, so the admin dashboard
+        // cannot be locked out from the Account page.
         [HttpDelete]
         public async Task<IActionResult> DeleteAccount()
         {
             var user = userResolver.ResolveUser(User);
             if (user == null) return NotFound();
 
+            if (Server.Authentication.AdminPolicy.IsAdmin(config, User, user))
+            {
+                logger.LogWarning("Refused self-delete for admin user {UserId}", user.Id);
+                return StatusCode(StatusCodes.Status403Forbidden, "Admin accounts cannot be deleted.");
+            }
+
             // Cascade: items+content → feeds → user
             await itemRepository.DeleteAllItemsAsync(user);
             feedRepository.DeleteAllFeeds(user);
             userRepository.DeleteUser(user.Id);
+
+            // End the session too. A still-valid cookie makes the next page
+            // load call register, which silently creates a fresh account for
+            // the same login, so the delete looked like it never happened.
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
             logger.LogWarning("User {UserId} deleted their account", user.Id);
             return NoContent();

@@ -6,6 +6,7 @@
 @using WasmApp.Services
 @inject IUserClient userClient
 @inject IPostCache postCache
+@inject IAuthClient authClient
 @inject NavigationManager navigationManager
 
 <div class="account-container">
@@ -89,7 +90,11 @@
             <strong>This cannot be undone.</strong>
         </p>
 
-        @if (!showConfirm)
+        @if (isAdmin)
+        {
+            <p class="text-muted">Admin accounts cannot be deleted.</p>
+        }
+        else if (!showConfirm)
         {
             <button class="btn btn-outline-danger" @onclick="() => showConfirm = true">Delete My Account</button>
         }
@@ -128,6 +133,7 @@
     private bool showConfirm = false;
     private bool deleting = false;
     private string deleteError;
+    private bool isAdmin = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -136,6 +142,7 @@
             // Fetch from backend (triggers lazy username migration)
             var user = await userClient.GetFeedUserAsync();
             username = user.Username;
+            isAdmin = user.IsAdmin;
         }
         catch
         {
@@ -175,7 +182,10 @@
             // storage would let a reload paint a deleted timeline.
             await postCache.ClearAsync();
 
-            navigationManager.NavigateTo("/", forceLoad: true);
+            // The API already ended the session; going through logout as a
+            // top-level navigation also clears the cookie where a browser
+            // ignored the Set-Cookie on the cross-origin DELETE response.
+            navigationManager.NavigateTo(authClient.LogoutUrl(navigationManager.BaseUri), forceLoad: true);
         }
         catch (Exception ex)
         {
