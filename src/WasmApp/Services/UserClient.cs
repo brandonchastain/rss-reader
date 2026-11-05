@@ -70,7 +70,15 @@ public class UserClient : IUserClient
 
     public async Task DeleteAccountAsync()
     {
-        await _apiClient.DeleteAsync("api/user");
+        var response = await _apiClient.DeleteAsync("api/user");
+        if (!response.IsSuccessStatusCode)
+        {
+            var reason = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException(
+                string.IsNullOrWhiteSpace(reason) ? $"{(int)response.StatusCode} {response.ReasonPhrase}" : reason,
+                null,
+                response.StatusCode);
+        }
     }
 
     public void Dispose()
