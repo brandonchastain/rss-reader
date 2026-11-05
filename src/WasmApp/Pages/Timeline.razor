@@ -12,8 +12,10 @@
 
 <CascadingValue Value="@Page" Name="Page">
 <CascadingValue Value="@Items" Name="Posts">
+<CascadingValue Value="@LoadFailed" Name="LoadFailed">
 <CascadingValue Value="@IsLoading" Name="IsLoading">
     <PostTable OnPageChanged="UpdatePage" FeedClient="@this.feedClient" OnRefreshTriggered="RefreshItems" CacheEnabled="true" />
+</CascadingValue>
 </CascadingValue>
 </CascadingValue>
 </CascadingValue>
