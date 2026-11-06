@@ -20,9 +20,9 @@
         <h2>What we collect</h2>
         <ul>
             <li>
-                <strong>A unique account identifier</strong> &mdash; when you sign in with Microsoft, Azure Static
-                Web Apps generates an app-specific identifier for your account. This ID cannot be used to identify
-                you across other apps or services. <strong>Your email address is never stored.</strong>
+                <strong>A unique account identifier</strong> &mdash; the account ID your sign-in provider
+                (Microsoft or GitHub) gives us. For Microsoft this is an opaque identifier; for GitHub it is your
+                numeric GitHub user ID, which is public on GitHub. <strong>Your email address is never stored.</strong>
             </li>
             <li><strong>Your feed subscriptions</strong> &mdash; the RSS feeds you add to your account.</li>
             <li>
@@ -54,6 +54,10 @@
         <ul>
             <li><strong>The operator</strong> &mdash; a single developer, for service maintenance and support.</li>
             <li>
+                <strong>GitHub</strong> &mdash; if you sign in with GitHub, GitHub handles that sign-in under
+                <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub&rsquo;s Privacy Statement</a>.
+            </li>
+            <li>
                 <strong>Microsoft / Azure</strong> &mdash; our cloud infrastructure provider. Your data is
                 processed on Azure services under
                 <a href="https://privacy.microsoft.com/en-us/privacystatement">Microsoft&rsquo;s Privacy Statement</a>.
@@ -71,7 +75,7 @@
             <li>All data is stored in encrypted Azure storage in the United States.</li>
             <li>All network traffic between your browser and our servers uses HTTPS.</li>
             <li>The API enforces strict access controls &mdash; you can only access your own data.</li>
-            <li>Authentication is handled entirely by Microsoft; your password is never exposed to RSS Reader.</li>
+            <li>Authentication is handled entirely by Microsoft or GitHub; your password is never exposed to RSS Reader.</li>
         </ul>
     </section>
 
@@ -122,7 +126,7 @@
     <section class="legal-section">
         <h2>Cookies and local storage</h2>
         <p>
-            RSS Reader does not use tracking cookies. Azure Static Web Apps sets an essential authentication
+            RSS Reader does not use tracking cookies. The API sets an essential, encrypted sign-in
             cookie when you sign in, which is required for the app to function. We also use browser local
             storage to remember your session. Neither can be used to track you across other websites.
         </p>
@@ -131,7 +135,7 @@
     <section class="legal-section">
         <h2>Children&rsquo;s privacy</h2>
         <p>
-            RSS Reader requires a Microsoft account to sign in. Microsoft requires account holders to be
+            RSS Reader requires a Microsoft or GitHub account to sign in. Both require account holders to be
             at least 13 years old.
         </p>
     </section>

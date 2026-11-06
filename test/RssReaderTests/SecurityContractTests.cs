@@ -162,6 +162,20 @@ public sealed class SecurityContractTests
     }
 
     [TestMethod]
+    public async Task GitHubCallback_CancelledConsent_FailsBackToTheFrontend()
+    {
+        // Pressing Cancel on GitHub's consent screen returns ?error=access_denied.
+        // That must land on the frontend with an error, not a 500 on the API host.
+        using var configured = new ApiTestHost(isTestUserEnabled: false, githubConfigured: true);
+        var response = await configured.Anonymous().GetAsync("/auth/callback/github?error=access_denied&state=y");
+
+        Assert.AreEqual(HttpStatusCode.Redirect, response.StatusCode, await response.Content.ReadAsStringAsync());
+        var location = response.Headers.Location!.ToString();
+        StringAssert.StartsWith(location, configured.AllowedOrigin + "/");
+        StringAssert.Contains(location, "authError=provider");
+    }
+
+    [TestMethod]
     public async Task SafeMethods_AreNeverRefusedByOrigin()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/feed");
