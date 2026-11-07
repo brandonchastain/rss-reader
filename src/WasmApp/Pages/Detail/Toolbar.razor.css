@@ -3,31 +3,6 @@
     display: inline-block;
 }
 
-/* Strip Bootstrap's boxy button styling from toolbar action buttons */
-.toolbar button:not(.filter-tag-badge),
-.toolbar .btn-link {
-    border: none;
-    background: none;
-    box-shadow: none;
-    padding: 0 0.2rem;
-    outline: none;
-    color: var(--accent);
-    text-decoration: none;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: inherit;
-}
-
-.toolbar button:not(.filter-tag-badge):hover,
-.toolbar .btn-link:hover {
-    text-decoration: underline;
-    opacity: 0.85;
-}
-
-.toolbar .toolbar-active {
-    color: var(--warn);
-}
-
 .filter-dropdown {
     display: none;
     position: absolute;

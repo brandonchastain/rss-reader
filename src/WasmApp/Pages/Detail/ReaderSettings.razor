@@ -4,19 +4,19 @@
    (rssApp.reader in app.js); it is applied as attributes on <html>, so every
    open reader changes at once and the saved choice is in place before the
    first paint (see the pre-boot script in index.html). *@
-<button class="link" title="Text options" aria-expanded="@(_open ? "true" : "false")" @onclick:stopPropagation="true" @onclick="ToggleAsync">[Aa]</button>
+<button class="ui-btn @(_open ? "is-on" : "")" title="Text options" aria-expanded="@(_open ? "true" : "false")" @onclick:stopPropagation="true" @onclick="ToggleAsync"><i class="fa-solid fa-font" aria-hidden="true"></i>text</button>
 @if (_open)
 {
     <div class="reader-settings" @onclick:stopPropagation="true">
-        <span class="reader-settings-label">font:</span>
+        <span class="reader-settings-label">font</span>
         @foreach (var font in Fonts)
         {
-            <button class="link @(_font == font ? "reader-setting-active" : "")" aria-pressed="@(_font == font ? "true" : "false")" @onclick="() => SetFontAsync(font)">[@font]</button>
+            <button class="ui-btn @(_font == font ? "is-on" : "")" aria-pressed="@(_font == font ? "true" : "false")" @onclick="() => SetFontAsync(font)">@font</button>
         }
-        <span class="reader-settings-label">size:</span>
-        <button class="link" title="Smaller text" disabled="@(_size <= MinSize)" @onclick="() => StepSizeAsync(-1)">[-]</button>
+        <span class="reader-settings-label">size</span>
+        <button class="ui-btn ui-btn--icon" title="Smaller text" aria-label="Smaller text" disabled="@(_size <= MinSize)" @onclick="() => StepSizeAsync(-1)"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>
         <span class="reader-size-value">@(_size)%</span>
-        <button class="link" title="Larger text" disabled="@(_size >= MaxSize)" @onclick="() => StepSizeAsync(1)">[+]</button>
+        <button class="ui-btn ui-btn--icon" title="Larger text" aria-label="Larger text" disabled="@(_size >= MaxSize)" @onclick="() => StepSizeAsync(1)"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
     </div>
 }
 

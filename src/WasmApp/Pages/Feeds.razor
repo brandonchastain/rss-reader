@@ -167,15 +167,15 @@ else
                         @onkeydown:stopPropagation="true" />
                 </div>
                 <div class="feeds-row-actions" @onclick:stopPropagation="true">
-                    <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)" class="feeds-row-link">[posts]</a>
+                    <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)" class="ui-btn feeds-row-link"><i class="fa-solid fa-list" aria-hidden="true"></i>posts</a>
                     @if (confirmUnsubscribe == feed.Href)
                     {
-                        <button class="feeds-delete-btn" @onclick="() => DeleteAsync(feed.Href)">[confirm]</button>
-                        <button class="feeds-cancel-btn" @onclick="() => confirmUnsubscribe = null">[cancel]</button>
+                        <button class="ui-btn ui-btn--danger is-on" @onclick="() => DeleteAsync(feed.Href)"><i class="fa-solid fa-check" aria-hidden="true"></i>confirm</button>
+                        <button class="ui-btn" @onclick="() => confirmUnsubscribe = null">cancel</button>
                     }
                     else
                     {
-                        <button class="feeds-delete-btn" @onclick="() => confirmUnsubscribe = feed.Href">[unsubscribe]</button>
+                        <button class="ui-btn ui-btn--danger" @onclick="() => confirmUnsubscribe = feed.Href"><i class="fa-solid fa-circle-minus" aria-hidden="true"></i>unsubscribe</button>
                     }
                 </div>
             </div>

@@ -8,21 +8,22 @@
 
 <div class="toolbar">
 
-    <button class="btn-link" title="Check for new posts" @onclick="OnRefreshClicked" disabled="@IsRefreshing">
-        <i class="fas fa-sync @(IsRefreshing ? "fa-spin" : "")"></i>
+    <button class="ui-btn ui-btn--ghost ui-btn--icon" title="Check for new posts" aria-label="Check for new posts" @onclick="OnRefreshClicked" disabled="@IsRefreshing">
+        <i class="fa-solid fa-rotate @(IsRefreshing ? "fa-spin" : "")" aria-hidden="true"></i>
     </button>
 
-    <button class="btn-link @(IsReadingHeadlines ? "toolbar-active" : "")"
+    <button class="ui-btn ui-btn--ghost ui-btn--icon @(IsReadingHeadlines ? "is-on" : "")"
             title="@(IsReadingHeadlines ? "Pause reading headlines" : "Read headlines aloud")"
+            aria-label="@(IsReadingHeadlines ? "Pause reading headlines" : "Read headlines aloud")"
             @onclick="async () => await OnToggleReadHeadlines.InvokeAsync()">
-        <i class="fas @(IsReadingHeadlines ? "fa-pause" : "fa-headphones")"></i>
+        <i class="fa-solid @(IsReadingHeadlines ? "fa-pause" : "fa-headphones")" aria-hidden="true"></i>
     </button>
 
-    <button class="btn-link @(this.IsFilterUnread ? "toolbar-active" : "")" @onclick="async () => {await ToggleUnreadFilterAsync.InvokeAsync(); }">[unread]</button>
-    <button class="btn-link @(this.IsFilterSaved ? "toolbar-active" : "")" @onclick="async () => {await ToggleSavedFilterAsync.InvokeAsync(); }">[saved]</button>
+    <button class="ui-btn ui-btn--ghost @(this.IsFilterUnread ? "is-on" : "")" aria-pressed="@(this.IsFilterUnread ? "true" : "false")" @onclick="async () => {await ToggleUnreadFilterAsync.InvokeAsync(); }"><i class="fa-regular fa-envelope" aria-hidden="true"></i>unread</button>
+    <button class="ui-btn ui-btn--ghost @(this.IsFilterSaved ? "is-on" : "")" aria-pressed="@(this.IsFilterSaved ? "true" : "false")" @onclick="async () => {await ToggleSavedFilterAsync.InvokeAsync(); }"><i class="fa-regular fa-bookmark" aria-hidden="true"></i>saved</button>
 
     <div class="dropdown-container">
-        <button class="btn-link" @onclick="() => ToggleShowFilters()">[filters]</button>
+        <button class="ui-btn ui-btn--ghost @(string.IsNullOrEmpty(this.FilterTag) ? "" : "is-on")" aria-expanded="@(tagsAreHidden ? "false" : "true")" @onclick="() => ToggleShowFilters()"><i class="fa-solid fa-filter" aria-hidden="true"></i>@(string.IsNullOrEmpty(this.FilterTag) ? "filters" : "#" + this.FilterTag)</button>
         <div class="filter-dropdown @(tagsAreHidden ? "" : "show")" id="filter-tags">
             @if (this.userTags != null)
             {
@@ -34,7 +35,7 @@
         </div>
     </div>
 
-    <button class="btn-link desktop-only" title="Keyboard shortcuts (?)" @onclick="ShowShortcutsAsync">[?]</button>
+    <button class="ui-btn ui-btn--ghost ui-btn--icon desktop-only" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" @onclick="ShowShortcutsAsync"><i class="fa-regular fa-keyboard" aria-hidden="true"></i></button>
 </div>
 
 @code {

@@ -51,10 +51,15 @@
             <a class="post-headline" tooltip="@FormatDate(Post.ParsedDate)" href="@Post.Href" data-post-id="@Post.Id" data-mark-read-url="@MarkReadUrl(Post)" @onclick:stopPropagation="true" @onclick="async e => await OnHeadlineClick(e, Post)">@CleanTitle(Post.Title)</a><a class="post-external" href="@Post.Href" data-article-link data-post-id="@Post.Id" data-mark-read-url="@MarkReadUrl(Post)" title="Open original" aria-label="Open original article" @onclick:stopPropagation="true" @onclick="() => OnArticleLinkClick(Post)">↗</a>
         </p>
         <div class="post-actions">
-            <button class="link" data-action="toggle-read" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await MarkAsReadAsync(Post, !Post.IsRead)">[mark @(!Post.IsRead ? "read" : "unread")]</button><button class="link" data-action="toggle-save" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)">[@(!Post.IsSaved ? "save" : "unsave")]</button>
+            @{
+                var readLabel = Post.IsRead ? "Mark unread" : "Mark read";
+                var saveLabel = Post.IsSaved ? "Unsave" : "Save";
+            }
+            <button class="ui-btn ui-btn--ghost ui-btn--icon @(Post.IsRead ? "is-on" : "")" data-action="toggle-read" title="@readLabel (m)" aria-label="@readLabel" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await MarkAsReadAsync(Post, !Post.IsRead)"><i class="@(Post.IsRead ? "fa-solid" : "fa-regular") fa-circle-check" aria-hidden="true"></i></button>
+            <button class="ui-btn ui-btn--ghost ui-btn--icon @(Post.IsSaved ? "is-on" : "")" data-action="toggle-save" title="@saveLabel (s)" aria-label="@saveLabel" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="async () => await SavePost(Post)"><i class="@(Post.IsSaved ? "fa-solid" : "fa-regular") fa-bookmark" aria-hidden="true"></i></button>
             @if (!String.IsNullOrWhiteSpace(Post.CommentsHref))
             {
-                <a class="link" href="@Post.CommentsHref" data-article-link data-post-id="@Post.Id" @onclick:stopPropagation="true">[comments]</a>
+                <a class="ui-btn ui-btn--ghost ui-btn--icon" href="@Post.CommentsHref" title="Comments" aria-label="Comments" data-article-link data-post-id="@Post.Id" @onclick:stopPropagation="true"><i class="fa-regular fa-comment" aria-hidden="true"></i></a>
             }
             <a class="post-domain" href="/posts?href=@System.Net.WebUtility.UrlEncode(Post.FeedUrl)" @onclick:stopPropagation="true">@Post.Href.GetRootDomain()</a>
         </div>
@@ -81,24 +86,24 @@
                 @((MarkupString)HtmlSanitizer.Sanitize(Post.Content ?? ""))
             </div>
         }
-        @* One action line under the body. [open original] is always offered:
+        @* One action line under the body. "open original" is always offered:
            many feeds carry only an excerpt, and telling a truncated body from a
            complete one is guesswork. *@
         <div class="reader-footer">
-            <a class="link" href="@Post.Href" data-article-link data-post-id="@Post.Id" data-mark-read-url="@MarkReadUrl(Post)" @onclick="() => OnArticleLinkClick(Post)">[open original ↗]</a>
+            <a class="ui-btn" href="@Post.Href" data-article-link data-post-id="@Post.Id" data-mark-read-url="@MarkReadUrl(Post)" @onclick="() => OnArticleLinkClick(Post)"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>original</a>
             @if (!_isLoadingContent)
             {
                 @if (_isSpeaking)
                 {
-                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => StopSpeaking()">[stop]</button>
+                    <button class="ui-btn is-on" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => StopSpeaking()"><i class="fa-solid fa-stop" aria-hidden="true"></i>stop</button>
                 }
                 else
                 {
-                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)">[speak]</button>
+                    <button class="ui-btn" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)"><i class="fa-solid fa-volume-high" aria-hidden="true"></i>listen</button>
                 }
             }
             <ReaderSettings />
-            <button class="link" data-action="collapse" @onclick="async () => await HandleClick(Post)">[collapse]</button>
+            <button class="ui-btn reader-collapse" data-action="collapse" title="Collapse (h)" aria-label="collapse" @onclick="async () => await HandleClick(Post)"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i><span class="ui-btn-text">collapse</span></button>
         </div>
     </div>
 </div>

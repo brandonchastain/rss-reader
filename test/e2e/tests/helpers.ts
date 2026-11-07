@@ -38,15 +38,15 @@ export async function scrollToPost(page: Page, title: string): Promise<Locator> 
 }
 
 /** Turns a toolbar filter ([unread] / [saved]) on or off; the choice survives a reload, so click only when it differs. */
-export async function setFilter(page: Page, name: '[unread]' | '[saved]', on: boolean) {
+export async function setFilter(page: Page, name: 'unread' | 'saved', on: boolean) {
   // The app restores the remembered filter after it loads, so read the button only once posts show.
   await expect(page.locator('.row[data-post-id]').first()).toBeVisible();
-  const button = page.getByRole('button', { name });
-  const active = (await button.getAttribute('class'))?.includes('toolbar-active') ?? false;
+  const button = page.getByRole('button', { name, exact: true });
+  const active = (await button.getAttribute('aria-pressed')) === 'true';
   if (active !== on) {
     await button.click();
   }
-  await expect(button).toHaveClass(on ? /toolbar-active/ : /^((?!toolbar-active).)*$/);
+  await expect(button).toHaveAttribute('aria-pressed', on ? 'true' : 'false');
 }
 
 export const titles = (page: Page) => page.locator('a.post-headline').allTextContents();
