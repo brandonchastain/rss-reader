@@ -85,7 +85,7 @@ else if (_showUpToDate)
                     @if (DayHasUnread(i))
                     {
                         var day = entry.HeaderDate;
-                        <button class="link day-mark-read" title="Mark this day's loaded posts as read" @onclick="async () => await MarkDayReadAsync(day)">[mark all read]</button>
+                        <button class="ui-btn ui-btn--ghost day-mark-read" title="Mark this day's loaded posts as read" @onclick="async () => await MarkDayReadAsync(day)"><i class="fa-solid fa-check-double" aria-hidden="true"></i>mark all read</button>
                     }
                 </div>
             }

@@ -98,13 +98,6 @@ a {
     gap: 0.1rem;
 }
 
-@media (max-width: 480px) {
-    .toolbar {
-        font-size: 0.78rem;
-    }
-}
-
-.toolbar button,
 .toolbar .btn-link {
     border: none;
     background: none;
@@ -298,7 +291,7 @@ a {
 #post-table .post-read {
     background-color: var(--bg);
     color: var(--text-muted);
-    border-left: 3px solid transparent;
+    border-left: 2px solid transparent;
     opacity: 0.55;
 }
 
@@ -317,7 +310,7 @@ a {
 #post-table .post-unread {
     background-color: var(--bg);
     color: var(--text);
-    border-left: 4px solid var(--accent);
+    border-left: 2px solid var(--accent);
 }
 
 #post-table .post-unread .post-title a {
@@ -332,12 +325,46 @@ a {
 p.post-title {
     margin: 0;
     padding: 0;
+    line-height: 1.45;
+}
+
+/* Titles are underlined only on hover; the row's own hover shows it's a link. */
+#post-table a.post-headline {
+    text-decoration: none;
+}
+
+#post-table a.post-headline:hover {
+    text-decoration: underline;
 }
 
 .post-actions {
-    margin-top: 2px;
+    margin-top: 6px;
     font-size: 0.85em;
     color: var(--text-muted);
+}
+
+/* Row actions are dim icons until the row is hovered, focused or current, so a
+   page of posts doesn't read as a page of buttons. */
+#post-table .post-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    margin-left: -0.35rem;
+}
+
+#post-table .post-actions .ui-btn:not(.is-on) {
+    color: var(--text-muted) !important;
+    opacity: 0.7;
+}
+
+#post-table .row:hover .post-actions .ui-btn,
+#post-table .row:focus-within .post-actions .ui-btn,
+#post-table .row[data-current] .post-actions .ui-btn {
+    opacity: 1;
+}
+
+#post-table .post-actions .post-domain {
+    margin-left: 0.4rem;
 }
 
 .post-actions button.link,
@@ -404,11 +431,25 @@ button.big {
     display: none;
 }
 
+/* Where an open post's text starts: under the title, past the row's border,
+   padding, thumbnail and gap. On phones it starts under the thumbnail. */
+#post-table {
+    --reader-indent: calc(2px + 8px + 120px + 0.9rem);
+}
+
 @media (max-width: 640px) {
+    #post-table {
+        --reader-indent: 10px;
+    }
+
     #post-table .thumb {
         width: 84px;
         height: 56px;
         border-radius: 5px;
+    }
+
+    p.post-title {
+        font-size: 0.94em;
     }
 
     .thumb-img.thumb-favicon {
@@ -418,15 +459,20 @@ button.big {
 }
 
 .postContent {
-    max-width: 95%;
-    margin: 0 auto;
-    padding: 1rem;
+    margin: -6px 0 0 0;
+    padding: 0 1.5rem 1.4rem var(--reader-indent, 1rem);
     display: block;
     overflow: auto;
-    background-color: var(--bg-elevated);
-    border-left: 5px solid var(--link);
-    border-radius: 0 6px 6px 0;
     color: var(--text);
+}
+
+/* Bootstrap's .table cell rule (.table > :not(caption) > * > *) pads the
+   open post's meta line and body by .5rem, which pushed the text off the
+   title's left edge. */
+#post-table .postContent > * > * {
+    padding: 0;
+    border-bottom-width: 0;
+    box-shadow: none;
 }
 
 .postContent *:not(a) {
@@ -1274,6 +1320,25 @@ a.post-domain:hover {
 .feeds-tag-input { width: 80px; }
 .feeds-tag-input:focus { width: 140px; }
 
+/* My feeds: the list starts at the same left edge as its heading instead of
+   being centred like the timeline, and tags read as tags. */
+#post-table.feeds-list { margin-left: 0; margin-right: 0; }
+.feeds-list .feeds-row { padding: 11px 4px; }
+.feeds-list .feeds-tag-input { border: 0; background: transparent; width: 64px; }
+.feeds-list .feeds-tag-input:focus { border-bottom: 1px solid var(--accent); width: 140px; }
+.feeds-list .feeds-row-actions { gap: 0.4rem; }
+/* The x to remove a tag shows on hover where there is hover; touch screens
+   keep it visible. */
+@media (hover: hover) {
+    .feeds-list .feeds-tag-remove { display: none; }
+    .feeds-list .feeds-row:hover .feeds-tag-remove,
+    .feeds-list .feeds-row:focus-within .feeds-tag-remove { display: inline; }
+}
+@media (max-width: 640px) {
+    .feeds-list .feeds-row-main { flex: 1 0 100%; }
+    .feeds-list .feeds-row-tags { flex: 1 1 auto; }
+}
+
 /* ── Reader UX: headline, reading view, keyboard ─────────────── */
 
 /* Demoted "open original" link next to the headline. */
@@ -1306,16 +1371,18 @@ a.post-external:hover {
     flex-wrap: wrap;
     align-items: baseline;
     gap: 0.25rem 0.9rem;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
     color: var(--text-muted) !important;
     font-size: 0.85em;
+    white-space: nowrap;
 }
 
 .reader-settings {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.25rem 0.5rem;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.25rem;
     flex-basis: 100%;
 }
 
@@ -1340,6 +1407,8 @@ a.post-external:hover {
 
 .reader-body {
     font-size: calc(1em * var(--reader-scale, 1));
+    max-width: 68ch;
+    line-height: 1.65;
 }
 
 :root[data-reader-font="serif"] .reader-body {
@@ -1361,7 +1430,8 @@ a.post-external:hover {
 .reader-footer {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem 1rem;
+    align-items: center;
+    gap: 0.4rem;
     margin-top: 1rem;
     font-size: 0.85em;
 }
@@ -1414,4 +1484,156 @@ a.post-external:hover {
 .kb-help form {
     margin: 0;
     text-align: right;
+}
+
+
+/* ---------------------------------------------------------------------------
+   Buttons. One pattern for every action in the app: a small square-cornered
+   button in the app's mono type, an icon first and a lowercase label after.
+   .ui-btn--ghost has no border until hovered (rows, toolbar, day header);
+   .ui-btn--icon is the square icon-only size (needs a title and aria-label);
+   .is-on marks a toggle that is on (saved, read, an active filter).
+   Colors carry !important because the global `a` rule and the reader's
+   `.postContent *` reset both set colors with it.
+   --------------------------------------------------------------------------- */
+button.ui-btn,
+a.ui-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45em;
+    height: 28px;
+    margin: 0;
+    padding: 0 0.6rem;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 400;
+    line-height: 1;
+    white-space: nowrap;
+    color: var(--text-muted) !important;
+    background: transparent !important;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: none;
+    cursor: pointer;
+    text-decoration: none !important;
+    transition: color 0.12s, border-color 0.12s, background-color 0.12s;
+}
+
+.ui-btn i {
+    font-size: 0.95em;
+    line-height: 1;
+    /* Bootstrap's .table cell rule reaches icons three levels under
+       #post-table (e.g. the day header's button) and paints them white. */
+    padding: 0 !important;
+    border: 0 !important;
+    color: inherit !important;
+    background: none !important;
+    box-shadow: none !important;
+}
+
+/* The day header's button stays compact so the date keeps to one line. */
+button.ui-btn.day-mark-read {
+    height: 26px;
+    padding: 0 0.45rem;
+    font-size: 0.75rem;
+}
+
+.day-separator > span {
+    white-space: nowrap;
+}
+
+button.ui-btn:hover,
+a.ui-btn:hover {
+    color: var(--text) !important;
+    border-color: var(--text-muted);
+    background: var(--bg-hover) !important;
+    opacity: 1;
+}
+
+.ui-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.ui-btn--ghost {
+    border-color: transparent !important;
+}
+
+.ui-btn--ghost:hover {
+    border-color: var(--border) !important;
+}
+
+.ui-btn--icon {
+    width: 28px;
+    padding: 0 !important;
+}
+
+button.ui-btn.is-on,
+a.ui-btn.is-on {
+    color: var(--accent) !important;
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent) !important;
+}
+
+.ui-btn--ghost.is-on {
+    border-color: transparent !important;
+}
+
+/* In a post row a toggle that is on (read, saved) is just a green icon. */
+#post-table .post-actions .ui-btn.is-on {
+    background: transparent !important;
+}
+
+.ui-btn--danger:hover {
+    color: #f85149 !important;
+    border-color: #f85149 !important;
+}
+
+.ui-btn--danger.is-on {
+    color: #f85149 !important;
+    border-color: #f85149 !important;
+    background: color-mix(in srgb, #f85149 12%, transparent) !important;
+}
+
+button.ui-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
+}
+
+/* Bigger touch targets on phones. */
+@media (max-width: 640px) {
+    button.ui-btn,
+    a.ui-btn {
+        height: 34px;
+    }
+
+    .ui-btn--icon {
+        width: 34px;
+    }
+
+    /* Four buttons on one line at phone width. */
+    .reader-footer {
+        gap: 0.3rem;
+    }
+
+    .reader-footer .ui-btn:not(.ui-btn--icon) {
+        padding: 0 0.4rem;
+        font-size: 0.75rem;
+    }
+
+    /* Collapse is icon-only on phones; "h" and the title still name it. */
+    .reader-footer .reader-collapse {
+        width: 34px;
+        padding: 0 !important;
+    }
+
+    .reader-footer .reader-collapse .ui-btn-text {
+        display: none;
+    }
+
+    .postContent {
+        padding-right: 10px;
+    }
 }

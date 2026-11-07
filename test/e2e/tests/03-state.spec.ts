@@ -5,38 +5,38 @@ test.describe('read, saved and tag state', () => {
   test('mark read sticks across a reload, and mark unread undoes it', async ({ page }) => {
     await openTimeline(page);
     const row = await scrollToPost(page, 'Tech 20');
-    await expect(row.getByRole('button', { name: '[mark read]' })).toBeVisible();
-    await row.getByRole('button', { name: '[mark read]' }).click();
-    await expect(row.getByRole('button', { name: '[mark unread]' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Mark read', exact: true })).toBeVisible();
+    await row.getByRole('button', { name: 'Mark read', exact: true }).click();
+    await expect(row.getByRole('button', { name: 'Mark unread', exact: true })).toBeVisible();
 
     await page.reload();
     const reloaded = await scrollToPost(page, 'Tech 20');
-    await expect(reloaded.getByRole('button', { name: '[mark unread]' })).toBeVisible();
+    await expect(reloaded.getByRole('button', { name: 'Mark unread', exact: true })).toBeVisible();
 
-    await reloaded.getByRole('button', { name: '[mark unread]' }).click();
-    await expect(reloaded.getByRole('button', { name: '[mark read]' })).toBeVisible();
+    await reloaded.getByRole('button', { name: 'Mark unread', exact: true }).click();
+    await expect(reloaded.getByRole('button', { name: 'Mark read', exact: true })).toBeVisible();
     await page.reload();
     const again = await scrollToPost(page, 'Tech 20');
-    await expect(again.getByRole('button', { name: '[mark read]' })).toBeVisible();
+    await expect(again.getByRole('button', { name: 'Mark read', exact: true })).toBeVisible();
   });
 
   test('save adds a post to the saved view and unsave removes it', async ({ page }) => {
     await openTimeline(page);
     const row = await scrollToPost(page, 'World 20');
-    await row.getByRole('button', { name: '[save]' }).click();
-    await expect(row.getByRole('button', { name: '[unsave]' })).toBeVisible();
+    await row.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(row.getByRole('button', { name: 'Unsave', exact: true })).toBeVisible();
 
     await page.reload();
-    await setFilter(page, '[saved]', true);
+    await setFilter(page, 'saved', true);
     await expect(postRow(page, 'World 20')).toBeVisible();
     await expect(postRow(page, 'World 07')).toBeVisible();
 
-    await postRow(page, 'World 20').getByRole('button', { name: '[unsave]' }).click();
+    await postRow(page, 'World 20').getByRole('button', { name: 'Unsave', exact: true }).click();
     await page.reload();
-    await setFilter(page, '[saved]', true);
+    await setFilter(page, 'saved', true);
     await expect(postRow(page, 'World 07')).toBeVisible();
     await expect(postRow(page, 'World 20')).toHaveCount(0);
-    await setFilter(page, '[saved]', false);
+    await setFilter(page, 'saved', false);
   });
 
   test('hiding a tag removes its feed from the timeline until it is shown again', async ({ page }) => {

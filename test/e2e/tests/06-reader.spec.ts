@@ -13,14 +13,14 @@ test.describe('reading view and keys', () => {
     const reader = page.locator('.postContent');
     await expect(reader).toBeVisible();
     expect(page.url()).toBe(url);
-    await expect(reader.getByRole('link', { name: '[open original ↗]' })).toHaveAttribute('href', href!);
+    await expect(reader.getByRole('link', { name: 'original', exact: true })).toHaveAttribute('href', href!);
     await expect(row.locator('a.post-external')).toHaveAttribute('href', href!);
 
     // Opening marked it read. Marking it unread while open must survive closing.
-    await row.getByRole('button', { name: '[mark unread]' }).click();
-    await reader.getByRole('button', { name: '[collapse]' }).click();
+    await row.getByRole('button', { name: 'Mark unread', exact: true }).click();
+    await reader.getByRole('button', { name: 'collapse', exact: true }).click();
     await expect(page.locator('.postContent')).toHaveCount(0);
-    await expect(row.getByRole('button', { name: '[mark read]' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Mark read', exact: true })).toBeVisible();
   });
 
   test('j/k move, l/h open and close, m toggles read, ? lists the keys', async ({ page }) => {
@@ -35,16 +35,16 @@ test.describe('reading view and keys', () => {
     await page.keyboard.press('k');
     await expect(current).toHaveAttribute('data-post-id', first!);
 
-    const wasRead = (await current.getByRole('button', { name: '[mark unread]' }).count()) > 0;
+    const wasRead = (await current.getByRole('button', { name: 'Mark unread', exact: true }).count()) > 0;
     await page.keyboard.press('l');
     await expect(page.locator('.postContent')).toBeVisible();
     await page.keyboard.press('h');
     await expect(page.locator('.postContent')).toHaveCount(0);
-    await expect(current.getByRole('button', { name: '[mark unread]' })).toBeVisible();
+    await expect(current.getByRole('button', { name: 'Mark unread', exact: true })).toBeVisible();
 
     if (!wasRead) {
       await page.keyboard.press('m');
-      await expect(current.getByRole('button', { name: '[mark read]' })).toBeVisible();
+      await expect(current.getByRole('button', { name: 'Mark read', exact: true })).toBeVisible();
     }
 
     await page.keyboard.press('?');
