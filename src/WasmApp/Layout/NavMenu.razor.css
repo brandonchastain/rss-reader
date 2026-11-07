@@ -141,3 +141,37 @@ button.nav-link {
         display: none;
     }
 }
+
+/* Phone: the page toolbar gets its own row under the title bar. Sharing one
+   48px line with the page title is what made them overlap. */
+@media (max-width: 640.98px) {
+    .nav-row {
+        flex-wrap: wrap;
+        height: auto;
+    }
+
+    .page-title-wrap {
+        flex: 1 1 auto;
+        height: 48px;
+    }
+
+    .toolbar-container {
+        order: 5;
+        flex: 1 0 100%;
+        justify-content: space-between;
+        height: 40px;
+        margin: 0 -0.75rem;
+        padding: 0 0.75rem;
+        border-top: 1px solid var(--border);
+    }
+
+    /* Pages without a toolbar don't get an empty second row. */
+    .toolbar-container:not(:has(*)) {
+        display: none;
+    }
+
+    .toolbar-container ::deep .toolbar {
+        width: 100%;
+        justify-content: space-between;
+    }
+}

@@ -65,19 +65,7 @@
 <div class="postContent">
     <div class="">
         <div class="reader-meta">
-            <span>Published @FormatDate(Post.ParsedDate)</span>
-            @if (!_isLoadingContent)
-            {
-                @if (_isSpeaking)
-                {
-                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => StopSpeaking()"><i class="fa-solid fa-stop"></i> [stop]</button>
-                }
-                else
-                {
-                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)"><i class="fa-solid fa-volume-high"></i> [speak]</button>
-                }
-            }
-            <ReaderSettings />
+            <time title="@FormatDate(Post.ParsedDate)">@ShortDate(Post.ParsedDate)</time>
         </div>
         @if (_isLoadingContent)
         {
@@ -93,11 +81,24 @@
                 @((MarkupString)HtmlSanitizer.Sanitize(Post.Content ?? ""))
             </div>
         }
-        @* Always offered: many feeds carry only an excerpt, and telling a
-           truncated body from a complete one is guesswork. *@
+        @* One action line under the body. [open original] is always offered:
+           many feeds carry only an excerpt, and telling a truncated body from a
+           complete one is guesswork. *@
         <div class="reader-footer">
             <a class="link" href="@Post.Href" data-article-link data-post-id="@Post.Id" data-mark-read-url="@MarkReadUrl(Post)" @onclick="() => OnArticleLinkClick(Post)">[open original ↗]</a>
-            <button class="link" @onclick="async () => await HandleClick(Post)">[collapse]</button>
+            @if (!_isLoadingContent)
+            {
+                @if (_isSpeaking)
+                {
+                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => StopSpeaking()">[stop]</button>
+                }
+                else
+                {
+                    <button class="link" @onclick:stopPropagation="true" @onclick:preventDefault="true" @onclick="() => OnSpeakTextClicked(Post)">[speak]</button>
+                }
+            }
+            <ReaderSettings />
+            <button class="link" data-action="collapse" @onclick="async () => await HandleClick(Post)">[collapse]</button>
         </div>
     </div>
 </div>
@@ -306,6 +307,16 @@
         if (date == null) return "";
         var d = date.Value;
         return $"{_days[(int)d.DayOfWeek]}, {_months[d.Month - 1]} {d.Day} {d.Year} {d:h:mm tt}";
+    }
+
+    // "Sat, Nov 7 · 10:12 AM", short enough for one line on a phone. The year
+    // shows only when it isn't this year.
+    private static string ShortDate(DateTime? date)
+    {
+        if (date == null) return "";
+        var d = date.Value;
+        var year = d.Year == DateTime.Now.Year ? "" : $" {d.Year}";
+        return $"{_days[(int)d.DayOfWeek][..3]}, {_months[d.Month - 1]} {d.Day}{year} · {d:h:mm tt}";
     }
 
     private async Task HandleClick(NewsFeedItem post, bool preview = true)

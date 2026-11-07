@@ -98,12 +98,6 @@ a {
     gap: 0.1rem;
 }
 
-@media (max-width: 480px) {
-    .toolbar {
-        font-size: 0.78rem;
-    }
-}
-
 .toolbar button,
 .toolbar .btn-link {
     border: none;
@@ -298,7 +292,7 @@ a {
 #post-table .post-read {
     background-color: var(--bg);
     color: var(--text-muted);
-    border-left: 3px solid transparent;
+    border-left: 2px solid transparent;
     opacity: 0.55;
 }
 
@@ -317,7 +311,7 @@ a {
 #post-table .post-unread {
     background-color: var(--bg);
     color: var(--text);
-    border-left: 4px solid var(--accent);
+    border-left: 2px solid var(--accent);
 }
 
 #post-table .post-unread .post-title a {
@@ -332,12 +326,35 @@ a {
 p.post-title {
     margin: 0;
     padding: 0;
+    line-height: 1.45;
+}
+
+/* Titles are underlined only on hover; the row's own hover shows it's a link. */
+#post-table a.post-headline {
+    text-decoration: none;
+}
+
+#post-table a.post-headline:hover {
+    text-decoration: underline;
 }
 
 .post-actions {
-    margin-top: 2px;
+    margin-top: 6px;
     font-size: 0.85em;
     color: var(--text-muted);
+}
+
+/* Row actions stay gray until the row is hovered, focused or current, so a
+   page of posts doesn't read as a page of buttons. !important because the
+   global `a` rule sets the link color with it. */
+#post-table .post-actions .link {
+    color: var(--text-muted) !important;
+}
+
+#post-table .row:hover .post-actions .link,
+#post-table .row:focus-within .post-actions .link,
+#post-table .row[data-current] .post-actions .link {
+    color: var(--accent) !important;
 }
 
 .post-actions button.link,
@@ -404,11 +421,25 @@ button.big {
     display: none;
 }
 
+/* Where an open post's text starts: under the title, past the row's border,
+   padding, thumbnail and gap. On phones it starts under the thumbnail. */
+#post-table {
+    --reader-indent: calc(2px + 8px + 120px + 0.9rem);
+}
+
 @media (max-width: 640px) {
+    #post-table {
+        --reader-indent: 10px;
+    }
+
     #post-table .thumb {
         width: 84px;
         height: 56px;
         border-radius: 5px;
+    }
+
+    p.post-title {
+        font-size: 0.94em;
     }
 
     .thumb-img.thumb-favicon {
@@ -418,15 +449,20 @@ button.big {
 }
 
 .postContent {
-    max-width: 95%;
-    margin: 0 auto;
-    padding: 1rem;
+    margin: -6px 0 0 0;
+    padding: 0 1.5rem 1.4rem var(--reader-indent, 1rem);
     display: block;
     overflow: auto;
-    background-color: var(--bg-elevated);
-    border-left: 5px solid var(--link);
-    border-radius: 0 6px 6px 0;
     color: var(--text);
+}
+
+/* Bootstrap's .table cell rule (.table > :not(caption) > * > *) pads the
+   open post's meta line and body by .5rem, which pushed the text off the
+   title's left edge. */
+#post-table .postContent > * > * {
+    padding: 0;
+    border-bottom-width: 0;
+    box-shadow: none;
 }
 
 .postContent *:not(a) {
@@ -1274,6 +1310,29 @@ a.post-domain:hover {
 .feeds-tag-input { width: 80px; }
 .feeds-tag-input:focus { width: 140px; }
 
+/* My feeds: the list starts at the same left edge as its heading instead of
+   being centred like the timeline; tags read as tags and the actions are
+   quiet brackets like the rest of the app. */
+#post-table.feeds-list { margin-left: 0; margin-right: 0; }
+.feeds-list .feeds-row { padding: 11px 4px; }
+.feeds-list .feeds-tag-input { border: 0; background: transparent; width: 64px; }
+.feeds-list .feeds-tag-input:focus { border-bottom: 1px solid var(--accent); width: 140px; }
+.feeds-list .feeds-row-link { color: var(--accent) !important; text-decoration: none; }
+.feeds-list .feeds-row-link:hover { text-decoration: underline; }
+.feeds-list .feeds-delete-btn { color: var(--text-muted); }
+.feeds-list .feeds-delete-btn:hover { color: #f85149; text-decoration: none; }
+/* The x to remove a tag shows on hover where there is hover; touch screens
+   keep it visible. */
+@media (hover: hover) {
+    .feeds-list .feeds-tag-remove { display: none; }
+    .feeds-list .feeds-row:hover .feeds-tag-remove,
+    .feeds-list .feeds-row:focus-within .feeds-tag-remove { display: inline; }
+}
+@media (max-width: 640px) {
+    .feeds-list .feeds-row-main { flex: 1 0 100%; }
+    .feeds-list .feeds-row-tags { flex: 1 1 auto; }
+}
+
 /* ── Reader UX: headline, reading view, keyboard ─────────────── */
 
 /* Demoted "open original" link next to the headline. */
@@ -1306,9 +1365,10 @@ a.post-external:hover {
     flex-wrap: wrap;
     align-items: baseline;
     gap: 0.25rem 0.9rem;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
     color: var(--text-muted) !important;
     font-size: 0.85em;
+    white-space: nowrap;
 }
 
 .reader-settings {
@@ -1340,6 +1400,8 @@ a.post-external:hover {
 
 .reader-body {
     font-size: calc(1em * var(--reader-scale, 1));
+    max-width: 68ch;
+    line-height: 1.65;
 }
 
 :root[data-reader-font="serif"] .reader-body {
@@ -1361,7 +1423,8 @@ a.post-external:hover {
 .reader-footer {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem 1rem;
+    align-items: baseline;
+    gap: 0.25rem 1.1rem;
     margin-top: 1rem;
     font-size: 0.85em;
 }

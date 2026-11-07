@@ -133,7 +133,7 @@ else if (!feeds.Any())
 else
 {
     <h2 class="feeds-section-title">My feeds</h2>
-    <div id="post-table">
+    <div id="post-table" class="feeds-list">
         @foreach (NewsFeed feed in feeds.OrderBy(f => DisplayName(f.Title, f.Href), StringComparer.OrdinalIgnoreCase))
         {
             <div class="feeds-row" @onclick="() => ToggleFeed(feed.Href)">
@@ -167,15 +167,15 @@ else
                         @onkeydown:stopPropagation="true" />
                 </div>
                 <div class="feeds-row-actions" @onclick:stopPropagation="true">
-                    <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)" class="feeds-row-link">View posts</a>
+                    <a href="posts?Href=@System.Net.WebUtility.UrlEncode(feed.Href)" class="feeds-row-link">[posts]</a>
                     @if (confirmUnsubscribe == feed.Href)
                     {
-                        <button class="feeds-delete-btn" @onclick="() => DeleteAsync(feed.Href)">Confirm</button>
-                        <button class="feeds-cancel-btn" @onclick="() => confirmUnsubscribe = null">Cancel</button>
+                        <button class="feeds-delete-btn" @onclick="() => DeleteAsync(feed.Href)">[confirm]</button>
+                        <button class="feeds-cancel-btn" @onclick="() => confirmUnsubscribe = null">[cancel]</button>
                     }
                     else
                     {
-                        <button class="feeds-delete-btn" @onclick="() => confirmUnsubscribe = feed.Href">Unsubscribe</button>
+                        <button class="feeds-delete-btn" @onclick="() => confirmUnsubscribe = feed.Href">[unsubscribe]</button>
                     }
                 </div>
             </div>

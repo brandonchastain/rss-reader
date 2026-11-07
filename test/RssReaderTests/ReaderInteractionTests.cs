@@ -97,7 +97,7 @@ public sealed class ReaderInteractionTests
         cut.Find("[data-action=\"toggle-read\"]").Click();
         Assert.IsFalse(post.IsRead);
 
-        cut.Find(".reader-footer button").Click();
+        cut.Find(".reader-footer [data-action=\"collapse\"]").Click();
 
         Assert.IsFalse(post.IsBeingPreviewed);
         Assert.IsFalse(post.IsRead, "collapsing must not mark the post read again");
