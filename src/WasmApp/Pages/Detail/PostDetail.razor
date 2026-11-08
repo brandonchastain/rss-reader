@@ -16,7 +16,7 @@
 
 @if (Post != null)
 {
-<div @ref="_postRowRef" data-post-id="@Post.Id" class="row @(Post.IsRead ? "post-read" : "post-unread")" @onclick="async () => await HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
+<div @ref="_postRowRef" data-post-id="@Post.Id" class="row @(Post.IsRead ? "post-read" : "post-unread") @(Post.IsBeingPreviewed ? "is-open" : "")" @onclick="async () => await HandleClick(Post)" hidden=@(ShouldPostBeHidden(Post))>
     <div class="col thumbnail">
         @{
             var thumbnailUrl = Post.ThumbnailUrl;
