@@ -25,14 +25,14 @@ test.describe('timeline', () => {
   test('read posts are marked as read', async ({ page }) => {
     await page.goto('/posts?href=' + encodeURIComponent('https://tech.example.com/feed.xml'));
     await scrollToPost(page, 'Tech 05');
-    await expect(postRow(page, 'Tech 05').getByRole('button', { name: '[mark unread]' })).toBeVisible();
-    await expect(postRow(page, 'Tech 06').getByRole('button', { name: '[mark read]' })).toBeVisible();
+    await expect(postRow(page, 'Tech 05').getByRole('button', { name: 'Mark unread', exact: true })).toBeVisible();
+    await expect(postRow(page, 'Tech 06').getByRole('button', { name: 'Mark read', exact: true })).toBeVisible();
   });
 
   test('the unread filter hides read posts', async ({ page }) => {
     await page.goto('/posts?href=' + encodeURIComponent('https://tech.example.com/feed.xml'));
     await scrollToPost(page, 'Tech 05');
-    await page.getByRole('button', { name: '[unread]' }).click();
+    await page.getByRole('button', { name: 'unread', exact: true }).click();
     await scrollToPost(page, 'Tech 06');
     await expect(postRow(page, 'Tech 05')).toHaveCount(0);
     await expect(postRow(page, 'Tech 01')).toHaveCount(0);
@@ -40,7 +40,7 @@ test.describe('timeline', () => {
 
   test('the saved filter shows only saved posts', async ({ page }) => {
     await openTimeline(page);
-    await page.getByRole('button', { name: '[saved]' }).click();
+    await page.getByRole('button', { name: 'saved', exact: true }).click();
     await expect(postRow(page, 'Tech 07')).toBeVisible();
     await expect(postRow(page, 'World 07')).toBeVisible();
     await expect(postRow(page, 'Tech 30')).toHaveCount(0);
@@ -49,7 +49,7 @@ test.describe('timeline', () => {
 
   test('a tag filter shows only that tag', async ({ page }) => {
     await openTimeline(page);
-    await page.getByRole('button', { name: '[filters]' }).click();
+    await page.getByRole('button', { name: 'filters', exact: true }).click();
     await page.locator('#filter-tags').getByRole('button', { name: 'tech', exact: true }).click();
     await expect(postRow(page, 'Tech 30')).toBeVisible();
     await expect(postRow(page, 'World 30')).toHaveCount(0);

@@ -116,6 +116,9 @@ public static class AuthenticationSetup
                             NormalizeIdentity(ctx.Principal!, UserIdentity.ProviderGitHub);
                             return Task.CompletedTask;
                         };
+                        // Cancelled consent (?error=access_denied) or a replayed
+                        // callback: back to the frontend, not a 500 on the API host.
+                        options.Events.OnRemoteFailure = ctx => RedirectFailureToFrontend(ctx, auth);
                     });
                     break;
 
@@ -167,24 +170,7 @@ public static class AuthenticationSetup
                         // A failed callback (provider error, cancelled consent,
                         // or an account the app cannot identify) goes back to
                         // the frontend with the reason instead of a 500 page.
-                        options.Events.OnRemoteFailure = ctx =>
-                        {
-                            // Without the state cookie (a replayed or expired callback) there
-                            // are no properties; "/" would land on the API host, so fall back
-                            // to the frontend.
-                            var target = ctx.Properties?.RedirectUri
-                                ?? ReturnUrlValidator.Resolve(null, auth.AllowedFrontendOrigins);
-                            var reason = ctx.Failure switch
-                            {
-                                NoEmailException => "no-email",
-                                MicrosoftAccounts.WorkAccountException => "work-account",
-                                Microsoft.IdentityModel.Tokens.SecurityTokenInvalidIssuerException => "work-account",
-                                _ => "provider",
-                            };
-                            ctx.Response.Redirect(QueryHelpers.AddQueryString(target, "authError", reason));
-                            ctx.HandleResponse();
-                            return Task.CompletedTask;
-                        };
+                        options.Events.OnRemoteFailure = ctx => RedirectFailureToFrontend(ctx, auth);
 
                         // Always show the account picker: people with several
                         // Microsoft or Google accounts signed in must get to
@@ -201,6 +187,30 @@ public static class AuthenticationSetup
         }
 
         return services;
+    }
+
+    /// <summary>
+    /// Sends a failed callback (provider error, cancelled consent, or an
+    /// account the app cannot identify) back to the frontend with the reason
+    /// instead of a 500 page.
+    /// </summary>
+    private static Task RedirectFailureToFrontend(RemoteFailureContext ctx, AuthConfig auth)
+    {
+        // Without the state cookie (a replayed or expired callback) there
+        // are no properties; "/" would land on the API host, so fall back
+        // to the frontend.
+        var target = ctx.Properties?.RedirectUri
+            ?? ReturnUrlValidator.Resolve(null, auth.AllowedFrontendOrigins);
+        var reason = ctx.Failure switch
+        {
+            NoEmailException => "no-email",
+            MicrosoftAccounts.WorkAccountException => "work-account",
+            Microsoft.IdentityModel.Tokens.SecurityTokenInvalidIssuerException => "work-account",
+            _ => "provider",
+        };
+        ctx.Response.Redirect(QueryHelpers.AddQueryString(target, "authError", reason));
+        ctx.HandleResponse();
+        return Task.CompletedTask;
     }
 
     /// <summary>
