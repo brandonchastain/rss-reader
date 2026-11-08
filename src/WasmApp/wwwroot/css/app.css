@@ -213,12 +213,12 @@ a {
 #post-table .row {
     display: flex;
     flex-wrap: nowrap;
-    align-items: flex-start;
-    gap: 0.9rem;
+    align-items: center;
+    gap: 0.75rem;
     margin: 0;
-    padding: 12px 10px 12px 8px;
+    padding: 8px 10px 8px 8px;
     border-top: 1px solid var(--border);
-    line-height: 1.55;
+    line-height: 1.4;
 }
 
 #post-table .row > .col {
@@ -244,7 +244,7 @@ a {
 }
 
 #post-table .row > .col.post-body {
-    padding-top: 2px;
+    padding-top: 0;
 }
 
 .day-separator {
@@ -325,7 +325,11 @@ a {
 p.post-title {
     margin: 0;
     padding: 0;
-    line-height: 1.45;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 /* Titles are underlined only on hover; the row's own hover shows it's a link. */
@@ -338,7 +342,7 @@ p.post-title {
 }
 
 .post-actions {
-    margin-top: 6px;
+    margin-top: 2px;
     font-size: 0.85em;
     color: var(--text-muted);
 }
@@ -403,8 +407,8 @@ button.big {
    photo; a favicon sits small on a dim tile instead of being blown up; when
    nothing loads at all the tile simply stays empty. */
 #post-table .thumb {
-    width: 120px;
-    height: 80px;
+    width: 111px;
+    height: 74px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -434,12 +438,16 @@ button.big {
 /* Where an open post's text starts: under the title, past the row's border,
    padding, thumbnail and gap. On phones it starts under the thumbnail. */
 #post-table {
-    --reader-indent: calc(2px + 8px + 120px + 0.9rem);
+    --reader-indent: calc(2px + 8px + 111px + 0.75rem);
 }
 
 @media (max-width: 640px) {
     #post-table {
         --reader-indent: 10px;
+    }
+
+    #post-table .row {
+        padding: 8px 8px 8px 6px;
     }
 
     #post-table .thumb {
