@@ -332,6 +332,23 @@ p.post-title {
     overflow: hidden;
 }
 
+/* The clamp's "…" takes the paragraph's style, so give it the headline's
+   colour and weight; otherwise it is a faint dot easy to miss. */
+#post-table p.post-title {
+    color: var(--link);
+}
+
+#post-table .post-unread p.post-title {
+    font-weight: 700;
+}
+
+/* An open post shows its whole title; the reader is right under it. */
+#post-table .row.is-open p.post-title {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+}
+
 /* Titles are underlined only on hover; the row's own hover shows it's a link. */
 #post-table a.post-headline {
     text-decoration: none;
