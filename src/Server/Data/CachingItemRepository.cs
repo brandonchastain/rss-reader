@@ -144,14 +144,20 @@ public sealed class CachingItemRepository : IItemRepository
     /// the new ones, so caching all of their content for an hour filled memory with
     /// posts nobody had opened. Content is cached when a reader asks for it.
     public async Task<int> AddItemsAsync(IEnumerable<NewsFeedItem> items)
+        => (await UpsertItemsAsync(items)).Inserted;
+
+    /// <inheritdoc/>
+    /// A post renamed in place changes what the timeline shows as much as a new
+    /// one does, so either bumps the stamp.
+    public async Task<ItemWriteResult> UpsertItemsAsync(IEnumerable<NewsFeedItem> items)
     {
-        var inserted = await _inner.AddItemsAsync(items);
-        if (inserted > 0)
+        var result = await _inner.UpsertItemsAsync(items);
+        if (result.Inserted > 0 || result.Updated > 0)
         {
             _stamp.Bump();
         }
 
-        return inserted;
+        return result;
     }
 
     /// <inheritdoc/>

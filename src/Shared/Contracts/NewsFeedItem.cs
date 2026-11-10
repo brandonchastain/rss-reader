@@ -32,6 +32,12 @@ public class NewsFeedItem : IEquatable<NewsFeedItem>
     public string FeedUrl { get; set; }
     public int UserId { get; set; }
     public string Title { get; set; }
+
+    /// <summary>
+    /// The title the post was first stored under, when the feed has since
+    /// renamed it (a typo fix, a reworded headline); null otherwise.
+    /// </summary>
+    public string FormerTitle { get; set; }
     public string Href { get; set; }
     public string CommentsHref { get; set; }
     public long PublishDateOrder { get; set; }

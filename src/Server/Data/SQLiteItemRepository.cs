@@ -81,6 +81,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             p.Href,
             p.CommentsHref,
             p.Title,
+            p.FormerTitle,
             p.PublishDateOrder,
             p.PublishDate,
             {(includeContent ? "pc.Content" : "NULL AS Content")},
@@ -383,6 +384,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var isSaved = !reader.IsDBNull(reader.GetOrdinal("IsSaved")) && reader.GetInt64(reader.GetOrdinal("IsSaved")) != 0;
         var tags = reader.IsDBNull(reader.GetOrdinal("Tags")) ? "" : reader.GetString(reader.GetOrdinal("Tags"));
         var thumbnailUrl = reader.IsDBNull(reader.GetOrdinal("ThumbnailUrl")) ? "" : reader.GetString(reader.GetOrdinal("ThumbnailUrl"));
+        var formerTitle = reader.IsDBNull(reader.GetOrdinal("FormerTitle")) ? null : reader.GetString(reader.GetOrdinal("FormerTitle"));
 
         return new NewsFeedItem(id, userId, title, href, commentsHref, publishDate, content, thumbnailUrl)
         {
@@ -390,7 +392,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             IsRead = isRead,
             FeedTags = string.IsNullOrWhiteSpace(tags) ? [] : tags.Split(","),
             IsSaved = isSaved,
-            PublishDateOrder = publishDateOrder
+            PublishDateOrder = publishDateOrder,
+            FormerTitle = formerTitle
         };
     }
 
@@ -474,11 +477,38 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     // -------------------------------------------------------------------------
 
     public async Task<int> AddItemsAsync(IEnumerable<NewsFeedItem> items)
+        => (await this.UpsertItemsAsync(items)).Inserted;
+
+    /// <summary>
+    /// Stores a fetch's items once per feed. A post is the same post when its
+    /// link matches, or failing that when its guid matches: some publishers (The
+    /// Register) put the headline in the URL, so fixing a typo in a title moves
+    /// the link while the guid stays put. The link is checked first and the guid
+    /// is only the fallback, so rows stored before guids were kept still match by
+    /// link and nothing is re-inserted or backfilled. The fallback also needs the
+    /// same publish date: a renamed article keeps its date, while a feed that
+    /// reuses guids (numbering items by position, say) gives a different article
+    /// a different date, and overwriting that post would lose it. A matched post keeps its row, and with it
+    /// every reader's read and saved state; a changed title is recorded, the
+    /// first one kept in FormerTitle.
+    /// </summary>
+    public async Task<ItemWriteResult> UpsertItemsAsync(IEnumerable<NewsFeedItem> items)
     {
         var itemList = items.Where(i => !string.IsNullOrEmpty(i.FeedUrl)).ToList();
-        if (itemList.Count == 0) return 0;
+        if (itemList.Count == 0) return default;
+
+        // A guid only identifies a post when it is unique within the fetch and
+        // is not just the feed's own address; feeds that repeat one guid on every
+        // item would otherwise fold distinct posts into one.
+        var usableGuids = itemList
+            .Where(i => !string.IsNullOrWhiteSpace(i.Id) && !string.Equals(i.Id.Trim(), i.FeedUrl, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(i => (i.FeedUrl, Guid: i.Id.Trim()))
+            .Where(g => g.Count() == 1)
+            .Select(g => g.Key)
+            .ToHashSet();
 
         var insertedCount = 0;
+        var updatedCount = 0;
         await this.writeSemaphore.WaitAsync();
         try
         {
@@ -507,23 +537,41 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 var feedId = feedIds[item.FeedUrl];
                 if (feedId == null) continue;
 
+                var href = item.Href ?? "";
+                var title = item.Title ?? "";
+                var guid = string.IsNullOrWhiteSpace(item.Id) ? null : item.Id.Trim();
+                if (guid != null && !usableGuids.Contains((item.FeedUrl, guid))) guid = null;
+
                 try
                 {
-                    // INSERT OR IGNORE lets UNIQUE(FeedId, Href) handle duplicates.
+                    var existing = FindPost(connection, transaction, feedId.Value, "Href", href)
+                        ?? (guid == null ? null : FindPost(connection, transaction, feedId.Value, "Guid", guid, item.PublishDateOrder));
+
+                    if (existing is { } post)
+                    {
+                        if (UpdatePost(connection, transaction, post, item, href, title))
+                        {
+                            updatedCount++;
+                        }
+
+                        continue;
+                    }
+
                     var command = connection.CreateCommand();
                     command.Transaction = transaction;
                     command.CommandText = """
-                        INSERT OR IGNORE INTO Posts (FeedId, Href, CommentsHref, Title, PublishDateOrder, PublishDate, ThumbnailUrl, FirstSeenUtc)
-                        VALUES (@feedId, @href, @commentsHref, @title, @publishDateOrder, @publishDate, @thumbnailUrl, @now)
+                        INSERT OR IGNORE INTO Posts (FeedId, Href, CommentsHref, Title, PublishDateOrder, PublishDate, ThumbnailUrl, FirstSeenUtc, Guid)
+                        VALUES (@feedId, @href, @commentsHref, @title, @publishDateOrder, @publishDate, @thumbnailUrl, @now, @guid)
                         """;
                     command.Parameters.AddWithValue("@feedId", feedId.Value);
-                    command.Parameters.AddWithValue("@href", item.Href ?? "");
+                    command.Parameters.AddWithValue("@href", href);
                     command.Parameters.AddWithValue("@commentsHref", (object)item.CommentsHref ?? DBNull.Value);
-                    command.Parameters.AddWithValue("@title", item.Title ?? "");
+                    command.Parameters.AddWithValue("@title", title);
                     command.Parameters.AddWithValue("@publishDateOrder", item.PublishDateOrder);
                     command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
                     command.Parameters.AddWithValue("@thumbnailUrl", (object)item.ThumbnailUrl ?? DBNull.Value);
                     command.Parameters.AddWithValue("@now", now);
+                    command.Parameters.AddWithValue("@guid", (object)guid ?? DBNull.Value);
                     var rowsAffected = await command.ExecuteNonQueryAsync();
                     if (rowsAffected == 0) continue;
 
@@ -534,7 +582,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         INSERT OR IGNORE INTO PostContent (PostId, Title, Content)
                         VALUES (last_insert_rowid(), @title, @content)
                         """;
-                    content.Parameters.AddWithValue("@title", item.Title ?? "");
+                    content.Parameters.AddWithValue("@title", title);
                     content.Parameters.AddWithValue("@content", item.Content ?? "");
                     await content.ExecuteNonQueryAsync();
                 }
@@ -549,14 +597,89 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         catch (Exception ex)
         {
             this.logger.LogError(ex, "Error adding items to SQLite database");
-            return 0;
+            return default;
         }
         finally
         {
             this.writeSemaphore.Release();
         }
 
-        return insertedCount;
+        return new ItemWriteResult(insertedCount, updatedCount);
+    }
+
+    private readonly record struct StoredPost(long Id, string Href, string Title, string FormerTitle);
+
+    // column is a fixed identifier ("Href" or "Guid"), never input.
+    private static StoredPost? FindPost(SqliteConnection connection, SqliteTransaction transaction, long feedId, string column, string value, long? publishDateOrder = null)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = $"SELECT Id, Href, Title, FormerTitle FROM Posts WHERE FeedId = @feedId AND {column} = @value"
+            + (publishDateOrder.HasValue ? " AND PublishDateOrder = @publishDateOrder" : "")
+            + " ORDER BY Id DESC LIMIT 1";
+        cmd.Parameters.AddWithValue("@feedId", feedId);
+        cmd.Parameters.AddWithValue("@value", value);
+        if (publishDateOrder.HasValue) cmd.Parameters.AddWithValue("@publishDateOrder", publishDateOrder.Value);
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read()) return null;
+        return new StoredPost(
+            reader.GetInt64(0),
+            reader.IsDBNull(1) ? "" : reader.GetString(1),
+            reader.IsDBNull(2) ? "" : reader.GetString(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3));
+    }
+
+    /// <summary>
+    /// Brings a stored post in line with the feed's current copy when its title
+    /// or link changed, refreshing the searchable content with it. An unchanged
+    /// post (nearly every item of every fetch) costs no write.
+    /// </summary>
+    private bool UpdatePost(SqliteConnection connection, SqliteTransaction transaction, StoredPost post, NewsFeedItem item, string href, string title)
+    {
+        var retitled = title.Length > 0 && !string.Equals(title, post.Title, StringComparison.Ordinal);
+        var relinked = !string.Equals(href, post.Href, StringComparison.Ordinal);
+        if (!retitled && !relinked) return false;
+
+        // FormerTitle is the title readers first saw, kept across later renames;
+        // a rename back to it leaves nothing to show.
+        var formerTitle = post.FormerTitle;
+        if (retitled)
+        {
+            formerTitle ??= string.IsNullOrEmpty(post.Title) ? null : post.Title;
+            if (string.Equals(formerTitle, title, StringComparison.Ordinal)) formerTitle = null;
+        }
+
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                UPDATE Posts
+                SET Href = @href, Title = @title, FormerTitle = @formerTitle,
+                    CommentsHref = COALESCE(@commentsHref, CommentsHref)
+                WHERE Id = @id
+                """;
+            cmd.Parameters.AddWithValue("@id", post.Id);
+            cmd.Parameters.AddWithValue("@href", href);
+            cmd.Parameters.AddWithValue("@title", retitled ? title : post.Title);
+            cmd.Parameters.AddWithValue("@formerTitle", (object)formerTitle ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@commentsHref", relinked && !string.IsNullOrEmpty(item.CommentsHref) ? item.CommentsHref : DBNull.Value);
+            cmd.ExecuteNonQuery();
+        }
+
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = "UPDATE PostContent SET Title = @title, Content = COALESCE(NULLIF(@content, ''), Content) WHERE PostId = @id";
+            cmd.Parameters.AddWithValue("@id", post.Id);
+            cmd.Parameters.AddWithValue("@title", retitled ? title : post.Title);
+            cmd.Parameters.AddWithValue("@content", item.Content ?? "");
+            cmd.ExecuteNonQuery();
+        }
+
+        this.logger.LogInformation(
+            "Post {PostId} updated in place ({Change}): {OldTitle} -> {NewTitle}",
+            post.Id, retitled && relinked ? "retitled, relinked" : retitled ? "retitled" : "relinked", post.Title, title);
+        return true;
     }
 
     /// <summary>
