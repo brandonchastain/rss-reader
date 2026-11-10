@@ -111,8 +111,7 @@ deploy without a code change: `gh workflow run deploy.yml --ref main`.
   A healthy writer also confirms additive schema (`CREATE TABLE IF NOT EXISTS`) applied cleanly.
 - **Frontend**: confirm `https://rss.brandonchastain.com/` returns 200. For asset-level
   proof, fetch the changed file (e.g. `css/app.css`, `app.js`) and grep for the new code;
-  for compiled WASM/auth-gated/audio behavior, hand the check to the user (note that a hard
-  refresh may be needed to bust the Blazor service-worker cache).
+  for compiled WASM/auth-gated/audio behavior, hand the check to the user.
 
 ## Conventions
 - Schema changes must be transitionless: additive `CREATE TABLE IF NOT EXISTS` only, no
