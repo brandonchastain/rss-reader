@@ -81,6 +81,8 @@ public static class DatabaseSchema
             PublishDate      TEXT,
             ThumbnailUrl     TEXT,
             FirstSeenUtc     TEXT NOT NULL,
+            Guid             TEXT,
+            FormerTitle      TEXT,
             UNIQUE (FeedId, Href)
         );
         CREATE INDEX IF NOT EXISTS IX_Posts_Timeline     ON Posts(PublishDateOrder DESC, Id DESC);
@@ -141,8 +143,39 @@ public static class DatabaseSchema
     {
         Execute(connection, "PRAGMA journal_mode=WAL;");
         Execute(connection, Tables);
+        EnsurePostIdentityColumns(connection);
         Execute(connection, FtsTable);
         Execute(connection, FtsTriggers);
+    }
+
+    /// <summary>
+    /// Posts.Guid (the feed's own item id: RSS guid, Atom id) and Posts.FormerTitle
+    /// arrived after the posts-once schema, so a database created before them gets
+    /// the columns here; a fresh one already has them from <see cref="Tables"/>.
+    /// The Guid index is not UNIQUE: some feeds reuse one guid for every item,
+    /// and the write path guards against that rather than the schema.
+    /// </summary>
+    private static void EnsurePostIdentityColumns(SqliteConnection connection)
+    {
+        if (!ColumnExists(connection, "Posts", "Guid"))
+        {
+            Execute(connection, "ALTER TABLE Posts ADD COLUMN Guid TEXT;");
+        }
+
+        if (!ColumnExists(connection, "Posts", "FormerTitle"))
+        {
+            Execute(connection, "ALTER TABLE Posts ADD COLUMN FormerTitle TEXT;");
+        }
+
+        Execute(connection, "CREATE INDEX IF NOT EXISTS IX_Posts_FeedGuid ON Posts(FeedId, Guid) WHERE Guid IS NOT NULL;");
+    }
+
+    public static bool ColumnExists(SqliteConnection connection, string table, string column)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"SELECT count(*) FROM pragma_table_info('{table}') WHERE name = @c";
+        cmd.Parameters.AddWithValue("@c", column);
+        return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
     }
 
     public static bool TableExists(SqliteConnection connection, string name)

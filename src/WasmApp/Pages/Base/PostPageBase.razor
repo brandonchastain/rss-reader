@@ -238,9 +238,11 @@
                     Items = new List<NewsFeedItem>();
                 }
 
-                // Deduplicate by Href before adding
+                // Deduplicate by Href and by post id before adding: a post the
+                // feed renamed keeps its id but can come back under a new link.
                 var existingHrefs = new HashSet<string>(Items.Select(i => i.Href), StringComparer.OrdinalIgnoreCase);
-                var dedupedNewPosts = newPageRes.Where(i => !existingHrefs.Contains(i.Href)).ToList();
+                var existingIds = new HashSet<string>(Items.Select(i => i.Id).Where(id => !string.IsNullOrEmpty(id)), StringComparer.Ordinal);
+                var dedupedNewPosts = newPageRes.Where(i => !existingHrefs.Contains(i.Href) && !existingIds.Contains(i.Id)).ToList();
                 Items.AddRange(dedupedNewPosts);
 
                 // Update cursor from the new page results (not deduplicated — use original to get true last item)

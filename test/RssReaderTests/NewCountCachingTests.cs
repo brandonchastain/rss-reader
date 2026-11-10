@@ -110,7 +110,7 @@ public class NewCountCachingTests
     public void ChangeStamp_MovesOnEveryItemMutation()
     {
         var inner = new Mock<IItemRepository>();
-        inner.Setup(r => r.AddItemsAsync(It.IsAny<IEnumerable<NewsFeedItem>>())).ReturnsAsync(1);
+        inner.Setup(r => r.UpsertItemsAsync(It.IsAny<IEnumerable<NewsFeedItem>>())).ReturnsAsync(new ItemWriteResult(1, 0));
         var s = new ItemsChangeStamp();
         var repo = new CachingItemRepository(inner.Object, new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()), s);
         var item = new NewsFeedItem { Id = "1", UserId = TestUser.Id, Href = "h", FeedUrl = "f" };

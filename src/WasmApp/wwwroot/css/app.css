@@ -1402,6 +1402,12 @@ a.post-external:hover {
     white-space: nowrap;
 }
 
+/* A long former title wraps instead of widening the meta line on phones. */
+.postContent .reader-former-title {
+    white-space: normal;
+    font-style: italic;
+}
+
 .reader-settings {
     display: flex;
     flex-wrap: wrap;

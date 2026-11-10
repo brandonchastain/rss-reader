@@ -188,7 +188,7 @@ public sealed class ItemRepoTests
         // Insert 5 items with distinct timestamps
         for (int i = 0; i < 5; i++)
         {
-            var item = new NewsFeedItem("0", 0, $"Article {i}", $"https://example.com/article-{i}", null, "2025-01-01", $"<p>Content {i}</p>", null)
+            var item = new NewsFeedItem($"guid-{i}", 0, $"Article {i}", $"https://example.com/article-{i}", null, "2025-01-01", $"<p>Content {i}</p>", null)
             {
                 FeedUrl = feed.Href,
                 PublishDateOrder = 1000 + i
@@ -228,7 +228,7 @@ public sealed class ItemRepoTests
         // Insert 4 items with SAME timestamp (ties)
         for (int i = 0; i < 4; i++)
         {
-            var item = new NewsFeedItem("0", 0, $"Tied Article {i}", $"https://example.com/tied-{i}", null, "2025-01-01", $"<p>Tied {i}</p>", null)
+            var item = new NewsFeedItem($"guid-{i}", 0, $"Tied Article {i}", $"https://example.com/tied-{i}", null, "2025-01-01", $"<p>Tied {i}</p>", null)
             {
                 FeedUrl = feed.Href,
                 PublishDateOrder = 5000 // all same timestamp
@@ -261,7 +261,7 @@ public sealed class ItemRepoTests
         // Insert 5 items with distinct, ascending timestamps (1000..1004).
         for (int i = 0; i < 5; i++)
         {
-            var item = new NewsFeedItem("0", 0, $"Article {i}", $"https://example.com/article-{i}", null, "2025-01-01", $"<p>Content {i}</p>", null)
+            var item = new NewsFeedItem($"guid-{i}", 0, $"Article {i}", $"https://example.com/article-{i}", null, "2025-01-01", $"<p>Content {i}</p>", null)
             {
                 FeedUrl = feed.Href,
                 PublishDateOrder = 1000 + i
@@ -293,7 +293,7 @@ public sealed class ItemRepoTests
         // Four items sharing one timestamp — ordering falls back to Id.
         for (int i = 0; i < 4; i++)
         {
-            var item = new NewsFeedItem("0", 0, $"Tied {i}", $"https://example.com/tied-{i}", null, "2025-01-01", $"<p>Tied {i}</p>", null)
+            var item = new NewsFeedItem($"guid-{i}", 0, $"Tied {i}", $"https://example.com/tied-{i}", null, "2025-01-01", $"<p>Tied {i}</p>", null)
             {
                 FeedUrl = feed.Href,
                 PublishDateOrder = 5000
@@ -319,7 +319,7 @@ public sealed class ItemRepoTests
 
         for (int i = 0; i < 4; i++)
         {
-            var item = new NewsFeedItem("0", 0, $"Article {i}", $"https://example.com/unread-{i}", null, "2025-01-01", $"<p>{i}</p>", null)
+            var item = new NewsFeedItem($"guid-{i}", 0, $"Article {i}", $"https://example.com/unread-{i}", null, "2025-01-01", $"<p>{i}</p>", null)
             {
                 FeedUrl = feed.Href,
                 PublishDateOrder = 2000 + i

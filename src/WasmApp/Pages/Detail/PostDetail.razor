@@ -71,6 +71,12 @@
     <div class="">
         <div class="reader-meta">
             <time title="@FormatDate(Post.ParsedDate)">@ShortDate(Post.ParsedDate)</time>
+            @if (!String.IsNullOrWhiteSpace(Post.FormerTitle))
+            {
+                @* The feed renamed this post after it was first stored; the
+                   headline above is the current title. *@
+                <span class="reader-former-title">originally titled <q>@CleanTitle(Post.FormerTitle)</q></span>
+            }
         </div>
         @if (_isLoadingContent)
         {
