@@ -44,8 +44,3 @@
     color: var(--link);
     text-decoration: underline;
 }
-
-.legal-gdpr {
-    border-top: 1px solid var(--border);
-    padding-top: 1.5rem;
-}
