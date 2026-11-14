@@ -13,16 +13,20 @@ public class FeedSchedulerTests
     private sealed class CountingRefresher : IFeedRefresher
     {
         private int tickCount;
+        private readonly SemaphoreSlim firstTick = new(0, 1);
 
         public int TickCount => Volatile.Read(ref this.tickCount);
 
-        public TaskCompletionSource FirstTick { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        /// <summary>True once the scheduler has ticked; false if it did not within <paramref name="timeout"/>.</summary>
+        public Task<bool> WaitForFirstTickAsync(TimeSpan timeout) => this.firstTick.WaitAsync(timeout);
 
         public Task<DateTimeOffset?> RunSchedulerTickAsync(CancellationToken token)
         {
-            Interlocked.Increment(ref this.tickCount);
-            this.FirstTick.TrySetResult();
+            if (Interlocked.Increment(ref this.tickCount) == 1)
+            {
+                this.firstTick.Release();
+            }
+
             return Task.FromResult<DateTimeOffset?>(null);
         }
 
@@ -52,14 +56,12 @@ public class FeedSchedulerTests
 
         // Well past the tick interval, but nowhere near the startup delay: the
         // cold-start window must stay clear of feed fetches.
-        var ticked = await Task.WhenAny(
-            refresher.FirstTick.Task,
-            Task.Delay(TimeSpan.FromMilliseconds(500)));
+        var ticked = await refresher.WaitForFirstTickAsync(TimeSpan.FromMilliseconds(500));
 
         await cts.CancelAsync();
         try { await scheduler.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
 
-        Assert.AreNotSame(refresher.FirstTick.Task, ticked, "Scheduler ticked before the startup delay elapsed.");
+        Assert.IsFalse(ticked, "Scheduler ticked before the startup delay elapsed.");
         Assert.AreEqual(0, refresher.TickCount);
     }
 
@@ -78,14 +80,12 @@ public class FeedSchedulerTests
         using var cts = new CancellationTokenSource();
         await scheduler.StartAsync(cts.Token);
 
-        var completed = await Task.WhenAny(
-            refresher.FirstTick.Task,
-            Task.Delay(TimeSpan.FromSeconds(10)));
+        var ticked = await refresher.WaitForFirstTickAsync(TimeSpan.FromSeconds(10));
 
         await cts.CancelAsync();
         try { await scheduler.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
 
-        Assert.AreSame(refresher.FirstTick.Task, completed, "Scheduler never ticked after the startup delay.");
+        Assert.IsTrue(ticked, "Scheduler never ticked after the startup delay.");
     }
 
     [TestMethod]

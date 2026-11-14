@@ -126,10 +126,11 @@ public class WriterStartupGateTests
     {
         var port = FreePort();
         var url = $"http://127.0.0.1:{port}";
-        var restoreDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var restoreDone = new SemaphoreSlim(0, 1);
 
         var run = WriterStartupGate.RunAsync(
-            Array.Empty<string>(), _ => restoreDone.Task, Origins, NullLoggerFactory.Instance, url);
+            Array.Empty<string>(), async ct => { await restoreDone.WaitAsync(ct); return true; },
+            Origins, NullLoggerFactory.Instance, url);
 
         // Gate is up: probe passes while the restore is still running.
         using var http = new HttpClient { BaseAddress = new Uri(url) };
@@ -138,7 +139,7 @@ public class WriterStartupGateTests
         Assert.AreEqual(HttpStatusCode.ServiceUnavailable, (await http.GetAsync("/api/feeds")).StatusCode);
         Assert.IsFalse(run.IsCompleted);
 
-        restoreDone.SetResult(true);
+        restoreDone.Release();
         await run.WaitAsync(TimeSpan.FromSeconds(15));
 
         Assert.IsFalse(PortAccepts(port), "Gate stopped and freed the port");

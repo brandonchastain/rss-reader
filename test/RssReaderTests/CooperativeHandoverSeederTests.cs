@@ -316,7 +316,15 @@ public class CooperativeHandoverSeederTests
         var run = h.Seeder.RunAsync(cts.Token);
         await Task.Delay(50);
         await cts.CancelAsync();
-        await Assert.ThrowsExceptionAsync<TaskCanceledException>(() => run);
+        try
+        {
+            await run;
+            Assert.Fail("RunAsync should throw once its token is cancelled.");
+        }
+        catch (OperationCanceledException ex)
+        {
+            Assert.AreEqual(typeof(TaskCanceledException), ex.GetType());
+        }
     }
 
     // The tail wait on its own.
