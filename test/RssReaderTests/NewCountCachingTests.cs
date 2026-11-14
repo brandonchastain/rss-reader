@@ -106,7 +106,7 @@ public class NewCountCachingTests
     }
 
     [TestMethod]
-    public void ChangeStamp_MovesOnEveryItemMutation()
+    public async Task ChangeStamp_MovesOnEveryItemMutation()
     {
         var inner = new Mock<IItemRepository>();
         inner.Setup(r => r.UpsertItemsAsync(It.IsAny<IEnumerable<NewsFeedItem>>())).ReturnsAsync(new ItemWriteResult(1, 0));
@@ -119,7 +119,7 @@ public class NewCountCachingTests
         Assert.AreNotEqual(before, s.Current);
 
         before = s.Current;
-        repo.AddItemsAsync(new[] { item }).GetAwaiter().GetResult();
+        await repo.AddItemsAsync(new[] { item });
         Assert.AreNotEqual(before, s.Current);
     }
 }
