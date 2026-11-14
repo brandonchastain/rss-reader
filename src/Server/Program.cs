@@ -351,7 +351,7 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 // Setup endpoints
-app.MapControllers();
+app.MapControllers().RequireAuthorization();
 
 // One-box self-hosting: when the published frontend is mounted into wwwroot,
 // serve it and let the Blazor router own every path the API does not.

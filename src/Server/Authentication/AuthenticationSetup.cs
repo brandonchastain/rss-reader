@@ -43,14 +43,16 @@ public static class AuthenticationSetup
                 .PersistKeysToFileSystem(new DirectoryInfo(auth.DataProtectionKeysPath));
         }
 
-        // Secure by default: an endpoint that declares nothing requires a signed-in
-        // caller. Anonymous routes (health, sign-in, favicons, the SPA fallback)
-        // opt out with AllowAnonymous.
+        // Secure by default: controllers require a signed-in caller (MapControllers
+        // in Program.cs), and EveryEndpoint_DeclaresItsAuthorization fails the build
+        // for any endpoint that declares neither [Authorize] nor AllowAnonymous.
+        // Not a FallbackPolicy: that also covers requests matching no endpoint, so
+        // an anonymous GET to a POST-only route answered 401 instead of 405 (and an
+        // unknown path 401 instead of 404), which the deploy smoke check relies on.
         services.AddSingleton<IAuthorizationHandler, AdminAuthorizationHandler>();
         var builder = services
             .AddAuthorization(options =>
             {
-                options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
                 options.AddPolicy(AdminPolicy.Name, policy => policy
                     .RequireAuthenticatedUser()
                     .AddRequirements(new AdminRequirement()));
