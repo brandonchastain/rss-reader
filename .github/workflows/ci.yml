@@ -77,7 +77,10 @@ jobs:
   # Separate from the unit job so a unit failure still reports in under a minute.
   browser:
     name: Browser tests
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.59.1 cannot install
+    # Chromium on ("Playwright does not support chromium on ubuntu26.04-x64").
+    # Back to ubuntu-latest once test/e2e is on a Playwright release that supports it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
