@@ -34,7 +34,6 @@ public class ContentBatchTests
         return new ItemController(
             this.itemRepo.Object,
             new Mock<IFeedRepository>().Object,
-            new Mock<IUserRepository>().Object,
             this.userResolver.Object,
             new Mock<IFeedRefresher>().Object,
             new RssAppConfig(),
@@ -139,14 +138,4 @@ public class ContentBatchTests
         this.itemRepo.Verify(r => r.GetItem(It.IsAny<RssUser>(), It.IsAny<int>()), Times.Never);
     }
 
-    [TestMethod]
-    public void ContentBatch_UnknownUserIsNotFound()
-    {
-        var controller = CreateController(user: null);
-        this.userResolver
-            .Setup(r => r.ResolveUser(It.IsAny<ClaimsPrincipal>()))
-            .Returns((RssUser)null);
-
-        Assert.IsInstanceOfType(controller.GetItemContentBatch("1"), typeof(NotFoundObjectResult));
-    }
 }

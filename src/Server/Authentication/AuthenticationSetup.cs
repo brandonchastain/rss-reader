@@ -3,6 +3,7 @@ using System.Security.Claims;
 using AspNet.Security.OAuth.GitHub;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Azure.Extensions.AspNetCore.DataProtection.Blobs;
 using Microsoft.AspNetCore.DataProtection;
@@ -42,8 +43,18 @@ public static class AuthenticationSetup
                 .PersistKeysToFileSystem(new DirectoryInfo(auth.DataProtectionKeysPath));
         }
 
+        // Secure by default: an endpoint that declares nothing requires a signed-in
+        // caller. Anonymous routes (health, sign-in, favicons, the SPA fallback)
+        // opt out with AllowAnonymous.
+        services.AddSingleton<IAuthorizationHandler, AdminAuthorizationHandler>();
         var builder = services
-            .AddAuthorization()
+            .AddAuthorization(options =>
+            {
+                options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
+                options.AddPolicy(AdminPolicy.Name, policy => policy
+                    .RequireAuthenticatedUser()
+                    .AddRequirements(new AdminRequirement()));
+            })
             .AddAuthentication(PolicyScheme);
 
         // Per-request selector: test-user mode short-circuits to the fake

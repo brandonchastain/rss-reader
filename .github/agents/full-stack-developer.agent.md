@@ -63,10 +63,11 @@ Browser → static frontend (Azure SWA, no API)
 ### Adding a new API endpoint
 
 1. Add or extend a controller in `src/Server/Controllers/`
-2. Use `[Authorize]` and compare `ClaimTypes.Name` against the target user ID for user-scoped endpoints
-3. Inject repositories and services — never construct them directly
-4. Enqueue background work via `BackgroundWorkQueue`, never inline
-5. Return appropriate HTTP status codes; use `Problem()` for errors
+2. User-scoped controllers derive from `UserScopedController` and use `CurrentUser` (resolved once from the session; unregistered callers get 404 before the action runs). Never act on a user id from the request. Admin-only endpoints use `[Authorize(Policy = AdminPolicy.Name)]`. Endpoints are authenticated by default (fallback policy); anonymous ones need `[AllowAnonymous]`.
+3. Any repository lookup by id or URL takes the `RssUser` and scopes its SQL to that user; add a cross-user test to `ApiContractTests`
+4. Inject repositories and services — never construct them directly
+5. Enqueue background work via `BackgroundWorkQueue`, never inline
+6. Return appropriate HTTP status codes; use `Problem()` for errors
 
 ---
 

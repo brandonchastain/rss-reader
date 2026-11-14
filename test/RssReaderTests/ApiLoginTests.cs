@@ -381,31 +381,36 @@ public sealed class ApiLoginTests
 public sealed class AdminControllerLinkedIdTests
 {
     // The admin list holds the pre-migration SWA id. After cutover the login id
-    // is microsoft:<oid>, so the controller must consult the resolved row.
+    // is microsoft:<oid>, so the admin policy must consult the resolved row.
     [TestMethod]
-    public async Task GetUsers_AdminByLinkedRow_IsAllowed()
+    public async Task AdminPolicy_AdminByLinkedRow_IsAllowed()
+    {
+        Assert.IsTrue(await EvaluateAsync("microsoft:obj-1"));
+    }
+
+    [TestMethod]
+    public async Task AdminPolicy_SignedInNonAdmin_IsRefused()
+    {
+        Assert.IsFalse(await EvaluateAsync("github:someone-else"));
+    }
+
+    private static async Task<bool> EvaluateAsync(string loginId)
     {
         var config = new RssAppConfig { AdminAadUserIds = "024d97a14bc74c58b9a83e88b919a92c" };
         var repo = new FakeUserRepository();
         repo.Users.Add(new RssUser("legacy", 7));
         repo.Link(7, "024d97a14bc74c58b9a83e88b919a92c");
         repo.Link(7, "microsoft:obj-1");
-        var resolver = new UserResolver(repo, NullLogger<UserResolver>.Instance);
-        var stats = new Moq.Mock<RssApp.Data.ISystemStatsRepository>().Object;
-        var controller = new Server.Controllers.AdminController(
-            stats, repo, config, resolver,
-            new RssReader.Server.Services.SystemStatsCollector(stats, config, NullLogger<RssReader.Server.Services.SystemStatsCollector>.Instance),
-            new RssApp.Data.AdminDetailQueries(new Moq.Mock<RssApp.Data.IDbConnections>().Object, config));
+        repo.Users.Add(new RssUser("other", 8));
+        repo.Link(8, "github:someone-else");
+        var handler = new Server.Authentication.AdminAuthorizationHandler(config, new UserResolver(repo, NullLogger<UserResolver>.Instance));
+
         var identity = new ClaimsIdentity("cookie");
-        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "microsoft:obj-1"));
-        controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
-        {
-            HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext { User = new ClaimsPrincipal(identity) }
-        };
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, loginId));
+        var context = new Microsoft.AspNetCore.Authorization.AuthorizationHandlerContext(
+            new[] { new Server.Authentication.AdminRequirement() }, new ClaimsPrincipal(identity), resource: null);
 
-        var result = controller.GetUsers();
-
-        Assert.IsInstanceOfType(result, typeof(Microsoft.AspNetCore.Mvc.OkObjectResult));
-        await Task.CompletedTask;
+        await handler.HandleAsync(context);
+        return context.HasSucceeded;
     }
 }

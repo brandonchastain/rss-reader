@@ -8,19 +8,17 @@ using RssReader.Server.Services;
 using System.Text;
 using System.Threading.Tasks;
 using System.Security.Claims;
+using Server.Authentication;
 
 
 namespace Server.Controllers
 {
-    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
-    public class ItemController : ControllerBase
+    public class ItemController : UserScopedController
     {
         private readonly IItemRepository itemRepository;
         private readonly IFeedRepository feedRepository;
-        private readonly IUserRepository userRepository;
-        private readonly IUserResolver userResolver;
         private readonly IFeedRefresher feedRefresher;
         private readonly RssAppConfig config;
         private readonly ILogger<ItemController> logger;
@@ -37,19 +35,17 @@ namespace Server.Controllers
         public ItemController(
             IItemRepository itemRepository,
             IFeedRepository feedRepository,
-            IUserRepository userRepository,
             IUserResolver userResolver,
             IFeedRefresher feedRefresher,
             RssAppConfig config,
             ILogger<ItemController> logger,
             ItemsChangeStamp changeStamp = null
         )
+            : base(userResolver)
         {
             this.changeStamp = changeStamp ?? new ItemsChangeStamp();
             this.itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
-            this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
-            this.userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
             this.feedRefresher = feedRefresher ?? throw new ArgumentNullException(nameof(feedRefresher));
             this.config = config ?? throw new ArgumentNullException(nameof(config));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -63,12 +59,7 @@ namespace Server.Controllers
         [HttpGet("timeline")]
         public async Task<IActionResult> TimelineAsync(bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound("Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             // Enforce both-or-neither cursor params
             long? lastId = null;
@@ -105,12 +96,7 @@ namespace Server.Controllers
         [HttpGet("newCount")]
         public async Task<IActionResult> NewCountAsync(long cursorPublishDateOrder, long cursorId, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null)
         {
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound("Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             // The probe is polled by every open timeline tab. Let the browser cache
             // the answer briefly, then answer revalidations from the in-memory change
@@ -142,12 +128,7 @@ namespace Server.Controllers
         [HttpGet("feed")]
         public async Task<IActionResult> FeedAsync(string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound("Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             var feed = this.feedRepository.GetFeed(user, href);
 
@@ -178,12 +159,7 @@ namespace Server.Controllers
         [HttpGet("search")]
         public async Task<IActionResult> SearchAsync(string query, int page = 0, int pageSize = 20)
         {
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound("Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             if (query == null)
             {
@@ -200,12 +176,7 @@ namespace Server.Controllers
         [ResponseCache(Duration = 3600, Location = ResponseCacheLocation.Client)]
         public IActionResult GetItemContent(int itemId)
         {
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound("Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             var item = this.itemRepository.GetItem(user, itemId);
 
@@ -235,12 +206,7 @@ namespace Server.Controllers
         [ResponseCache(Duration = 3600, Location = ResponseCacheLocation.Client)]
         public IActionResult GetItemContentBatch(string itemIds)
         {
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound("Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             if (string.IsNullOrWhiteSpace(itemIds))
             {
@@ -286,12 +252,7 @@ namespace Server.Controllers
         [HttpPost("markAsRead")]
         public IActionResult MarkAsRead(int itemId, bool isRead)
         {
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound("Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             var item = this.itemRepository.GetItem(user, itemId);
 
@@ -312,24 +273,18 @@ namespace Server.Controllers
                 return BadRequest("Item is required.");
             }
 
-            var authenticatedUser = this.userResolver.ResolveUser(User);
-            if (authenticatedUser == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
-
-            if (item.UserId != authenticatedUser.Id)
+            if (!this.IsCaller(item.UserId))
             {
                 return StatusCode(403, "You can only save items to your own account.");
             }
 
-            var user = this.userRepository.GetUserById(item.UserId);
-            if (user == null)
+            var owned = this.FindVisibleItem(item);
+            if (owned == null)
             {
-                return NotFound($"User not found.");
+                return NotFound("Item not found.");
             }
 
-            this.itemRepository.SavePost(item, user);
+            this.itemRepository.SavePost(owned, this.CurrentUser);
             return Ok();
         }
 
@@ -341,25 +296,37 @@ namespace Server.Controllers
                 return BadRequest("Item is required.");
             }
 
-            var authenticatedUser = this.userResolver.ResolveUser(User);
-            if (authenticatedUser == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
-
-            if (item.UserId != authenticatedUser.Id)
+            if (!this.IsCaller(item.UserId))
             {
                 return StatusCode(403, "You can only unsave items from your own account.");
             }
 
-            var user = this.userRepository.GetUserById(item.UserId);
-            if (user == null)
+            var owned = this.FindVisibleItem(item);
+            if (owned == null)
             {
-                return NotFound($"User not found.");
+                return NotFound("Item not found.");
             }
 
-            this.itemRepository.UnsavePost(item, user);
+            this.itemRepository.UnsavePost(owned, this.CurrentUser);
             return Ok();
+        }
+
+        // The body of save/unsave is the client's copy of a post. Only its id (or,
+        // failing that, its href) is taken from it, and only a post the caller can
+        // already see resolves: saving is what makes a post visible, so trusting
+        // the body would let anyone read any feed by saving its posts by id.
+        private NewsFeedItem FindVisibleItem(NewsFeedItem item)
+        {
+            NewsFeedItem found = null;
+            if (int.TryParse(item.Id, out var id) && id > 0)
+            {
+                found = this.itemRepository.GetItem(this.CurrentUser, id);
+            }
+            if (found == null && !string.IsNullOrEmpty(item.Href))
+            {
+                found = this.itemRepository.GetItem(this.CurrentUser, item.Href);
+            }
+            return found;
         }
 
         [HttpDelete("all")]
@@ -370,11 +337,7 @@ namespace Server.Controllers
                 return StatusCode(403, "This endpoint is only available in test mode.");
             }
 
-            var user = this.userResolver.ResolveUser(User);
-            if (user == null)
-            {
-                return NotFound("Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             await this.itemRepository.DeleteAllItemsAsync(user);
             this.feedRefresher.ResetRefreshCooldown();

@@ -8,19 +8,18 @@ using RssApp.ComponentServices;
 using RssApp.Config;
 using System.Threading.Tasks;
 using System.Security.Claims;
+using Server.Authentication;
 
 
 namespace Server.Controllers
 {
-    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
-    public class UserController : ControllerBase
+    public class UserController : UserScopedController
     {
         private readonly IUserRepository userRepository;
         private readonly IFeedRepository feedRepository;
         private readonly IItemRepository itemRepository;
-        private readonly IUserResolver userResolver;
         private readonly ILogger<UserController> logger;
         private readonly RssAppConfig config;
         // Static: controllers are created per request, so an instance lock never
@@ -37,11 +36,11 @@ namespace Server.Controllers
             IUserResolver userResolver,
             ILogger<UserController> logger,
             RssAppConfig config)
+            : base(userResolver)
         {
             this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
             this.itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
-            this.userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
             this.config = config ?? throw new ArgumentNullException(nameof(config));
         }
@@ -50,12 +49,7 @@ namespace Server.Controllers
         [HttpGet]
         public IActionResult GetUserByName()
         {
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound();
-            }
+            var user = this.CurrentUser;
 
             user.IsAdmin = Server.Authentication.AdminPolicy.IsAdmin(config, User, user);
             return Ok(user);
@@ -63,6 +57,7 @@ namespace Server.Controllers
 
         // POST: api/user/register
         [HttpPost("register")]
+        [AllowUnregisteredUser]
         public async Task<IActionResult> RegisterAsync()
         {
             var aadId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -75,14 +70,14 @@ namespace Server.Controllers
             await locker.WaitAsync();
             try
             {
-                var existing = this.userResolver.ResolveUser(User);
+                var existing = this.UserResolver.ResolveUser(User);
                 if (existing != null)
                 {
                     existing.IsAdmin = Server.Authentication.AdminPolicy.IsAdmin(config, User, existing);
                     return Ok(existing);
                 }
 
-                var newUser = this.userResolver.ResolveOrCreateUser(User);
+                var newUser = this.UserResolver.ResolveOrCreateUser(User);
                 newUser.IsAdmin = Server.Authentication.AdminPolicy.IsAdmin(config, User, newUser);
                 return Created(nameof(RegisterAsync), newUser);
             }
@@ -96,8 +91,7 @@ namespace Server.Controllers
         [HttpGet("report")]
         public IActionResult GetDataReport()
         {
-            var user = userResolver.ResolveUser(User);
-            if (user == null) return NotFound();
+            var user = this.CurrentUser;
 
             var feeds = feedRepository.GetFeeds(user).ToList();
             var feedSummaries = feeds.Select(f => new FeedSummary
@@ -124,8 +118,7 @@ namespace Server.Controllers
         [HttpDelete]
         public async Task<IActionResult> DeleteAccount()
         {
-            var user = userResolver.ResolveUser(User);
-            if (user == null) return NotFound();
+            var user = this.CurrentUser;
 
             if (Server.Authentication.AdminPolicy.IsAdmin(config, User, user))
             {
