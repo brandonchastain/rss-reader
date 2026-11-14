@@ -116,7 +116,7 @@ namespace Server.Controllers
         // An admin can never delete their own account, so the admin dashboard
         // cannot be locked out from the Account page.
         [HttpDelete]
-        public async Task<IActionResult> DeleteAccount()
+        public async Task<IActionResult> DeleteAccountAsync()
         {
             var user = this.CurrentUser;
 

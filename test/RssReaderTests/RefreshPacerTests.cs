@@ -17,7 +17,7 @@ public sealed class RefreshPacerTests
         public DateTimeOffset Now = new(2026, 10, 24, 12, 0, 0, TimeSpan.Zero);
         public List<TimeSpan> Delays { get; } = new();
 
-        public Task Delay(TimeSpan wait, CancellationToken token)
+        public Task DelayAsync(TimeSpan wait, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             this.Delays.Add(wait);
@@ -30,7 +30,7 @@ public sealed class RefreshPacerTests
     {
         config ??= new RssAppConfig();
         var clock = new FakeClock();
-        var pacer = new RefreshPacer(config, () => clock.Now, clock.Delay);
+        var pacer = new RefreshPacer(config, () => clock.Now, clock.DelayAsync);
         return (pacer, clock);
     }
 

@@ -112,7 +112,7 @@ public class WriterStartupGateTests
         listener.Stop();
     }
 
-    private static async Task<HttpResponseMessage> WaitForGate(HttpClient http, string path)
+    private static async Task<HttpResponseMessage> WaitForGateAsync(HttpClient http, string path)
     {
         for (var i = 0; i < 100; i++)
         {
@@ -133,7 +133,7 @@ public class WriterStartupGateTests
 
         // Gate is up: probe passes while the restore is still running.
         using var http = new HttpClient { BaseAddress = new Uri(url) };
-        var probe = await WaitForGate(http, "/api/healthz");
+        var probe = await WaitForGateAsync(http, "/api/healthz");
         Assert.AreEqual(HttpStatusCode.OK, probe.StatusCode);
         Assert.AreEqual(HttpStatusCode.ServiceUnavailable, (await http.GetAsync("/api/feeds")).StatusCode);
         Assert.IsFalse(run.IsCompleted);

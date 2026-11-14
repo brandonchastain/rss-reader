@@ -167,7 +167,7 @@ namespace Server.Controllers
 
         [HttpPost]
         [Route("tags/remove")]
-        public IActionResult RemoveTagAsync([FromBody] NewsFeed feed)
+        public IActionResult RemoveTag([FromBody] NewsFeed feed)
         {
             if (feed == null || string.IsNullOrWhiteSpace(feed.Href) || feed.UserId <= 0)
             {

@@ -43,7 +43,7 @@ public class AdminController : ControllerBase
     // Captures a fresh snapshot (at most hourly) only when the dashboard is opened;
     // nothing runs these COUNT(*) queries in the background any more.
     [HttpGet("stats")]
-    public async Task<IActionResult> GetStats()
+    public async Task<IActionResult> GetStatsAsync()
     {
         var snapshot = await _statsCollector.GetOrCaptureAsync();
         return Ok(snapshot);
@@ -52,7 +52,7 @@ public class AdminController : ControllerBase
     // POST /api/admin/stats/refresh: take a snapshot now instead of waiting
     // for the hourly cadence; returns it.
     [HttpPost("stats/refresh")]
-    public async Task<IActionResult> RefreshStats()
+    public async Task<IActionResult> RefreshStatsAsync()
     {
         var snapshot = await _statsCollector.CaptureNowAsync();
         return Ok(snapshot);

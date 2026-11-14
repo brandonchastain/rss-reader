@@ -48,7 +48,7 @@ public sealed class PostRetitleTests
         return result is null or DBNull ? 0 : Convert.ToInt64(result);
     }
 
-    private static async Task<List<NewsFeedItem>> Timeline(SQLiteItemRepository repo, RssUser user)
+    private static async Task<List<NewsFeedItem>> TimelineAsync(SQLiteItemRepository repo, RssUser user)
         => (await repo.GetItemsAsync(new NewsFeed("%", user.Id), false, false, null, 0, 50)).ToList();
 
     [TestMethod]
@@ -63,7 +63,7 @@ public sealed class PostRetitleTests
         var result = await repo.UpsertItemsAsync([Item("https://www.theregister.com/a/1", "Safari's Autofill feature may be distorting time", "https://www.theregister.com/2026/11/05/safari-autofill-distorting-time/1", content: "<p>fixed</p>")]);
 
         Assert.AreEqual(new ItemWriteResult(0, 1), result);
-        var posts = await Timeline(repo, user);
+        var posts = await TimelineAsync(repo, user);
         Assert.AreEqual(1, posts.Count);
         Assert.AreEqual(stored.Id, posts[0].Id, "the post keeps its row");
         Assert.AreEqual("Safari's Autofill feature may be distorting time", posts[0].Title);
@@ -107,12 +107,12 @@ public sealed class PostRetitleTests
 
         Assert.AreEqual(new ItemWriteResult(0, 1), await repo.UpsertItemsAsync([Item("g1", "Hospital gave very sick doctor a special PC for his personal, erm, pleasure", href)]));
         Assert.AreEqual(new ItemWriteResult(0, 1), await repo.UpsertItemsAsync([Item("g1", "Hospital gave sick doctor a PC", href)]));
-        var post = (await Timeline(repo, user)).Single();
+        var post = (await TimelineAsync(repo, user)).Single();
         Assert.AreEqual("Hospital gave sick doctor a PC", post.Title);
         Assert.AreEqual("Hospital gave very sick doctor a special PC for his very personal use", post.FormerTitle, "FormerTitle is the title readers first saw");
 
         await repo.UpsertItemsAsync([Item("g1", "Hospital gave very sick doctor a special PC for his very personal use", href)]);
-        post = (await Timeline(repo, user)).Single();
+        post = (await TimelineAsync(repo, user)).Single();
         Assert.IsNull(post.FormerTitle, "renamed back to the first title: nothing to show");
 
         Assert.AreEqual(new ItemWriteResult(0, 0), await repo.UpsertItemsAsync([Item("g1", post.Title, href)]), "an unchanged post is not an update");
@@ -128,7 +128,7 @@ public sealed class PostRetitleTests
         var result = await repo.UpsertItemsAsync([Item("1", "Tuesday's top story", "https://example.com/tuesday", Published + TimeSpan.TicksPerDay)]);
 
         Assert.AreEqual(new ItemWriteResult(1, 0), result);
-        Assert.AreEqual(2, (await Timeline(repo, user)).Count);
+        Assert.AreEqual(2, (await TimelineAsync(repo, user)).Count);
     }
 
     [TestMethod]
@@ -139,7 +139,7 @@ public sealed class PostRetitleTests
         var result = await repo.UpsertItemsAsync([Item("same", "A2", "https://example.com/a2"), Item("same", "B2", "https://example.com/b2")]);
 
         Assert.AreEqual(new ItemWriteResult(2, 0), result);
-        Assert.AreEqual(4, (await Timeline(repo, user)).Count);
+        Assert.AreEqual(4, (await TimelineAsync(repo, user)).Count);
     }
 
     [TestMethod]
