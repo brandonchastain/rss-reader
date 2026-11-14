@@ -1,0 +1,54 @@
+# Quarterly warrant-canary renewal for the privacy policy (src/WasmApp/Pages/Privacy.razor).
+#
+# Moves the "Last updated" date and the canary's "As of" date to today, and the
+# "updated by" deadline three months out, commits straight to main, then starts
+# a deploy so the live page picks it up. (A push made with GITHUB_TOKEN doesn't
+# trigger other workflows, so the deploy is dispatched explicitly.)
+#
+# To let the canary lapse, disable this workflow: Actions > Canary renewal >
+# Disable workflow. The page then goes stale on its "updated by" date.
+name: Canary renewal
+
+on:
+  schedule:
+    # 15:00 UTC on the 13th of Feb, May, Aug and Nov.
+    - cron: '0 15 13 2,5,8,11 *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update the dates
+        run: |
+          set -euo pipefail
+          file=src/WasmApp/Pages/Privacy.razor
+          today=$(date -u +'%B %-d, %Y')
+          next=$(date -u -d '+3 months' +'%B %-d, %Y')
+          date_re='[A-Z][a-z]+ [0-9]{1,2}, [0-9]{4}'
+
+          for pattern in "Last updated: $date_re" "As of $date_re," "updated by $date_re,"; do
+            grep -Eq "$pattern" "$file" || { echo "::error::'$pattern' not found in $file"; exit 1; }
+          done
+
+          sed -E -i \
+            -e "s/Last updated: $date_re/Last updated: $today/" \
+            -e "s/As of $date_re,/As of $today,/" \
+            -e "s/updated by $date_re,/updated by $next,/" \
+            "$file"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "docs(privacy): renew warrant canary ($today)"
+          git push origin HEAD:main
+
+      - name: Deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref main
