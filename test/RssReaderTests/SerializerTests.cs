@@ -234,11 +234,13 @@ public sealed class SerializerTests
         // Verify required attributes on RSS outline elements
         foreach (System.Xml.XmlNode node in outlineNodes)
         {
-            Assert.IsNotNull(node.Attributes?["type"], "Outline must have type attribute");
-            Assert.AreEqual("rss", node.Attributes["type"].Value, "Type must be 'rss'");
-            Assert.IsNotNull(node.Attributes?["xmlUrl"], "Outline must have xmlUrl attribute");
+            var type = node.Attributes?["type"];
+            Assert.IsNotNull(type, "Outline must have type attribute");
+            Assert.AreEqual("rss", type.Value, "Type must be 'rss'");
+            var xmlUrl = node.Attributes?["xmlUrl"];
+            Assert.IsNotNull(xmlUrl, "Outline must have xmlUrl attribute");
             Assert.IsNotNull(node.Attributes?["text"], "Outline must have text attribute");
-            Assert.IsFalse(string.IsNullOrEmpty(node.Attributes["xmlUrl"].Value), "xmlUrl must not be empty");
+            Assert.IsFalse(string.IsNullOrEmpty(xmlUrl.Value), "xmlUrl must not be empty");
         }
 
         // Verify category attribute format (comma-separated, per OPML 2.0 spec)

@@ -989,7 +989,9 @@ public sealed class ApiContractTests
 
         var aliceFeeds = await alice.GetFromJsonAsync<List<NewsFeed>>("/api/feed", Json);
         var carolFeeds = await carol.GetFromJsonAsync<List<NewsFeed>>("/api/feed", Json);
-        CollectionAssert.AreEquivalent(aliceFeeds!.Select(f => f.Href).ToList(), carolFeeds!.Select(f => f.Href).ToList());
+        Assert.IsNotNull(aliceFeeds);
+        Assert.IsNotNull(carolFeeds);
+        CollectionAssert.AreEquivalent(aliceFeeds.Select(f => f.Href).ToList(), carolFeeds.Select(f => f.Href).ToList());
         foreach (var feed in aliceFeeds)
         {
             var imported = carolFeeds.Single(f => f.Href == feed.Href);
