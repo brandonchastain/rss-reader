@@ -26,7 +26,7 @@ public class NewCountCachingTests
     private Mock<IFeedRepository> feedRepo = null!;
     private ItemsChangeStamp stamp = null!;
 
-    private ItemController CreateController(string ifNoneMatch = null)
+    private ItemController CreateController(string? ifNoneMatch = null)
     {
         this.itemRepo = new Mock<IItemRepository>();
         this.feedRepo = new Mock<IFeedRepository>();

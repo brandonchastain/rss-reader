@@ -23,7 +23,7 @@ public class ContentBatchTests
     private readonly Mock<IItemRepository> itemRepo = new();
     private readonly Mock<IUserResolver> userResolver = new();
 
-    private ItemController CreateController(RssUser user = null)
+    private ItemController CreateController(RssUser? user = null)
     {
         this.userResolver
             .Setup(r => r.ResolveUser(It.IsAny<ClaimsPrincipal>()))
@@ -38,7 +38,7 @@ public class ContentBatchTests
             NullLogger<ItemController>.Instance);
     }
 
-    private void SetupItem(int id, string content)
+    private void SetupItem(int id, string? content)
     {
         var item = new NewsFeedItem { Id = id.ToString(), UserId = TestUser.Id, FeedUrl = "f", Href = "h" + id };
         this.itemRepo.Setup(r => r.GetItem(It.IsAny<RssUser>(), id)).Returns(item);

@@ -26,7 +26,7 @@ public sealed class RefreshPacerTests
         }
     }
 
-    private static (RefreshPacer pacer, FakeClock clock) Create(RssAppConfig config = null)
+    private static (RefreshPacer pacer, FakeClock clock) Create(RssAppConfig? config = null)
     {
         config ??= new RssAppConfig();
         var clock = new FakeClock();

@@ -47,7 +47,7 @@ internal sealed class TestDatabase : IDisposable
         return await Items.AddItemsAsync(items);
     }
 
-    public async Task<List<NewsFeedItem>> TimelineAsync(RssUser user, bool unread = false, bool saved = false, string tag = null, bool hideHidden = true, int pageSize = 100)
+    public async Task<List<NewsFeedItem>> TimelineAsync(RssUser user, bool unread = false, bool saved = false, string? tag = null, bool hideHidden = true, int pageSize = 100)
         => (await Items.GetItemsAsync(new NewsFeed("%", user.Id), unread, saved, tag, 0, pageSize,
             excludeFeedUrls: hideHidden ? Feeds.GetHiddenFeedUrls(user) : null)).ToList();
 

@@ -64,7 +64,7 @@ public sealed class FeedRefresherTests
         public List<NewsFeed> Subscriptions { get; } = new();
         public int RecordCount;
 
-        public void Seed(string url, DateTimeOffset? lastFetched = null, DateTimeOffset? next = null, string etag = null, DateTimeOffset? lastModified = null, int failures = 0)
+        public void Seed(string url, DateTimeOffset? lastFetched = null, DateTimeOffset? next = null, string? etag = null, DateTimeOffset? lastModified = null, int failures = 0)
             => this.states[url] = new FeedFetchState(this.states.Count + 1, url, etag, lastModified, lastFetched, next, failures);
 
         public IEnumerable<NewsFeed> GetFeeds(RssUser user) => this.Subscriptions.Where(f => f.UserId == user.Id).ToList();
@@ -110,22 +110,22 @@ public sealed class FeedRefresherTests
     }
 
     private static (FeedRefresher refresher, Mock<IItemRepository> itemRepo) CreateRefresher(
-        IFeedRepository feedRepo = null,
-        Mock<IUserRepository> userRepo = null,
-        RssAppConfig config = null,
-        HttpMessageHandler primaryHandler = null,
-        RefreshPacer pacer = null)
+        IFeedRepository? feedRepo = null,
+        Mock<IUserRepository>? userRepo = null,
+        RssAppConfig? config = null,
+        HttpMessageHandler? primaryHandler = null,
+        RefreshPacer? pacer = null)
     {
         var (refresher, itemRepo, _) = CreateRefresherWithProvider(feedRepo, userRepo, config, primaryHandler, pacer);
         return (refresher, itemRepo);
     }
 
     private static (FeedRefresher refresher, Mock<IItemRepository> itemRepo, ServiceProvider provider) CreateRefresherWithProvider(
-        IFeedRepository feedRepo = null,
-        Mock<IUserRepository> userRepo = null,
-        RssAppConfig config = null,
-        HttpMessageHandler primaryHandler = null,
-        RefreshPacer pacer = null)
+        IFeedRepository? feedRepo = null,
+        Mock<IUserRepository>? userRepo = null,
+        RssAppConfig? config = null,
+        HttpMessageHandler? primaryHandler = null,
+        RefreshPacer? pacer = null)
     {
         feedRepo ??= new InMemoryFeedRepository();
         var mockItemRepo = new Mock<IItemRepository>();
