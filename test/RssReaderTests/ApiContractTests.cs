@@ -397,9 +397,11 @@ public sealed class ApiContractTests
         {
             Assert.AreEqual(HttpStatusCode.Unauthorized, (await client.GetAsync(path)).StatusCode, path);
         }
+        // Unmatched routes fall under the fallback authorization policy, so an
+        // anonymous caller gets 401 rather than learning whether a route exists.
         foreach (var path in new[] { "/api/health", "/api/health/feeds/x", "/api/health/users" })
         {
-            Assert.AreEqual(HttpStatusCode.NotFound, (await client.GetAsync(path)).StatusCode, path);
+            Assert.AreEqual(HttpStatusCode.Unauthorized, (await client.GetAsync(path)).StatusCode, path);
         }
     }
 
@@ -687,6 +689,98 @@ public sealed class ApiContractTests
         var items = await GetItemsAsync(bob, $"/api/item/feed?href={Feed(BobFeed)}&pageSize=1");
         var response = await alice.PostAsJsonAsync("/api/item/save", items[0]);
         Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Save_APostOfAFeedTheCallerDoesNotFollow_Is404_AndTheContentStaysUnreachable()
+    {
+        // Saving is what makes a post visible (a saved post of a feed you left stays
+        // reachable), so save must only accept posts the caller can already see.
+        // Otherwise Alice could read Bob's private feed by saving its posts by id.
+        var bobPost = (await GetItemsAsync(bob, $"/api/item/feed?href={Feed(BobFeed)}&pageSize=100")).Single(i => i.Href.EndsWith("/09"));
+
+        var byId = await alice.PostAsJsonAsync("/api/item/save", new NewsFeedItem { Id = bobPost.Id, UserId = aliceId });
+        Assert.AreEqual(HttpStatusCode.NotFound, byId.StatusCode);
+
+        var byKey = await alice.PostAsJsonAsync("/api/item/save", new NewsFeedItem { FeedUrl = BobFeed, Href = bobPost.Href, UserId = aliceId });
+        Assert.AreEqual(HttpStatusCode.NotFound, byKey.StatusCode);
+
+        var unsave = await alice.PostAsJsonAsync("/api/item/unsave", new NewsFeedItem { Id = bobPost.Id, UserId = aliceId });
+        Assert.AreEqual(HttpStatusCode.NotFound, unsave.StatusCode);
+
+        Assert.AreEqual(HttpStatusCode.NotFound, (await alice.GetAsync($"/api/item/content?itemId={bobPost.Id}")).StatusCode);
+        Assert.IsFalse((await GetItemsAsync(alice, "/api/item/timeline?isFilterSaved=true&pageSize=100")).Any(i => i.Href == bobPost.Href));
+
+        // The repository refuses on its own too, whatever a future caller passes it.
+        var items = host.Services.GetRequiredService<IItemRepository>();
+        var aliceUser = host.Services.GetRequiredService<IUserRepository>().GetUserById(aliceId);
+        items.SavePost(bobPost, aliceUser);
+        Assert.IsNull(items.GetItem(aliceUser, int.Parse(bobPost.Id)), "a direct SavePost on an unfollowed feed's post made it visible");
+    }
+
+    [TestMethod]
+    public async Task CrossUser_AnotherUsersFeedAndPosts_AreNotFound()
+    {
+        var bobPost = (await GetItemsAsync(bob, $"/api/item/feed?href={Feed(BobFeed)}&pageSize=100")).Single(i => i.Href.EndsWith("/06"));
+
+        Assert.AreEqual(HttpStatusCode.NotFound, (await alice.GetAsync($"/api/item/content?itemId={bobPost.Id}")).StatusCode);
+        var batch = await alice.GetFromJsonAsync<Dictionary<string, string>>($"/api/item/contentBatch?itemIds={bobPost.Id}");
+        Assert.AreEqual(0, batch!.Count, "batch content skips another user's posts");
+        Assert.AreEqual(HttpStatusCode.NotFound, (await alice.PostAsync($"/api/item/markAsRead?itemId={bobPost.Id}&isRead=true", content: null)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await alice.GetAsync($"/api/item/feed?href={Feed(BobFeed)}")).StatusCode);
+        Assert.AreEqual(0, (await GetItemsAsync(alice, "/api/item/search?query=beta")).Count(i => i.FeedUrl == BobFeed));
+
+        var tag = new NewsFeed(BobFeed, aliceId);
+        tag.Tags.Add("stolen");
+        Assert.AreEqual(HttpStatusCode.NotFound, (await alice.PostAsJsonAsync("/api/feed/tags", tag)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await alice.PostAsJsonAsync("/api/feed/tags/remove", tag)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await alice.DeleteAsync($"/api/feed/delete?href={Feed(BobFeed)}")).StatusCode);
+
+        var bobFeeds = await bob.GetFromJsonAsync<List<NewsFeed>>("/api/feed", Json);
+        var bobFeed = bobFeeds!.Single(f => f.Href == BobFeed);
+        CollectionAssert.DoesNotContain(bobFeed.Tags.ToList(), "stolen");
+        Assert.IsFalse((await GetItemsAsync(bob, $"/api/item/feed?href={Feed(BobFeed)}&pageSize=100")).Single(i => i.Href == bobPost.Href).IsRead);
+    }
+
+    [TestMethod]
+    public async Task SignedInWithoutAnAccount_UserScopedRoutesAre404()
+    {
+        // The client answers this 404 by calling register, so the status and the
+        // message are part of the contract the CurrentUser filter now owns.
+        using var stranger = host.As("github:never-registered", "stranger");
+        foreach (var path in new[] { "/api/user", "/api/feed", "/api/item/timeline", "/api/item/contentBatch?itemIds=1" })
+        {
+            var response = await stranger.GetAsync(path);
+            Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode, path);
+        }
+        StringAssert.Contains(await (await stranger.GetAsync("/api/feed")).Content.ReadAsStringAsync(), "Authenticated user not found.");
+        Assert.IsNull(host.Services.GetRequiredService<IUserRepository>().GetUserByName("github:never-registered"), "a read never creates the account");
+    }
+
+    [TestMethod]
+    public async Task AdminRoutes_Are403ForUsers_And401ForAnonymous()
+    {
+        foreach (var path in new[] { "/api/admin/stats", "/api/admin/users", "/api/admin/stats/history", "/api/admin/detail/users" })
+        {
+            Assert.AreEqual(HttpStatusCode.Forbidden, (await bob.GetAsync(path)).StatusCode, path);
+            using var anonymous = host.Anonymous();
+            Assert.AreEqual(HttpStatusCode.Unauthorized, (await anonymous.GetAsync(path)).StatusCode, path);
+        }
+        Assert.AreEqual(HttpStatusCode.Forbidden, (await bob.DeleteAsync($"/api/admin/detail/users/{aliceId}")).StatusCode);
+        Assert.IsNotNull(host.Services.GetRequiredService<IUserRepository>().GetUserById(aliceId));
+
+        using var admin = host.As("024d97a14bc74c58b9a83e88b919a92c", "admin");
+        await admin.PostAsync("/api/user/register", content: null);
+        Assert.AreEqual(HttpStatusCode.OK, (await admin.GetAsync("/api/admin/users")).StatusCode);
+    }
+
+    [TestMethod]
+    public async Task EndpointsThatDeclareNothing_RequireASignedInCaller()
+    {
+        var provider = host.Services.GetRequiredService<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider>();
+        var fallback = await provider.GetFallbackPolicyAsync();
+        Assert.IsNotNull(fallback, "no fallback policy: a new endpoint would be anonymous by default");
+        Assert.IsTrue(fallback.Requirements.OfType<Microsoft.AspNetCore.Authorization.Infrastructure.DenyAnonymousAuthorizationRequirement>().Any());
     }
 
     // ---------- search ----------

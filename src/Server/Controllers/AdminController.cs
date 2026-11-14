@@ -9,14 +9,15 @@ using System.Security.Claims;
 
 namespace Server.Controllers;
 
-[Authorize]
+// Every action is admin-only: the policy (AdminAuthorizationHandler) answers
+// 401 for an anonymous caller and 403 for a signed-in non-admin.
+[Authorize(Policy = Server.Authentication.AdminPolicy.Name)]
 [ApiController]
 [Route("api/admin")]
 public class AdminController : ControllerBase
 {
     private readonly ISystemStatsRepository _statsRepo;
     private readonly IUserRepository _userRepo;
-    private readonly RssAppConfig _config;
     private readonly IUserResolver _userResolver;
     private readonly SystemStatsCollector _statsCollector;
     private readonly AdminDetailQueries _details;
@@ -25,7 +26,6 @@ public class AdminController : ControllerBase
     public AdminController(
         ISystemStatsRepository statsRepo,
         IUserRepository userRepo,
-        RssAppConfig config,
         IUserResolver userResolver,
         SystemStatsCollector statsCollector,
         AdminDetailQueries details,
@@ -35,7 +35,6 @@ public class AdminController : ControllerBase
         _details        = details        ?? throw new ArgumentNullException(nameof(details));
         _statsRepo      = statsRepo      ?? throw new ArgumentNullException(nameof(statsRepo));
         _userRepo       = userRepo       ?? throw new ArgumentNullException(nameof(userRepo));
-        _config         = config         ?? throw new ArgumentNullException(nameof(config));
         _userResolver   = userResolver   ?? throw new ArgumentNullException(nameof(userResolver));
         _statsCollector = statsCollector ?? throw new ArgumentNullException(nameof(statsCollector));
     }
@@ -46,9 +45,6 @@ public class AdminController : ControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats()
     {
-        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
-            return Forbid();
-
         var snapshot = await _statsCollector.GetOrCaptureAsync();
         return Ok(snapshot);
     }
@@ -58,9 +54,6 @@ public class AdminController : ControllerBase
     [HttpPost("stats/refresh")]
     public async Task<IActionResult> RefreshStats()
     {
-        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
-            return Forbid();
-
         var snapshot = await _statsCollector.CaptureNowAsync();
         return Ok(snapshot);
     }
@@ -69,9 +62,6 @@ public class AdminController : ControllerBase
     [HttpGet("stats/history")]
     public IActionResult GetStatsHistory([FromQuery] string range = null, [FromQuery] int? days = null)
     {
-        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
-            return Forbid();
-
         if (range == null && days == null) range = RssReader.Server.Services.StatsHistoryRange.DefaultRange;
         if (!RssReader.Server.Services.StatsHistoryRange.TryResolve(range, days, out var window))
             return BadRequest($"range must be one of {string.Join(", ", RssReader.Server.Services.StatsHistoryRange.Ranges.Keys)}.");
@@ -84,9 +74,6 @@ public class AdminController : ControllerBase
     [HttpGet("detail/{section}")]
     public IActionResult GetDetail(string section)
     {
-        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
-            return Forbid();
-
         var table = _details.Get(section);
         return table == null ? NotFound() : Ok(table);
     }
@@ -97,8 +84,6 @@ public class AdminController : ControllerBase
     public IActionResult DeleteDetail(string section, long id)
     {
         var caller = _userResolver.ResolveUser(User);
-        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, caller))
-            return Forbid();
 
         if (string.Equals(section, "users", StringComparison.OrdinalIgnoreCase) && caller != null && caller.Id == id)
             return BadRequest("You cannot delete your own admin user.");
@@ -122,9 +107,6 @@ public class AdminController : ControllerBase
     [HttpGet("users")]
     public IActionResult GetUsers()
     {
-        if (!Server.Authentication.AdminPolicy.IsAdmin(_config, User, _userResolver.ResolveUser(User)))
-            return Forbid();
-
         // Build per-user stats lookup once (one indexed query) and join in-memory.
         var statsByUser = _statsRepo.GetPerUserStats()
             .ToDictionary(s => s.UserId);

@@ -40,7 +40,6 @@ public class NewCountCachingTests
         var controller = new ItemController(
             this.itemRepo.Object,
             this.feedRepo.Object,
-            new Mock<IUserRepository>().Object,
             resolver.Object,
             new Mock<IFeedRefresher>().Object,
             new RssAppConfig(),

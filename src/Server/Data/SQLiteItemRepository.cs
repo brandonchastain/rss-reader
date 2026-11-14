@@ -449,14 +449,29 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     /// it is stable across the id change of the migration; the numeric Id is
     /// the fallback for callers that only have that.
     /// </summary>
-    private static long? ResolvePostId(SqliteConnection connection, NewsFeedItem item)
+    // ResolvePostId's restriction to posts the user can see: a feed they subscribe
+    // to, or a post they already have read/saved state on. Same rule as
+    // OwnershipWhere, written against Posts p without the UserPostState join.
+    private const string ResolveOwnedWhere = """
+         AND (EXISTS (SELECT 1 FROM Subscriptions sub WHERE sub.FeedId = p.FeedId AND sub.UserId = @userId)
+              OR EXISTS (SELECT 1 FROM UserPostState ups WHERE ups.PostId = p.Id AND ups.UserId = @userId))
+        """;
+
+    /// <summary>
+    /// Finds the Posts row an item names, by (feed URL, href) or by id. With a
+    /// userId, only a post that user can see resolves; anything else is null,
+    /// so a crafted id or href can never reach another user's feed.
+    /// </summary>
+    private static long? ResolvePostId(SqliteConnection connection, NewsFeedItem item, int? userId = null)
     {
+        var owned = userId.HasValue ? ResolveOwnedWhere : string.Empty;
         if (!string.IsNullOrEmpty(item.FeedUrl) && !string.IsNullOrEmpty(item.Href))
         {
             var byKey = connection.CreateCommand();
-            byKey.CommandText = "SELECT p.Id FROM Posts p JOIN Feeds f ON f.Id = p.FeedId WHERE f.Url = @url AND p.Href = @href";
+            byKey.CommandText = "SELECT p.Id FROM Posts p JOIN Feeds f ON f.Id = p.FeedId WHERE f.Url = @url AND p.Href = @href" + owned;
             byKey.Parameters.AddWithValue("@url", item.FeedUrl);
             byKey.Parameters.AddWithValue("@href", item.Href);
+            if (userId.HasValue) byKey.Parameters.AddWithValue("@userId", userId.Value);
             var found = byKey.ExecuteScalar();
             if (found is long id) return id;
         }
@@ -464,8 +479,9 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         if (long.TryParse(item.Id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
         {
             var byId = connection.CreateCommand();
-            byId.CommandText = "SELECT Id FROM Posts WHERE Id = @id";
+            byId.CommandText = "SELECT p.Id FROM Posts p WHERE p.Id = @id" + owned;
             byId.Parameters.AddWithValue("@id", parsed);
+            if (userId.HasValue) byId.Parameters.AddWithValue("@userId", userId.Value);
             if (byId.ExecuteScalar() is long id) return id;
         }
 
@@ -705,10 +721,13 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
     private void UpsertState(NewsFeedItem item, RssUser user, string flagColumn, string timeColumn, bool value)
     {
         using var connection = this.connections.OpenWrite();
-        var postId = ResolvePostId(connection, item);
+        // Scoped to the user: saving a post is how it becomes visible to them
+        // (OwnershipWhere admits any post with state), so an unscoped lookup
+        // would let anyone read any feed's posts by saving them by id first.
+        var postId = ResolvePostId(connection, item, user.Id);
         if (postId == null)
         {
-            this.logger.LogWarning("Cannot set {Flag} on unknown post {Href}", flagColumn, item.Href);
+            this.logger.LogWarning("Cannot set {Flag} for user {UserId}: post {Href} is unknown or not visible to them", flagColumn, user.Id, item.Href);
             return;
         }
 

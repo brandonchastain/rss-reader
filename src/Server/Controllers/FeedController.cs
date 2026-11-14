@@ -7,29 +7,26 @@ using RssApp.Serialization;
 using RssReader.Server.Services;
 using RssApp.RssClient;
 using System.Runtime.InteropServices;
+using Server.Authentication;
 
 namespace Server.Controllers
 {
-    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
-    public class FeedController : ControllerBase
+    public class FeedController : UserScopedController
     {
         // Minimum followers for a feed to be listed as popular. 1 = a plain top list;
         // raise it as the user base grows so a lone user's feed is not listed.
         private const int PopularFeedMinSubscribers = 1;
 
-        private readonly IUserRepository userRepository;
         private readonly IFeedRepository feedRepository;
         private readonly IFeedRefresher feedRefresher;
         private readonly IItemRepository itemRepository;
-        private readonly IUserResolver userResolver;
         private readonly FaviconService faviconService;
         private readonly OutboundUrlGuard urlGuard;
         private readonly ILogger<UserController> logger;
 
         public FeedController(
-            IUserRepository userRepository,
             IFeedRepository feedRepository,
             IFeedRefresher feedRefresher,
             IItemRepository itemRepository,
@@ -37,13 +34,12 @@ namespace Server.Controllers
             FaviconService faviconService,
             OutboundUrlGuard urlGuard,
             ILogger<UserController> logger)
+            : base(userResolver)
         {
             this.urlGuard = urlGuard ?? throw new ArgumentNullException(nameof(urlGuard));
-            this.userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
             this.feedRepository = feedRepository ?? throw new ArgumentNullException(nameof(feedRepository));
             this.feedRefresher = feedRefresher ?? throw new ArgumentNullException(nameof(feedRefresher));
             this.itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
-            this.userResolver = userResolver ?? throw new ArgumentNullException(nameof(userResolver));
             this.faviconService = faviconService ?? throw new ArgumentNullException(nameof(faviconService));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
@@ -71,26 +67,13 @@ namespace Server.Controllers
         public async Task<IActionResult> ImportOpmlAsync(OpmlImport import)
         {
             await Task.Yield();
-            var authenticatedUser = this.userResolver.ResolveUser(User);
-            if (authenticatedUser == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
-
-            if (import.UserId != authenticatedUser.Id)
+            if (!this.IsCaller(import.UserId))
             {
                 return StatusCode(403, "You can only import OPML for your own account.");
             }
 
-            var userId = import.UserId;
-            var opmlContent = import.OpmlContent;
-            var user = this.userRepository.GetUserById(userId);
-            if (user == null)
-            {
-                return NotFound($"User with ID '{userId}' not found.");
-            }
-
-            var feeds = OpmlSerializer.ParseOpmlContent(opmlContent, userId);
+            var user = this.CurrentUser;
+            var feeds = OpmlSerializer.ParseOpmlContent(import.OpmlContent, user.Id);
             this.feedRepository.AddFeeds(user, feeds);
             return Ok();
         }
@@ -100,25 +83,12 @@ namespace Server.Controllers
         public async Task<IActionResult> ExportOpmlAsync(int userId)
         {
             await Task.Yield();
-            var authenticatedUser = this.userResolver.ResolveUser(User);
-            if (authenticatedUser == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
-
-            if (userId != authenticatedUser.Id)
+            if (!this.IsCaller(userId))
             {
                 return StatusCode(403, "You can only export OPML for your own account.");
             }
 
-            var user = this.userRepository.GetUserById(userId);
-
-            if (user == null)
-            {
-                return NotFound($"User with ID '{userId}' not found.");
-            }
-
-            var feeds = this.feedRepository.GetFeeds(user);
+            var feeds = this.feedRepository.GetFeeds(this.CurrentUser);
             var fileContent = OpmlSerializer.GenerateOpmlContent(feeds);
 
             return Ok(fileContent);
@@ -129,12 +99,7 @@ namespace Server.Controllers
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public async Task<IActionResult> RefreshFeedsAsync()
         {
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             // Fire-and-forget: enqueue work and return immediately.
             await this.feedRefresher.RefreshAsync(user);
@@ -147,12 +112,7 @@ namespace Server.Controllers
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public IActionResult GetRefreshStatus()
         {
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             var status = this.feedRefresher.GetRefreshStatus(user);
             return Ok(status);
@@ -167,23 +127,12 @@ namespace Server.Controllers
                 return BadRequest("Feed data is required.");
             }
 
-            var authenticatedUser = this.userResolver.ResolveUser(User);
-            if (authenticatedUser == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
-
-            if (feed.UserId != authenticatedUser.Id)
+            if (!this.IsCaller(feed.UserId))
             {
                 return StatusCode(403, "You can only add tags to your own feeds.");
             }
 
-            var user = this.userRepository.GetUserById(feed.UserId);
-            if (user == null)
-            {
-                return NotFound($"User with ID '{feed.UserId}' not found.");
-            }
-
+            var user = this.CurrentUser;
             var existingFeed = this.feedRepository.GetFeed(user, feed.Href);
             if (existingFeed == null)
             {
@@ -225,18 +174,12 @@ namespace Server.Controllers
                 return BadRequest("Feed data is required.");
             }
 
-            var authenticatedUser = this.userResolver.ResolveUser(User);
-            if (authenticatedUser == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
-
-            if (feed.UserId != authenticatedUser.Id)
+            if (!this.IsCaller(feed.UserId))
             {
                 return StatusCode(403, "You can only remove tags from your own feeds.");
             }
 
-            var existingFeed = this.feedRepository.GetFeed(authenticatedUser, feed.Href);
+            var existingFeed = this.feedRepository.GetFeed(this.CurrentUser, feed.Href);
             if (existingFeed == null)
             {
                 return NotFound($"Feed with URL '{feed.Href}' not found.");
@@ -255,24 +198,12 @@ namespace Server.Controllers
         public async Task<IActionResult> GetUserTagsAsync(int userId)
         {
             await Task.Yield();
-            var authenticatedUser = this.userResolver.ResolveUser(User);
-            if (authenticatedUser == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
-
-            if (userId != authenticatedUser.Id)
+            if (!this.IsCaller(userId))
             {
                 return StatusCode(403, "You can only access your own tags.");
             }
 
-            var user = this.userRepository.GetUserById(userId);
-            if (user == null)
-            {
-                return NotFound($"User with ID '{userId}' not found.");
-            }
-
-            var tags = this.feedRepository.GetFeeds(user)
+            var tags = this.feedRepository.GetFeeds(this.CurrentUser)
                 .SelectMany(f => f.Tags)
                 .Where(f => !string.IsNullOrWhiteSpace(f))
                 .Distinct();
@@ -284,11 +215,7 @@ namespace Server.Controllers
         [Route("tagSettings")]
         public IActionResult GetTagSettings()
         {
-            var user = this.userResolver.ResolveUser(User);
-            if (user == null)
-            {
-                return NotFound("Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             var settings = this.feedRepository.GetTagSettings(user);
             return Ok(settings);
@@ -303,11 +230,7 @@ namespace Server.Controllers
                 return BadRequest("Tag setting is required.");
             }
 
-            var user = this.userResolver.ResolveUser(User);
-            if (user == null)
-            {
-                return NotFound("Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             this.feedRepository.SetTagHidden(user, setting.Tag, setting.IsHidden);
             var settings = this.feedRepository.GetTagSettings(user);
@@ -320,11 +243,7 @@ namespace Server.Controllers
         [Route("popular")]
         public IActionResult GetPopularFeeds([FromQuery] int limit = 10)
         {
-            var user = this.userResolver.ResolveUser(User);
-            if (user == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             limit = Math.Clamp(limit, 1, 50);
             return Ok(this.feedRepository.GetPopularFeeds(limit, PopularFeedMinSubscribers));
@@ -334,11 +253,7 @@ namespace Server.Controllers
         [HttpGet]
         public IActionResult GetFeeds()
         {
-            var user = this.userResolver.ResolveUser(User);
-            if (user == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             var feeds = this.feedRepository.GetFeeds(user);
             if (feeds == null)
@@ -363,13 +278,7 @@ namespace Server.Controllers
                 return BadRequest("Feed URL and User ID are required.");
             }
 
-            var authenticatedUser = this.userResolver.ResolveUser(User);
-            if (authenticatedUser == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
-
-            if (feed.UserId != authenticatedUser.Id)
+            if (!this.IsCaller(feed.UserId))
             {
                 return StatusCode(403, "You can only add feeds to your own account.");
             }
@@ -398,7 +307,7 @@ namespace Server.Controllers
                 // stored posts are visible to the new subscriber at once and no
                 // fetch happens; a brand-new row is fetched once, now, so the
                 // first subscriber does not wait for the scheduler.
-                var user = this.userRepository.GetUserById(feed.UserId);
+                var user = this.CurrentUser;
                 var existingFeed = this.feedRepository.GetFeed(user, feed.Href);
                 if (existingFeed == null)
                 {
@@ -406,7 +315,7 @@ namespace Server.Controllers
                     await this.feedRefresher.FetchNewFeedAsync(feed.Href);
                 }
 
-                return CreatedAtAction(nameof(GetFeeds), new { username = this.userRepository.GetUserById(feed.UserId)?.Username }, feed);
+                return CreatedAtAction(nameof(GetFeeds), new { username = user.Username }, feed);
             }
             catch (Exception ex)
             {
@@ -422,12 +331,7 @@ namespace Server.Controllers
         public async Task<IActionResult> DeleteFeedAsync([FromQuery]string href)
         {
             await Task.Yield();
-            var user = this.userResolver.ResolveUser(User);
-
-            if (user == null)
-            {
-                return NotFound($"Authenticated user not found.");
-            }
+            var user = this.CurrentUser;
 
             if (href == null)
             {

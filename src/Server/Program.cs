@@ -357,7 +357,7 @@ app.MapControllers();
 // serve it and let the Blazor router own every path the API does not.
 if (File.Exists(Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "index.html")))
 {
-    app.MapFallbackToFile("index.html");
+    app.MapFallbackToFile("index.html").AllowAnonymous();
 }
 app.MapGet("/api/healthz", async () =>
 {
