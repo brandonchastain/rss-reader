@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Durability integration test, BLOB-DURABILITY-SPEC.md 9.2. Runs the real image
+# Durability integration test. Runs the real image
 # against Azurite (blob). The replica is the only durable copy, so every writer
 # restores from it at startup. Each scenario first bootstraps a replica (one
 # writer with restore off, as a new environment would be given one by hand).
@@ -213,7 +213,7 @@ scenario_overlap() {
   pass "overlap: B waited in the gate without replicating and proceeded ${waited}s after A died"
 }
 
-# BLOB-DURABILITY-SPEC.md 3.2 v2: B asks on the handoff blob, A drains and hands
+# Cooperative handover: B asks on the handoff blob, A drains and hands
 # the lease over while still alive, B restores from the replica through
 # `litestream restore -f` and serves every row A acknowledged, A answers 503 to
 # writes, and A's later SIGTERM has nothing left to sync.

@@ -10,8 +10,8 @@ using RssApp.Config;
 namespace RssReader.Server.Services
 {
     /// <summary>
-    /// The new writer's side of the cooperative handover (BLOB-DURABILITY-SPEC.md 3.2 v2,
-    /// rollout step 3). While the startup gate answers the probe:
+    /// The new writer's side of the cooperative handover.
+    /// While the startup gate answers the probe:
     ///
     /// <list type="number">
     /// <item>start <c>litestream restore -f</c> into a staging file: the full restore runs

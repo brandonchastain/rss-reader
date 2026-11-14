@@ -29,11 +29,11 @@ if (config.IsTestUserEnabled && builder.Environment.IsProduction() && !config.Al
 }
 var dbConnections = new SqliteDbConnections(config.DbLocation);
 
-// Writer durability (BLOB-DURABILITY-SPEC.md): the live DB on local disk is restored from the
+// Writer durability: the live DB on local disk is restored from the
 // Litestream replica at startup and replicated back by a Litestream child of this process.
 var startupLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole().SetMinimumLevel(LogLevel.Information));
 
-// Blob writer lease (spec 3.4). Acquired while the gate below is answering the startup
+// Blob writer lease. Acquired while the gate below is answering the startup
 // probe, because the old revision only releases it after it has been told to stop, and it
 // is only told to stop once this revision's probe passes.
 var processStartedUtc = DateTimeOffset.UtcNow;
@@ -46,7 +46,7 @@ var leaseAcquire = writerLease == null
     ? Task.FromResult(false)
     : Task.Run(() => writerLease.AcquireAsync(leaseAcquireCts.Token));
 
-// Spec 3.2 steps 3 to 5, behind RssAppConfig:Durability:RestoreFromBlob: once the lease is
+// Behind RssAppConfig:Durability:RestoreFromBlob: once the lease is
 // held, restore /tmp from the Litestream replica. Without it (local development, the e2e
 // suite, a self-hosted box) there is no gate and SQLite creates the database on first use.
 if (config.Durability.RestoreFromBlob)
@@ -58,7 +58,7 @@ if (config.Durability.RestoreFromBlob)
             $"(LitestreamEnabled={config.Durability.LitestreamEnabled}, lease configured={writerLease != null}).");
     }
 
-    // Cooperative handover first (spec 3.2 v2): follow the replica while the old writer
+    // Cooperative handover first: follow the replica while the old writer
     // drains on request, so the lease wait is seconds rather than the platform's SIGTERM
     // delay. The gate's probe answers 503 until the follower's initial restore is on disk
     // (trafficReady), then 200.
@@ -107,7 +107,7 @@ if (config.Durability.RestoreFromBlob)
     }
 }
 
-// One-shot schema migration (DB-REDESIGN-SPEC.md section 7) before any
+// One-shot schema migration before any
 // repository opens the database. Runs inside one transaction and refuses to
 // start on failure; the legacy tables stay as Legacy_* until dropped by hand.
 var migrationState = LegacyMigration.RunIfNeeded(dbConnections, startupLoggerFactory.CreateLogger("LegacyMigration"));
@@ -161,8 +161,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownProxies.Clear();
 });
 
-// Add authn and authz: session cookie + one scheme per configured provider,
-// plus the Static Web Apps header scheme during the migration window.
+// Add authn and authz: session cookie + one scheme per configured provider.
 builder.Services.AddRssAuthentication(config);
 builder.Services.AddRssRateLimiting(config.Auth);
 
@@ -205,7 +204,7 @@ builder.Services
     .AddSingleton<RssDeserializer>()
     .AddSingleton<BackgroundWorkQueue>()
     // Hosted services stop in reverse registration order, so the shutdown sequence of
-    // BLOB-DURABILITY-SPEC.md 3.3 is this list read bottom-up: the retention service,
+    // The shutdown order is this list read bottom-up: the retention service,
     // feed scheduler and worker stop first (nothing writes after this); Litestream runs
     // the final sync; the blob lease is released (the next writer may now restore from
     // the replica).
@@ -224,7 +223,7 @@ builder.Services
     .AddSingleton<IFeedRefresher, FeedRefresher>()
     .AddHostedService<FeedScheduler>()
     .AddHostedService<PostRetentionService>()
-    // Cooperative handover, the running writer's side (spec 3.2 v2): when the next
+    // Cooperative handover, the running writer's side: when the next
     // revision asks on the handoff blob, stop the writers above, checkpoint, final
     // sync, acknowledge, release the lease.
     // Registered last so it is the first to stop and never races the shutdown order.
@@ -256,7 +255,7 @@ builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSe
 
 if (config.Durability.RestoreEnabled && writerLease != null)
 {
-    // Cooperative handover, the running writer's side (spec 3.2 v2): when the next
+    // Cooperative handover, the running writer's side: when the next
     // revision asks on the handoff blob, stop the feed scheduler, worker and retention
     // service, checkpoint, final Litestream sync, acknowledge with the transaction id,
     // release the lease. WriterHandoffService polls.
@@ -340,7 +339,7 @@ app.UseResponseCompression();
 app.UseStaticFiles();
 app.UseCors("Frontend");
 // After a cooperative handoff this revision no longer owns the database: mutating
-// requests get 503 until the platform stops it; reads keep working (spec 3.2 v2).
+// requests get 503 until the platform stops it; reads keep working.
 app.Use(WriterState.Middleware(writerState));
 // Cross-site request forgery: the session cookie is SameSite=None (the
 // frontend is another origin), so a state-changing request from a foreign
@@ -361,8 +360,8 @@ if (File.Exists(Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "index.ht
 }
 app.MapGet("/api/healthz", async () =>
 {
-    // Row counts for the nightly restore drill (BLOB-DURABILITY-SPEC.md 9.5), which
-    // compares them with the same counts in a restore of the blob replica. Cheap:
+    // Row counts, to compare by hand with the same counts in a restore of the blob
+    // replica. Cheap:
     // Posts and UserPostState have rowid tables; a count(*) on either is a btree walk
     // of a few milliseconds at the live size.
     DatabaseRowCounts counts;

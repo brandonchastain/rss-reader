@@ -6,7 +6,7 @@ using RssReader.Server.Services;
 namespace RssReaderTests;
 
 /// <summary>
-/// The new writer's side of the cooperative handover (BLOB-DURABILITY-SPEC.md 3.2 v2) with
+/// The new writer's side of the cooperative handover with
 /// the <c>litestream restore -f</c> process faked: the fake writes the database and the
 /// <c>-txid</c> sidecar the way 0.5.17 does, and the test moves the txid along.
 /// </summary>

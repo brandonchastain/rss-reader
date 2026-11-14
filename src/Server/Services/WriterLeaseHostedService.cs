@@ -9,7 +9,7 @@ namespace RssReader.Server.Services
 {
     /// <summary>
     /// Holds the <see cref="BlobWriterLease"/> for the life of the host and releases it on
-    /// shutdown (BLOB-DURABILITY-SPEC.md 3.3 step 5).
+    /// shutdown.
     ///
     /// The lease is acquired in <c>Program.cs</c> while the startup gate is answering the
     /// probe, so this service only reports at start and releases at stop. Stop order (hosted

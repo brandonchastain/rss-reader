@@ -6,7 +6,7 @@ using RssReader.Server.Services;
 namespace RssReaderTests;
 
 /// <summary>
-/// BLOB-DURABILITY-SPEC.md 9.1, "Lease wrapper", against Azurite. The connection string
+/// The lease wrapper against Azurite. The connection string
 /// comes from RSSREADER_TEST_AZURITE_CONNECTION (set in ci.yml, where Azurite is a service
 /// container); without it the tests are inconclusive rather than failing, so a plain
 /// `dotnet test` on a laptop still passes. Locally:

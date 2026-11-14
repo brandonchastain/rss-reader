@@ -19,7 +19,7 @@ namespace RssReader.Server.Services
     /// <c>litestream ltx -level all -json</c>, and what a restore would read from
     /// <c>litestream restore -dry-run</c>. Runs a minute after start and then every
     /// <see cref="DurabilityConfig.ReplicaReportInterval"/> (an hour).
-    /// BLOB-DURABILITY-SPEC.md rollout step 3: the restore chain must stay one snapshot plus at
+    /// The restore chain must stay one snapshot plus at
     /// most an hour of L0/L1 tail (L2 and L3 are off, see infrastructure/litestream.yml).
     /// </summary>
     public sealed class ReplicaChainReporter : BackgroundService

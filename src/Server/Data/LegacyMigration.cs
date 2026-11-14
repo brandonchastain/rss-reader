@@ -18,7 +18,7 @@ public sealed record MigrationState(
 
 /// <summary>
 /// The one-shot, in-place migration from the per-subscriber Items schema to
-/// the shared Posts schema (DB-REDESIGN-SPEC.md section 7). Runs once, on the
+/// the shared Posts schema. Runs once, on the
 /// writer, before the repositories open the database:
 ///
 ///  1. Guard: only when the legacy Items table exists, no Legacy_ table exists,
@@ -297,7 +297,7 @@ public static class LegacyMigration
                 GROUP BY i.UserId, m.PostId;
                 """);
 
-            // --- Verification (spec 7, "Verification inside the migration").
+            // --- Verification inside the migration.
             var oldPostGroups = Scalar(connection, tx, "SELECT count(*) FROM (SELECT 1 FROM Legacy_Items GROUP BY FeedUrl, COALESCE(Href, ''))");
             var newPosts = Scalar(connection, tx, "SELECT count(*) FROM Posts");
             Verify("posts", oldPostGroups, newPosts);

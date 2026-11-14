@@ -45,7 +45,7 @@ namespace RssReader.Server.Services
         public static bool IsMutating(string method) =>
             !(HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method));
 
-        /// <summary>Middleware: 503 for mutating requests once handed over (spec 3.2 v2 step 2).</summary>
+        /// <summary>Middleware: 503 for mutating requests once handed over.</summary>
         public static Func<HttpContext, RequestDelegate, Task> Middleware(WriterState state) => async (ctx, next) =>
         {
             if (state.IsHandedOver && IsMutating(ctx.Request.Method))

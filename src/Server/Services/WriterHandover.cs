@@ -9,15 +9,15 @@ using Microsoft.Extensions.Logging;
 namespace RssReader.Server.Services
 {
     /// <summary>
-    /// The running writer's side of a cooperative handover (BLOB-DURABILITY-SPEC.md 3.2 v2,
-    /// rollout step 3). When the next revision asks, before the platform's SIGTERM arrives:
+    /// The running writer's side of a cooperative handover.
+    /// When the next revision asks, before the platform's SIGTERM arrives:
     ///
     /// <list type="number">
     /// <item>refuse writes from now on (<see cref="WriterState"/>), stop the feed scheduler and worker;</item>
     /// <item><c>PRAGMA wal_checkpoint(TRUNCATE)</c>;</item>
     /// <item><c>litestream sync -wait</c> and stop the Litestream child (final transaction id from the sync);</item>
     /// <item>acknowledge on the handoff blob with that transaction id;</item>
-    /// <item>release the blob lease, stamping the transaction id on it (spec 3.3 step 5);</item>
+    /// <item>release the blob lease, stamping the transaction id on it;</item>
     /// <item>then, off the critical path, any <see cref="Steps.AfterReleaseAsync"/> work (none in production).</item>
     /// </list>
     ///

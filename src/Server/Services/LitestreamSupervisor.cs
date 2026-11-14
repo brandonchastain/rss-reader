@@ -10,12 +10,12 @@ using RssApp.Config;
 
 namespace RssReader.Server.Services
 {
-    /// <summary>Outcome of one <c>litestream sync</c> invocation (BLOB-DURABILITY-SPEC.md 3.3 step 4).</summary>
+    /// <summary>Outcome of one <c>litestream sync</c> invocation.</summary>
     public enum LitestreamSyncResult { Ok, Failed, TimedOut }
 
     /// <summary>
     /// The <c>litestream</c> command line, with the process behind an injectable runner so
-    /// tests can fake exit codes and hangs (spec 9.1, "Litestream process wrapper").
+    /// tests can fake exit codes and hangs.
     /// </summary>
     public sealed class LitestreamCli
     {
@@ -69,7 +69,7 @@ namespace RssReader.Server.Services
         /// <c>litestream restore -config CFG -o OUT DB</c>: a full restore of the replica that
         /// <paramref name="configPath"/> declares for <paramref name="dbPath"/>, written to
         /// <paramref name="outputPath"/> (which must not exist yet; Litestream refuses to
-        /// overwrite). Spec 3.2 step 4. Bounded by <paramref name="timeout"/>.
+        /// overwrite). Bounded by <paramref name="timeout"/>.
         /// </summary>
         public async Task<(LitestreamSyncResult Result, string Output)> RestoreAsync(
             string configPath, string dbPath, string outputPath, TimeSpan timeout, CancellationToken cancellationToken)
@@ -112,20 +112,20 @@ namespace RssReader.Server.Services
     }
 
     /// <summary>
-    /// Runs <c>litestream replicate</c> as a child of the app for the life of the host
-    /// (spec 3.1). The app, not the entrypoint, starts it: the startup gate seeds
+    /// Runs <c>litestream replicate</c> as a child of the app for the life of the host.
+    /// The app, not the entrypoint, starts it: the startup gate seeds
     /// <c>/tmp/storage.db</c> by renaming a staged copy into place, and Litestream must
-    /// open the file only after that (verification 11.3). SIGTERM therefore reaches the
+    /// open the file only after that. SIGTERM therefore reaches the
     /// app directly as PID 1, and this service stops the child in its own
     /// <see cref="StopAsync"/>.
     ///
-    /// Stop order (spec 3.3; hosted services stop in reverse registration order, see the
+    /// Stop order (hosted services stop in reverse registration order, see the
     /// registrations in Program.cs): the feed scheduler, worker and retention service stop
     /// first, so nothing is writing during the final sync; this service stops next; then
     /// the blob lease is released. First
     /// <c>litestream sync -wait</c> uploads the pending WAL (logged as "final sync OK"),
     /// then the child gets SIGTERM and performs its own shutdown sync as a safety net
-    /// (11.4) before exiting. The next writer restores from the replica only once it holds
+    /// before exiting. The next writer restores from the replica only once it holds
     /// the lease, so everything this sync uploaded is in that restore.
     ///
     /// An exited child is restarted with backoff; a Litestream failure is logged, never fatal,
@@ -236,7 +236,7 @@ namespace RssReader.Server.Services
         }
 
         /// <summary>
-        /// Spec 3.3 step 4, used both at host shutdown and at a cooperative handoff: one
+        /// Used both at host shutdown and at a cooperative handoff: one
         /// <c>litestream sync -wait</c>, then SIGTERM to the child and wait for it. Returns the
         /// replica transaction id the sync reported, when it did. Runs once; later calls
         /// return the first result.

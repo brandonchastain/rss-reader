@@ -1,42 +1,15 @@
 # Local testing
 
-Two processes make up the local stack, the same shape as production:
+The local stack has the same shape as production: the API on **8080** and the Blazor
+frontend on **8443**. Open <http://localhost:8443>. You are signed in as a test user, and
+no sign-in provider is needed.
 
-| Piece | Local | Port |
-|---|---|---|
-| API (`src/Server`) | `dotnet run` or Docker | 8080 |
-| Blazor frontend (`src/WasmApp`) | `dotnet watch run` dev server | 8443 |
+You need the .NET 10 SDK and Docker Desktop. Node is needed only for the browser tests,
+and k6 only for the load tests.
 
-Open **http://localhost:8443**. The Debug build ships `appsettings.Development.json`
-with `ApiBaseUrl` pointing at `http://localhost:8080/`, and the API's Development
-settings allow that origin. Hard-refresh (Ctrl+Shift+R) after a rebuild, because the
-Blazor service worker caches aggressively.
+## Run
 
-## Login
-
-Two options:
-
-- **Test user (default).** `appsettings.Development.json` for the API sets
-  `IsTestUserEnabled: true`, so every request is the test user and the frontend goes
-  straight to the timeline. No provider needed.
-- **A real provider.** Register a GitHub OAuth app with callback
-  `http://localhost:8080/auth/callback/github`, then run the API with
-  `RssAppConfig__IsTestUserEnabled=false` and
-  `RssAppConfig__Auth__Providers__github__ClientId` / `__ClientSecret` set. The home
-  page offers the configured providers. Google and Microsoft work the same way.
-
-The API's session cookie is `SameSite=Lax` in Development (both ports are the same
-site, `localhost`), `None; Secure` in production.
-
-## 1. Backend
-
-```powershell
-$env:ASPNETCORE_ENVIRONMENT = "Development"
-dotnet run --project src/Server/Server.csproj --no-launch-profile --urls http://localhost:8080
-```
-
-The database is wherever `RssAppConfig:DbLocation` points in
-`appsettings.Development.json`. To run the production image instead:
+Start the API, either in Docker (the production image) or with `dotnet run`:
 
 ```powershell
 docker build -f src/Server/Dockerfile -t rss-reader-api:local .
@@ -48,45 +21,52 @@ docker run -d --name rss-reader-test -p 8080:8080 `
   rss-reader-api:local
 ```
 
-The database is thrown away with the container. To keep it between runs, add
-`-v C:\dev\rssreader\docker-data:/data` and `-e RssAppConfig__DbLocation=/data/storage.db`.
-
-Confirm with:
-
 ```powershell
-Invoke-WebRequest http://localhost:8080/api/healthz -UseBasicParsing
-Invoke-WebRequest http://localhost:8080/auth/me -UseBasicParsing
+# or: no Docker, uses src/Server/appsettings.Development.json
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+dotnet run --project src/Server/Server.csproj --no-launch-profile --urls http://localhost:8080
 ```
 
-## 2. Frontend
+Then start the frontend. Wait until the API is up first, because both build `src/Shared`
+and would race:
 
 ```powershell
-dotnet watch run --project src/WasmApp/WasmApp.csproj --no-launch-profile --urls http://localhost:8443
+dotnet run -c Debug --project src/WasmApp/WasmApp.csproj
 ```
 
-Edits to `.razor` files hot-reload. Start the two processes one after the other, not
-in parallel: both build `src/Shared` and race on its output.
+Use a **Debug** build. A Release build leaves out `appsettings.Development.json`, so the
+frontend would call the production API.
 
-### From a git worktree
+The Docker database is lost with the container. To keep it, add
+`-v C:\dev\rssreader\docker-data:/data -e RssAppConfig__DbLocation=/data/storage.db`.
 
-The `.claude/launch.json` entries in the main checkout start the pieces separately
-(`rss-api`, `rss-wasm`) and point at a worktree path; update that path when you switch
-worktrees. Stale `blazor-devserver` processes can hold 8443 and keep serving an old
-build; kill them before restarting.
+## Sign in with a real provider
 
-## 3. Tests
+1. Register a GitHub OAuth app with callback `http://localhost:8080/auth/callback/github`.
+2. Run the API with `RssAppConfig__IsTestUserEnabled=false`.
+3. Set `RssAppConfig__Auth__Providers__github__ClientId` and `__ClientSecret`.
+
+Google and Microsoft work the same way.
+
+## Test
 
 ```powershell
-dotnet test test/RssReaderTests/RssReaderTests.csproj
+dotnet test test/RssReaderTests/RssReaderTests.csproj --filter "TestCategory!=Network"
 ```
 
-Tests that fetch live third-party feeds are tagged `Network` and excluded in CI; run
-them with `--filter TestCategory=Network`. The load scenarios under `test/load/` run
-against a local stack; see [test/load/REPORT.md](test/load/REPORT.md).
+- The filter skips tests that fetch live feeds.
+- The writer-lease tests need Azurite and `RSSREADER_TEST_AZURITE_CONNECTION` (see
+  `.github/workflows/ci.yml`). Without them, those tests are inconclusive.
+- Browser tests: [test/e2e/README.md](test/e2e/README.md).
+- Durability test (Docker, real Litestream): `bash test/durability/run.sh`.
+- Load tests: [test/load/README.md](test/load/README.md).
 
-## Stopping
+## Stop
 
 ```powershell
 docker rm -f rss-reader-test
 Get-Process -Name Server, blazor-devserver -ErrorAction SilentlyContinue | Stop-Process
 ```
+
+A leftover `blazor-devserver` process can keep port 8443 and serve an old build. Kill it
+before restarting.

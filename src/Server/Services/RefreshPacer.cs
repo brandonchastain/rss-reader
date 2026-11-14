@@ -15,7 +15,7 @@ namespace RssReader.Server.Services;
 /// measured alongside this and dropped: alone it moved p95 at 50 req/s from 513 ms to
 /// only 429 ms, because the pipeline is usually empty at the instant of the check and the
 /// parse that then starts runs to completion, and under load it held budgets below
-/// nominal. See test/load/REPORT.md, "Refresh pacing".
+/// nominal. See test/load/README.md.
 ///
 /// The clock and the delay are injectable so the tests run in milliseconds.
 /// </summary>

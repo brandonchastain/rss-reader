@@ -16,8 +16,7 @@ namespace WasmApp.Services;
 public interface IPostCache
 {
     /// <summary>
-    /// Cache partition key. Set from the Easy Auth identity, which resolves
-    /// against the always-warm Static Web App rather than the container.
+    /// Cache partition key. Set from the signed-in identity (/auth/me).
     /// </summary>
     string Username { get; set; }
 

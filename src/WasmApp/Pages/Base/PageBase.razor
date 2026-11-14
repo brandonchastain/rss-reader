@@ -41,8 +41,7 @@
         }
     }
 
-    // Resolves the cache partition key from the Easy Auth identity, which is
-    // served by the Static Web App and stays warm while the container is asleep.
+    // Resolves the cache partition key from the signed-in identity (/auth/me).
     // Also sweeps slots left by another user or an older cache version.
     protected async Task<string> EnsureCacheIdentityAsync()
     {

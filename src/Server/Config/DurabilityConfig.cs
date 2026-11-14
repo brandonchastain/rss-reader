@@ -3,7 +3,7 @@ using System;
 namespace RssApp.Config
 {
     /// <summary>
-    /// Blob-storage durability (BLOB-DURABILITY-SPEC.md): the writer lease and the
+    /// Blob-storage durability: the writer lease and the
     /// Litestream child that replicates the live database to blob. Bound from
     /// <c>RssAppConfig:Durability</c>. Everything is off until
     /// <see cref="BlobServiceUri"/> or <see cref="ConnectionString"/> is set, which is
@@ -12,7 +12,7 @@ namespace RssApp.Config
     /// The Litestream replica is the only durable copy of the database: with
     /// <see cref="RestoreFromBlob"/> on, startup restores the live database from it once the
     /// lease is held, and a restore that fails stops the container (it restarts and tries
-    /// again). The Azure Files share and its lock file are gone (spec section 8, step 5).
+    /// again). The Azure Files share and its lock file are gone.
     /// </summary>
     public class DurabilityConfig
     {
@@ -31,7 +31,7 @@ namespace RssApp.Config
         /// <summary>Blob container holding the writer lease blob.</summary>
         public string LeaseContainer { get; set; } = "litestream";
 
-        /// <summary>Name of the blob whose lease is the writer lock (spec 3.4).</summary>
+        /// <summary>Name of the blob whose lease is the writer lock.</summary>
         public string LeaseBlob { get; set; } = "writer-lease";
 
         /// <summary>Lease duration; the service allows 15 to 60 seconds. Expires server-side without a release.</summary>
@@ -63,14 +63,14 @@ namespace RssApp.Config
         public TimeSpan ReplicaReportInterval { get; set; } = TimeSpan.FromHours(1);
 
         /// <summary>
-        /// Upper bound for the final replica sync on shutdown (spec 3.3 step 4). Litestream's
+        /// Upper bound for the final replica sync on shutdown. Litestream's
         /// own shutdown sync retries for up to its <c>shutdown-sync-timeout</c> (30 s default)
         /// after the child is told to stop; this bounds how long the host waits for it.
         /// </summary>
         public TimeSpan FinalSyncTimeout { get; set; } = TimeSpan.FromSeconds(20);
 
         /// <summary>
-        /// Spec 3.2 steps 3 to 5: once the blob lease is held, restore the live database from
+        /// Once the blob lease is held, restore the live database from
         /// the Litestream replica (<c>litestream restore</c>, then <c>PRAGMA quick_check</c>).
         /// Needs <see cref="LitestreamEnabled"/> and the lease. Off means no restore and no
         /// startup gate: local development and the e2e suite, where SQLite creates the file.
@@ -83,10 +83,10 @@ namespace RssApp.Config
         /// </summary>
         public TimeSpan RestoreTimeout { get; set; } = TimeSpan.FromSeconds(180);
 
-        /// <summary>True when startup should try the replica first (spec 3.2 step 4).</summary>
+        /// <summary>True when startup should try the replica first.</summary>
         public bool RestoreEnabled => RestoreFromBlob && LitestreamEnabled && LeaseEnabled;
 
-        // Cooperative handover (spec 3.2 "v2" plus a handoff marker). All under RestoreFromBlob.
+        // Cooperative handover (a handoff marker blob). All under RestoreFromBlob.
 
         /// <summary>Blob in <see cref="LeaseContainer"/> carrying the handoff request and its acknowledgement.</summary>
         public string HandoffBlob { get; set; } = "writer-handoff";

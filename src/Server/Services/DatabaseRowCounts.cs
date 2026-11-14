@@ -6,7 +6,7 @@ using RssApp.Data;
 namespace RssReader.Server.Services
 {
     /// <summary>
-    /// The numbers the restore check at cutover compares (BLOB-DURABILITY-SPEC.md 9.5):
+    /// Row counts to compare a restore against the live writer:
     /// reported on <c>/api/healthz</c> by the live writer and computed with the same
     /// SQL on a restore of the replica, by hand.
     /// </summary>

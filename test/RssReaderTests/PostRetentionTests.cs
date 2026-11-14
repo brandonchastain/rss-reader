@@ -4,7 +4,7 @@ using RssReader.Server.Services;
 
 namespace RssReaderTests;
 
-/// <summary>Nightly retention (DB-REDESIGN-SPEC.md section 4): saved posts survive, orphan feeds go after the grace period.</summary>
+/// <summary>Nightly retention: saved posts survive, orphan feeds go after the grace period.</summary>
 [TestClass]
 public sealed class PostRetentionTests
 {

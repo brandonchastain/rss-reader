@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Request latency during a feed-refresh cycle (REPORT.md, "Refresh pacing"). Run from Git Bash with
+# Request latency during a feed-refresh cycle (see README.md). Run from Git Bash with
 # MSYS_NO_PATHCONV=1 and Docker Desktop running. Needs an image to measure and a database copy.
 #   DB=../../dbcopy/storage.db test/load/refresh-pacing.sh prepare
 #       one-time: Docker network 11.11.0.0/24, eight synthetic feed origins (lib/feedserver.py), a prepared
