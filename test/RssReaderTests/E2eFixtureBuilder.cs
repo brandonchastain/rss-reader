@@ -92,7 +92,7 @@ public sealed class E2eFixtureBuilder
         }
 
         // Fold the write-ahead log into the file so it can be copied on its own.
-        using (var c = connections.OpenWrite())
+        using (var c = await connections.OpenWriteAsync())
         {
             DatabaseSchema.Execute(c, "PRAGMA wal_checkpoint(TRUNCATE);");
         }

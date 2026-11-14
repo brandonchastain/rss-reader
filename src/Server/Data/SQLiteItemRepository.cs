@@ -541,7 +541,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                 lookup.Transaction = transaction;
                 lookup.CommandText = "SELECT Id FROM Feeds WHERE Url = @url";
                 lookup.Parameters.AddWithValue("@url", url);
-                feedIds[url] = lookup.ExecuteScalar() as long?;
+                feedIds[url] = await lookup.ExecuteScalarAsync() as long?;
                 if (feedIds[url] == null)
                 {
                     this.logger.LogWarning("No feed row for {Url}; its {Count} items were not stored", url, itemList.Count(i => i.FeedUrl == url));

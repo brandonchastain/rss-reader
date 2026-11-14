@@ -251,7 +251,7 @@ public sealed class LegacyMigrationTests
             Assert.AreEqual(17, Count(c, "SELECT count(*) FROM Posts"));
             using var check = c.CreateCommand();
             check.CommandText = "PRAGMA integrity_check";
-            Assert.AreEqual("ok", check.ExecuteScalar() as string);
+            Assert.AreEqual("ok", await check.ExecuteScalarAsync() as string);
         }
     }
 

@@ -16,7 +16,7 @@ public class DatabaseRowCountsTests
         {
             using (var conn = new SqliteConnection($"Data Source={path}"))
             {
-                conn.Open();
+                await conn.OpenAsync();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     CREATE TABLE Posts (Id INTEGER PRIMARY KEY, Title TEXT);
@@ -25,7 +25,7 @@ public class DatabaseRowCountsTests
                     INSERT INTO Posts (Id) VALUES (3), (10), (42);
                     INSERT INTO Subscriptions (Id) VALUES (1), (2);
                     INSERT INTO UserPostState VALUES (1, 3);";
-                cmd.ExecuteNonQuery();
+                await cmd.ExecuteNonQueryAsync();
             }
 
             var counts = await DatabaseRowCounts.ReadAsync(new SqliteDbConnections(path));

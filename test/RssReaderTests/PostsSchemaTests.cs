@@ -148,7 +148,7 @@ public sealed class PostsSchemaTests
         await db.AddPosts("https://plan.example.com/f", 50);
         db.Execute("ANALYZE;");
 
-        using var connection = db.Connections.OpenRead();
+        using var connection = await db.Connections.OpenReadAsync();
         using var command = SQLiteItemRepository.BuildSearchCommand(connection, "post", user, 0, 20, useFts: true);
         var plan = ExplainPlan(connection, command);
         StringAssert.Contains(plan, "Posts_fts", plan);
@@ -267,7 +267,7 @@ public sealed class PostsSchemaTests
         }
         db.Execute("ANALYZE;");
 
-        using var connection = db.Connections.OpenRead();
+        using var connection = await db.Connections.OpenReadAsync();
         foreach (var (unread, cursor) in new[] { (false, false), (true, false), (false, true), (true, true) })
         {
             using var command = SQLiteItemRepository.BuildTimelineCommand(
@@ -521,12 +521,12 @@ public sealed class PostsSchemaTests
 
         // Reference: the old implementation's ordering, PublishDateOrder DESC then Id DESC.
         var reference = new List<(long Order, long Id)>();
-        using (var c = db.Connections.OpenRead())
+        using (var c = await db.Connections.OpenReadAsync())
         {
             var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT PublishDateOrder, Id FROM Posts";
-            using var r = cmd.ExecuteReader();
-            while (r.Read()) reference.Add((r.GetInt64(0), r.GetInt64(1)));
+            using var r = await cmd.ExecuteReaderAsync();
+            while (await r.ReadAsync()) reference.Add((r.GetInt64(0), r.GetInt64(1)));
         }
         var expected = reference.OrderByDescending(p => p.Order).ThenByDescending(p => p.Id).Select(p => p.Id.ToString()).ToList();
 

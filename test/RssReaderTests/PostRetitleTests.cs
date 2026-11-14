@@ -85,10 +85,10 @@ public sealed class PostRetitleTests
         // As if stored before this change: no guids at all.
         using (var connection = new SqliteConnection($"Data Source={db}"))
         {
-            connection.Open();
+            await connection.OpenAsync();
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "UPDATE Posts SET Guid = NULL";
-            cmd.ExecuteNonQuery();
+            await cmd.ExecuteNonQueryAsync();
         }
 
         var result = await repo.UpsertItemsAsync(items);

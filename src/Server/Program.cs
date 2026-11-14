@@ -282,7 +282,7 @@ if (config.Durability.RestoreEnabled && writerLease != null)
             },
             CheckpointAsync = async ct =>
             {
-                using var conn = dbConnections.OpenWrite();
+                using var conn = await dbConnections.OpenWriteAsync();
                 using var cmd = conn.CreateCommand();
                 // Busy timeout 2 s: an in-flight read keeps TRUNCATE from completing and
                 // the pragma then reports busy rather than failing; the final sync carries

@@ -163,7 +163,7 @@ public class WriterStartupGateTests
             await Task.Delay(20);
         }
         Assert.IsTrue(PortAccepts(port), "gate should be listening before it is cancelled");
-        cts.Cancel();
+        await cts.CancelAsync();
 
         try
         {
