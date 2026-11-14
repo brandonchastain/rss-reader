@@ -114,15 +114,30 @@ namespace RssApp.Config
         /// </summary>
         public TimeSpan HandoffProbeHold { get; set; } = TimeSpan.FromSeconds(30);
 
-        /// <summary>Polling interval of <c>litestream restore -f</c> on the new writer.</summary>
-        public TimeSpan FollowInterval { get; set; } = TimeSpan.FromMilliseconds(500);
+        /// <summary>
+        /// Polling interval of <c>litestream restore -f</c> on the new writer. The follower
+        /// applies one LTX file (one transaction id) per tick, so this sets the catch-up rate:
+        /// at 500 ms a backlog of 50 transactions took 25 s. With the 30 min sync interval the
+        /// old writer's final sync can upload that many at once (2026-11-14 RCA).
+        /// </summary>
+        public TimeSpan FollowInterval { get; set; } = TimeSpan.FromMilliseconds(100);
 
         /// <summary>
-        /// After the lease is held, how long the new writer waits for the follower to reach the
-        /// transaction id the old writer recorded (or, with no acknowledgement, to go quiet)
-        /// before giving up on the followed copy and taking a fresh full restore.
+        /// After the lease is held, the most the new writer waits for the follower to reach the
+        /// transaction id the old writer recorded (or, with no acknowledgement, to go quiet).
+        /// On timeout startup fails and the restarted container restores from scratch, which
+        /// costs about a minute more, so this is a ceiling, not the expected wait: the wait
+        /// ends early once the follower is caught up or stops advancing
+        /// (<see cref="CatchUpStallTimeout"/>).
         /// </summary>
-        public TimeSpan CatchUpTimeout { get; set; } = TimeSpan.FromSeconds(20);
+        public TimeSpan CatchUpTimeout { get; set; } = TimeSpan.FromSeconds(90);
+
+        /// <summary>
+        /// With an acknowledged target, give up once the follower's transaction id has not
+        /// advanced for this long. Covers the follower downloading a large LTX file before it
+        /// applies it (about 7 s was seen in production).
+        /// </summary>
+        public TimeSpan CatchUpStallTimeout { get; set; } = TimeSpan.FromSeconds(20);
 
         /// <summary>With no acknowledgement to compare against, the follower counts as caught up once its txid has not moved for this long.</summary>
         public TimeSpan CatchUpQuietPeriod { get; set; } = TimeSpan.FromSeconds(2);

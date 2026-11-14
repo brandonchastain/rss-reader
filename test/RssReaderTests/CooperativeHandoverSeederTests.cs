@@ -321,11 +321,13 @@ public class CooperativeHandoverSeederTests
 
     // The tail wait on its own.
 
+    private static readonly TimeSpan NoStall = TimeSpan.FromMinutes(1);
+
     [TestMethod]
     public async Task WaitForCatchUp_TargetReached_True()
     {
         long? txid = 5;
-        var task = CooperativeHandoverSeeder.WaitForCatchUpAsync(() => txid, () => false, 7, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), CancellationToken.None);
+        var task = CooperativeHandoverSeeder.WaitForCatchUpAsync(() => txid, () => false, 7, TimeSpan.FromSeconds(5), NoStall, TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), CancellationToken.None);
         await Task.Delay(60);
         Assert.IsFalse(task.IsCompleted);
         txid = 7;
@@ -335,20 +337,58 @@ public class CooperativeHandoverSeederTests
     [TestMethod]
     public async Task WaitForCatchUp_TargetAheadOfAck_TrueImmediately()
     {
-        Assert.IsTrue(await CooperativeHandoverSeeder.WaitForCatchUpAsync(() => 9, () => false, 7, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), CancellationToken.None));
+        Assert.IsTrue(await CooperativeHandoverSeeder.WaitForCatchUpAsync(() => 9, () => false, 7, TimeSpan.FromSeconds(1), NoStall, TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), CancellationToken.None));
     }
 
     [TestMethod]
     public async Task WaitForCatchUp_Timeout_False()
     {
-        Assert.IsFalse(await CooperativeHandoverSeeder.WaitForCatchUpAsync(() => 5, () => false, 7, TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), CancellationToken.None));
+        Assert.IsFalse(await CooperativeHandoverSeeder.WaitForCatchUpAsync(() => 5, () => false, 7, TimeSpan.FromMilliseconds(200), NoStall, TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task WaitForCatchUp_Stalled_FalseBeforeCeiling()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Assert.IsFalse(await CooperativeHandoverSeeder.WaitForCatchUpAsync(() => 5, () => false, 7, TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), CancellationToken.None));
+        Assert.IsTrue(sw.Elapsed < TimeSpan.FromSeconds(5), $"gave up after {sw.Elapsed}; expected the stall timeout, not the ceiling");
+    }
+
+    [TestMethod]
+    public async Task WaitForCatchUp_SlowButAdvancing_KeepsWaitingPastStallTimeout()
+    {
+        // The 2026-11-14 failure: the follower applies one txid per tick and the backlog takes
+        // longer than any single stall window. While it advances, the wait goes on.
+        long txid = 0;
+        var advance = Task.Run(async () =>
+        {
+            while (Interlocked.Read(ref txid) < 20)
+            {
+                await Task.Delay(50);
+                Interlocked.Increment(ref txid);
+            }
+        });
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var ok = await CooperativeHandoverSeeder.WaitForCatchUpAsync(() => Interlocked.Read(ref txid), () => false, 20,
+            TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(300), TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), CancellationToken.None);
+        await advance;
+        Assert.IsTrue(ok);
+        Assert.IsTrue(sw.Elapsed > TimeSpan.FromMilliseconds(600), $"the backlog should outlast the stall window twice over; took {sw.Elapsed}");
+    }
+
+    [TestMethod]
+    public async Task WaitForCatchUp_NoTarget_StallTimeoutDoesNotApply()
+    {
+        // Without an acknowledgement, a txid that stops moving means caught up, not stuck.
+        Assert.IsTrue(await CooperativeHandoverSeeder.WaitForCatchUpAsync(() => 5, () => false, null,
+            TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(10), CancellationToken.None));
     }
 
     [TestMethod]
     public async Task WaitForCatchUp_FollowerDied_False()
     {
         var exited = false;
-        var task = CooperativeHandoverSeeder.WaitForCatchUpAsync(() => 5, () => exited, 7, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), CancellationToken.None);
+        var task = CooperativeHandoverSeeder.WaitForCatchUpAsync(() => 5, () => exited, 7, TimeSpan.FromSeconds(5), NoStall, TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), CancellationToken.None);
         exited = true;
         Assert.IsFalse(await task.WaitAsync(TimeSpan.FromSeconds(2)));
     }
@@ -357,7 +397,7 @@ public class CooperativeHandoverSeederTests
     public async Task WaitForCatchUp_NoTarget_TrueOnceQuiet_ResetsWhileMoving()
     {
         long? txid = 5;
-        var task = CooperativeHandoverSeeder.WaitForCatchUpAsync(() => txid, () => false, null, TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(10), CancellationToken.None);
+        var task = CooperativeHandoverSeeder.WaitForCatchUpAsync(() => txid, () => false, null, TimeSpan.FromSeconds(5), NoStall, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(10), CancellationToken.None);
         await Task.Delay(150); txid = 6;
         await Task.Delay(150); txid = 7;
         await Task.Delay(150);
@@ -368,7 +408,7 @@ public class CooperativeHandoverSeederTests
     [TestMethod]
     public async Task WaitForCatchUp_NoTxidYet_WaitsThenTimesOut()
     {
-        Assert.IsFalse(await CooperativeHandoverSeeder.WaitForCatchUpAsync(() => null, () => false, null, TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10), CancellationToken.None));
+        Assert.IsFalse(await CooperativeHandoverSeeder.WaitForCatchUpAsync(() => null, () => false, null, TimeSpan.FromMilliseconds(200), NoStall, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10), CancellationToken.None));
     }
 
     [TestMethod]

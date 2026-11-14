@@ -31,7 +31,8 @@ namespace RssReader.Server.Services
     ///   on any failure;</item>
     /// <item>acquire the lease;</item>
     /// <item>wait until the follower has applied up to the acknowledged transaction id (with
-    ///   no acknowledgement, until it goes quiet), bounded by <see cref="DurabilityConfig.CatchUpTimeout"/>;</item>
+    ///   no acknowledgement, until it goes quiet), for as long as it keeps advancing
+    ///   (<see cref="DurabilityConfig.CatchUpStallTimeout"/>) up to <see cref="DurabilityConfig.CatchUpTimeout"/>;</item>
     /// <item>stop the follower, <c>PRAGMA quick_check</c>, rename over the live path.</item>
     /// </list>
     ///
@@ -187,11 +188,14 @@ namespace RssReader.Server.Services
                     _logger.LogWarning(ex, "Handover: could not read the acknowledgement; waiting for the replica to go quiet.");
                 }
 
-                var caughtUp = await WaitForCatchUpAsync(follower.ReadTxid, () => follower.HasExited, target, _config.CatchUpTimeout, _config.CatchUpQuietPeriod, PollInterval, cancellationToken);
+                var catchUpStart = sw.Elapsed;
+                var caughtUp = await WaitForCatchUpAsync(follower.ReadTxid, () => follower.HasExited, target,
+                    _config.CatchUpTimeout, _config.CatchUpStallTimeout, _config.CatchUpQuietPeriod, PollInterval, cancellationToken);
                 if (!caughtUp)
                 {
-                    _logger.LogError("Handover: follower at txid {Txid} did not reach {Target} within {Timeout}.",
-                        follower.ReadTxid()?.ToString() ?? "none", target?.ToString() ?? "quiet", _config.CatchUpTimeout);
+                    _logger.LogError("Handover: follower at txid {Txid} did not reach {Target} after {Waited:N0} ms (ceiling {Timeout}, gives up after {Stall} without progress, follower exited={Exited}).",
+                        follower.ReadTxid()?.ToString() ?? "none", target?.ToString() ?? "quiet", (sw.Elapsed - catchUpStart).TotalMilliseconds,
+                        _config.CatchUpTimeout, _config.CatchUpStallTimeout, follower.HasExited);
                     return false;
                 }
                 var finalTxid = follower.ReadTxid();
@@ -252,12 +256,16 @@ namespace RssReader.Server.Services
 
         /// <summary>
         /// Wait for the follower to reach <paramref name="target"/>, or, when there is none,
-        /// for its transaction id to stay put for <paramref name="quietPeriod"/>. False on
-        /// timeout or if the follower dies. Pure logic, exposed for tests.
+        /// for its transaction id to stay put for <paramref name="quietPeriod"/>. False if the
+        /// follower dies, if it has a target and its transaction id has not advanced for
+        /// <paramref name="stallTimeout"/>, or at <paramref name="timeout"/> regardless. A
+        /// follower that keeps applying is given the time it needs, up to the ceiling: the
+        /// backlog after the old writer's final sync varies with how long ago it last synced.
+        /// Pure logic, exposed for tests.
         /// </summary>
         public static async Task<bool> WaitForCatchUpAsync(
             Func<long?> readTxid, Func<bool> hasExited, long? target,
-            TimeSpan timeout, TimeSpan quietPeriod, TimeSpan poll, CancellationToken cancellationToken)
+            TimeSpan timeout, TimeSpan stallTimeout, TimeSpan quietPeriod, TimeSpan poll, CancellationToken cancellationToken)
         {
             var deadline = DateTimeOffset.UtcNow + timeout;
             var last = readTxid();
@@ -273,6 +281,7 @@ namespace RssReader.Server.Services
                 }
                 if (hasExited()) return false;
                 if (DateTimeOffset.UtcNow >= deadline) return false;
+                if (target != null && DateTimeOffset.UtcNow - lastChange >= stallTimeout) return false;
                 await Task.Delay(poll, cancellationToken);
             }
         }
