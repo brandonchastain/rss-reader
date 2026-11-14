@@ -18,11 +18,11 @@ namespace RssApp.Serialization;
 /// </summary>
 public static class MediaImagePicker
 {
-    public static string PickBest(
-        IEnumerable<MediaContent> contents,
-        IEnumerable<MediaContent> thumbnails,
-        IEnumerable<MediaGroup> groups,
-        RssEnclosure enclosure)
+    public static string? PickBest(
+        IEnumerable<MediaContent>? contents,
+        IEnumerable<MediaContent>? thumbnails,
+        IEnumerable<MediaGroup>? groups,
+        RssEnclosure? enclosure)
     {
         var groupList = groups ?? Enumerable.Empty<MediaGroup>();
         var allContents = (contents ?? Enumerable.Empty<MediaContent>())
@@ -42,9 +42,9 @@ public static class MediaImagePicker
     /// is given. Unsized elements rank below any sized element but still win when
     /// nothing is sized; ties keep document order.
     /// </summary>
-    private static string Largest(IEnumerable<MediaContent> candidates)
+    private static string? Largest(IEnumerable<MediaContent> candidates)
     {
-        MediaContent best = null;
+        MediaContent? best = null;
         long bestScore = -1;
         foreach (var candidate in candidates)
         {
@@ -74,7 +74,7 @@ public static class MediaImagePicker
         return 0;
     }
 
-    private static long ParseSize(string value) =>
+    private static long ParseSize(string? value) =>
         long.TryParse(value?.Trim(), out var n) && n > 0 ? n : 0;
 
     /// <summary>

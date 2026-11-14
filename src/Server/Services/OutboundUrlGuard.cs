@@ -150,7 +150,7 @@ public sealed class OutboundUrlGuard
         this.resolve = resolve ?? throw new ArgumentNullException(nameof(resolve));
     }
 
-    public async Task ValidateAsync(Uri uri, CancellationToken token = default)
+    public async Task ValidateAsync(Uri? uri, CancellationToken token = default)
     {
         if (uri == null || !uri.IsAbsoluteUri)
         {

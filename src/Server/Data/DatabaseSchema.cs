@@ -186,7 +186,7 @@ public static class DatabaseSchema
         return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
     }
 
-    public static void Execute(SqliteConnection connection, string sql, SqliteTransaction transaction = null)
+    public static void Execute(SqliteConnection connection, string sql, SqliteTransaction? transaction = null)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
@@ -194,7 +194,7 @@ public static class DatabaseSchema
         cmd.ExecuteNonQuery();
     }
 
-    public static long Scalar(SqliteConnection connection, string sql, SqliteTransaction transaction = null)
+    public static long Scalar(SqliteConnection connection, string sql, SqliteTransaction? transaction = null)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;

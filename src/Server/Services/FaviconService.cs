@@ -28,7 +28,7 @@ public class FaviconService
     /// it on first request. Returns null if the domain is invalid or the icon
     /// cannot be fetched.
     /// </summary>
-    public async Task<string> GetFaviconPathAsync(string domain)
+    public async Task<string?> GetFaviconPathAsync(string? domain)
     {
         var safe = SanitizeDomain(domain);
         if (safe == null)
@@ -74,7 +74,7 @@ public class FaviconService
     }
 
     /// <summary>Allow only plausible hostnames (letters, digits, dot, hyphen) to keep this off the filesystem/SSRF surface.</summary>
-    private static string SanitizeDomain(string domain)
+    private static string? SanitizeDomain(string? domain)
     {
         if (string.IsNullOrWhiteSpace(domain))
         {

@@ -21,7 +21,7 @@ public sealed class CachingItemRepository : IItemRepository
 
     private readonly ItemsChangeStamp _stamp;
 
-    public CachingItemRepository(IItemRepository inner, IMemoryCache cache, ItemsChangeStamp stamp = null)
+    public CachingItemRepository(IItemRepository inner, IMemoryCache cache, ItemsChangeStamp? stamp = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
@@ -36,10 +36,10 @@ public sealed class CachingItemRepository : IItemRepository
     /// Content is shared by every subscriber, so the key is the post itself
     /// (<c>itemcontent:{FeedUrl}|{Href}</c>) — 1-hour absolute expiration.
     /// Null/empty results are NOT cached.
-    public string GetItemContent(NewsFeedItem item)
+    public string? GetItemContent(NewsFeedItem item)
     {
         var key = ContentKey(item);
-        if (_cache.TryGetValue(key, out string cached))
+        if (_cache.TryGetValue(key, out string? cached))
             return cached;
 
         var content = _inner.GetItemContent(item);
@@ -59,10 +59,10 @@ public sealed class CachingItemRepository : IItemRepository
     /// <inheritdoc/>
     /// Cache key: <c>item:{user.Id}:{href}</c> — sliding expiration.
     /// Null results are NOT cached.
-    public NewsFeedItem GetItem(RssUser user, string href)
+    public NewsFeedItem? GetItem(RssUser user, string href)
     {
         var key = ItemByHrefKey(user.Id, href);
-        if (_cache.TryGetValue(key, out NewsFeedItem cached))
+        if (_cache.TryGetValue(key, out NewsFeedItem? cached))
             return cached;
 
         var item = _inner.GetItem(user, href);
@@ -82,10 +82,10 @@ public sealed class CachingItemRepository : IItemRepository
     /// <inheritdoc/>
     /// Cache key: <c>item:{user.Id}:id:{itemId}</c> — sliding expiration.
     /// Null results are NOT cached.
-    public NewsFeedItem GetItem(RssUser user, int itemId)
+    public NewsFeedItem? GetItem(RssUser user, int itemId)
     {
         var key = ItemByIdKey(user.Id, itemId.ToString());
-        if (_cache.TryGetValue(key, out NewsFeedItem cached))
+        if (_cache.TryGetValue(key, out NewsFeedItem? cached))
             return cached;
 
         var item = _inner.GetItem(user, itemId);
@@ -111,12 +111,12 @@ public sealed class CachingItemRepository : IItemRepository
         NewsFeed feed,
         bool isFilterUnread,
         bool isFilterSaved,
-        string filterTag,
+        string? filterTag,
         int? page = null,
         int? pageSize = null,
         long? lastId = null,
         long? lastPublishDateOrder = null,
-        IEnumerable<string> excludeFeedUrls = null,
+        IEnumerable<string>? excludeFeedUrls = null,
         bool includeContent = true)
         => _inner.GetItemsAsync(feed, isFilterUnread, isFilterSaved, filterTag, page, pageSize, lastId, lastPublishDateOrder, excludeFeedUrls, includeContent);
 
@@ -125,10 +125,10 @@ public sealed class CachingItemRepository : IItemRepository
         NewsFeed feed,
         bool isFilterUnread,
         bool isFilterSaved,
-        string filterTag,
+        string? filterTag,
         long cursorPublishDateOrder,
         long cursorId,
-        IEnumerable<string> excludeFeedUrls = null)
+        IEnumerable<string>? excludeFeedUrls = null)
         => _inner.GetNewItemCountAsync(feed, isFilterUnread, isFilterSaved, filterTag, cursorPublishDateOrder, cursorId, excludeFeedUrls);
 
     /// <inheritdoc/>

@@ -23,7 +23,7 @@ public sealed class SerializerTests
 
             foreach (var item in feed)
             {
-                string thumbUrl = resolver.Resolve(item);
+                string? thumbUrl = resolver.Resolve(item);
                 Assert.IsNotNull(thumbUrl, $"Expected a resolved thumbnail for {item.Href}");
             }
         }

@@ -32,11 +32,11 @@ public sealed class CachingUserRepository : IUserRepository
 
     // --- Read methods (cache-aside) ---
 
-    public RssUser GetUserByName(string username)
+    public RssUser? GetUserByName(string username)
     {
         var key = UserNameKey(username);
-        if (_cache.TryGetValue(key, out RssUser cached))
-            return cached!;
+        if (_cache.TryGetValue(key, out RssUser? cached))
+            return cached;
 
         var user = _inner.GetUserByName(username);
 
@@ -45,41 +45,41 @@ public sealed class CachingUserRepository : IUserRepository
         if (user is not null)
             SetWithEvictionToken(key, user);
 
-        return user!;
+        return user;
     }
 
-    public RssUser GetUserById(int userId)
+    public RssUser? GetUserById(int userId)
     {
         var key = UserIdKey(userId);
-        if (_cache.TryGetValue(key, out RssUser cached))
-            return cached!;
+        if (_cache.TryGetValue(key, out RssUser? cached))
+            return cached;
 
         var user = _inner.GetUserById(userId);
 
         if (user is not null)
             SetWithEvictionToken(key, user);
 
-        return user!;
+        return user;
     }
 
-    public RssUser FindByIdentity(string provider, string subject)
+    public RssUser? FindByIdentity(string provider, string subject)
     {
         var key = IdentityKey(provider, subject);
-        if (_cache.TryGetValue(key, out RssUser cached))
-            return cached!;
+        if (_cache.TryGetValue(key, out RssUser? cached))
+            return cached;
 
         var user = _inner.FindByIdentity(provider, subject);
 
         if (user is not null)
             SetWithEvictionToken(key, user);
 
-        return user!;
+        return user;
     }
 
     public IEnumerable<RssUser> GetAllUsers()
     {
-        if (_cache.TryGetValue(AllUsersKey, out List<RssUser> cached))
-            return cached!;
+        if (_cache.TryGetValue(AllUsersKey, out List<RssUser>? cached) && cached is not null)
+            return cached;
 
         // Materialize to List<RssUser> before caching — prevents caching a dead lazy enumerator.
         var result = _inner.GetAllUsers().ToList();
@@ -96,13 +96,10 @@ public sealed class CachingUserRepository : IUserRepository
 
         // Seed the cache with the newly created user to avoid an immediate DB
         // round-trip on the next lookup.
-        if (user is not null)
-        {
-            SetWithEvictionToken(UserNameKey(user.Username), user);
-            SetWithEvictionToken(UserIdKey(user.Id), user);
-        }
+        SetWithEvictionToken(UserNameKey(user.Username), user);
+        SetWithEvictionToken(UserIdKey(user.Id), user);
 
-        return user!;
+        return user;
     }
 
     public void LinkIdentity(int userId, string provider, string subject)

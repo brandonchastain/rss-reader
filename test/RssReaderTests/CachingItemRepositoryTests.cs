@@ -27,36 +27,36 @@ internal sealed class FakeItemRepository : IItemRepository
     public NewsFeedItem? ItemByHrefToReturn   { get; set; }
     public NewsFeedItem? ItemByIdToReturn     { get; set; }
 
-    public string GetItemContent(NewsFeedItem item)
+    public string? GetItemContent(NewsFeedItem item)
     {
         GetItemContentCallCount++;
-        return ContentToReturn!;
+        return ContentToReturn;
     }
 
-    public NewsFeedItem GetItem(RssUser user, string href)
+    public NewsFeedItem? GetItem(RssUser user, string href)
     {
         GetItemByHrefCallCount++;
-        return ItemByHrefToReturn!;
+        return ItemByHrefToReturn;
     }
 
-    public NewsFeedItem GetItem(RssUser user, int itemId)
+    public NewsFeedItem? GetItem(RssUser user, int itemId)
     {
         GetItemByIdCallCount++;
-        return ItemByIdToReturn!;
+        return ItemByIdToReturn;
     }
 
     public Task<IEnumerable<NewsFeedItem>> GetItemsAsync(
         NewsFeed feed, bool isFilterUnread, bool isFilterSaved,
-        string filterTag, int? page, int? pageSize, long? lastId, long? lastPublishDateOrder,
-        IEnumerable<string> excludeFeedUrls = null, bool includeContent = true)
+        string? filterTag, int? page, int? pageSize, long? lastId, long? lastPublishDateOrder,
+        IEnumerable<string>? excludeFeedUrls = null, bool includeContent = true)
     {
         GetItemsAsyncCallCount++;
         return Task.FromResult<IEnumerable<NewsFeedItem>>(Array.Empty<NewsFeedItem>());
     }
 
     public Task<int> GetNewItemCountAsync(
-        NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string filterTag,
-        long cursorPublishDateOrder, long cursorId, IEnumerable<string> excludeFeedUrls = null)
+        NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string? filterTag,
+        long cursorPublishDateOrder, long cursorId, IEnumerable<string>? excludeFeedUrls = null)
         => Task.FromResult(0);
 
     public Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize)

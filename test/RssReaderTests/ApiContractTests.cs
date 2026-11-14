@@ -244,6 +244,10 @@ public sealed class ApiContractTests
         var users = host.Services.GetRequiredService<IUserRepository>();
         var aliceUser = users.GetUserById(aliceId);
         var bobUser = users.GetUserById(bobId);
+        Assert.IsNotNull(aliceUser);
+        Assert.IsNotNull(bobUser);
+        Assert.IsNotNull(aliceUser);
+        Assert.IsNotNull(bobUser);
         var alpha = (await items.GetItemsAsync(new NewsFeed(AliceFeed, aliceId), false, false, null, 0, 100)).OrderBy(i => i.Href).ToList();
         foreach (var i in alpha.Take(4)) items.MarkAsRead(i, true, aliceUser);
         foreach (var i in alpha.Skip(4).Take(2)) items.SavePost(i, aliceUser);
@@ -712,6 +716,7 @@ public sealed class ApiContractTests
         // The repository refuses on its own too, whatever a future caller passes it.
         var items = host.Services.GetRequiredService<IItemRepository>();
         var aliceUser = host.Services.GetRequiredService<IUserRepository>().GetUserById(aliceId);
+        Assert.IsNotNull(aliceUser);
         items.SavePost(bobPost, aliceUser);
         Assert.IsNull(items.GetItem(aliceUser, int.Parse(bobPost.Id)), "a direct SavePost on an unfollowed feed's post made it visible");
     }

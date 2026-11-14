@@ -6,47 +6,47 @@ namespace RssApp.Contracts.FeedTypes;
 public class RdfFeed
 {
     [XmlElement("channel", Namespace = "http://purl.org/rss/1.0/")]
-    public RdfChannel Channel { get; set; }
+    public RdfChannel? Channel { get; set; }
 
     [XmlElement("item", Namespace = "http://purl.org/rss/1.0/")]
-    public List<RdfItem> Items { get; set; }
+    public List<RdfItem>? Items { get; set; }
 }
 
 public class RdfChannel
 {
     [XmlElement("title", Namespace = "http://purl.org/rss/1.0/")]
-    public string Title { get; set; }
+    public string? Title { get; set; }
 
     [XmlElement("link", Namespace = "http://purl.org/rss/1.0/")]
-    public string Link { get; set; }
+    public string? Link { get; set; }
 
     [XmlElement("description", Namespace = "http://purl.org/rss/1.0/")]
-    public string Description { get; set; }
+    public string? Description { get; set; }
 }
 
 public class RdfItem
 {
     [XmlElement("title", Namespace = "http://purl.org/rss/1.0/")]
-    public string Title { get; set; }
+    public string? Title { get; set; }
 
     [XmlElement("link", Namespace = "http://purl.org/rss/1.0/")]
-    public RdfLink Link { get; set; }
+    public RdfLink? Link { get; set; }
 
     [XmlElement("description", Namespace = "http://purl.org/rss/1.0/")]
-    public string Description { get; set; }
+    public string? Description { get; set; }
 
     [XmlElement("date", Namespace = "http://purl.org/dc/elements/1.1/")]
-    public string PublishDate { get; set; }
+    public string? PublishDate { get; set; }
 
     [XmlElement("comments", Namespace = "http://purl.org/rss/1.0/")]
-    public RdfLink CommentsLink { get; set; }
+    public RdfLink? CommentsLink { get; set; }
 
     [XmlElement("guid", Namespace = "http://purl.org/rss/1.0/")]
-    public string Id { get; set; }
+    public string? Id { get; set; }
 }
 
 public class RdfLink
 {
     [XmlText]
-    public string Href { get; set; }
+    public string? Href { get; set; }
 }

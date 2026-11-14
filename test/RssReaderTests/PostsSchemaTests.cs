@@ -174,14 +174,16 @@ public sealed class PostsSchemaTests
         db.Subscribe(user, b);
         var feedA = db.Feeds.GetFeed(user, a);
         var feedB = db.Feeds.GetFeed(user, b);
+        Assert.IsNotNull(feedA);
+        Assert.IsNotNull(feedB);
         db.Feeds.AddTag(feedA, "tech");
         db.Feeds.AddTag(feedA, "news");
         db.Feeds.AddTag(feedB, "tech");
 
         db.Feeds.RemoveTag(feedA, "tech");
 
-        CollectionAssert.AreEqual(new[] { "news" }, db.Feeds.GetFeed(user, a).Tags.ToArray());
-        CollectionAssert.AreEqual(new[] { "tech" }, db.Feeds.GetFeed(user, b).Tags.ToArray());
+        CollectionAssert.AreEqual(new[] { "news" }, db.Feeds.GetFeed(user, a)?.Tags.ToArray());
+        CollectionAssert.AreEqual(new[] { "tech" }, db.Feeds.GetFeed(user, b)?.Tags.ToArray());
 
         db.Feeds.RemoveTag(feedB, "tech");
         Assert.IsFalse(db.Feeds.GetTagSettings(user).Any(t => t.Tag == "tech"));
@@ -194,11 +196,13 @@ public sealed class PostsSchemaTests
         var user = db.AddUser("titled");
         const string url = "https://titled.example.com/feed";
         db.Subscribe(user, url);
-        Assert.IsNull(db.Feeds.GetFeed(user, url).Title);
+        var untitled = db.Feeds.GetFeed(user, url);
+        Assert.IsNotNull(untitled);
+        Assert.IsNull(untitled.Title);
 
         db.Feeds.SetFeedTitle(url, "The Titled Blog");
 
-        Assert.AreEqual("The Titled Blog", db.Feeds.GetFeed(user, url).Title);
+        Assert.AreEqual("The Titled Blog", db.Feeds.GetFeed(user, url)?.Title);
     }
 
     [TestMethod]
@@ -232,6 +236,7 @@ public sealed class PostsSchemaTests
         }
 
         var failing = db.Feeds.GetFeed(user, url);
+        Assert.IsNotNull(failing);
         Assert.AreEqual(NewsFeed.FailingThreshold, failing.ConsecutiveFailures);
         Assert.AreEqual("HTTP 403", failing.LastError);
         Assert.IsTrue(failing.IsFailing);
@@ -426,8 +431,8 @@ public sealed class PostsSchemaTests
         db.Items.MarkAsRead(post, true, alice);
         db.Items.MarkAsRead(post, true, alice);
         Assert.AreEqual(1, db.Scalar("SELECT count(*) FROM UserPostState WHERE IsRead = 1"));
-        Assert.IsTrue(db.Items.GetItem(alice, int.Parse(post.Id)).IsRead);
-        Assert.IsFalse(db.Items.GetItem(bob, int.Parse(post.Id)).IsRead);
+        Assert.IsTrue(db.Items.GetItem(alice, int.Parse(post.Id))?.IsRead);
+        Assert.IsFalse(db.Items.GetItem(bob, int.Parse(post.Id))?.IsRead);
     }
 
     [TestMethod]
@@ -543,6 +548,7 @@ public sealed class PostsSchemaTests
         // The new-count probe agrees with the page boundary.
         var mid = actual[50];
         var midItem = db.Items.GetItem(alice, int.Parse(mid));
+        Assert.IsNotNull(midItem);
         var newer = await db.Items.GetNewItemCountAsync(new NewsFeed("%", alice.Id), false, false, null, midItem.PublishDateOrder, long.Parse(mid), Array.Empty<string>());
         Assert.AreEqual(50, newer);
     }
@@ -611,13 +617,14 @@ public sealed class PostsSchemaTests
         db.Users.LinkIdentity(alice.Id, "email-link", "abc");
         db.Users.LinkIdentity(bob.Id, "microsoft", "obj-1"); // already alice's: ignored
 
-        Assert.AreEqual(alice.Id, db.Users.FindByIdentity("microsoft", "obj-1").Id);
+        Assert.AreEqual(alice.Id, db.Users.FindByIdentity("microsoft", "obj-1")?.Id);
         Assert.IsNull(db.Users.FindByIdentity("microsoft", "nobody"));
         var reloaded = db.Users.GetUserById(alice.Id);
+        Assert.IsNotNull(reloaded);
         CollectionAssert.AreEqual(new[] { "microsoft:obj-1", "microsoft-email:abc" }, reloaded.Identities.ToList());
         Assert.AreEqual("obj-1", reloaded.AadUserId);
         Assert.AreEqual("microsoft:obj-1", reloaded.ProviderUserId);
-        Assert.AreEqual(0, db.Users.GetUserById(bob.Id).Identities.Count);
+        Assert.AreEqual(0, db.Users.GetUserById(bob.Id)?.Identities.Count);
     }
 
     [TestMethod]
@@ -663,6 +670,7 @@ public sealed class PostsSchemaTests
         Assert.AreEqual(2, db.Scalar("SELECT count(*) FROM Posts_fts"));
 
         var item = db.Items.GetItem(alice, $"{url}/post-0");
+        Assert.IsNotNull(item);
         Assert.AreEqual("<p>post 0</p>", db.Items.GetItemContent(item));
     }
 }

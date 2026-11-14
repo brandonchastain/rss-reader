@@ -57,6 +57,7 @@ public sealed class PostRetitleTests
         var (repo, user, db) = Setup("slug");
         await repo.UpsertItemsAsync([Item("https://www.theregister.com/a/1", "Safari's Autofill feature may be distoring time", "https://www.theregister.com/2026/11/05/safari-autofill-distoring-time/1")]);
         var stored = repo.GetItem(user, "https://www.theregister.com/2026/11/05/safari-autofill-distoring-time/1");
+        Assert.IsNotNull(stored);
         repo.MarkAsRead(stored, true, user);
 
         var result = await repo.UpsertItemsAsync([Item("https://www.theregister.com/a/1", "Safari's Autofill feature may be distorting time", "https://www.theregister.com/2026/11/05/safari-autofill-distorting-time/1", content: "<p>fixed</p>")]);

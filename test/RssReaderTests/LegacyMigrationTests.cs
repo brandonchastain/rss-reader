@@ -199,9 +199,11 @@ public sealed class LegacyMigrationTests
         var feeds = new SQLiteFeedRepository(connections, NullLogger<SQLiteFeedRepository>.Instance);
         using var items = new SQLiteItemRepository(connections, NullLogger<SQLiteItemRepository>.Instance, feeds, users);
         var alice = users.FindByIdentity("microsoft", "obj-1");
+        Assert.IsNotNull(alice);
         Assert.AreEqual(1, alice.Id);
         Assert.AreEqual("024d97a14bc74c58b9a83e88b919a92c", alice.AadUserId);
         var bob = users.FindByIdentity("github", "4242");
+        Assert.IsNotNull(bob);
         Assert.AreEqual(2, bob.Id);
 
         var aliceFeeds = feeds.GetFeeds(alice).ToList();

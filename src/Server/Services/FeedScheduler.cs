@@ -22,7 +22,7 @@ public class FeedScheduler : BackgroundService
     private readonly ILogger<FeedScheduler> logger;
     private readonly IFeedRefresher refresher;
     private readonly RssAppConfig config;
-    private readonly SystemStatsCollector statsCollector;
+    private readonly SystemStatsCollector? statsCollector;
 
     private readonly RssReader.Server.Services.WriterState? writerState;
 
@@ -31,7 +31,7 @@ public class FeedScheduler : BackgroundService
         IFeedRefresher refresher,
         RssAppConfig config,
         RssReader.Server.Services.WriterState? writerState = null,
-        SystemStatsCollector statsCollector = null)
+        SystemStatsCollector? statsCollector = null)
     {
         this.statsCollector = statsCollector;
         this.logger = logger;

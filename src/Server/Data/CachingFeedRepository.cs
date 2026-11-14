@@ -29,7 +29,7 @@ public class CachingFeedRepository : IFeedRepository
     public IReadOnlyList<PopularFeed> GetPopularFeeds(int limit, int minSubscribers)
     {
         var key = $"popular:{limit}:{minSubscribers}";
-        if (!_cache.TryGetValue(key, out IReadOnlyList<PopularFeed> popular))
+        if (!_cache.TryGetValue(key, out IReadOnlyList<PopularFeed>? popular) || popular is null)
         {
             popular = _inner.GetPopularFeeds(limit, minSubscribers);
             _cache.Set(key, popular, new MemoryCacheEntryOptions
@@ -45,7 +45,7 @@ public class CachingFeedRepository : IFeedRepository
     public IEnumerable<NewsFeed> GetFeeds(RssUser user)
     {
         var key = FeedsKey(user.Id);
-        if (_cache.TryGetValue(key, out List<NewsFeed> cached))
+        if (_cache.TryGetValue(key, out List<NewsFeed>? cached) && cached is not null)
             return cached;
 
         // Materialize to List<NewsFeed> before caching — prevents caching a dead lazy enumerator.
@@ -63,10 +63,10 @@ public class CachingFeedRepository : IFeedRepository
         return result;
     }
 
-    public NewsFeed GetFeed(RssUser user, string url)
+    public NewsFeed? GetFeed(RssUser user, string url)
     {
         var key = FeedKey(user.Id, url);
-        if (_cache.TryGetValue(key, out NewsFeed cached))
+        if (_cache.TryGetValue(key, out NewsFeed? cached))
             return cached;
 
         var result = _inner.GetFeed(user, url);
@@ -151,11 +151,11 @@ public class CachingFeedRepository : IFeedRepository
 
     public IReadOnlyList<FeedFetchState> GetFeedFetchStates() => _inner.GetFeedFetchStates();
 
-    public FeedFetchState GetFeedFetchState(string url) => _inner.GetFeedFetchState(url);
+    public FeedFetchState? GetFeedFetchState(string url) => _inner.GetFeedFetchState(url);
 
     public IReadOnlyList<FeedFetchState> GetDueFeeds(DateTimeOffset now) => _inner.GetDueFeeds(now);
 
     public void RecordFetchResult(string url, DateTimeOffset fetchedUtc, DateTimeOffset nextFetchUtc, TimeSpan interval,
-        string etag, DateTimeOffset? lastModified, bool keepValidators, bool failed, string error)
+        string? etag, DateTimeOffset? lastModified, bool keepValidators, bool failed, string? error)
         => _inner.RecordFetchResult(url, fetchedUtc, nextFetchUtc, interval, etag, lastModified, keepValidators, failed, error);
 }

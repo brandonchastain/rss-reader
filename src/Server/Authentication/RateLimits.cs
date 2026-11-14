@@ -1,4 +1,3 @@
-#nullable enable
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http;

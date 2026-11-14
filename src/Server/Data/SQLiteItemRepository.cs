@@ -209,12 +209,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         NewsFeed feed,
         bool isFilterUnread,
         bool isFilterSaved,
-        string filterTag,
+        string? filterTag,
         int? page = null,
         int? pageSize = null,
         long? lastId = null,
         long? lastPublishDateOrder = null,
-        IEnumerable<string> excludeFeedUrls = null,
+        IEnumerable<string>? excludeFeedUrls = null,
         bool includeContent = true)
     {
         var items = new List<NewsFeedItem>();
@@ -243,12 +243,12 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         NewsFeed feed,
         bool isFilterUnread,
         bool isFilterSaved,
-        string filterTag,
+        string? filterTag,
         int? page,
         int? pageSize,
         long? lastId,
         long? lastPublishDateOrder,
-        IEnumerable<string> excludeFeedUrls,
+        IEnumerable<string>? excludeFeedUrls,
         bool includeContent)
     {
         var command = connection.CreateCommand();
@@ -259,12 +259,13 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         AppendFilters(command, feed, isFilterUnread, isFilterSaved, filterTag, excludeFeedUrls);
 
         // Cursor-based pagination: use (PublishDateOrder, Id) as seek position
-        bool useCursor = lastPublishDateOrder.HasValue && lastId.HasValue;
-        if (useCursor)
+        bool useCursor = false;
+        if (lastPublishDateOrder is long lastOrder && lastId is long lastIdValue)
         {
+            useCursor = true;
             command.CommandText += " AND (p.PublishDateOrder, p.Id) < (@lastOrder, @lastId)";
-            command.Parameters.AddWithValue("@lastOrder", lastPublishDateOrder.Value);
-            command.Parameters.AddWithValue("@lastId", lastId.Value);
+            command.Parameters.AddWithValue("@lastOrder", lastOrder);
+            command.Parameters.AddWithValue("@lastId", lastIdValue);
         }
 
         command.CommandText += " ORDER BY p.PublishDateOrder DESC, p.Id DESC";
@@ -286,10 +287,10 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         NewsFeed feed,
         bool isFilterUnread,
         bool isFilterSaved,
-        string filterTag,
+        string? filterTag,
         long cursorPublishDateOrder,
         long cursorId,
-        IEnumerable<string> excludeFeedUrls = null)
+        IEnumerable<string>? excludeFeedUrls = null)
     {
         using var connection = await this.connections.OpenReadAsync();
         var command = connection.CreateCommand();
@@ -319,8 +320,8 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         NewsFeed feed,
         bool isFilterUnread,
         bool isFilterSaved,
-        string filterTag,
-        IEnumerable<string> excludeFeedUrls)
+        string? filterTag,
+        IEnumerable<string>? excludeFeedUrls)
     {
         if (feed.Href != "%")
         {
@@ -378,7 +379,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         var title = reader.IsDBNull(reader.GetOrdinal("Title")) ? "" : reader.GetString(reader.GetOrdinal("Title"));
         var publishDateOrder = reader.IsDBNull(reader.GetOrdinal("PublishDateOrder")) ? 0 : reader.GetInt64(reader.GetOrdinal("PublishDateOrder"));
         var publishDate = reader.IsDBNull(reader.GetOrdinal("PublishDate")) ? "" : reader.GetString(reader.GetOrdinal("PublishDate"));
-        string content = reader.IsDBNull(reader.GetOrdinal("Content")) ? null : reader.GetString(reader.GetOrdinal("Content"));
+        string? content = reader.IsDBNull(reader.GetOrdinal("Content")) ? null : reader.GetString(reader.GetOrdinal("Content"));
         var url = reader.IsDBNull(reader.GetOrdinal("FeedUrl")) ? "" : reader.GetString(reader.GetOrdinal("FeedUrl"));
         var isRead = !reader.IsDBNull(reader.GetOrdinal("IsRead")) && reader.GetInt64(reader.GetOrdinal("IsRead")) != 0;
         var isSaved = !reader.IsDBNull(reader.GetOrdinal("IsSaved")) && reader.GetInt64(reader.GetOrdinal("IsSaved")) != 0;
@@ -408,7 +409,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
          OR s.PostId IS NOT NULL)
         """;
 
-    public NewsFeedItem GetItem(RssUser user, string href)
+    public NewsFeedItem? GetItem(RssUser user, string href)
     {
         using var connection = this.connections.OpenRead();
         var command = connection.CreateCommand();
@@ -420,7 +421,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         return reader.Read() ? ReadItemFromResults(reader, user.Id) : null;
     }
 
-    public NewsFeedItem GetItem(RssUser user, int itemId)
+    public NewsFeedItem? GetItem(RssUser user, int itemId)
     {
         using var connection = this.connections.OpenRead();
         var command = connection.CreateCommand();
@@ -432,7 +433,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         return reader.Read() ? ReadItemFromResults(reader, user.Id) : null;
     }
 
-    public string GetItemContent(NewsFeedItem item)
+    public string? GetItemContent(NewsFeedItem item)
     {
         using var connection = this.connections.OpenRead();
         var postId = ResolvePostId(connection, item);
@@ -581,13 +582,13 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
                         """;
                     command.Parameters.AddWithValue("@feedId", feedId.Value);
                     command.Parameters.AddWithValue("@href", href);
-                    command.Parameters.AddWithValue("@commentsHref", (object)item.CommentsHref ?? DBNull.Value);
+                    command.Parameters.AddWithValue("@commentsHref", (object?)item.CommentsHref ?? DBNull.Value);
                     command.Parameters.AddWithValue("@title", title);
                     command.Parameters.AddWithValue("@publishDateOrder", item.PublishDateOrder);
                     command.Parameters.AddWithValue("@publishDate", item.PublishDate ?? "");
-                    command.Parameters.AddWithValue("@thumbnailUrl", (object)item.ThumbnailUrl ?? DBNull.Value);
+                    command.Parameters.AddWithValue("@thumbnailUrl", (object?)item.ThumbnailUrl ?? DBNull.Value);
                     command.Parameters.AddWithValue("@now", now);
-                    command.Parameters.AddWithValue("@guid", (object)guid ?? DBNull.Value);
+                    command.Parameters.AddWithValue("@guid", (object?)guid ?? DBNull.Value);
                     var rowsAffected = await command.ExecuteNonQueryAsync();
                     if (rowsAffected == 0) continue;
 
@@ -623,7 +624,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
         return new ItemWriteResult(insertedCount, updatedCount);
     }
 
-    private readonly record struct StoredPost(long Id, string Href, string Title, string FormerTitle);
+    private readonly record struct StoredPost(long Id, string Href, string Title, string? FormerTitle);
 
     // column is a fixed identifier ("Href" or "Guid"), never input.
     private static StoredPost? FindPost(SqliteConnection connection, SqliteTransaction transaction, long feedId, string column, string value, long? publishDateOrder = null)
@@ -677,7 +678,7 @@ public class SQLiteItemRepository : IItemRepository, IDisposable
             cmd.Parameters.AddWithValue("@id", post.Id);
             cmd.Parameters.AddWithValue("@href", href);
             cmd.Parameters.AddWithValue("@title", retitled ? title : post.Title);
-            cmd.Parameters.AddWithValue("@formerTitle", (object)formerTitle ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@formerTitle", (object?)formerTitle ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@commentsHref", relinked && !string.IsNullOrEmpty(item.CommentsHref) ? item.CommentsHref : DBNull.Value);
             cmd.ExecuteNonQuery();
         }

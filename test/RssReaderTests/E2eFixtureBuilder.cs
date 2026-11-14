@@ -66,12 +66,15 @@ public sealed class E2eFixtureBuilder
         await items.AddItemsAsync(Posts(disposable, "Disposable", 3, 900_000, start, 0, _ => "", _ => "A throwaway post.", pad: false));
         await items.AddItemsAsync(Posts(muted, "Muted", 6, 800_000, start, 0, _ => "", _ => "A muted post."));
 
+        NewsFeedItem Stored(string href) =>
+            items.GetItem(user, href) ?? throw new InvalidOperationException($"Fixture post {href} was not stored.");
+
         for (var i = 1; i <= 5; i++)
         {
-            items.MarkAsRead(items.GetItem(user, $"{tech}/{i:00}"), true, user);
+            items.MarkAsRead(Stored($"{tech}/{i:00}"), true, user);
         }
-        items.SavePost(items.GetItem(user, $"{tech}/07"), user);
-        items.SavePost(items.GetItem(user, $"{world}/07"), user);
+        items.SavePost(Stored($"{tech}/07"), user);
+        items.SavePost(Stored($"{world}/07"), user);
 
         // Snapshots for the admin trends chart: inside each of 1h, 1d, 7d, 30d and 1y.
         var now = DateTime.UtcNow;

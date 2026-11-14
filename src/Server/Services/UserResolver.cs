@@ -1,4 +1,3 @@
-#nullable enable
 using System.Security.Claims;
 using RssApp.Contracts;
 using RssApp.Data;

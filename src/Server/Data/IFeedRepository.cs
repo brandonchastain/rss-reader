@@ -9,7 +9,7 @@ namespace RssApp.Data;
 public sealed record FeedFetchState(
     int FeedId,
     string Url,
-    string ETag,
+    string? ETag,
     DateTimeOffset? LastModified,
     DateTimeOffset? LastFetchedUtc,
     DateTimeOffset? NextFetchUtc,
@@ -26,7 +26,7 @@ public interface IFeedRepository
     /// <summary>The user's subscriptions as NewsFeed views (FeedId = Feeds.Id, Href = Feeds.Url).</summary>
     IEnumerable<NewsFeed> GetFeeds(RssUser user);
 
-    NewsFeed GetFeed(RssUser user, string url);
+    NewsFeed? GetFeed(RssUser user, string url);
 
     /// <summary>Subscribe: upsert the feed by URL, insert the subscription, attach feed.Tags. Sets feed.FeedId.</summary>
     void AddFeed(NewsFeed feed);
@@ -68,7 +68,7 @@ public interface IFeedRepository
     IReadOnlyList<FeedFetchState> GetFeedFetchStates();
 
     /// <summary>Fetch state of one feed by URL, or null when no such feed row exists.</summary>
-    FeedFetchState GetFeedFetchState(string url);
+    FeedFetchState? GetFeedFetchState(string url);
 
     /// <summary>Feeds whose NextFetchUtc is null or not after <paramref name="now"/>, among subscribed feeds.</summary>
     IReadOnlyList<FeedFetchState> GetDueFeeds(DateTimeOffset now);
@@ -83,9 +83,9 @@ public interface IFeedRepository
         DateTimeOffset fetchedUtc,
         DateTimeOffset nextFetchUtc,
         TimeSpan interval,
-        string etag,
+        string? etag,
         DateTimeOffset? lastModified,
         bool keepValidators,
         bool failed,
-        string error);
+        string? error);
 }

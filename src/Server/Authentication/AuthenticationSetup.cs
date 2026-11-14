@@ -1,4 +1,3 @@
-#nullable enable
 using System.Security.Claims;
 using AspNet.Security.OAuth.GitHub;
 using Microsoft.AspNetCore.Authentication;

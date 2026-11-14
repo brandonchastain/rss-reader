@@ -31,11 +31,11 @@ internal sealed class FakeFeedRepository : IFeedRepository
 
     public IReadOnlyList<PopularFeed> GetPopularFeeds(int limit, int minSubscribers) => Array.Empty<PopularFeed>();
 
-    public NewsFeed GetFeed(RssUser user, string url)
+    public NewsFeed? GetFeed(RssUser user, string url)
     {
         GetFeedCallCount++;
         return Feeds.FirstOrDefault(f => f.UserId == user.Id &&
-                                         string.Equals(f.Href, url, StringComparison.OrdinalIgnoreCase))!;
+                                         string.Equals(f.Href, url, StringComparison.OrdinalIgnoreCase));
     }
 
     public void AddFeed(NewsFeed feed)
@@ -78,10 +78,10 @@ internal sealed class FakeFeedRepository : IFeedRepository
 
     public IReadOnlyList<FeedFetchState> GetFeedFetchStates()
         => Feeds.Select(f => f.Href).Distinct().Select((u, i) => new FeedFetchState(i + 1, u, null, null, null, null, 0)).ToList();
-    public FeedFetchState GetFeedFetchState(string url) => GetFeedFetchStates().FirstOrDefault(s => s.Url == url)!;
+    public FeedFetchState? GetFeedFetchState(string url) => GetFeedFetchStates().FirstOrDefault(s => s.Url == url);
     public IReadOnlyList<FeedFetchState> GetDueFeeds(DateTimeOffset now) => GetFeedFetchStates();
     public void RecordFetchResult(string url, DateTimeOffset fetchedUtc, DateTimeOffset nextFetchUtc, TimeSpan interval,
-        string etag, DateTimeOffset? lastModified, bool keepValidators, bool failed, string error) { }
+        string? etag, DateTimeOffset? lastModified, bool keepValidators, bool failed, string? error) { }
 }
 
 // ---------------------------------------------------------------------------

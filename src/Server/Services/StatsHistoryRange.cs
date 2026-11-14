@@ -1,4 +1,3 @@
-#nullable enable
 using RssApp.Contracts;
 
 namespace RssReader.Server.Services;

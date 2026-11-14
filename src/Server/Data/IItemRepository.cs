@@ -7,16 +7,16 @@ public readonly record struct ItemWriteResult(int Inserted, int Updated);
 
 public interface IItemRepository : IDisposable
 {
-    Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string filterTag, int? page = null, int? pageSize = null, long? lastId = null, long? lastPublishDateOrder = null, IEnumerable<string> excludeFeedUrls = null, bool includeContent = true);
+    Task<IEnumerable<NewsFeedItem>> GetItemsAsync(NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string? filterTag, int? page = null, int? pageSize = null, long? lastId = null, long? lastPublishDateOrder = null, IEnumerable<string>? excludeFeedUrls = null, bool includeContent = true);
     /// <summary>
     /// Counts the user's timeline items strictly newer than the cursor
     /// (PublishDateOrder, Id), mirroring the timeline ordering and filters.
     /// Cheap indexed COUNT — fetches no rows.
     /// </summary>
-    Task<int> GetNewItemCountAsync(NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string filterTag, long cursorPublishDateOrder, long cursorId, IEnumerable<string> excludeFeedUrls = null);
+    Task<int> GetNewItemCountAsync(NewsFeed feed, bool isFilterUnread, bool isFilterSaved, string? filterTag, long cursorPublishDateOrder, long cursorId, IEnumerable<string>? excludeFeedUrls = null);
     Task<IEnumerable<NewsFeedItem>> SearchItemsAsync(string query, RssUser user, int page, int pageSize);
-    NewsFeedItem GetItem(RssUser user, string href);
-    NewsFeedItem GetItem(RssUser user, int itemId);
+    NewsFeedItem? GetItem(RssUser user, string href);
+    NewsFeedItem? GetItem(RssUser user, int itemId);
     /// <summary>Stores a feed's items (see <see cref="UpsertItemsAsync"/>). Returns the number of new posts.</summary>
     Task<int> AddItemsAsync(IEnumerable<NewsFeedItem> item);
 
@@ -31,7 +31,7 @@ public interface IItemRepository : IDisposable
     void SavePost(NewsFeedItem item, RssUser user);
     void UnsavePost(NewsFeedItem item, RssUser user);
     void UpdateTags(NewsFeedItem item, string tags);
-    string GetItemContent(NewsFeedItem item);
+    string? GetItemContent(NewsFeedItem item);
     Task DeleteAllItemsAsync(RssUser user);
     int GetItemCountForFeed(RssUser user, string feedUrl);
 }

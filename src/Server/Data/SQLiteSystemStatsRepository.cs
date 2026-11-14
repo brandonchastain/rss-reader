@@ -55,7 +55,7 @@ public class SQLiteSystemStatsRepository : ISystemStatsRepository
         cmd.ExecuteNonQuery();
     }
 
-    public SystemStatsSnapshot GetLatestSnapshot()
+    public SystemStatsSnapshot? GetLatestSnapshot()
     {
         using var connection = _connections.OpenRead();
 

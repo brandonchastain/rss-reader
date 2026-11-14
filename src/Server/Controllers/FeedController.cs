@@ -49,7 +49,7 @@ namespace Server.Controllers
         // favicons aren't user data, and <img> loads shouldn't depend on auth.
         [HttpGet("icon")]
         [AllowAnonymous]
-        public async Task<IActionResult> GetIconAsync([FromQuery] string domain)
+        public async Task<IActionResult> GetIconAsync([FromQuery] string? domain)
         {
             var path = await this.faviconService.GetFaviconPathAsync(domain);
             if (path == null)
@@ -328,7 +328,7 @@ namespace Server.Controllers
         // HTML form can POST without a CORS preflight; DELETE always preflights.
         [HttpDelete]
         [Route("delete")]
-        public async Task<IActionResult> DeleteFeedAsync([FromQuery]string href)
+        public async Task<IActionResult> DeleteFeedAsync([FromQuery] string? href)
         {
             await Task.Yield();
             var user = this.CurrentUser;
