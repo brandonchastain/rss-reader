@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -24,7 +25,7 @@ public class RssDeserializer
     /// document was fetched from; it is the last-resort base for resolving
     /// site-relative item links when the feed declares no base of its own.
     /// </summary>
-    public IEnumerable<NewsFeedItem> FromString(string responseContent, RssUser user, string feedUrl = null)
+    public IEnumerable<NewsFeedItem> FromString(string responseContent, RssUser user, string? feedUrl = null)
     {
         var now = FormatDateString(DateTime.UtcNow.ToString(IsoDateFormat));
         var defaultDate = DateTime.UtcNow - TimeSpan.FromDays(7); // Default to 7 days ago if no date is provided
@@ -37,14 +38,14 @@ public class RssDeserializer
             responseContent = RepairRootAttributes(responseContent);
 
             var xmlDoc = XDocument.Parse(responseContent);
-            var root = xmlDoc.Root;
+            var root = xmlDoc.Root ?? throw new InvalidDataException("feed document has no root element");
             if (root.Name.LocalName.Equals("rdf", StringComparison.OrdinalIgnoreCase))
             {
                 XmlSerializer xs = new XmlSerializer(typeof(RdfFeed));
                 var reader = new StringReader(responseContent);
-                RdfFeed rdfFeedModel = (RdfFeed)xs.Deserialize(reader);
-                var rdfBase = ResolveBase(rdfFeedModel.Channel?.Link, feedUrl);
-                return MapItems(rdfFeedModel.Items, x =>
+                var rdfFeedModel = (RdfFeed?)xs.Deserialize(reader);
+                var rdfBase = ResolveBase(rdfFeedModel?.Channel?.Link, feedUrl);
+                return MapItems(rdfFeedModel?.Items, x =>
                 {
                     var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
                     var href = ResolveHref(x.Link?.Href ?? x.Id, rdfBase);
@@ -70,8 +71,8 @@ public class RssDeserializer
             {
                 XmlSerializer xs = new XmlSerializer(typeof(RssDocument));
                 var reader = new StringReader(responseContent);
-                RssDocument rssFeedModel = (RssDocument)xs.Deserialize(reader);
-                var rssChannel = rssFeedModel.Feed;
+                var rssFeedModel = (RssDocument?)xs.Deserialize(reader);
+                var rssChannel = rssFeedModel?.Feed;
                 var rssBase = ResolveBase(
                     rssChannel?.Link
                         ?? rssChannel?.AtomLinks?.FirstOrDefault(l => l.Rel == "alternate")?.Href
@@ -112,9 +113,9 @@ public class RssDeserializer
             {
                 XmlSerializer xs = new XmlSerializer(typeof(AtomFeed));
                 var reader = new StringReader(responseContent);
-                AtomFeed rssFeedModel = (AtomFeed)xs.Deserialize(reader);
-                var atomBase = ResolveBase(rssFeedModel.BaseHref, feedUrl);
-                return MapItems(rssFeedModel.Entries, x =>
+                var rssFeedModel = (AtomFeed?)xs.Deserialize(reader);
+                var atomBase = ResolveBase(rssFeedModel?.BaseHref, feedUrl);
+                return MapItems(rssFeedModel?.Entries, x =>
                 {
                     var date = FormatDateString(x.PublishDate) ?? FormatDateString(defaultDate.ToString()); // Default to 1 day ago if no date is provided
                     var href = ResolveHref(x.AltLink?.Href ?? x.Links?.FirstOrDefault()?.Href ?? x.Id, atomBase);
@@ -168,7 +169,7 @@ public class RssDeserializer
     /// to the URL the feed itself was fetched from. Returns null when neither is a
     /// usable absolute URL, in which case relative links are left untouched.
     /// </summary>
-    private static Uri ResolveBase(string declaredBase, string feedUrl)
+    private static Uri? ResolveBase(string? declaredBase, string? feedUrl)
     {
         foreach (var candidate in new[] { declaredBase, feedUrl })
         {
@@ -189,7 +190,8 @@ public class RssDeserializer
     /// origin and 404 when opened. Absolute links, and anything we cannot resolve,
     /// are returned unchanged.
     /// </summary>
-    private static string ResolveHref(string href, Uri baseUri)
+    [return: NotNullIfNotNull(nameof(href))]
+    private static string? ResolveHref(string? href, Uri? baseUri)
     {
         if (string.IsNullOrWhiteSpace(href))
         {
@@ -217,7 +219,7 @@ public class RssDeserializer
     /// Materialized eagerly so any per-item exception is contained here, not surfaced
     /// later when the caller enumerates the result.
     /// </summary>
-    private List<NewsFeedItem> MapItems<TSource>(IEnumerable<TSource> entries, Func<TSource, NewsFeedItem> map)
+    private List<NewsFeedItem> MapItems<TSource>(IEnumerable<TSource>? entries, Func<TSource, NewsFeedItem?> map)
     {
         var items = new List<NewsFeedItem>();
         if (entries == null)
@@ -244,7 +246,7 @@ public class RssDeserializer
         return items;
     }
 
-    public static string FormatDateString(string dateString)
+    public static string? FormatDateString(string? dateString)
     {
         var date = ParseDateTime(dateString);
         if (date.HasValue)
@@ -279,7 +281,7 @@ public class RssDeserializer
     }
 
     /// <summary>The feed's own title (RSS/RDF channel title or Atom feed title), or null if there is none.</summary>
-    public static string TryGetFeedTitle(string responseContent)
+    public static string? TryGetFeedTitle(string responseContent)
     {
         try
         {
@@ -302,7 +304,8 @@ public class RssDeserializer
     /// Strips HTML tags and decodes HTML entities from feed titles.
     /// RSS feeds sometimes embed markup (e.g. &lt;i&gt;) in title elements.
     /// </summary>
-    internal static string CleanTitle(string title)
+    [return: NotNullIfNotNull(nameof(title))]
+    internal static string? CleanTitle(string? title)
     {
         if (string.IsNullOrEmpty(title))
             return title;
@@ -314,7 +317,7 @@ public class RssDeserializer
         return cleaned.Trim();
     }
 
-    private static DateTime? ParseDateTime(string dateString)
+    private static DateTime? ParseDateTime(string? dateString)
     {
         if (string.IsNullOrWhiteSpace(dateString))
         {

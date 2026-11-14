@@ -68,21 +68,28 @@ public sealed class ItemRepoTests
 
         await itemRepo.AddItemsAsync(new[] { item });
 
-        item = itemRepo.GetItem(user, item.Href);
+        NewsFeedItem Reload(NewsFeedItem stale)
+        {
+            var stored = itemRepo.GetItem(user, stale.Href);
+            Assert.IsNotNull(stored);
+            return stored;
+        }
+
+        item = Reload(item);
         item.FeedUrl = "https://feeds.propublica.org/propublica/main";
         itemRepo.MarkAsRead(item, true, user);
 
-        item = itemRepo.GetItem(user, item.Href);
+        item = Reload(item);
         Assert.IsTrue(item.IsRead);
 
         // Idempotent: the outbox may replay a mark-read the keepalive request
         // already delivered, and the second call must leave the row as it is.
         itemRepo.MarkAsRead(item, true, user);
-        item = itemRepo.GetItem(user, item.Href);
+        item = Reload(item);
         Assert.IsTrue(item.IsRead);
 
         itemRepo.MarkAsRead(item, false, user);
-        item = itemRepo.GetItem(user, item.Href);
+        item = Reload(item);
         Assert.IsFalse(item.IsRead);
     }
 
@@ -333,6 +340,7 @@ public sealed class ItemRepoTests
         foreach (var order in new[] { 2002, 2003 })
         {
             var toRead = itemRepo.GetItem(user, $"https://example.com/unread-{order - 2000}");
+            Assert.IsNotNull(toRead);
             toRead.FeedUrl = feed.Href;
             itemRepo.MarkAsRead(toRead, true, user);
         }

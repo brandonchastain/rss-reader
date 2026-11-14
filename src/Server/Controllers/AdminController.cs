@@ -21,7 +21,7 @@ public class AdminController : ControllerBase
     private readonly IUserResolver _userResolver;
     private readonly SystemStatsCollector _statsCollector;
     private readonly AdminDetailQueries _details;
-    private readonly ILogger<AdminController> _logger;
+    private readonly ILogger<AdminController>? _logger;
 
     public AdminController(
         ISystemStatsRepository statsRepo,
@@ -29,7 +29,7 @@ public class AdminController : ControllerBase
         IUserResolver userResolver,
         SystemStatsCollector statsCollector,
         AdminDetailQueries details,
-        ILogger<AdminController> logger = null)
+        ILogger<AdminController>? logger = null)
     {
         _logger         = logger;
         _details        = details        ?? throw new ArgumentNullException(nameof(details));
@@ -43,7 +43,7 @@ public class AdminController : ControllerBase
     // Captures a fresh snapshot (at most hourly) only when the dashboard is opened;
     // nothing runs these COUNT(*) queries in the background any more.
     [HttpGet("stats")]
-    public async Task<IActionResult> GetStats()
+    public async Task<IActionResult> GetStatsAsync()
     {
         var snapshot = await _statsCollector.GetOrCaptureAsync();
         return Ok(snapshot);
@@ -52,7 +52,7 @@ public class AdminController : ControllerBase
     // POST /api/admin/stats/refresh: take a snapshot now instead of waiting
     // for the hourly cadence; returns it.
     [HttpPost("stats/refresh")]
-    public async Task<IActionResult> RefreshStats()
+    public async Task<IActionResult> RefreshStatsAsync()
     {
         var snapshot = await _statsCollector.CaptureNowAsync();
         return Ok(snapshot);
@@ -60,7 +60,7 @@ public class AdminController : ControllerBase
 
     // GET /api/admin/stats/history?range=30d   (1h, 1d, 7d, 30d, 1y; ?days=N still accepted)
     [HttpGet("stats/history")]
-    public IActionResult GetStatsHistory([FromQuery] string range = null, [FromQuery] int? days = null)
+    public IActionResult GetStatsHistory([FromQuery] string? range = null, [FromQuery] int? days = null)
     {
         if (range == null && days == null) range = RssReader.Server.Services.StatsHistoryRange.DefaultRange;
         if (!RssReader.Server.Services.StatsHistoryRange.TryResolve(range, days, out var window))

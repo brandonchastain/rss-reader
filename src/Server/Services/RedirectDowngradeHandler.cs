@@ -37,6 +37,11 @@ public class RedirectDowngradeHandler : DelegatingHandler
 
             if (!location.IsAbsoluteUri)
             {
+                if (currentRequest.RequestUri == null)
+                {
+                    return response; // Nothing to resolve a relative location against.
+                }
+
                 location = new Uri(currentRequest.RequestUri, location);
             }
 

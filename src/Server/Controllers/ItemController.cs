@@ -39,7 +39,7 @@ namespace Server.Controllers
             IFeedRefresher feedRefresher,
             RssAppConfig config,
             ILogger<ItemController> logger,
-            ItemsChangeStamp changeStamp = null
+            ItemsChangeStamp? changeStamp = null
         )
             : base(userResolver)
         {
@@ -57,7 +57,7 @@ namespace Server.Controllers
         // back-navigation would otherwise show a post Unread that was just read).
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [HttpGet("timeline")]
-        public async Task<IActionResult> TimelineAsync(bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
+        public async Task<IActionResult> TimelineAsync(bool isFilterUnread = false, bool isFilterSaved = false, string? filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
             var user = this.CurrentUser;
 
@@ -71,7 +71,7 @@ namespace Server.Controllers
             }
 
             // When no explicit tag filter and not filtering saved items, exclude feeds with hidden tags
-            IEnumerable<string> excludeFeedUrls = null;
+            IEnumerable<string>? excludeFeedUrls = null;
             if (string.IsNullOrWhiteSpace(filterTag) && !isFilterSaved)
             {
                 excludeFeedUrls = this.feedRepository.GetHiddenFeedUrls(user);
@@ -94,7 +94,7 @@ namespace Server.Controllers
         // unread/saved/tag/hidden-feed filters as the timeline so the count matches
         // what a top-of-list reload would surface. COUNT-only; fetches no rows.
         [HttpGet("newCount")]
-        public async Task<IActionResult> NewCountAsync(long cursorPublishDateOrder, long cursorId, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null)
+        public async Task<IActionResult> NewCountAsync(long cursorPublishDateOrder, long cursorId, bool isFilterUnread = false, bool isFilterSaved = false, string? filterTag = null)
         {
             var user = this.CurrentUser;
 
@@ -112,7 +112,7 @@ namespace Server.Controllers
             }
 
             // When no explicit tag filter and not filtering saved items, exclude feeds with hidden tags
-            IEnumerable<string> excludeFeedUrls = null;
+            IEnumerable<string>? excludeFeedUrls = null;
             if (string.IsNullOrWhiteSpace(filterTag) && !isFilterSaved)
             {
                 excludeFeedUrls = this.feedRepository.GetHiddenFeedUrls(user);
@@ -126,11 +126,11 @@ namespace Server.Controllers
 
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [HttpGet("feed")]
-        public async Task<IActionResult> FeedAsync(string href, bool isFilterUnread = false, bool isFilterSaved = false, string filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
+        public async Task<IActionResult> FeedAsync(string? href, bool isFilterUnread = false, bool isFilterSaved = false, string? filterTag = null, int page = 0, int pageSize = 20, long? cursorPublishDateOrder = null, long? cursorId = null)
         {
             var user = this.CurrentUser;
 
-            var feed = this.feedRepository.GetFeed(user, href);
+            var feed = href == null ? null : this.feedRepository.GetFeed(user, href);
 
             if (feed == null)
             {
@@ -157,7 +157,7 @@ namespace Server.Controllers
 
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [HttpGet("search")]
-        public async Task<IActionResult> SearchAsync(string query, int page = 0, int pageSize = 20)
+        public async Task<IActionResult> SearchAsync(string? query, int page = 0, int pageSize = 20)
         {
             var user = this.CurrentUser;
 
@@ -204,7 +204,7 @@ namespace Server.Controllers
         // so a single empty post can't sink the prefetch.
         [HttpGet("contentBatch")]
         [ResponseCache(Duration = 3600, Location = ResponseCacheLocation.Client)]
-        public IActionResult GetItemContentBatch(string itemIds)
+        public IActionResult GetItemContentBatch(string? itemIds)
         {
             var user = this.CurrentUser;
 
@@ -315,9 +315,9 @@ namespace Server.Controllers
         // failing that, its href) is taken from it, and only a post the caller can
         // already see resolves: saving is what makes a post visible, so trusting
         // the body would let anyone read any feed by saving its posts by id.
-        private NewsFeedItem FindVisibleItem(NewsFeedItem item)
+        private NewsFeedItem? FindVisibleItem(NewsFeedItem item)
         {
-            NewsFeedItem found = null;
+            NewsFeedItem? found = null;
             if (int.TryParse(item.Id, out var id) && id > 0)
             {
                 found = this.itemRepository.GetItem(this.CurrentUser, id);

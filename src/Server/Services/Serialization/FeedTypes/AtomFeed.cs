@@ -8,19 +8,19 @@ namespace RssApp.Contracts.FeedTypes;
 public class AtomFeed
 {
     [XmlElement("title")]
-    public string Title { get; set; }
+    public string? Title { get; set; }
 
     [XmlElement("entry")]
-    public List<AtomEntry> Entries { get; set; }
+    public List<AtomEntry>? Entries { get; set; }
 
     /// <summary>
     /// Feed-level links. The rel="alternate" href (the site itself) is the base for
     /// resolving relative entry links; rel="self" (the feed URL) is the fallback.
     /// </summary>
     [XmlElement("link")]
-    public List<AtomLink> Links { get; set; }
+    public List<AtomLink>? Links { get; set; }
 
-    public string BaseHref =>
+    public string? BaseHref =>
         this.Links?.FirstOrDefault(l => l.Rel == "alternate")?.Href
         ?? this.Links?.FirstOrDefault(l => l.Rel == "self")?.Href;
 }
@@ -29,24 +29,24 @@ public class AtomFeed
 public class AtomEntry
 {
     [XmlElement("id")]
-    public string Id { get; set; }
+    public string? Id { get; set; }
 
     [XmlElement("title")]
-    public string Title { get; set; }
+    public string? Title { get; set; }
 
     [XmlElement("published")]
-    public string PublishDate { get; set; }
+    public string? PublishDate { get; set; }
     
     [XmlElement("link")]
-    public  List<AtomLink> Links { get; set; }
+    public  List<AtomLink>? Links { get; set; }
 
-    public AtomLink AltLink => this.Links?.FirstOrDefault(l => l.Rel == "alternate");
+    public AtomLink? AltLink => this.Links?.FirstOrDefault(l => l.Rel == "alternate");
 
     [XmlElement("summary")]
-    public string Summary { get; set; }
+    public string? Summary { get; set; }
 
     [XmlElement("content")]
-    public AtomContent Content { get; set; }
+    public AtomContent? Content { get; set; }
 
     /// <summary>
     /// Media RSS tags also appear on Atom entries (YouTube wraps them in a
@@ -55,25 +55,25 @@ public class AtomEntry
     /// relying on an &lt;img&gt; in the content.
     /// </summary>
     [XmlElement("content", Namespace = MediaContent.MediaRssNamespace)]
-    public List<MediaContent> MediaContents { get; set; }
+    public List<MediaContent>? MediaContents { get; set; }
 
     [XmlElement("thumbnail", Namespace = MediaContent.MediaRssNamespace)]
-    public List<MediaContent> MediaThumbnails { get; set; }
+    public List<MediaContent>? MediaThumbnails { get; set; }
 
     [XmlElement("group", Namespace = MediaContent.MediaRssNamespace)]
-    public List<MediaGroup> MediaGroups { get; set; }
+    public List<MediaGroup>? MediaGroups { get; set; }
 }
 
 public class AtomContent
 {
     [XmlAttribute("type")]
-    public string Type { get; set; }
+    public string? Type { get; set; }
     
     [XmlText]
-    public string Text { get; set; }
+    public string? Text { get; set; }
     
     [XmlAnyElement]
-    public XmlElement[] Elements { get; set; }
+    public XmlElement[]? Elements { get; set; }
     
     public override string ToString()
     {
@@ -93,8 +93,8 @@ public class AtomContent
 public class AtomLink
 {
     [XmlAttribute("rel")]
-    public string Rel { get; set; }
+    public string? Rel { get; set; }
 
     [XmlAttribute("href")]
-    public  string Href { get; set; }
+    public  string? Href { get; set; }
 }

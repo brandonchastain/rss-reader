@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Nullable>disable</Nullable>
+    <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- One replica at 0.25 vCPU / 0.5 GiB: workstation GC keeps a smaller heap than
          server GC, and non-concurrent GC skips the background GC thread and its

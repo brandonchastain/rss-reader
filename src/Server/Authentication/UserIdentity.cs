@@ -1,4 +1,3 @@
-#nullable enable
 using System.Security.Claims;
 
 namespace Server.Authentication;

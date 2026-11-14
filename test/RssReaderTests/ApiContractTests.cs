@@ -70,12 +70,12 @@ internal sealed class ApiTestHost : IDisposable
                 {
                     // Test-only login: a request carrying X-Test-User is that user,
                     // everything else goes through the real cookie scheme.
-                    services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, TestHeaderAuthHandler>(TestHeaderAuthHandler.Scheme, _ => { });
+                    services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, TestHeaderAuthHandler>(TestHeaderAuthHandler.SchemeName, _ => { });
                     services.PostConfigure<PolicySchemeOptions>(Server.Authentication.AuthenticationSetup.PolicyScheme, o =>
                     {
                         var cookieSelector = o.ForwardDefaultSelector;
                         o.ForwardDefaultSelector = ctx => ctx.Request.Headers.ContainsKey(TestUserHeader)
-                            ? TestHeaderAuthHandler.Scheme
+                            ? TestHeaderAuthHandler.SchemeName
                             : cookieSelector?.Invoke(ctx);
                     });
 
@@ -244,6 +244,10 @@ public sealed class ApiContractTests
         var users = host.Services.GetRequiredService<IUserRepository>();
         var aliceUser = users.GetUserById(aliceId);
         var bobUser = users.GetUserById(bobId);
+        Assert.IsNotNull(aliceUser);
+        Assert.IsNotNull(bobUser);
+        Assert.IsNotNull(aliceUser);
+        Assert.IsNotNull(bobUser);
         var alpha = (await items.GetItemsAsync(new NewsFeed(AliceFeed, aliceId), false, false, null, 0, 100)).OrderBy(i => i.Href).ToList();
         foreach (var i in alpha.Take(4)) items.MarkAsRead(i, true, aliceUser);
         foreach (var i in alpha.Skip(4).Take(2)) items.SavePost(i, aliceUser);
@@ -712,6 +716,7 @@ public sealed class ApiContractTests
         // The repository refuses on its own too, whatever a future caller passes it.
         var items = host.Services.GetRequiredService<IItemRepository>();
         var aliceUser = host.Services.GetRequiredService<IUserRepository>().GetUserById(aliceId);
+        Assert.IsNotNull(aliceUser);
         items.SavePost(bobPost, aliceUser);
         Assert.IsNull(items.GetItem(aliceUser, int.Parse(bobPost.Id)), "a direct SavePost on an unfollowed feed's post made it visible");
     }
@@ -984,7 +989,9 @@ public sealed class ApiContractTests
 
         var aliceFeeds = await alice.GetFromJsonAsync<List<NewsFeed>>("/api/feed", Json);
         var carolFeeds = await carol.GetFromJsonAsync<List<NewsFeed>>("/api/feed", Json);
-        CollectionAssert.AreEquivalent(aliceFeeds!.Select(f => f.Href).ToList(), carolFeeds!.Select(f => f.Href).ToList());
+        Assert.IsNotNull(aliceFeeds);
+        Assert.IsNotNull(carolFeeds);
+        CollectionAssert.AreEquivalent(aliceFeeds.Select(f => f.Href).ToList(), carolFeeds.Select(f => f.Href).ToList());
         foreach (var feed in aliceFeeds)
         {
             var imported = carolFeeds.Single(f => f.Href == feed.Href);
@@ -1065,7 +1072,7 @@ public sealed class ApiContractTestUserModeTests
 /// <summary>Signs a request in as the user named in X-Test-User ("id|display name").</summary>
 internal sealed class TestHeaderAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    public const string Scheme = "TestHeader";
+    public const string SchemeName = "TestHeader";
 
     public TestHeaderAuthHandler(
         Microsoft.Extensions.Options.IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -1078,11 +1085,11 @@ internal sealed class TestHeaderAuthHandler : AuthenticationHandler<Authenticati
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var parts = Request.Headers["X-Test-User"].ToString().Split('|', 2);
-        var identity = new System.Security.Claims.ClaimsIdentity(Scheme);
+        var identity = new System.Security.Claims.ClaimsIdentity(SchemeName);
         identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, parts[0]));
         identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, parts.Length > 1 ? parts[1] : parts[0]));
         identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "authenticated"));
         identity.AddClaim(new System.Security.Claims.Claim(Server.Authentication.UserIdentity.IdentityProviderClaim, "github"));
-        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new System.Security.Claims.ClaimsPrincipal(identity), Scheme)));
+        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new System.Security.Claims.ClaimsPrincipal(identity), SchemeName)));
     }
 }

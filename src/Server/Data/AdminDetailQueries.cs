@@ -26,7 +26,7 @@ public class AdminDetailQueries
         _dbPath = config?.DbLocation ?? string.Empty;
     }
 
-    public AdminTable Get(string section) => section?.ToLowerInvariant() switch
+    public AdminTable? Get(string section) => section?.ToLowerInvariant() switch
     {
         "users" => Users(),
         "feeds" => Feeds(),

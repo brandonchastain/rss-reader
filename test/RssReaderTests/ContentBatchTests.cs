@@ -20,13 +20,11 @@ public class ContentBatchTests
 {
     private static readonly RssUser TestUser = new("testuser", 7);
 
-    private Mock<IItemRepository> itemRepo;
-    private Mock<IUserResolver> userResolver;
+    private readonly Mock<IItemRepository> itemRepo = new();
+    private readonly Mock<IUserResolver> userResolver = new();
 
-    private ItemController CreateController(RssUser user = null)
+    private ItemController CreateController(RssUser? user = null)
     {
-        this.itemRepo = new Mock<IItemRepository>();
-        this.userResolver = new Mock<IUserResolver>();
         this.userResolver
             .Setup(r => r.ResolveUser(It.IsAny<ClaimsPrincipal>()))
             .Returns(user ?? TestUser);
@@ -40,7 +38,7 @@ public class ContentBatchTests
             NullLogger<ItemController>.Instance);
     }
 
-    private void SetupItem(int id, string content)
+    private void SetupItem(int id, string? content)
     {
         var item = new NewsFeedItem { Id = id.ToString(), UserId = TestUser.Id, FeedUrl = "f", Href = "h" + id };
         this.itemRepo.Setup(r => r.GetItem(It.IsAny<RssUser>(), id)).Returns(item);
@@ -51,7 +49,9 @@ public class ContentBatchTests
     {
         var ok = result as OkObjectResult;
         Assert.IsNotNull(ok, "Expected an OK result.");
-        return (Dictionary<string, string>)ok.Value;
+        var map = ok.Value as Dictionary<string, string>;
+        Assert.IsNotNull(map, "Expected the OK result to carry the id-to-content map.");
+        return map;
     }
 
     private static string Decode(string base64)
@@ -92,7 +92,7 @@ public class ContentBatchTests
         var controller = CreateController();
         SetupItem(1, "<p>mine</p>");
         // GetItem is user-scoped: another user's id resolves to null.
-        this.itemRepo.Setup(r => r.GetItem(It.IsAny<RssUser>(), 99)).Returns((NewsFeedItem)null);
+        this.itemRepo.Setup(r => r.GetItem(It.IsAny<RssUser>(), 99)).Returns((NewsFeedItem?)null);
 
         var map = ResultMap(controller.GetItemContentBatch("1,99"));
 

@@ -176,26 +176,26 @@ public class WriterHandoverTests
         var state = new WriterState();
         var mw = WriterState.Middleware(state);
         var nextCalls = 0;
-        Task Next(Microsoft.AspNetCore.Http.HttpContext _) { nextCalls++; return Task.CompletedTask; }
+        Task NextAsync(Microsoft.AspNetCore.Http.HttpContext _) { nextCalls++; return Task.CompletedTask; }
 
         var ctx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
         ctx.Request.Method = "POST";
         ctx.Response.Body = new MemoryStream();
-        await mw(ctx, Next);
+        await mw(ctx, NextAsync);
         Assert.AreEqual(1, nextCalls, "before the handoff everything passes");
 
         state.MarkHandedOver("rev-0096/b", 5);
         ctx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
         ctx.Request.Method = "POST";
         ctx.Response.Body = new MemoryStream();
-        await mw(ctx, Next);
+        await mw(ctx, NextAsync);
         Assert.AreEqual(1, nextCalls);
         Assert.AreEqual(503, ctx.Response.StatusCode);
         Assert.AreEqual("5", ctx.Response.Headers.RetryAfter.ToString());
 
         ctx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
         ctx.Request.Method = "GET";
-        await mw(ctx, Next);
+        await mw(ctx, NextAsync);
         Assert.AreEqual(2, nextCalls, "reads keep working");
     }
 }

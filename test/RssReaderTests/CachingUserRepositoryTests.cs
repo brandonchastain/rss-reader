@@ -54,25 +54,25 @@ internal sealed class FakeUserRepository : IUserRepository
         return user;
     }
 
-    public RssUser GetUserByName(string username)
+    public RssUser? GetUserByName(string username)
     {
         GetUserByNameCallCount++;
         return Users.FirstOrDefault(u =>
-            string.Equals(u.Username, username, StringComparison.Ordinal))!;
+            string.Equals(u.Username, username, StringComparison.Ordinal));
     }
 
-    public RssUser GetUserById(int userId)
+    public RssUser? GetUserById(int userId)
     {
         GetUserByIdCallCount++;
-        return Users.FirstOrDefault(u => u.Id == userId)!;
+        return Users.FirstOrDefault(u => u.Id == userId);
     }
 
-    public RssUser FindByIdentity(string provider, string subject)
+    public RssUser? FindByIdentity(string provider, string subject)
     {
         FindByIdentityCallCount++;
         return Identities.TryGetValue((provider, subject), out var userId)
-            ? Users.FirstOrDefault(u => u.Id == userId)!
-            : null!;
+            ? Users.FirstOrDefault(u => u.Id == userId)
+            : null;
     }
 
     public void LinkIdentity(int userId, string provider, string subject)

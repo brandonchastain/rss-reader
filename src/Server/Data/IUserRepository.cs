@@ -5,11 +5,11 @@ namespace RssApp.Data;
 public interface IUserRepository
 {
     RssUser AddUser(string username, int? id = null);
-    RssUser GetUserByName(string username);
-    RssUser GetUserById(int userId);
+    RssUser? GetUserByName(string username);
+    RssUser? GetUserById(int userId);
 
     /// <summary>The user a login identity (UserIdentities row) belongs to, or null.</summary>
-    RssUser FindByIdentity(string provider, string subject);
+    RssUser? FindByIdentity(string provider, string subject);
 
     /// <summary>
     /// Attaches a login identity to a user. A no-op when the identity is already

@@ -11,7 +11,7 @@ namespace RssApp.Config
         // Storage
 
         /// <summary>Path of the live SQLite database file.</summary>
-        public string DbLocation { get; set; }
+        public string DbLocation { get; set; } = string.Empty;
 
         /// <summary>Rebuild the full-text search index from stored posts at startup.</summary>
         public bool RebuildFtsOnStartup { get; set; }

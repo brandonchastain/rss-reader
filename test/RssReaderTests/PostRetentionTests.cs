@@ -18,8 +18,8 @@ public sealed class PostRetentionTests
         var alice = db.AddUser("alice");
         const string url = "https://example.com/feed";
         db.Subscribe(alice, url);
-        await db.AddPosts(url, 5);
-        var saved = (await db.Timeline(alice))[2];
+        await db.AddPostsAsync(url, 5);
+        var saved = (await db.TimelineAsync(alice))[2];
         db.Items.SavePost(saved, alice);
 
         // Nothing is old yet.
@@ -30,7 +30,7 @@ public sealed class PostRetentionTests
         var result = Create(db).RunOnce(DateTimeOffset.UtcNow.AddDays(181));
 
         Assert.AreEqual(4, result.PostsDeleted);
-        var left = await db.Timeline(alice);
+        var left = await db.TimelineAsync(alice);
         Assert.AreEqual(1, left.Count);
         Assert.AreEqual(saved.Id, left[0].Id);
         Assert.IsTrue(left[0].IsSaved);
@@ -45,7 +45,7 @@ public sealed class PostRetentionTests
         var alice = db.AddUser("alice");
         const string url = "https://example.com/feed";
         db.Subscribe(alice, url);
-        await db.AddPosts(url, 3);
+        await db.AddPostsAsync(url, 3);
 
         var result = Create(db, days: 0).RunOnce(DateTimeOffset.UtcNow.AddYears(5));
         Assert.AreEqual(0, result.PostsDeleted);
@@ -62,10 +62,10 @@ public sealed class PostRetentionTests
         db.Subscribe(alice, dropped);
         db.Subscribe(alice, kept);
         db.Subscribe(alice, active);
-        await db.AddPosts(dropped, 2, 1000, "d");
-        await db.AddPosts(kept, 2, 2000, "k");
-        await db.AddPosts(active, 2, 3000, "a");
-        db.Items.SavePost((await db.Timeline(alice)).First(i => i.FeedUrl == kept), alice);
+        await db.AddPostsAsync(dropped, 2, 1000, "d");
+        await db.AddPostsAsync(kept, 2, 2000, "k");
+        await db.AddPostsAsync(active, 2, 3000, "a");
+        db.Items.SavePost((await db.TimelineAsync(alice)).First(i => i.FeedUrl == kept), alice);
 
         db.Feeds.DeleteFeed(alice, dropped);
         db.Feeds.DeleteFeed(alice, kept);

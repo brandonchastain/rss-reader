@@ -61,10 +61,10 @@ public class FeedRefresher : IFeedRefresher
         public List<NewsFeedItem> Items { get; init; } = new();
         public TimeSpan? AdvertisedInterval { get; init; }
         public DateTimeOffset? BackoffUntil { get; init; }
-        public string ETag { get; init; }
+        public string? ETag { get; init; }
         public DateTimeOffset? LastModified { get; init; }
-        public string Error { get; init; }
-        public string Title { get; init; }
+        public string? Error { get; init; }
+        public string? Title { get; init; }
     }
 
     private DateTime startupTime = DateTime.UtcNow;
@@ -284,7 +284,7 @@ public class FeedRefresher : IFeedRefresher
 
     public async Task FetchNewFeedAsync(string url)
     {
-        FeedFetchState state;
+        FeedFetchState? state;
         try
         {
             state = this.persistedFeeds.GetFeedFetchState(url);
@@ -435,7 +435,7 @@ public class FeedRefresher : IFeedRefresher
         }
     }
 
-    private static bool IsDue(FeedFetchState state, DateTimeOffset now)
+    private static bool IsDue(FeedFetchState? state, DateTimeOffset now)
         => state?.NextFetchUtc == null || state.NextFetchUtc <= now;
 
     /// <summary>
@@ -444,7 +444,7 @@ public class FeedRefresher : IFeedRefresher
     /// </summary>
     internal bool IsStale(string url) => IsStale(this.persistedFeeds.GetFeedFetchState(url));
 
-    private bool IsStale(FeedFetchState state)
+    private bool IsStale(FeedFetchState? state)
         => state?.LastFetchedUtc == null
             || state.LastFetchedUtc.Value + this.config.FeedRefreshIntervalFloor <= DateTimeOffset.UtcNow;
 
@@ -481,14 +481,14 @@ public class FeedRefresher : IFeedRefresher
 
     private const int MaxStoredErrorLength = 300;
 
-    private static string TruncateError(string error)
+    private static string? TruncateError(string? error)
         => error != null && error.Length > MaxStoredErrorLength ? error[..MaxStoredErrorLength] + "…" : error;
 
     /// <summary>
     /// When the response body is an HTML page rather than a feed, returns a
     /// human-readable reason (naming where a redirect landed), otherwise null.
     /// </summary>
-    internal static string DescribeNonFeed(HttpResponseMessage response, string requestedUrl, string body)
+    internal static string? DescribeNonFeed(HttpResponseMessage response, string requestedUrl, string? body)
     {
         var trimmed = body?.TrimStart() ?? string.Empty;
         var looksLikeHtml =
@@ -602,21 +602,21 @@ public class FeedRefresher : IFeedRefresher
         var hostGate = GetHostGate(url);
         await hostGate.WaitAsync(token);
 
-        List<NewsFeedItem> parsed = null;
+        List<NewsFeedItem>? parsed = null;
         TimeSpan? advertisedInterval = null;
-        string feedTitle = null;
+        string? feedTitle = null;
         TimeSpan? originRetryAfter = null;
         bool notModified = false;
-        string newEtag = null;
+        string? newEtag = null;
         DateTimeOffset? newLastModified = null;
-        string lastError = null;
+        string? lastError = null;
 
         try
         {
             foreach (string agent in agents)
             {
-                string response = null;
-                string nonFeedNote = null;
+                string? response = null;
+                string? nonFeedNote = null;
                 try
                 {
                     using var httpClient = httpClientFactory.CreateClient("RssClient");
@@ -786,9 +786,9 @@ public class FeedRefresher : IFeedRefresher
     /// process still sends a conditional GET and can earn a 304 instead of a
     /// cold fetch after a restart.
     /// </summary>
-    private (EntityTagHeaderValue ETag, DateTimeOffset? LastModified) GetValidators(string url)
+    private (EntityTagHeaderValue? ETag, DateTimeOffset? LastModified) GetValidators(string url)
     {
-        FeedFetchState persisted = null;
+        FeedFetchState? persisted = null;
         try
         {
             persisted = this.persistedFeeds.GetFeedFetchState(url);
@@ -798,7 +798,7 @@ public class FeedRefresher : IFeedRefresher
             this.logger.LogWarning(ex, "Failed to read validators for {url}; fetching unconditionally.", url);
         }
 
-        EntityTagHeaderValue etag = null;
+        EntityTagHeaderValue? etag = null;
         if (persisted != null && !string.IsNullOrEmpty(persisted.ETag))
         {
             EntityTagHeaderValue.TryParse(persisted.ETag, out etag);

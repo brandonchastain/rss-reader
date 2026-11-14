@@ -11,16 +11,15 @@ using RssReader.Server.Services;
 [TestClass]
 public sealed class TagSettingsTests
 {
-    private string testDbFile;
+    private readonly string testDbFile;
 
-    private SQLiteUserRepository userRepo;
-    private SQLiteFeedRepository feedRepo;
-    private IItemRepository itemRepo;
-    private RssUser testUser;
-    private ServiceProvider serviceProvider;
+    private readonly SQLiteUserRepository userRepo;
+    private readonly SQLiteFeedRepository feedRepo;
+    private readonly IItemRepository itemRepo;
+    private readonly RssUser testUser;
+    private readonly ServiceProvider serviceProvider;
 
-    [TestInitialize]
-    public void Setup()
+    public TagSettingsTests()
     {
         testDbFile = $"tagsettings-{Guid.NewGuid():N}.db";
         var dbConnections = new SqliteDbConnections(testDbFile);

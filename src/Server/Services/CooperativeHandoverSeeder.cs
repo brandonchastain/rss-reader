@@ -1,4 +1,3 @@
-#nullable enable
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -241,7 +240,7 @@ namespace RssReader.Server.Services
             }
             finally
             {
-                holdCts.Cancel();
+                await holdCts.CancelAsync();
                 Ready("handover finished");
                 if (follower != null)
                 {

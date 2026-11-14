@@ -32,11 +32,12 @@ public class CacheWarmTests
         public List<Uri> Requests { get; } = new();
         public int CallCount => this.Requests.Count;
 
-        public Uri RequestFor(string pathFragment)
+        public Uri? RequestFor(string pathFragment)
             => this.Requests.FirstOrDefault(u => u.AbsolutePath.Contains(pathFragment));
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
+            Assert.IsNotNull(request.RequestUri, "HttpClient sends every request with a URI.");
             this.Requests.Add(request.RequestUri);
             return Task.FromResult(new HttpResponseMessage(this.status)
             {
@@ -135,7 +136,7 @@ public class CacheWarmTests
             new("3", PendingWrite.ReadKind, true, 1),
         });
 
-        List<NewsFeedItem> persisted = null;
+        List<NewsFeedItem>? persisted = null;
         cache.Setup(c => c.SetTimelineAsync(It.IsAny<string>(), It.IsAny<IEnumerable<NewsFeedItem>>()))
             .Callback<string, IEnumerable<NewsFeedItem>>((_, i) => persisted = i.ToList())
             .Returns(Task.CompletedTask);

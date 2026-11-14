@@ -21,13 +21,13 @@ public class SQLiteUserRepository : IUserRepository
         DatabaseSchema.EnsureCreated(connection);
     }
 
-    public RssUser GetUserByName(string username)
+    public RssUser? GetUserByName(string username)
         => QueryOne("SELECT Id, Username FROM Users WHERE Username = @p", username);
 
-    public RssUser GetUserById(int userId)
+    public RssUser? GetUserById(int userId)
         => QueryOne("SELECT Id, Username FROM Users WHERE Id = @p", userId);
 
-    public RssUser FindByIdentity(string provider, string subject)
+    public RssUser? FindByIdentity(string provider, string subject)
     {
         using var connection = this.connections.OpenRead();
         var command = connection.CreateCommand();
@@ -85,7 +85,8 @@ public class SQLiteUserRepository : IUserRepository
             command.ExecuteNonQuery();
         }
 
-        return this.GetUserByName(username);
+        return this.GetUserByName(username)
+            ?? throw new InvalidOperationException($"User '{username}' was not found right after it was inserted.");
     }
 
     public IEnumerable<RssUser> GetAllUsers()
@@ -117,7 +118,7 @@ public class SQLiteUserRepository : IUserRepository
         command.ExecuteNonQuery();
     }
 
-    private RssUser QueryOne(string sql, object parameter)
+    private RssUser? QueryOne(string sql, object parameter)
     {
         using var connection = this.connections.OpenRead();
         var command = connection.CreateCommand();

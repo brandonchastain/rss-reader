@@ -37,11 +37,11 @@ public sealed class ReaderInteractionTests
     [TestMethod]
     public void PlainHeadlineClick_OpensTheReaderAndMarksRead()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new BunitContext();
         var feedClient = Register(ctx);
         var post = Post("42");
 
-        var cut = ctx.RenderComponent<PostDetail>(p => p.Add(x => x.Post, post));
+        var cut = ctx.Render<PostDetail>(p => p.Add(x => x.Post, post));
         cut.Find("a.post-headline").Click();
 
         Assert.IsTrue(post.IsBeingPreviewed, "a plain headline click opens the reader");
@@ -57,11 +57,11 @@ public sealed class ReaderInteractionTests
     [TestMethod]
     public void ModifiedHeadlineClick_LeavesTheReaderClosed()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new BunitContext();
         var feedClient = Register(ctx);
         var post = Post("42");
 
-        var cut = ctx.RenderComponent<PostDetail>(p => p.Add(x => x.Post, post));
+        var cut = ctx.Render<PostDetail>(p => p.Add(x => x.Post, post));
         cut.Find("a.post-headline").Click(new MouseEventArgs { CtrlKey = true });
 
         // The browser opens the original in a new tab; app.js sends the write.
@@ -73,11 +73,11 @@ public sealed class ReaderInteractionTests
     [TestMethod]
     public void HeadlineAndExternalLink_BothPointAtTheOriginal()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new BunitContext();
         Register(ctx);
         var post = Post("42");
 
-        var cut = ctx.RenderComponent<PostDetail>(p => p.Add(x => x.Post, post));
+        var cut = ctx.Render<PostDetail>(p => p.Add(x => x.Post, post));
 
         Assert.AreEqual(post.Href, cut.Find("a.post-headline").GetAttribute("href"));
         var external = cut.Find("a.post-external");
@@ -88,11 +88,11 @@ public sealed class ReaderInteractionTests
     [TestMethod]
     public void CollapsingAPostMarkedUnreadWhileOpen_LeavesItUnread()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new BunitContext();
         var feedClient = Register(ctx);
         var post = Post("42");
 
-        var cut = ctx.RenderComponent<PostDetail>(p => p.Add(x => x.Post, post));
+        var cut = ctx.Render<PostDetail>(p => p.Add(x => x.Post, post));
         cut.Find("a.post-headline").Click();
         cut.Find("[data-action=\"toggle-read\"]").Click();
         Assert.IsFalse(post.IsRead);
@@ -107,13 +107,13 @@ public sealed class ReaderInteractionTests
     [TestMethod]
     public void MarkAllRead_MarksOnlyThatDaysPosts()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new BunitContext();
         var feedClient = Register(ctx);
         var today = new[] { Post("4"), Post("3") };
         var yesterday = Post("2", "2024-01-01T12:00:00");
         var posts = new List<NewsFeedItem>(today) { yesterday };
 
-        var cut = ctx.RenderComponent<CascadingValue<List<NewsFeedItem>>>(p => p
+        var cut = ctx.Render<CascadingValue<List<NewsFeedItem>>>(p => p
             .Add(x => x.Name, "Posts")
             .Add(x => x.Value, posts)
             .AddChildContent<PostTable>(t => t
@@ -135,7 +135,7 @@ public sealed class ReaderInteractionTests
         Assert.AreEqual(1, cut.FindAll(".day-mark-read").Count, "a day with nothing unread drops the action");
     }
 
-    private static Mock<IFeedClient> Register(Bunit.TestContext ctx)
+    private static Mock<IFeedClient> Register(BunitContext ctx)
     {
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         var feedClient = new Mock<IFeedClient>();

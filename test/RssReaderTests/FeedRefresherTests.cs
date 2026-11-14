@@ -31,7 +31,7 @@ public sealed class FeedRefresherTests
         private int calls;
 
         public int CallCount => Volatile.Read(ref calls);
-        public string LastIfNoneMatch { get; private set; }
+        public string? LastIfNoneMatch { get; private set; }
         public DateTimeOffset? LastIfModifiedSince { get; private set; }
 
         public StubHandler(Func<int, HttpResponseMessage> responder) => this.responder = responder;
@@ -60,15 +60,15 @@ public sealed class FeedRefresherTests
     private sealed class InMemoryFeedRepository : IFeedRepository
     {
         private readonly ConcurrentDictionary<string, FeedFetchState> states = new();
-        public ConcurrentDictionary<string, string> LastErrors { get; } = new();
+        public ConcurrentDictionary<string, string?> LastErrors { get; } = new();
         public List<NewsFeed> Subscriptions { get; } = new();
         public int RecordCount;
 
-        public void Seed(string url, DateTimeOffset? lastFetched = null, DateTimeOffset? next = null, string etag = null, DateTimeOffset? lastModified = null, int failures = 0)
+        public void Seed(string url, DateTimeOffset? lastFetched = null, DateTimeOffset? next = null, string? etag = null, DateTimeOffset? lastModified = null, int failures = 0)
             => this.states[url] = new FeedFetchState(this.states.Count + 1, url, etag, lastModified, lastFetched, next, failures);
 
         public IEnumerable<NewsFeed> GetFeeds(RssUser user) => this.Subscriptions.Where(f => f.UserId == user.Id).ToList();
-        public NewsFeed GetFeed(RssUser user, string url) => this.Subscriptions.FirstOrDefault(f => f.UserId == user.Id && f.Href == url);
+        public NewsFeed? GetFeed(RssUser user, string url) => this.Subscriptions.FirstOrDefault(f => f.UserId == user.Id && f.Href == url);
         public void AddFeed(NewsFeed feed)
         {
             this.Subscriptions.Add(feed);
@@ -87,12 +87,12 @@ public sealed class FeedRefresherTests
 
         public IReadOnlyList<FeedFetchState> GetFeedFetchStates()
             => this.states.Values.Where(s => this.Subscriptions.Any(f => f.Href == s.Url)).OrderBy(s => s.FeedId).ToList();
-        public FeedFetchState GetFeedFetchState(string url) => this.states.TryGetValue(url, out var s) ? s : null;
+        public FeedFetchState? GetFeedFetchState(string url) => this.states.TryGetValue(url, out var s) ? s : null;
         public IReadOnlyList<FeedFetchState> GetDueFeeds(DateTimeOffset now)
             => GetFeedFetchStates().Where(s => s.NextFetchUtc == null || s.NextFetchUtc <= now).ToList();
 
         public void RecordFetchResult(string url, DateTimeOffset fetchedUtc, DateTimeOffset nextFetchUtc, TimeSpan interval,
-            string etag, DateTimeOffset? lastModified, bool keepValidators, bool failed, string error)
+            string? etag, DateTimeOffset? lastModified, bool keepValidators, bool failed, string? error)
         {
             Interlocked.Increment(ref this.RecordCount);
             this.LastErrors[url] = error;
@@ -110,22 +110,22 @@ public sealed class FeedRefresherTests
     }
 
     private static (FeedRefresher refresher, Mock<IItemRepository> itemRepo) CreateRefresher(
-        IFeedRepository feedRepo = null,
-        Mock<IUserRepository> userRepo = null,
-        RssAppConfig config = null,
-        HttpMessageHandler primaryHandler = null,
-        RefreshPacer pacer = null)
+        IFeedRepository? feedRepo = null,
+        Mock<IUserRepository>? userRepo = null,
+        RssAppConfig? config = null,
+        HttpMessageHandler? primaryHandler = null,
+        RefreshPacer? pacer = null)
     {
         var (refresher, itemRepo, _) = CreateRefresherWithProvider(feedRepo, userRepo, config, primaryHandler, pacer);
         return (refresher, itemRepo);
     }
 
     private static (FeedRefresher refresher, Mock<IItemRepository> itemRepo, ServiceProvider provider) CreateRefresherWithProvider(
-        IFeedRepository feedRepo = null,
-        Mock<IUserRepository> userRepo = null,
-        RssAppConfig config = null,
-        HttpMessageHandler primaryHandler = null,
-        RefreshPacer pacer = null)
+        IFeedRepository? feedRepo = null,
+        Mock<IUserRepository>? userRepo = null,
+        RssAppConfig? config = null,
+        HttpMessageHandler? primaryHandler = null,
+        RefreshPacer? pacer = null)
     {
         feedRepo ??= new InMemoryFeedRepository();
         var mockItemRepo = new Mock<IItemRepository>();
@@ -318,7 +318,7 @@ public sealed class FeedRefresherTests
 
         Assert.AreEqual(2, handler.CallCount,
             "After a failed fetch the feed should back off; the second fetch must not hit the origin again.");
-        Assert.AreEqual(1, feedRepo.GetFeedFetchState(url).ConsecutiveFailures, "the failure is recorded on the feed row");
+        Assert.AreEqual(1, feedRepo.GetFeedFetchState(url)?.ConsecutiveFailures, "the failure is recorded on the feed row");
     }
 
     [TestMethod]
@@ -339,7 +339,7 @@ public sealed class FeedRefresherTests
         feedRepo.Seed(url);
         await refresher.FetchFeedAsync(url, force: true, CancellationToken.None);
 
-        Assert.AreEqual(1, feedRepo.GetFeedFetchState(url).ConsecutiveFailures);
+        Assert.AreEqual(1, feedRepo.GetFeedFetchState(url)?.ConsecutiveFailures);
         Assert.AreEqual("returned a web page, not a feed (redirected to www.example.com/landing/)", feedRepo.LastErrors[url]);
     }
 
@@ -367,6 +367,8 @@ public sealed class FeedRefresherTests
         await refresher.FetchFeedAsync(url, force: true, CancellationToken.None);
 
         var state = feedRepo.GetFeedFetchState(url);
+
+        Assert.IsNotNull(state);
         Assert.AreEqual(9, state.ConsecutiveFailures);
         Assert.IsTrue(state.NextFetchUtc > DateTimeOffset.UtcNow.AddHours(4.5), $"next attempt {state.NextFetchUtc} is too soon for 9 failures");
     }
@@ -384,7 +386,7 @@ public sealed class FeedRefresherTests
         await refresher.FetchFeedAsync(url, force: true, CancellationToken.None);
 
         Assert.AreEqual(0, handler.CallCount, "the origin must not be contacted inside the recorded backoff");
-        Assert.AreEqual(5, feedRepo.GetFeedFetchState(url).ConsecutiveFailures, "a skipped fetch is not another failure");
+        Assert.AreEqual(5, feedRepo.GetFeedFetchState(url)?.ConsecutiveFailures, "a skipped fetch is not another failure");
     }
 
     [TestMethod]
@@ -456,6 +458,7 @@ public sealed class FeedRefresherTests
         await refresher.FetchFeedAsync(url, force: true, CancellationToken.None);
 
         var saved = feedRepo.GetFeedFetchState(url);
+        Assert.IsNotNull(saved);
         StringAssert.Contains(saved.ETag, "vox-etag-123", "Persisted ETag should match the response.");
         Assert.AreEqual(lastModified, saved.LastModified, "Persisted Last-Modified should match the response.");
         Assert.IsNotNull(saved.NextFetchUtc, "the next fetch is scheduled");
@@ -486,6 +489,7 @@ public sealed class FeedRefresherTests
         Assert.AreEqual(0, added);
         itemRepo.Verify(r => r.AddItemsAsync(It.IsAny<IEnumerable<NewsFeedItem>>()), Times.Never);
         var state = feedRepo.GetFeedFetchState(url);
+        Assert.IsNotNull(state);
         Assert.AreEqual(0, state.ConsecutiveFailures);
         Assert.IsNotNull(state.LastFetchedUtc);
         StringAssert.Contains(state.ETag, "persisted-etag", "a 304 keeps the stored validators");

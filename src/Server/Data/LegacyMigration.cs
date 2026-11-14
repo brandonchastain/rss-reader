@@ -12,9 +12,9 @@ namespace RssApp.Data;
 public sealed record MigrationState(
     string Id,
     string Status,          // "migrated" | "already-applied" | "not-needed" | "failed"
-    string AppliedUtc,
+    string? AppliedUtc,
     long? DurationMs,
-    string Notes);
+    string? Notes);
 
 /// <summary>
 /// The one-shot, in-place migration from the per-subscriber Items schema to
@@ -375,7 +375,7 @@ public static class LegacyMigration
         }
     }
 
-    private static MigrationState ReadRecord(SqliteConnection connection)
+    private static MigrationState? ReadRecord(SqliteConnection connection)
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT AppliedUtc, DurationMs, Notes FROM SchemaMigrations WHERE Id = @id";

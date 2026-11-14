@@ -76,7 +76,7 @@ public class SQLiteFeedRepository : IFeedRepository
         return popular;
     }
 
-    public NewsFeed GetFeed(RssUser user, string url)
+    public NewsFeed? GetFeed(RssUser user, string url)
     {
         using var connection = this.connections.OpenRead();
         var command = connection.CreateCommand();
@@ -354,7 +354,7 @@ public class SQLiteFeedRepository : IFeedRepository
         return ReadStates(command);
     }
 
-    public FeedFetchState GetFeedFetchState(string url)
+    public FeedFetchState? GetFeedFetchState(string url)
     {
         using var connection = this.connections.OpenRead();
         var command = connection.CreateCommand();
@@ -390,11 +390,11 @@ public class SQLiteFeedRepository : IFeedRepository
         DateTimeOffset fetchedUtc,
         DateTimeOffset nextFetchUtc,
         TimeSpan interval,
-        string etag,
+        string? etag,
         DateTimeOffset? lastModified,
         bool keepValidators,
         bool failed,
-        string error)
+        string? error)
     {
         try
         {
@@ -416,11 +416,11 @@ public class SQLiteFeedRepository : IFeedRepository
             command.Parameters.AddWithValue("@next", nextFetchUtc.ToString("o", CultureInfo.InvariantCulture));
             command.Parameters.AddWithValue("@interval", (long)interval.TotalSeconds);
             command.Parameters.AddWithValue("@keep", keepValidators ? 1 : 0);
-            command.Parameters.AddWithValue("@etag", (object)etag ?? DBNull.Value);
+            command.Parameters.AddWithValue("@etag", (object?)etag ?? DBNull.Value);
             command.Parameters.AddWithValue("@lastModified",
                 lastModified.HasValue ? lastModified.Value.ToString("o", CultureInfo.InvariantCulture) : DBNull.Value);
             command.Parameters.AddWithValue("@failed", failed ? 1 : 0);
-            command.Parameters.AddWithValue("@error", (object)error ?? DBNull.Value);
+            command.Parameters.AddWithValue("@error", (object?)error ?? DBNull.Value);
             command.ExecuteNonQuery();
         }
         catch (Exception ex)

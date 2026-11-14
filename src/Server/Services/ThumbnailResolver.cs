@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using RssApp.Contracts;
@@ -21,7 +22,7 @@ namespace RssReader.Server.Services;
 /// </summary>
 public class ThumbnailResolver
 {
-    public string Resolve(NewsFeedItem item)
+    public string? Resolve(NewsFeedItem item)
     {
         if (IsHttpUrl(item.ThumbnailUrl))
         {
@@ -31,7 +32,7 @@ public class ThumbnailResolver
         return ExtractBestImage(item.Content);
     }
 
-    private static string ExtractBestImage(string content)
+    private static string? ExtractBestImage(string? content)
     {
         if (string.IsNullOrEmpty(content))
         {
@@ -75,36 +76,36 @@ public class ThumbnailResolver
     /// descriptor in srcset, else the biggest density ("x"), else the plain src,
     /// else a lazy-loading data-src.
     /// </summary>
-    private static string BestSrc(HtmlNode img)
+    private static string? BestSrc(HtmlNode img)
     {
-        var fromSrcset = LargestSrcsetCandidate(img.GetAttributeValue("srcset", null))
-            ?? LargestSrcsetCandidate(img.GetAttributeValue("data-srcset", null));
+        var fromSrcset = LargestSrcsetCandidate(Attribute(img, "srcset"))
+            ?? LargestSrcsetCandidate(Attribute(img, "data-srcset"));
         if (IsHttpUrl(fromSrcset))
         {
             return fromSrcset;
         }
 
-        var src = img.GetAttributeValue("src", null);
+        var src = Attribute(img, "src");
         if (IsHttpUrl(src))
         {
             return src;
         }
 
-        return img.GetAttributeValue("data-src", null);
+        return Attribute(img, "data-src");
     }
 
     // "url 300w, url 600w" or "url 1x, url 2x". A URL never contains whitespace,
     // so each candidate is a non-space run followed by its descriptor.
     private static readonly Regex SrcsetCandidate = new(@"(\S+)\s+(\d+(?:\.\d+)?)([wx])", RegexOptions.Compiled);
 
-    private static string LargestSrcsetCandidate(string srcset)
+    private static string? LargestSrcsetCandidate(string? srcset)
     {
         if (string.IsNullOrWhiteSpace(srcset))
         {
             return null;
         }
 
-        string best = null;
+        string? best = null;
         double bestWidth = -1;
         double bestDensity = -1;
         foreach (Match match in SrcsetCandidate.Matches(srcset))
@@ -138,16 +139,19 @@ public class ThumbnailResolver
 
     private static bool IsTrackingPixel(HtmlNode img)
     {
-        var width = img.GetAttributeValue("width", null);
-        var height = img.GetAttributeValue("height", null);
+        var width = Attribute(img, "width");
+        var height = Attribute(img, "height");
         return IsOnePixel(width) || IsOnePixel(height);
     }
 
-    private static bool IsOnePixel(string value) =>
+    private static bool IsOnePixel(string? value) =>
         !string.IsNullOrWhiteSpace(value)
         && int.TryParse(value.Trim().TrimEnd('p', 'x'), out var n)
         && n <= 1;
 
-    private static bool IsHttpUrl(string url) =>
+    private static bool IsHttpUrl([NotNullWhen(true)] string? url) =>
         !string.IsNullOrEmpty(url) && url.StartsWith("http", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The attribute's value, or null when the element doesn't carry it.</summary>
+    private static string? Attribute(HtmlNode node, string name) => node.Attributes[name]?.Value;
 }

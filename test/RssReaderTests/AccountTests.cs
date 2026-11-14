@@ -10,15 +10,14 @@ using RssReader.Server.Services;
 [TestClass]
 public sealed class AccountTests
 {
-    private string testDbFile;
+    private readonly string testDbFile;
 
-    private SQLiteUserRepository userRepo;
-    private SQLiteFeedRepository feedRepo;
-    private IItemRepository itemRepo;
-    private ServiceProvider serviceProvider;
+    private readonly SQLiteUserRepository userRepo;
+    private readonly SQLiteFeedRepository feedRepo;
+    private readonly IItemRepository itemRepo;
+    private readonly ServiceProvider serviceProvider;
 
-    [TestInitialize]
-    public void Setup()
+    public AccountTests()
     {
         testDbFile = $"account-{Guid.NewGuid():N}.db";
         var dbConnections = new SqliteDbConnections(testDbFile);

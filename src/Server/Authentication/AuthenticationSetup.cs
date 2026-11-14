@@ -1,4 +1,3 @@
-#nullable enable
 using System.Security.Claims;
 using AspNet.Security.OAuth.GitHub;
 using Microsoft.AspNetCore.Authentication;
@@ -131,7 +130,7 @@ public static class AuthenticationSetup
                         };
                         // Cancelled consent (?error=access_denied) or a replayed
                         // callback: back to the frontend, not a 500 on the API host.
-                        options.Events.OnRemoteFailure = ctx => RedirectFailureToFrontend(ctx, auth);
+                        options.Events.OnRemoteFailure = ctx => RedirectFailureToFrontendAsync(ctx, auth);
                     });
                     break;
 
@@ -183,7 +182,7 @@ public static class AuthenticationSetup
                         // A failed callback (provider error, cancelled consent,
                         // or an account the app cannot identify) goes back to
                         // the frontend with the reason instead of a 500 page.
-                        options.Events.OnRemoteFailure = ctx => RedirectFailureToFrontend(ctx, auth);
+                        options.Events.OnRemoteFailure = ctx => RedirectFailureToFrontendAsync(ctx, auth);
 
                         // Always show the account picker: people with several
                         // Microsoft or Google accounts signed in must get to
@@ -207,7 +206,7 @@ public static class AuthenticationSetup
     /// account the app cannot identify) back to the frontend with the reason
     /// instead of a 500 page.
     /// </summary>
-    private static Task RedirectFailureToFrontend(RemoteFailureContext ctx, AuthConfig auth)
+    private static Task RedirectFailureToFrontendAsync(RemoteFailureContext ctx, AuthConfig auth)
     {
         // Without the state cookie (a replayed or expired callback) there
         // are no properties; "/" would land on the API host, so fall back

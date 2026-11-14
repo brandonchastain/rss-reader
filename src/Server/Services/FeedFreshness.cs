@@ -1,4 +1,3 @@
-#nullable enable
 using System;
 using System.Globalization;
 using System.Threading.Tasks;
@@ -38,8 +37,8 @@ namespace RssReader.Server.Services
             cmd.CommandText = Sql;
             using var reader = await cmd.ExecuteReaderAsync();
             await reader.ReadAsync();
-            var newest = ParseUtc(reader.IsDBNull(0) ? null : reader.GetString(0));
-            var lastRefresh = ParseUtc(reader.IsDBNull(2) ? null : reader.GetString(2));
+            var newest = ParseUtc(await reader.IsDBNullAsync(0) ? null : reader.GetString(0));
+            var lastRefresh = ParseUtc(await reader.IsDBNullAsync(2) ? null : reader.GetString(2));
             return new FeedFreshness(
                 newest == null ? null : Math.Round(Math.Max(0, (now - newest.Value).TotalHours), 1),
                 reader.GetInt64(1),

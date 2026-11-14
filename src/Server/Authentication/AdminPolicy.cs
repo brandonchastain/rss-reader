@@ -1,4 +1,3 @@
-#nullable enable
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using RssApp.ComponentServices;

@@ -48,9 +48,9 @@ public sealed class NewUserFirstLoadTests
         FeedTags = new List<string>(),
     };
 
-    private static (Bunit.TestContext ctx, Mock<IFeedClient> feeds, Mock<IUserClient> users) Setup()
+    private static (BunitContext ctx, Mock<IFeedClient> feeds, Mock<IUserClient> users) Setup()
     {
-        var ctx = new Bunit.TestContext();
+        var ctx = new BunitContext();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var feedClient = new Mock<IFeedClient>();
@@ -86,7 +86,7 @@ public sealed class NewUserFirstLoadTests
             .ThrowsAsync(Status(HttpStatusCode.NotFound))
             .ReturnsAsync(new[] { Post("2"), Post("1") });
 
-        var cut = ctx.RenderComponent<NoDelayTimeline>();
+        var cut = ctx.Render<NoDelayTimeline>();
 
         cut.WaitForAssertion(() =>
         {
@@ -105,7 +105,7 @@ public sealed class NewUserFirstLoadTests
             .Setup(f => f.GetTimelineAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<long?>()))
             .ThrowsAsync(Status(HttpStatusCode.NotFound));
 
-        var cut = ctx.RenderComponent<NoDelayTimeline>();
+        var cut = ctx.Render<NoDelayTimeline>();
 
         cut.WaitForAssertion(() => Assert.IsTrue(cut.Markup.Contains(FailedText)), Wait);
         VerifyFetches(feeds, 2);
@@ -123,7 +123,7 @@ public sealed class NewUserFirstLoadTests
             .ThrowsAsync(Status(HttpStatusCode.ServiceUnavailable))
             .ReturnsAsync(new[] { Post("2"), Post("1") });
 
-        var cut = ctx.RenderComponent<NoDelayTimeline>();
+        var cut = ctx.Render<NoDelayTimeline>();
 
         cut.WaitForAssertion(() => Assert.IsTrue(cut.Markup.Contains("Post 2")), Wait);
         Assert.IsFalse(cut.Markup.Contains(FailedText));
@@ -140,7 +140,7 @@ public sealed class NewUserFirstLoadTests
             .Setup(f => f.GetTimelineAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<long?>()))
             .ThrowsAsync(Status(HttpStatusCode.ServiceUnavailable));
 
-        var cut = ctx.RenderComponent<NoDelayTimeline>();
+        var cut = ctx.Render<NoDelayTimeline>();
 
         cut.WaitForAssertion(() => Assert.IsTrue(cut.Markup.Contains(FailedText)), Wait);
         Assert.IsFalse(cut.Markup.Contains("No posts found"), "a failed load must not claim the list is empty");
@@ -165,7 +165,7 @@ public sealed class NewUserFirstLoadTests
             .Setup(f => f.GetTimelineAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<long?>()))
             .ThrowsAsync(Status(HttpStatusCode.Unauthorized));
 
-        var cut = ctx.RenderComponent<NoDelayTimeline>();
+        var cut = ctx.Render<NoDelayTimeline>();
 
         cut.WaitForAssertion(() => Assert.IsTrue(cut.Markup.Contains(FailedText)), Wait);
         VerifyFetches(feeds, 1);
@@ -181,7 +181,7 @@ public sealed class NewUserFirstLoadTests
             .Setup(f => f.GetTimelineAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<long?>()))
             .ReturnsAsync(Array.Empty<NewsFeedItem>());
 
-        var cut = ctx.RenderComponent<NoDelayTimeline>();
+        var cut = ctx.Render<NoDelayTimeline>();
 
         cut.WaitForAssertion(() => Assert.IsTrue(cut.Markup.Contains("No posts found")), Wait);
         Assert.IsFalse(cut.Markup.Contains(FailedText));

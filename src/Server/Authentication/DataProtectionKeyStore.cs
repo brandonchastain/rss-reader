@@ -1,4 +1,3 @@
-#nullable enable
 using Azure.Storage.Blobs;
 using RssApp.Config;
 using RssReader.Server.Services;

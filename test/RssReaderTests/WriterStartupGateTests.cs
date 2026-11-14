@@ -112,7 +112,7 @@ public class WriterStartupGateTests
         listener.Stop();
     }
 
-    private static async Task<HttpResponseMessage> WaitForGate(HttpClient http, string path)
+    private static async Task<HttpResponseMessage> WaitForGateAsync(HttpClient http, string path)
     {
         for (var i = 0; i < 100; i++)
         {
@@ -126,19 +126,20 @@ public class WriterStartupGateTests
     {
         var port = FreePort();
         var url = $"http://127.0.0.1:{port}";
-        var restoreDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var restoreDone = new SemaphoreSlim(0, 1);
 
         var run = WriterStartupGate.RunAsync(
-            Array.Empty<string>(), _ => restoreDone.Task, Origins, NullLoggerFactory.Instance, url);
+            Array.Empty<string>(), async ct => { await restoreDone.WaitAsync(ct); return true; },
+            Origins, NullLoggerFactory.Instance, url);
 
         // Gate is up: probe passes while the restore is still running.
         using var http = new HttpClient { BaseAddress = new Uri(url) };
-        var probe = await WaitForGate(http, "/api/healthz");
+        var probe = await WaitForGateAsync(http, "/api/healthz");
         Assert.AreEqual(HttpStatusCode.OK, probe.StatusCode);
         Assert.AreEqual(HttpStatusCode.ServiceUnavailable, (await http.GetAsync("/api/feeds")).StatusCode);
         Assert.IsFalse(run.IsCompleted);
 
-        restoreDone.SetResult(true);
+        restoreDone.Release();
         await run.WaitAsync(TimeSpan.FromSeconds(15));
 
         Assert.IsFalse(PortAccepts(port), "Gate stopped and freed the port");
@@ -163,7 +164,7 @@ public class WriterStartupGateTests
             await Task.Delay(20);
         }
         Assert.IsTrue(PortAccepts(port), "gate should be listening before it is cancelled");
-        cts.Cancel();
+        await cts.CancelAsync();
 
         try
         {

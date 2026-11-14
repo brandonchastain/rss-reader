@@ -194,6 +194,7 @@ public sealed class OutboundUrlGuardTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Assert.IsNotNull(request.RequestUri, "HttpClient sends every request with a URI.");
             this.Requested.Add(request.RequestUri);
             return Task.FromResult(this.script(request.RequestUri));
         }
