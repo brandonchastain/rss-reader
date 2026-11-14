@@ -8,7 +8,7 @@ namespace RssReaderTests;
 [TestClass]
 public class WriterStartupGateTests
 {
-    private static readonly string[] Origins = { "http://localhost:4280" };
+    private static readonly string[] Origins = { "https://localhost:8443" };
     private static int FreePort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -68,12 +68,12 @@ public class WriterStartupGateTests
         foreach (var path in new[] { "/api/feeds", "/auth/me", "/" })
         {
             var req = new HttpRequestMessage(HttpMethod.Get, path);
-            req.Headers.Add("Origin", "http://localhost:4280");
+            req.Headers.Add("Origin", "https://localhost:8443");
             var res = await http.SendAsync(req);
 
             Assert.AreEqual(HttpStatusCode.ServiceUnavailable, res.StatusCode, path);
             Assert.AreEqual("5", res.Headers.RetryAfter!.Delta!.Value.TotalSeconds.ToString(), path);
-            Assert.AreEqual("http://localhost:4280", res.Headers.GetValues("Access-Control-Allow-Origin").Single(), path);
+            Assert.AreEqual("https://localhost:8443", res.Headers.GetValues("Access-Control-Allow-Origin").Single(), path);
             Assert.AreEqual("true", res.Headers.GetValues("Access-Control-Allow-Credentials").Single(), path);
             Assert.AreEqual("Origin", res.Headers.Vary.Single(), path);
         }
