@@ -69,11 +69,11 @@ public sealed class MarkReadOnNavigateTests
     [TestMethod]
     public void OutboundLink_CarriesTheApiMarkReadUrl()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new BunitContext();
         var feedClient = Register(ctx);
         var post = UnreadPost();
 
-        var cut = ctx.RenderComponent<PostDetail>(p => p.Add(x => x.Post, post));
+        var cut = ctx.Render<PostDetail>(p => p.Add(x => x.Post, post));
 
         var link = cut.Find("a[data-article-link][data-mark-read-url]");
         Assert.AreEqual(post.Href, link.GetAttribute("href"));
@@ -87,11 +87,11 @@ public sealed class MarkReadOnNavigateTests
     [TestMethod]
     public void ClickingTheOutboundLink_MarksReadLocallyBeforeNavigation()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new BunitContext();
         var feedClient = Register(ctx);
         var post = UnreadPost();
 
-        var cut = ctx.RenderComponent<PostDetail>(p => p.Add(x => x.Post, post));
+        var cut = ctx.Render<PostDetail>(p => p.Add(x => x.Post, post));
         cut.Find("a[data-article-link][data-mark-read-url]").Click();
 
         // Local state flips synchronously so any snapshot of the page shows Read.
@@ -104,7 +104,7 @@ public sealed class MarkReadOnNavigateTests
         feedClient.Verify(f => f.MarkAsReadAsync(It.IsAny<NewsFeedItem>(), It.IsAny<bool>()), Times.Never);
     }
 
-    private static Mock<IFeedClient> Register(Bunit.TestContext ctx)
+    private static Mock<IFeedClient> Register(BunitContext ctx)
     {
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         var feedClient = new Mock<IFeedClient>();

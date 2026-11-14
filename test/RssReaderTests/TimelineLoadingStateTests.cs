@@ -35,7 +35,7 @@ public sealed class TimelineLoadingStateTests
     [TestMethod]
     public async Task AfterTheFirstLoad_PostTableSeesIsLoadingFalseAndTheProbeFires()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new BunitContext();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         // Loose mode answers false to every bool call, which would read as a
         // hidden tab and skip the probe for an unrelated reason.
@@ -67,7 +67,7 @@ public sealed class TimelineLoadingStateTests
         ctx.Services.AddSingleton(new Mock<IUserClient>().Object);
         ctx.Services.AddSingleton(cache.Object);
 
-        var cut = ctx.RenderComponent<Timeline>();
+        var cut = ctx.Render<Timeline>();
         var table = cut.FindComponent<PostTable>();
         Assert.IsTrue(table.Instance.IsLoading, "the table starts out loading");
 
