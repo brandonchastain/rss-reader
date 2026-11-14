@@ -397,11 +397,9 @@ public sealed class ApiContractTests
         {
             Assert.AreEqual(HttpStatusCode.Unauthorized, (await client.GetAsync(path)).StatusCode, path);
         }
-        // Unmatched routes fall under the fallback authorization policy, so an
-        // anonymous caller gets 401 rather than learning whether a route exists.
         foreach (var path in new[] { "/api/health", "/api/health/feeds/x", "/api/health/users" })
         {
-            Assert.AreEqual(HttpStatusCode.Unauthorized, (await client.GetAsync(path)).StatusCode, path);
+            Assert.AreEqual(HttpStatusCode.NotFound, (await client.GetAsync(path)).StatusCode, path);
         }
     }
 
@@ -775,12 +773,30 @@ public sealed class ApiContractTests
     }
 
     [TestMethod]
-    public async Task EndpointsThatDeclareNothing_RequireASignedInCaller()
+    public void EveryEndpoint_DeclaresItsAuthorization()
     {
-        var provider = host.Services.GetRequiredService<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider>();
-        var fallback = await provider.GetFallbackPolicyAsync();
-        Assert.IsNotNull(fallback, "no fallback policy: a new endpoint would be anonymous by default");
-        Assert.IsTrue(fallback.Requirements.OfType<Microsoft.AspNetCore.Authorization.Infrastructure.DenyAnonymousAuthorizationRequirement>().Any());
+        // Secure by default without a FallbackPolicy (which would also answer 401
+        // for requests matching no route, hiding the 404/405 below): every mapped
+        // endpoint must either require authorization or say AllowAnonymous.
+        var endpoints = host.Services.GetRequiredService<Microsoft.AspNetCore.Routing.EndpointDataSource>().Endpoints;
+        Assert.IsTrue(endpoints.Count > 10, "endpoint data source looks empty");
+        var undeclared = endpoints
+            .Where(e => e.Metadata.GetMetadata<Microsoft.AspNetCore.Authorization.IAuthorizeData>() == null
+                     && e.Metadata.GetMetadata<Microsoft.AspNetCore.Authorization.IAllowAnonymous>() == null)
+            .Select(e => e.DisplayName)
+            .ToList();
+        Assert.AreEqual(0, undeclared.Count, "endpoints with no authorization declared: " + string.Join(", ", undeclared));
+    }
+
+    [TestMethod]
+    public async Task UnmatchedRequests_Keep404And405_ForAnonymousCallers()
+    {
+        // The deploy smoke check (smoke-prod.sh) asserts this 405 anonymously.
+        using var anonymous = host.Anonymous();
+        Assert.AreEqual(HttpStatusCode.MethodNotAllowed, (await anonymous.GetAsync("/api/item/markAsRead?itemId=1&isRead=true")).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await anonymous.GetAsync("/api/no-such-route")).StatusCode);
+        Assert.AreNotEqual(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/feed/icon?domain=example.com")).StatusCode, "AllowAnonymous on the favicon route must beat the controller-wide requirement");
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await anonymous.PostAsync("/api/item/markAsRead?itemId=1&isRead=true", content: null)).StatusCode);
     }
 
     // ---------- search ----------
