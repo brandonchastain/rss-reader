@@ -70,12 +70,12 @@ internal sealed class ApiTestHost : IDisposable
                 {
                     // Test-only login: a request carrying X-Test-User is that user,
                     // everything else goes through the real cookie scheme.
-                    services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, TestHeaderAuthHandler>(TestHeaderAuthHandler.Scheme, _ => { });
+                    services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, TestHeaderAuthHandler>(TestHeaderAuthHandler.SchemeName, _ => { });
                     services.PostConfigure<PolicySchemeOptions>(Server.Authentication.AuthenticationSetup.PolicyScheme, o =>
                     {
                         var cookieSelector = o.ForwardDefaultSelector;
                         o.ForwardDefaultSelector = ctx => ctx.Request.Headers.ContainsKey(TestUserHeader)
-                            ? TestHeaderAuthHandler.Scheme
+                            ? TestHeaderAuthHandler.SchemeName
                             : cookieSelector?.Invoke(ctx);
                     });
 
@@ -1070,7 +1070,7 @@ public sealed class ApiContractTestUserModeTests
 /// <summary>Signs a request in as the user named in X-Test-User ("id|display name").</summary>
 internal sealed class TestHeaderAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    public const string Scheme = "TestHeader";
+    public const string SchemeName = "TestHeader";
 
     public TestHeaderAuthHandler(
         Microsoft.Extensions.Options.IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -1083,11 +1083,11 @@ internal sealed class TestHeaderAuthHandler : AuthenticationHandler<Authenticati
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var parts = Request.Headers["X-Test-User"].ToString().Split('|', 2);
-        var identity = new System.Security.Claims.ClaimsIdentity(Scheme);
+        var identity = new System.Security.Claims.ClaimsIdentity(SchemeName);
         identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, parts[0]));
         identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, parts.Length > 1 ? parts[1] : parts[0]));
         identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "authenticated"));
         identity.AddClaim(new System.Security.Claims.Claim(Server.Authentication.UserIdentity.IdentityProviderClaim, "github"));
-        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new System.Security.Claims.ClaimsPrincipal(identity), Scheme)));
+        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new System.Security.Claims.ClaimsPrincipal(identity), SchemeName)));
     }
 }
