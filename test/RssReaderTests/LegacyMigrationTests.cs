@@ -41,10 +41,7 @@ public sealed class LegacyMigrationTests
     private const string AliceOnly = "https://alice.example.com/rss";
     private const string Orphan = "https://orphan.example.com/rss";
 
-    private string path;
-
-    [TestInitialize]
-    public void Setup() => path = $"legacy-{Guid.NewGuid():N}.db";
+    private readonly string path = $"legacy-{Guid.NewGuid():N}.db";
 
     [TestCleanup]
     public void Cleanup()

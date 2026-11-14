@@ -8,12 +8,11 @@ using RssApp.Data;
 [TestClass]
 public sealed class PopularFeedsTests
 {
-    private string testDbFile;
-    private SQLiteUserRepository userRepo;
-    private SQLiteFeedRepository feedRepo;
+    private readonly string testDbFile;
+    private readonly SQLiteUserRepository userRepo;
+    private readonly SQLiteFeedRepository feedRepo;
 
-    [TestInitialize]
-    public void Setup()
+    public PopularFeedsTests()
     {
         testDbFile = $"popularfeeds-{Guid.NewGuid():N}.db";
         var connections = new SqliteDbConnections(testDbFile);

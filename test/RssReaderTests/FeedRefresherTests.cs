@@ -31,7 +31,7 @@ public sealed class FeedRefresherTests
         private int calls;
 
         public int CallCount => Volatile.Read(ref calls);
-        public string LastIfNoneMatch { get; private set; }
+        public string? LastIfNoneMatch { get; private set; }
         public DateTimeOffset? LastIfModifiedSince { get; private set; }
 
         public StubHandler(Func<int, HttpResponseMessage> responder) => this.responder = responder;

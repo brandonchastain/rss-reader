@@ -20,13 +20,11 @@ public class ContentBatchTests
 {
     private static readonly RssUser TestUser = new("testuser", 7);
 
-    private Mock<IItemRepository> itemRepo;
-    private Mock<IUserResolver> userResolver;
+    private readonly Mock<IItemRepository> itemRepo = new();
+    private readonly Mock<IUserResolver> userResolver = new();
 
     private ItemController CreateController(RssUser user = null)
     {
-        this.itemRepo = new Mock<IItemRepository>();
-        this.userResolver = new Mock<IUserResolver>();
         this.userResolver
             .Setup(r => r.ResolveUser(It.IsAny<ClaimsPrincipal>()))
             .Returns(user ?? TestUser);
