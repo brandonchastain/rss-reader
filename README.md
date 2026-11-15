@@ -27,5 +27,4 @@ A simple browser-based RSS reader, live at <https://rss.brandonchastain.com>.
 ## Docs
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the pieces fit and how data is kept safe
-- [SELF-HOSTING.md](SELF-HOSTING.md): run your own copy
 - [CLAUDE.md](CLAUDE.md): build, test and deploy commands, and the rules for changes

@@ -1,6 +1,6 @@
 ---
 name: docs
-description: Rules for writing, reviewing or trimming this repo's documentation (README, ARCHITECTURE, SELF-HOSTING, CLAUDE.md, skills, test READMEs). Use when adding or changing a doc, when a code change makes a doc wrong, or when asked to review or clean up docs.
+description: Rules for writing, reviewing or trimming this repo's documentation (README, ARCHITECTURE, CLAUDE.md, skills, test READMEs). Use when adding or changing a doc, when a code change makes a doc wrong, or when asked to review or clean up docs.
 ---
 
 # Writing docs for this repo
@@ -13,7 +13,7 @@ Anthropic's guidance on CLAUDE.md and skills, and the Diátaxis framework.
    one. If a doc no longer applies, delete it, because git history keeps it.
 2. **Give each file one job** (Diátaxis):
    - README orients the reader.
-   - SELF-HOSTING and the skills are how-to guides.
+   - The skills are how-to guides.
    - ARCHITECTURE explains the design.
    - The code is the reference.
    Don't mix these jobs in one file.
