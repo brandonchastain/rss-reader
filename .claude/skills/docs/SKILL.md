@@ -1,6 +1,6 @@
 ---
 name: docs
-description: Rules for writing, reviewing or trimming this repo's documentation (README, ARCHITECTURE, DEPLOY, LOCAL-TESTING, SELF-HOSTING, CLAUDE.md, skills, test READMEs). Use when adding or changing a doc, when a code change makes a doc wrong, or when asked to review or clean up docs.
+description: Rules for writing, reviewing or trimming this repo's documentation (README, ARCHITECTURE, SELF-HOSTING, CLAUDE.md, skills, test READMEs). Use when adding or changing a doc, when a code change makes a doc wrong, or when asked to review or clean up docs.
 ---
 
 # Writing docs for this repo
@@ -13,7 +13,7 @@ Anthropic's guidance on CLAUDE.md and skills, and the Diátaxis framework.
    one. If a doc no longer applies, delete it, because git history keeps it.
 2. **Give each file one job** (Diátaxis):
    - README orients the reader.
-   - LOCAL-TESTING and DEPLOY are how-to guides.
+   - SELF-HOSTING and the skills are how-to guides.
    - ARCHITECTURE explains the design.
    - The code is the reference.
    Don't mix these jobs in one file.
@@ -22,8 +22,7 @@ Anthropic's guidance on CLAUDE.md and skills, and the Diátaxis framework.
    and the schema in `DatabaseSchema.cs`. A copied table goes stale; a link doesn't.
 4. **Describe only how things work now.** No history, PR numbers, rollout steps,
    "before/after" measurements or dated status lines. Those belong in commits and PRs.
-   A finished design spec gets deleted. The one exception is benchmark findings in
-   `test/load/README.md`, each with its date and box size.
+   A finished design spec gets deleted.
 5. **Update the docs in the same change as the code.** If a change makes a sentence
    false, fix or delete the sentence in that PR.
 6. **Write for someone about to act.** Use commands they can copy, then one line on why

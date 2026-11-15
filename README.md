@@ -2,8 +2,17 @@
 
 A simple browser-based RSS reader, live at <https://rss.brandonchastain.com>.
 
-Subscribe to RSS and Atom feeds, read them in one infinite-scroll timeline, organize
-feeds with tags, save and search posts, and import or export your feeds as OPML.
+![The RSS reader timeline](docs/screenshot.png)
+
+## Features
+
+- 🗞️ Subscribe to RSS and Atom feeds
+- 📰 Browse recent posts in an infinite-scroll feed
+- 🏷️ Categorize feeds using **tags**
+- 🚰 Curate your own feed with **tag filters** and **saved posts**
+- 🔍 **Search** for posts
+- 📥 **Import and export** feeds to/from other reader apps
+- 📱 Responsive design for mobile & desktop
 
 ## Layout
 
@@ -17,13 +26,6 @@ feeds with tags, save and search posts, and import or export your feeds as OPML.
 
 ## Docs
 
-- [LOCAL-TESTING.md](LOCAL-TESTING.md): run and test it on your machine
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the pieces fit and how data is kept safe
-- [DEPLOY.md](DEPLOY.md): how production deploys, and what to do when it breaks
 - [SELF-HOSTING.md](SELF-HOSTING.md): run your own copy
-
-## OPML
-
-Import reads `<outline type="rss" xmlUrl="...">` elements and takes tags from a
-comma-separated `category` attribute. Other outlines are skipped, so folders from
-other readers don't become tags. Files are limited to 1 MB. Export writes the same shape.
+- [CLAUDE.md](CLAUDE.md): build, test and deploy commands, and the rules for changes

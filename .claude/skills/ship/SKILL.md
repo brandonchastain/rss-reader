@@ -46,8 +46,7 @@ git worktree remove ../rss-reader-<slug> --force && git branch -D <branch> && gi
 ```
 
 ## 5. Watch the deploy
-The merge triggers `.github/workflows/deploy.yml`. See [DEPLOY.md](../../../DEPLOY.md).
-Never deploy by hand.
+The merge triggers `.github/workflows/deploy.yml`. Never deploy by hand.
 ```bash
 gh run list --workflow deploy.yml --branch main --limit 1 --json databaseId,headSha,status
 gh run watch <id> --exit-status

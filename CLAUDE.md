@@ -4,11 +4,11 @@
 - Build: `dotnet build rss-reader.sln`
 - Test: `dotnet test test/RssReaderTests/RssReaderTests.csproj --filter "TestCategory!=Network"` (what CI runs)
 - Browser tests: `cd test/e2e && npm test`
-- Run locally: the `run-locally` skill, or [LOCAL-TESTING.md](LOCAL-TESTING.md). Always use a Debug build, because a Release build of the frontend calls the production API.
+- Run locally: the `run-locally` skill. Always use a Debug build, because a Release build of the frontend calls the production API.
 
 ## Deploying
 - Merging to `main` deploys to production through CI. Ask before merging.
-- Never run `az containerapp update`, `docker push` or `swa deploy` by hand. See [DEPLOY.md](DEPLOY.md).
+- Never run `az containerapp update`, `docker push` or `swa deploy` by hand: `az containerapp update` once dropped template settings and caused an outage. To roll back, revert the PR.
 - To check production, use `https://api.rss.brandonchastain.com/api/healthz`. The site host has no `/api`.
 - The full loop is the `ship` skill.
 

@@ -67,13 +67,3 @@ Every setting is documented where it is defined:
   bound from `appsettings.json` or `RssAppConfig__<Name>` environment variables.
 - Production overrides are the container env block in `infrastructure/main.bicep`. Sizing
   is in `main.bicepparam`.
-
-## Running costs
-
-The always-on replica and blob calls are the bill. The levers are in `main.bicep`:
-
-- `LITESTREAM_SYNC_INTERVAL` (30 min): a shorter interval loses less in a crash. At 30 s
-  it cost about $3/month in blob listings.
-- Lease and handover poll intervals: a longer interval means fewer blob calls, but a
-  slower takeover.
-- Each deploy uploads one full copy of the database, so fewer deploys is cheaper.

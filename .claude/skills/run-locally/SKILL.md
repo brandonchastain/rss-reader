@@ -40,5 +40,3 @@ docker rm -f rss-reader-test
 Get-Process -Name Server, blazor-devserver -ErrorAction SilentlyContinue | Stop-Process
 ```
 A leftover `blazor-devserver` can keep port 8443 and serve an old build.
-
-More detail is in LOCAL-TESTING.md.
