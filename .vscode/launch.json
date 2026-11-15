@@ -15,7 +15,7 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development"
             },
-            "program": "${workspaceFolder}/src/Server/bin/Debug/net9.0/Server.dll"
+            "program": "${workspaceFolder}/src/Server/bin/Debug/net10.0/Server.dll"
         },
         {
             "name": "Launch and Debug Standalone Blazor WebAssembly App",
@@ -45,12 +45,6 @@
             "cwd": "${workspaceFolder}/src/WasmApp",
             "url": "http://localhost:8443",
             "timeout": 120000
-        },
-        {
-            "name": "Attach to .NET Functions",
-            "type": "coreclr",
-            "request": "attach",
-            "processId": "${command:azureFunctions.pickProcess}"
         }
     ],
     "compounds": [

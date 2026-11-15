@@ -16,7 +16,7 @@ namespace RssReaderTests;
 [TestClass]
 public sealed class ApiLoginTests
 {
-    private static readonly string[] Origins = { "https://rss.example.com", "http://localhost:4280" };
+    private static readonly string[] Origins = { "https://rss.example.com", "https://localhost:8443" };
 
     // ---------- user id mapping ----------
 
@@ -199,7 +199,7 @@ public sealed class ApiLoginTests
     [TestMethod]
     public void ReturnUrl_AbsoluteOnAllowedOrigin_IsKept()
     {
-        Assert.AreEqual("http://localhost:4280/feeds", ReturnUrlValidator.Resolve("http://localhost:4280/feeds", Origins));
+        Assert.AreEqual("https://localhost:8443/feeds", ReturnUrlValidator.Resolve("https://localhost:8443/feeds", Origins));
         Assert.AreEqual("https://rss.example.com/a", ReturnUrlValidator.Resolve("HTTPS://RSS.EXAMPLE.COM/a", Origins));
     }
 

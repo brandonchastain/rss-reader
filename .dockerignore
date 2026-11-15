@@ -7,5 +7,3 @@ test/
 infrastructure/main.bicep
 rss-reader.sln
 rss-reader.code-workspace
-swa-cli.config.json
-api/
