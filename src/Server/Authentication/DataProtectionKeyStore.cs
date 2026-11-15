@@ -5,7 +5,7 @@ using RssReader.Server.Services;
 namespace Server.Authentication;
 
 /// <summary>
-/// Where the session-cookie key ring lives (BLOB-DURABILITY-SPEC.md 3.6): one blob,
+/// Where the session-cookie key ring lives: one blob,
 /// <c>keys.xml</c>, in the <c>dataprotection</c> container, reached with the app's managed
 /// identity. Replaces the key files on the Azure Files share.
 /// </summary>

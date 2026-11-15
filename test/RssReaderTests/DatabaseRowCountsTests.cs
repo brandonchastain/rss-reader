@@ -4,7 +4,7 @@ using RssReader.Server.Services;
 
 namespace RssReaderTests;
 
-/// <summary>The numbers /api/healthz reports for the restore drill (BLOB-DURABILITY-SPEC.md 9.5).</summary>
+/// <summary>The numbers /api/healthz reports, to compare with a restore of the replica.</summary>
 [TestClass]
 public class DatabaseRowCountsTests
 {

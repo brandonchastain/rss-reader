@@ -1,4 +1,4 @@
-# Durability integration test (BLOB-DURABILITY-SPEC.md 9.2): the real image, the
+# Durability integration test: the real image, the
 # real Litestream binary and Azurite standing in for blob storage. Two writers,
 # A and B, share the replica and the lease; run.sh starts and stops them per
 # scenario. The replica is the only durable copy: a writer restores from it at

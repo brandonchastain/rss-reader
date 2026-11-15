@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 namespace RssApp.Data;
 
 /// <summary>
-/// The current schema (DB-REDESIGN-SPEC.md section 3): a post is stored once per
+/// The current schema: a post is stored once per
 /// feed, users attach to feeds through subscriptions, and per-user facts live in
 /// sparse state tables. Every statement is idempotent (CREATE ... IF NOT EXISTS),
 /// so each repository can call <see cref="EnsureCreated"/> on start-up and a

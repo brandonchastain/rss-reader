@@ -5,8 +5,8 @@ using RssReader.Server.Services;
 namespace RssReaderTests;
 
 /// <summary>
-/// The replica-shape report (rollout step 3 finish line: levels 2 and 3 write files, the
-/// restore chain is one snapshot plus a short tail). Inputs are real litestream 0.5.17 outputs.
+/// The replica-shape report (a healthy restore chain is one snapshot plus a short tail).
+/// Inputs are real litestream 0.5.17 outputs.
 /// </summary>
 [TestClass]
 public class ReplicaChainReporterTests

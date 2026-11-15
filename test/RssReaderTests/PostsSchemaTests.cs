@@ -74,7 +74,7 @@ internal sealed class TestDatabase : IDisposable
     }
 }
 
-/// <summary>Repository behaviour of the shared-posts schema (DB-REDESIGN-SPEC.md section 6).</summary>
+/// <summary>Repository behaviour of the shared-posts schema.</summary>
 [TestClass]
 public sealed class PostsSchemaTests
 {

@@ -4,7 +4,7 @@ using RssReader.Server.Services;
 namespace RssReaderTests;
 
 /// <summary>
-/// The running writer's side of the cooperative handover (BLOB-DURABILITY-SPEC.md 3.2 v2):
+/// The running writer's side of the cooperative handover:
 /// which markers it acts on, in what order it drains, and that the lease always moves.
 /// </summary>
 [TestClass]

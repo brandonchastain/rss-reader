@@ -6,7 +6,7 @@ using RssApp.Data;
 namespace RssReader.Server.Services;
 
 /// <summary>
-/// Nightly retention for the shared post store (DB-REDESIGN-SPEC.md section 4).
+/// Nightly retention for the shared post store.
 /// Posts are never deleted on a read path; this is the one place they go:
 /// unsaved posts older than the configured window, and feeds that have had no
 /// subscriber for the grace period. Deletes run in small batches so the

@@ -13,7 +13,7 @@ using RssApp.Config;
 namespace RssReader.Server.Services
 {
     /// <summary>
-    /// The writer's lease on a blob (BLOB-DURABILITY-SPEC.md section 3.4): the successor
+    /// The writer's lease on a blob: the successor
     /// of <see cref="ShareWriterLock"/>. Azure acquires or refuses a blob lease atomically
     /// and expires it server-side after <see cref="Duration"/>, so there is no heartbeat
     /// file, no stale threshold and no takeover code: a writer that dies without releasing
@@ -243,7 +243,7 @@ namespace RssReader.Server.Services
 
         /// <summary>
         /// Release the lease, optionally stamping metadata on the blob first (the final
-        /// Litestream transaction id, spec 3.3 step 5). Failures are logged, never thrown:
+        /// Litestream transaction id). Failures are logged, never thrown:
         /// an unreleased lease expires on its own. Idempotent.
         /// </summary>
         public async Task ReleaseAsync(IDictionary<string, string>? metadata = null)
@@ -286,7 +286,7 @@ namespace RssReader.Server.Services
         private async Task EnsureBlobExistsAsync(CancellationToken cancellationToken)
         {
             // The container is created by Bicep in production; Azurite in the tests starts
-            // empty, and Litestream does not create its container either (11.1).
+            // empty, and Litestream does not create its container either.
             await _blob.GetParentBlobContainerClient().CreateIfNotExistsAsync(cancellationToken: cancellationToken);
             try
             {
@@ -317,7 +317,7 @@ namespace RssReader.Server.Services
                         OnRenewed?.Invoke(ok);
                         if (!ok && IsLost)
                         {
-                            // Spec 3.4: keep serving, retry the acquire. The lease may have
+                            // Keep serving, retry the acquire. The lease may have
                             // expired and be free again, or a new writer may hold it.
                             var (acquired, _) = await TryReacquireAsync(token);
                             if (acquired) _logger.LogInformation("Blob writer lease {Blob} re-acquired.", BlobName);

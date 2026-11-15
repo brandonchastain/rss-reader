@@ -1,121 +1,61 @@
 ---
 name: ship
-description: Take a change all the way to production for the rss-reader app via the full dev loop — git worktree, develop, build/test, PR, admin squash-merge, deploy, validate. Use when the user says "ship it", "run the dev loop", "do the full loop", "develop/test/merge/deploy/validate", or asks to implement-and-deploy a change to prod. Deploys run in CI (the Deploy workflow builds the image, deploys the Bicep template, and publishes the SWA frontend on every merge to main).
+description: Take a change all the way to production for the rss-reader app via the full dev loop — git worktree, develop, build/test, PR, admin squash-merge, deploy, validate. Use when the user says "ship it", "run the dev loop", "do the full loop", "develop/test/merge/deploy/validate", or asks to implement-and-deploy a change to prod. Merging to main deploys through CI.
 ---
 
-# Ship a change (rss-reader dev loop)
+# Ship a change
 
-Take a change from idea to validated-in-production. Work one change per loop. Do NOT
-skip steps; if a step can't complete, stop and report rather than faking success.
+Work on one change per loop. If a step can't complete, stop and report it. Never fake
+success. Use `gh` for GitHub, and never print a token or secret.
 
-## ⛔ Security rules (never violate)
-- Never echo, log, print, or `Write-Host` a token/password/secret.
-- Use the `gh` CLI for all GitHub operations; never extract/print credentials.
-- No personal access token is involved anywhere in this loop. CI pushes the image with
-  its own `GITHUB_TOKEN` and logs in to Azure with OIDC; the GHCR package is public.
-- If auth is missing and no safe method exists, stop and ask the user to run it.
-
-## Step 1 — Work on a git worktree (not the main checkout)
-The user requires change work on a separate worktree.
+## 1. Worktree
+Do the work on a separate worktree, not the main checkout:
 ```bash
-git worktree add -b <type>/<slug> ../rss-reader-<slug> main
-```
-`<type>` = feat | fix | chore. Do all edits under that worktree path.
-
-## Step 2 — Develop
-Make the change. Match the surrounding code's style, naming, and comment density.
-Read files before editing. Reference `file:line` in notes.
-
-## Step 3 — Build & test (in the worktree)
-Detect scope from what you changed:
-- **Backend** (`src/Server`, `src/Shared`):
-  `dotnet build src/Server/Server.csproj -c Debug`
-  `dotnet test test/RssReaderTests/RssReaderTests.csproj`  (all tests must pass)
-  Add focused tests for new logic. The test project uses MSTest + Moq; inject a stub
-  `HttpMessageHandler` to test feed-fetch behavior deterministically offline.
-- **Frontend** (`src/WasmApp`):
-  `dotnet build src/WasmApp/WasmApp.csproj -c Debug`
-  Optional render check: write `.claude/launch.json` in the MAIN repo pointing
-  `dotnet run --project <worktree>/src/WasmApp/WasmApp.csproj` at port 8443, then use the
-  preview tools. Note: without the local API, the timeline shows "Failed to fetch" — that's
-  expected; theme/anonymous pages still render. Auth-gated, audio, or post-dependent behavior
-  can't be validated headlessly — hand those to the user.
-
-Before committing, check for line-ending churn: `git diff --cached --stat` vs
-`git diff --cached -w --stat`. Files in this repo are LF in git but check out as CRLF
-(autocrlf); a noisy whole-file diff usually means an edit normalized a mixed-EOL file —
-the `-w` diff shows the real change.
-
-## Step 4 — Commit & push
-```bash
-git add -A
-git commit -F - <<'EOF'
-<type>: <subject>
-
-<body explaining what and why>
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-EOF
-git push -u origin <type>/<slug>
+git worktree add -b <feat|fix|chore>/<slug> ../rss-reader-<slug> main
 ```
 
-## Step 5 — Open the PR
-```bash
-gh pr create --base main --head <type>/<slug> --title "<title>" --body "<body>"
-```
-End the PR body with the Claude Code generation footer.
+## 2. Develop and test
+Match the surrounding style. Then run the checks for what you changed:
+- **Backend:** `dotnet test test/RssReaderTests/RssReaderTests.csproj --filter "TestCategory!=Network"`.
+  Add focused tests. Test feed fetching offline with a stub `HttpMessageHandler`.
+- **Frontend:** `dotnet build src/WasmApp/WasmApp.csproj -c Debug`. Then check the UI
+  in the browser with `cd test/e2e && npm test` and the `run-locally` skill. Hand any
+  check you can't run headless (real sign-in, audio) to the user.
 
-## Step 6 — Merge (admin squash)
-`main` has branch protection, so a normal merge is rejected. The user owns the repo and
-authorizes admin merges for this loop:
+Before you commit, compare `git diff --cached --stat` with `git diff --cached -w --stat`.
+Files check out as CRLF, so a whole-file diff usually means line endings changed.
+
+## 3. Commit, push, PR
+Use conventional commits (`type(scope): subject`), then:
+```bash
+git push -u origin <branch>
+gh pr create --base main --title "<title>" --body "<body>"
+gh pr checks <number> --watch
+```
+
+## 4. Merge (this deploys production)
+A "ship it" from the user covers the merge. If they didn't ask to ship, ask first. Then:
 ```bash
 gh pr merge <number> --squash --admin
 ```
-Do NOT pass `--delete-branch` from inside the worktree — it tries to check out `main`,
-which is already checked out in the primary repo, and fails. Delete the branch in Step 7.
-Verify: `gh pr view <number> --json state,mergeCommit --jq '{state, mergeCommit: .mergeCommit.oid}'`.
-
-## Step 7 — Update main & clean up (run from the MAIN checkout)
+Don't pass `--delete-branch` from inside the worktree: it tries to check out `main`,
+which the main checkout already has. Clean up from the main checkout instead:
 ```bash
-git checkout main && git pull origin main
-git worktree remove ../rss-reader-<slug> --force
-git branch -D <type>/<slug>
-git worktree prune
+git checkout main && git pull
+git worktree remove ../rss-reader-<slug> --force && git branch -D <branch> && git worktree prune
 ```
 
-## Step 8 — Deploy to production (CI does this)
-The squash-merge in Step 6 pushes to `main`, which triggers `.github/workflows/deploy.yml`.
-That workflow runs the tests, builds and pushes the backend image, deploys the Bicep
-template with the new image tag, and publishes the frontend + API proxy to SWA. Do NOT
-deploy from the laptop: `az containerapp update`, `docker push`, and `swa deploy` by hand
-are how the template drifted from production and caused an outage (see the header comment
-in `deploy.yml`).
-
-Find the run for the merge commit and wait for it:
+## 5. Watch the deploy
+The merge triggers `.github/workflows/deploy.yml`. Never deploy by hand.
 ```bash
-gh run list --workflow deploy.yml --branch main --limit 1 --json databaseId,headSha,status,conclusion
-gh run watch <databaseId> --exit-status
+gh run list --workflow deploy.yml --branch main --limit 1 --json databaseId,headSha,status
+gh run watch <id> --exit-status
 ```
-If the run fails, read the failing job with `gh run view <databaseId> --log-failed`, fix
-forward with a new loop (Steps 1–7), and never patch production directly. To re-run the
-deploy without a code change: `gh workflow run deploy.yml --ref main`.
+If it fails, read the logs with `gh run view <id> --log-failed`. Fix it forward with a
+new loop.
 
-## Step 9 — Validate
-- **Backend**: poll `https://api.rss.brandonchastain.com/api/healthz` until HTTP 200 with
-  `{"status":"healthy","role":"writer"}`. Do NOT use `https://rss.brandonchastain.com/api/*`:
-  since the auth cutover the Static Web App is deployed static-only (see the comment above
-  the two "Deploy to Static Web Apps" steps in `deploy.yml`), so every `/api/*` path on the
-  frontend origin answers 500 "Backend call failure" by design, whatever the backend's state.
-  Confirm the new revision is active at 100% traffic:
-  `az containerapp revision list --name rss-reader-api --resource-group rss-container-rg -o table`.
-  A healthy writer also confirms additive schema (`CREATE TABLE IF NOT EXISTS`) applied cleanly.
-- **Frontend**: confirm `https://rss.brandonchastain.com/` returns 200. For asset-level
-  proof, fetch the changed file (e.g. `css/app.css`, `app.js`) and grep for the new code;
-  for compiled WASM/auth-gated/audio behavior, hand the check to the user.
-
-## Conventions
-- Schema changes must be transitionless: additive `CREATE TABLE IF NOT EXISTS` only, no
-  destructive ALTER/DROP — the DB is live and Litestream-replicated, and rollback must be safe.
-- The app runs on ACA with `minReplicas: 0` (scale-to-zero, HTTP scaler) and `maxReplicas: 1`:
-  background work only runs while a replica is up, and there's exactly one scheduler instance.
-- See [[use-worktree-for-changes]].
+## 6. Validate
+- **API:** `https://api.rss.brandonchastain.com/api/healthz` returns 200 with
+  `"status":"healthy"` and no `"phase":"seeding"`.
+- **Site:** `https://rss.brandonchastain.com/` returns 200. For a frontend change, fetch
+  the changed asset and grep it for the new code.

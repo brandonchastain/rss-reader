@@ -6,7 +6,7 @@ using RssApp.Data;
 namespace RssReaderTests;
 
 /// <summary>
-/// The one-shot migration (DB-REDESIGN-SPEC.md section 7) against a database
+/// The one-shot migration against a database
 /// built with the pre-redesign schema and seeded the way production was:
 /// posts duplicated per subscriber, tags as comma strings, validators and
 /// schedule in side tables, identities in Users columns.
@@ -208,7 +208,7 @@ public sealed class LegacyMigrationTests
         CollectionAssert.AreEquivalent(new[] { "tech", "news" }, aliceFeeds.First(f => f.Href == Shared).Tags.ToList());
         CollectionAssert.AreEqual(new[] { Shared }, feeds.GetHiddenFeedUrls(alice).ToList());
 
-        // Per-user first page matches the old timeline by Href order (spec 7 verification).
+        // Per-user first page matches the old timeline by Href order.
         foreach (var (user, excluded) in new[] { (alice, feeds.GetHiddenFeedUrls(alice)), (bob, feeds.GetHiddenFeedUrls(bob)) })
         {
             var page = (await items.GetItemsAsync(new NewsFeed("%", user.Id), false, false, null, 0, 20, excludeFeedUrls: excluded, includeContent: false))

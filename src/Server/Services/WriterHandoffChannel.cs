@@ -9,7 +9,7 @@ using Azure.Storage.Blobs.Models;
 
 namespace RssReader.Server.Services
 {
-    /// <summary>A new writer asking the running one to hand the database over (spec 3.2 v2, cooperative trigger).</summary>
+    /// <summary>A new writer asking the running one to hand the database over.</summary>
     public sealed record HandoffRequest(string Id, string RequestedBy, DateTimeOffset RequestedAtUtc);
 
     /// <summary>The running writer's answer: it has synced, recorded the final Litestream transaction id, and released the lease.</summary>

@@ -104,7 +104,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   properties: {
     accessTier: 'Hot'
     minimumTlsVersion: 'TLS1_2'
-    // Entra ID only (BLOB-DURABILITY-SPEC.md section 4): the app, Litestream and the
+    // Entra ID only: the app, Litestream and the
     // lease all use the container app's managed identity, and the Azure Files share that
     // needed the account key is gone. Account keys and SAS tokens signed with one stop
     // working, including `az storage ...` data-plane calls made with a key; use
@@ -119,8 +119,8 @@ resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01
   parent: storageAccount
 }
 
-// BLOB-DURABILITY-SPEC.md 3.1: the Litestream replica (snapshot + LTX files under
-// storage.db/) and, at the container root, the writer-lease blob (3.4).
+// The Litestream replica (snapshot + LTX files under
+// storage-v2.db/) and, at the container root, the writer-lease blob.
 resource litestreamContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   name: 'litestream'
   parent: blobServices
@@ -129,7 +129,7 @@ resource litestreamContainer 'Microsoft.Storage/storageAccounts/blobServices/con
   }
 }
 
-// Data-protection key ring (spec 3.6): blob keys.xml, the session-cookie keys.
+// Data-protection key ring: blob keys.xml, the session-cookie keys.
 resource dataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   name: 'dataprotection'
   parent: blobServices
@@ -287,7 +287,7 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               value: 'true'
             }
             {
-              // Session-cookie key ring: blob `dataprotection/keys.xml` (spec 3.6), so a
+              // Session-cookie key ring: blob `dataprotection/keys.xml`, so a
               // deploy or a restart does not sign every user out.
               name: 'RssAppConfig__Auth__DataProtectionKeysContainer'
               value: 'dataprotection'

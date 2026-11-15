@@ -1,41 +1,30 @@
-# RssReader | A simple browser-based RSS reader
+# RSS Reader
+
+A simple browser-based RSS reader, live at <https://rss.brandonchastain.com>.
+
+![The RSS reader timeline](docs/screenshot.png)
 
 ## Features
-🗞️ Subscribe to RSS and Atom feeds
 
-📰 Browse recent posts in an infinite-scroll feed
+- 🗞️ Subscribe to RSS and Atom feeds
+- 📰 Browse recent posts in an infinite-scroll feed
+- 🏷️ Categorize feeds using **tags**
+- 🚰 Curate your own feed with **tag filters** and **saved posts**
+- 🔍 **Search** for posts
+- 📥 **Import and export** feeds to/from other reader apps
+- 📱 Responsive design for mobile & desktop
 
-🏷️ Categorize feeds using <b>tags</b>
+## Layout
 
-🚰 Curate your own feed with <b>tag filters</b> and <b>saved posts</b>
+| Path | What |
+|---|---|
+| `src/Server` | ASP.NET Core API, SQLite database, sign-in, feed refresh |
+| `src/WasmApp` | Blazor WebAssembly frontend (static files) |
+| `src/Shared` | Contracts shared by both |
+| `infrastructure` | Azure Bicep template and Litestream config |
+| `test/` | Unit tests, Playwright e2e, Docker durability test, k6 load scenarios |
 
-🔍 <b>Search</b> for posts
+## Docs
 
-📥 <b>Import and export</b> feeds to/from other reader apps
-
-📱 Responsive design for mobile & desktop
-
-# Docs
-* [ARCHITECTURE.md](ARCHITECTURE.md) — how the pieces fit, how data is kept safe, and every tunable knob
-* [LOCAL-TESTING.md](LOCAL-TESTING.md) — run the stack on your machine
-* [SELF-HOSTING.md](SELF-HOSTING.md) — host it yourself, on Docker or on Azure
-* [DEPLOY.md](DEPLOY.md) — how production deploys from CI, and the runbook
-* [OPML-FORMAT.md](OPML-FORMAT.md) — the import/export format
-
-# Running costs
-Background work is what keeps the always-on replica off Container Apps' cheaper idle
-rate, and every blob call is billed, so the cadences are settings in
-`infrastructure/main.bicep`, each a trade of dollars against recovery:
-
-* `LITESTREAM_SYNC_INTERVAL` (30 min): how much a hard crash can lose. At 30 s it cost
-  about $3/month in blob listings alone.
-* `RssAppConfig__Durability__LeaseDuration` / `LeaseRenewInterval` (60 s / 20 s): how
-  long a crashed writer's lease blocks the next one.
-* `RssAppConfig__Durability__HandoffPollInterval` (10 s): how long a deploy waits
-  before the handover starts.
-* `RssAppConfig__FeedRefreshInterval` (1 h): how fresh posts are. It runs as one
-  short burst an hour, so it costs little.
-
-Each deploy also uploads one full copy of the database (about 230 MB) while
-Litestream re-establishes its position; that is inherent, so fewer deploys is
-the only lever there.
+- [ARCHITECTURE.md](ARCHITECTURE.md): how the pieces fit and how data is kept safe
+- [CLAUDE.md](CLAUDE.md): build, test and deploy commands, and the rules for changes

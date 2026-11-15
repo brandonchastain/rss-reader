@@ -2,7 +2,7 @@ using RssReader.Server.Services;
 
 namespace RssReaderTests;
 
-/// <summary>BLOB-DURABILITY-SPEC.md 9.1, "Litestream process wrapper": the process is faked.</summary>
+/// <summary>The Litestream process wrapper: the process is faked.</summary>
 [TestClass]
 public class LitestreamCliTests
 {

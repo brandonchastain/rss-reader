@@ -1,5 +1,5 @@
 # Build and deploy everything: the ARM template, the backend image, and the
-# frontend (Blazor WASM + the Functions API proxy).
+# frontend (Blazor WASM, static files only).
 #
 # Before this existed, deploys ran from a laptop. The template had silently
 # stopped being deployable at all, so every change reached production through
@@ -111,11 +111,9 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # BLOB-DURABILITY-SPEC.md 9.4, "handover window": while the revision rolls, poll a
-      # real endpoint on the live hostname once a second and record the longest run of
-      # non-200 answers. Started here, read back after the health check below. Report
-      # only for now (rollout step 3 measures the window across deploys); the 30 s
-      # failure threshold comes in once the restore path is on and the baseline is known.
+      # Handover window: while the revision rolls, poll a real endpoint on the live
+      # hostname once a second and record the longest run of non-200 answers. Started
+      # here, read back after the health check below. Reported, not enforced.
       - name: Start the handover probe
         run: |
           nohup bash -c '
@@ -149,8 +147,7 @@ jobs:
 
       # Longest run of non-200 answers on /api/user seen by the probe above, into the
       # job summary. /api/user answers 401 without a session, which is the real host
-      # answering; only 5xx/000 count as the handover window. Rollout step 3's target
-      # is a few seconds (BLOB-DURABILITY-SPEC.md 3.2 v2); the pre-step-3 value was ~61 s.
+      # answering; only 5xx/000 count as the handover window, normally a few seconds.
       - name: Report the handover window
         if: always()
         run: |
