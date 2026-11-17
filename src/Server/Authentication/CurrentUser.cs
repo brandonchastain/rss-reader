@@ -10,8 +10,8 @@ namespace Server.Authentication;
 /// Base for controllers whose actions act on the signed-in user's own data.
 /// The caller is resolved once per request from the session principal (never
 /// from anything the request body or query says) and exposed as CurrentUser.
-/// <see cref="RequireRssUserAttribute"/> answers 404 before the action runs
-/// when the principal has no RssUser row yet, so an action never sees null.
+/// <see cref="RequireRssUserAttribute"/> answers 401 before the action runs
+/// when the principal has no RssUser row, so an action never sees null.
 ///
 /// This settles who the caller is. Whether the caller may touch a given post
 /// or feed is still the repository's job: every lookup by id or URL takes the
@@ -32,8 +32,8 @@ public abstract class UserScopedController : ControllerBase
     protected IUserResolver UserResolver { get; }
 
     /// <summary>
-    /// The signed-in caller's row. Non-null inside any action that is not marked
-    /// <see cref="AllowUnregisteredUserAttribute"/> or AllowAnonymous.
+    /// The signed-in caller's row. Non-null inside any action that is not
+    /// marked AllowAnonymous.
     /// </summary>
     protected internal RssUser CurrentUser => this.TryGetCurrentUser()!;
 
@@ -56,28 +56,21 @@ public abstract class UserScopedController : ControllerBase
 }
 
 /// <summary>
-/// Short-circuits with 404 "Authenticated user not found." when the principal
-/// is signed in but has no RssUser row. The client treats that 404 as "call
-/// register", so the status and body are part of the API contract.
+/// Short-circuits with 401 when the principal is signed in but has no RssUser
+/// row. Sign-in creates the account, so this is a session whose account was
+/// deleted; the client answers a 401 by sending the browser to sign in.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, Inherited = true)]
 public sealed class RequireRssUserAttribute : ActionFilterAttribute
 {
-    public const string NotFoundMessage = "Authenticated user not found.";
+    public const string NoAccountMessage = "This session has no account. Sign in again.";
 
     public override void OnActionExecuting(ActionExecutingContext context)
     {
-        var metadata = context.ActionDescriptor.EndpointMetadata;
-        if (metadata.OfType<IAllowAnonymous>().Any() || metadata.OfType<AllowUnregisteredUserAttribute>().Any())
+        if (context.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any())
             return;
 
         if (context.Controller is UserScopedController controller && controller.TryGetCurrentUser() == null)
-            context.Result = new NotFoundObjectResult(NotFoundMessage);
+            context.Result = new UnauthorizedObjectResult(NoAccountMessage);
     }
-}
-
-/// <summary>Opts an action out of <see cref="RequireRssUserAttribute"/> (registration creates the row).</summary>
-[AttributeUsage(AttributeTargets.Method)]
-public sealed class AllowUnregisteredUserAttribute : Attribute
-{
 }

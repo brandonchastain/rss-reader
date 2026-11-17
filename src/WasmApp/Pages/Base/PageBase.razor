@@ -21,9 +21,7 @@
         {
             await EnsureCacheIdentityAsync();
 
-            // Paint the cached record first: GetFeedUserAsync registers against
-            // the writer, so on a cold start it blocks for as long as the
-            // container takes to wake.
+            // Paint the cached record first, then replace it with the server's.
             var cached = await this.postCache.GetUserAsync();
             if (cached != null)
             {
@@ -41,26 +39,27 @@
         }
     }
 
-    // Resolves the cache partition key from the signed-in identity (/auth/me).
-    // Also sweeps slots left by another user or an older cache version.
+    // Resolves the cache partition key: the account id from /auth/me, never
+    // the email. Also sweeps slots left by another user or an older cache
+    // version. Signed out, it stays null and the app runs uncached.
     protected async Task<string> EnsureCacheIdentityAsync()
     {
-        if (!string.IsNullOrEmpty(this.postCache.Username))
+        if (!string.IsNullOrEmpty(this.postCache.UserId))
         {
-            return this.postCache.Username;
+            return this.postCache.UserId;
         }
 
         try
         {
-            var username = await this.userClient.GetUsernameAsync();
-            if (string.IsNullOrEmpty(username))
+            var accountId = await this.userClient.GetAccountIdAsync();
+            if (string.IsNullOrEmpty(accountId))
             {
                 return null;
             }
 
-            this.postCache.Username = username;
+            this.postCache.UserId = accountId;
             await this.postCache.PruneAsync();
-            return username;
+            return accountId;
         }
         catch (Exception ex)
         {

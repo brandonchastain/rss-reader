@@ -21,18 +21,18 @@ public class PostCache : IPostCache
         this.logger = logger;
     }
 
-    private string username;
+    private string userId;
 
     // Mirrored into JS (rssApp.cache.setActiveUser) so the capture-phase link
     // handler in app.js can patch the cache and outbox for this user without a
     // round trip into .NET -- the page is about to unload, so there is no time
     // for one.
-    public string Username
+    public string UserId
     {
-        get => this.username;
+        get => this.userId;
         set
         {
-            this.username = value;
+            this.userId = value;
             try
             {
                 if (this.jsRuntime is IJSInProcessRuntime inProcess)
@@ -180,14 +180,14 @@ public class PostCache : IPostCache
 
     public async Task<string> GetContentBase64Async(string itemId)
     {
-        if (string.IsNullOrEmpty(this.Username) || string.IsNullOrEmpty(itemId))
+        if (string.IsNullOrEmpty(this.UserId) || string.IsNullOrEmpty(itemId))
         {
             return null;
         }
 
         try
         {
-            return await this.jsRuntime.InvokeAsync<string>("rssApp.cache.getContent", this.Username, itemId);
+            return await this.jsRuntime.InvokeAsync<string>("rssApp.cache.getContent", this.UserId, itemId);
         }
         catch (Exception)
         {
@@ -197,7 +197,7 @@ public class PostCache : IPostCache
 
     public async Task MergeContentAsync(IDictionary<string, string> base64ById)
     {
-        if (string.IsNullOrEmpty(this.Username) || base64ById == null || base64ById.Count == 0)
+        if (string.IsNullOrEmpty(this.UserId) || base64ById == null || base64ById.Count == 0)
         {
             return;
         }
@@ -205,7 +205,7 @@ public class PostCache : IPostCache
         try
         {
             await this.jsRuntime.InvokeVoidAsync(
-                "rssApp.cache.mergeContent", this.Username, JsonSerializer.Serialize(base64ById));
+                "rssApp.cache.mergeContent", this.UserId, JsonSerializer.Serialize(base64ById));
         }
         catch (Exception ex)
         {
@@ -237,7 +237,7 @@ public class PostCache : IPostCache
 
     public async Task EnqueuePendingWriteAsync(NewsFeedItem item, string kind, bool value)
     {
-        if (string.IsNullOrEmpty(this.Username) || string.IsNullOrEmpty(item?.Id))
+        if (string.IsNullOrEmpty(this.UserId) || string.IsNullOrEmpty(item?.Id))
         {
             return;
         }
@@ -250,7 +250,7 @@ public class PostCache : IPostCache
 
     public async Task PatchTimelineItemAsync(string itemId, bool? isRead, bool? isSaved)
     {
-        if (string.IsNullOrEmpty(this.Username) || string.IsNullOrEmpty(itemId))
+        if (string.IsNullOrEmpty(this.UserId) || string.IsNullOrEmpty(itemId))
         {
             return;
         }
@@ -262,7 +262,7 @@ public class PostCache : IPostCache
             // the 'unread' slot is exactly what would resurface posts already
             // read -- the reason filtered views used to be excluded entirely.
             await this.jsRuntime.InvokeVoidAsync(
-                "rssApp.cache.patchItem", this.Username, itemId, isRead, isSaved);
+                "rssApp.cache.patchItem", this.UserId, itemId, isRead, isSaved);
         }
         catch (Exception ex)
         {
@@ -276,7 +276,7 @@ public class PostCache : IPostCache
     {
         try
         {
-            await this.jsRuntime.InvokeVoidAsync("rssApp.cache.clear", this.Username);
+            await this.jsRuntime.InvokeVoidAsync("rssApp.cache.clear", this.UserId);
         }
         catch (Exception)
         {
@@ -286,14 +286,14 @@ public class PostCache : IPostCache
 
     public async Task PruneAsync()
     {
-        if (string.IsNullOrEmpty(this.Username))
+        if (string.IsNullOrEmpty(this.UserId))
         {
             return;
         }
 
         try
         {
-            await this.jsRuntime.InvokeVoidAsync("rssApp.cache.prune", this.Username);
+            await this.jsRuntime.InvokeVoidAsync("rssApp.cache.prune", this.UserId);
         }
         catch (Exception)
         {
@@ -305,14 +305,14 @@ public class PostCache : IPostCache
     // slots are single-valued.
     private async Task<string> InvokeSlotGetAsync(string fn, string signature)
     {
-        if (string.IsNullOrEmpty(this.Username))
+        if (string.IsNullOrEmpty(this.UserId))
         {
             return null;
         }
 
         try
         {
-            return await this.jsRuntime.InvokeAsync<string>($"rssApp.cache.{fn}", this.Username, signature);
+            return await this.jsRuntime.InvokeAsync<string>($"rssApp.cache.{fn}", this.UserId, signature);
         }
         catch (Exception)
         {
@@ -322,14 +322,14 @@ public class PostCache : IPostCache
 
     private async Task InvokeSlotSetAsync(string fn, string signature, string json)
     {
-        if (string.IsNullOrEmpty(this.Username))
+        if (string.IsNullOrEmpty(this.UserId))
         {
             return;
         }
 
         try
         {
-            await this.jsRuntime.InvokeVoidAsync($"rssApp.cache.{fn}", this.Username, signature, json);
+            await this.jsRuntime.InvokeVoidAsync($"rssApp.cache.{fn}", this.UserId, signature, json);
         }
         catch (Exception ex)
         {
@@ -339,14 +339,14 @@ public class PostCache : IPostCache
 
     private async Task<string> GetSlotAsync(string fn)
     {
-        if (string.IsNullOrEmpty(this.Username))
+        if (string.IsNullOrEmpty(this.UserId))
         {
             return null;
         }
 
         try
         {
-            return await this.jsRuntime.InvokeAsync<string>($"rssApp.cache.{fn}", this.Username);
+            return await this.jsRuntime.InvokeAsync<string>($"rssApp.cache.{fn}", this.UserId);
         }
         catch (Exception)
         {
@@ -356,14 +356,14 @@ public class PostCache : IPostCache
 
     private async Task SetSlotAsync(string fn, string json)
     {
-        if (string.IsNullOrEmpty(this.Username))
+        if (string.IsNullOrEmpty(this.UserId))
         {
             return;
         }
 
         try
         {
-            await this.jsRuntime.InvokeVoidAsync($"rssApp.cache.{fn}", this.Username, json);
+            await this.jsRuntime.InvokeVoidAsync($"rssApp.cache.{fn}", this.UserId, json);
         }
         catch (Exception ex)
         {

@@ -42,7 +42,19 @@ public static class AuthEndpoints
             // scheme still populates ctx.User when the cookie (or, during the
             // migration, the proxy's headers) is present.
             var result = await ctx.AuthenticateAsync();
-            var body = ClientPrincipalResponse.From(result.Succeeded ? result.Principal : null);
+            var principal = result.Succeeded ? result.Principal : null;
+            RssApp.Contracts.RssUser? account = null;
+            if (principal?.Identity?.IsAuthenticated == true)
+            {
+                account = ctx.RequestServices.GetRequiredService<RssApp.ComponentServices.IUserResolver>().ResolveUser(principal);
+
+                // Sign-in creates the account, so a session without one belongs
+                // to a deleted account: end it, and the browser shows sign-in.
+                if (account == null)
+                    await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            }
+
+            var body = ClientPrincipalResponse.From(principal, account);
             ctx.Response.Headers.CacheControl = "no-store";
             return Results.Json(body);
         });

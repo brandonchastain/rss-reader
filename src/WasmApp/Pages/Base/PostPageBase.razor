@@ -287,16 +287,6 @@
         }
     }
 
-    // A brand-new account does not exist on the server until something calls
-    // api/user/register, and nothing makes the first page fetch wait for that:
-    // the nav menu and the toolbar's tag load register in parallel with it. If
-    // the fetch wins the race, the list endpoints answer 404 ("Authenticated
-    // user not found"), and the reader saw "No posts found" until they reloaded,
-    // by which time the account (and its starter feeds) existed. So on a 404,
-    // register and ask once more. Existing users never take this path, so their
-    // first load costs no extra round trip.
-    private bool _registeredAfterNotFound;
-
     private async Task<List<NewsFeedItem>> FetchPostsAsync(int pageSize)
     {
         var delays = Items.Count == 0 ? EmptyLoadRetryDelays : Array.Empty<TimeSpan>();
@@ -304,7 +294,7 @@
         {
             try
             {
-                return await FetchPostsRegisteringAsync(pageSize);
+                return await this.GetPostsAsync(pageSize);
             }
             catch (Exception ex) when (attempt < delays.Count && IsTransient(ex))
             {
@@ -326,21 +316,6 @@
         TaskCanceledException => !_disposeCts.IsCancellationRequested,
         _ => false,
     };
-
-    private async Task<List<NewsFeedItem>> FetchPostsRegisteringAsync(int pageSize)
-    {
-        try
-        {
-            return await this.GetPostsAsync(pageSize);
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound && !_registeredAfterNotFound)
-        {
-            _registeredAfterNotFound = true;
-            logger.LogInformation("Post fetch returned 404; registering the user and retrying once.");
-            await this.userClient.GetFeedUserAsync();
-            return await this.GetPostsAsync(pageSize);
-        }
-    }
 
     private bool UpdateFilters((bool isFilterUnread, bool isFilterSaved, string filterTag) filters)
     {

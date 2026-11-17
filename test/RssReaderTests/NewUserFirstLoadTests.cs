@@ -13,15 +13,9 @@ using WasmApp.Services;
 /// <summary>
 /// The first load of a post list when it fails with nothing on screen.
 ///
-/// A new account is created by api/user/register, which the nav menu and the
-/// toolbar call in parallel with the timeline's first fetch. When the fetch
-/// arrived first the server answered 404 ("Authenticated user not found") and
-/// the timeline showed "No posts found" until the reader reloaded. The page now
-/// registers and retries once on a 404.
-///
-/// Other failures used to show the same "No posts found". Transient ones are
-/// now retried with a backoff, and a load that still fails says so and offers a
-/// Retry button.
+/// Sign-in creates the account, so the first fetch never races account
+/// creation. Transient failures are retried with a backoff, and a load that
+/// still fails says so and offers a Retry button instead of "No posts found".
 /// </summary>
 [TestClass]
 public sealed class NewUserFirstLoadTests
@@ -75,42 +69,6 @@ public sealed class NewUserFirstLoadTests
 
     private static void VerifyFetches(Mock<IFeedClient> feeds, int times) =>
         feeds.Verify(f => f.GetTimelineAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<long?>()), Times.Exactly(times));
-
-    [TestMethod]
-    public void FirstFetchBeforeRegistration_RegistersAndShowsThePosts()
-    {
-        var (ctx, feeds, users) = Setup();
-        using var _ = ctx;
-        feeds
-            .SetupSequence(f => f.GetTimelineAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<long?>()))
-            .ThrowsAsync(Status(HttpStatusCode.NotFound))
-            .ReturnsAsync(new[] { Post("2"), Post("1") });
-
-        var cut = ctx.Render<NoDelayTimeline>();
-
-        cut.WaitForAssertion(() =>
-        {
-            Assert.IsTrue(cut.Markup.Contains("Post 2"), "the retried fetch's posts render");
-            Assert.IsFalse(cut.Markup.Contains("No posts found"));
-        }, Wait);
-        users.Verify(u => u.GetFeedUserAsync(), Times.Once);
-    }
-
-    [TestMethod]
-    public void PersistentNotFound_RegistersOnceAndShowsTheFailure()
-    {
-        var (ctx, feeds, users) = Setup();
-        using var _ = ctx;
-        feeds
-            .Setup(f => f.GetTimelineAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<long?>()))
-            .ThrowsAsync(Status(HttpStatusCode.NotFound));
-
-        var cut = ctx.Render<NoDelayTimeline>();
-
-        cut.WaitForAssertion(() => Assert.IsTrue(cut.Markup.Contains(FailedText)), Wait);
-        VerifyFetches(feeds, 2);
-        users.Verify(u => u.GetFeedUserAsync(), Times.Once);
-    }
 
     [TestMethod]
     public void TransientFailures_AreRetriedUntilTheLoadSucceeds()

@@ -9,16 +9,16 @@ namespace WasmApp.Services;
 /// what stays on screen when that fetch fails, so an API outage degrades to a
 /// readable (if stale) timeline rather than a spinner.
 ///
-/// All members no-op (returning null/empty) until <see cref="Username"/> is set,
+/// All members no-op (returning null/empty) until <see cref="UserId"/> is set,
 /// and every operation swallows storage failures -- a browser with storage
 /// disabled degrades to the uncached behaviour rather than breaking.
 /// </summary>
 public interface IPostCache
 {
     /// <summary>
-    /// Cache partition key. Set from the signed-in identity (/auth/me).
+    /// Cache partition key: the account id from /auth/me. Never the email.
     /// </summary>
-    string Username { get; set; }
+    string UserId { get; set; }
 
     /// <summary>
     /// The cached view for one filter signature (see

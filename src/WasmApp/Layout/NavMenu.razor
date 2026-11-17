@@ -153,7 +153,6 @@
         ? AuthClient.LoginUrl(_providers[0], Navigation.ToAbsoluteUri("/timeline").ToString())
         : "/";
 
-    private string username = null;
     private RssUser feedUser = null;
     private bool collapseNavMenu = true;
     private bool isLight = false;
@@ -182,7 +181,6 @@
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         if (authState.User?.Identity?.IsAuthenticated != true)
         {
-            username = "Guest";
             _providers = await AuthClient.GetProvidersAsync();
             return;
         }
@@ -190,15 +188,10 @@
         try
         {
             feedUser = await userClient.GetFeedUserAsync();
-            username = feedUser?.Username;
         }
         catch
         {
-            username = await userClient.GetUsernameAsync();
-        }
-        if (string.IsNullOrEmpty(username))
-        {
-            username = "Guest";
+            // Admin links stay hidden; nothing else here needs the account.
         }
     }
 
