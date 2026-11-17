@@ -103,6 +103,15 @@ public static class AuthenticationSetup
                 ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return Task.CompletedTask;
             };
+            options.Events.OnValidatePrincipal = ctx =>
+            {
+                if (ctx.Principal != null && StripLegacyClaims(ctx.Principal))
+                {
+                    ctx.ReplacePrincipal(ctx.Principal);
+                    ctx.ShouldRenew = true;
+                }
+                return Task.CompletedTask;
+            };
         });
 
         foreach (var (provider, p) in auth.Providers)
@@ -126,6 +135,7 @@ public static class AuthenticationSetup
                         options.Events.OnCreatingTicket = ctx =>
                         {
                             NormalizeIdentity(ctx.Principal!, UserIdentity.ProviderGitHub);
+                            EnsureAccount(ctx.HttpContext, ctx.Principal!);
                             return Task.CompletedTask;
                         };
                         // Cancelled consent (?error=access_denied) or a replayed
@@ -176,6 +186,7 @@ public static class AuthenticationSetup
                             if (personalOnly && !MicrosoftAccounts.IsPersonalAccount(ctx.Principal!))
                                 throw new MicrosoftAccounts.WorkAccountException();
                             NormalizeIdentity(ctx.Principal!, provider.ToLowerInvariant());
+                            EnsureAccount(ctx.HttpContext, ctx.Principal!);
                             return Task.CompletedTask;
                         };
 
@@ -226,35 +237,34 @@ public static class AuthenticationSetup
     }
 
     /// <summary>
-    /// Rewrites whatever the provider produced into the three claims the rest
-    /// of the app reads: NameIdentifier = provider:subject, Name = display
-    /// name, Role = authenticated, plus the provider key.
+    /// Rewrites whatever the provider produced into the claims the rest of the
+    /// app reads: NameIdentifier = provider:subject, Role = authenticated, and
+    /// the provider key. The email and name are dropped, so the cookie never
+    /// carries them.
     /// </summary>
     public static void NormalizeIdentity(ClaimsPrincipal principal, string provider)
     {
         var identity = (ClaimsIdentity)principal.Identity!;
         var subject = UserIdentity.ResolveSubject(provider, principal)
             ?? throw new InvalidOperationException($"{provider} returned no stable subject claim");
-        var name = UserIdentity.ResolveDisplayName(principal);
-        if (string.IsNullOrWhiteSpace(name))
+        if (!UserIdentity.HasEmailOrLogin(principal))
             throw new NoEmailException(provider);
         var microsoftEmail = provider == UserIdentity.ProviderMicrosoft ? UserIdentity.ResolveMicrosoftEmail(principal) : null;
 
         foreach (var claim in identity.FindAll(ClaimTypes.NameIdentifier).ToList()) identity.RemoveClaim(claim);
-        foreach (var claim in identity.FindAll(ClaimTypes.Name).ToList()) identity.RemoveClaim(claim);
         foreach (var claim in identity.FindAll(ClaimTypes.Role).ToList()) identity.RemoveClaim(claim);
 
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, UserIdentity.BuildUserId(provider, subject)));
-        identity.AddClaim(new Claim(ClaimTypes.Name, name));
         identity.AddClaim(new Claim(ClaimTypes.Role, "authenticated"));
         identity.AddClaim(new Claim(UserIdentity.IdentityProviderClaim, provider));
         if (microsoftEmail != null)
             identity.AddClaim(new Claim(UserIdentity.EmailLinkClaim, UserIdentity.EmailLinkId(microsoftEmail)));
 
-        // Keep the cookie small: drop everything else the provider sent.
+        // Keep the cookie small and free of personal data: drop everything
+        // else the provider sent, including the email and name.
         foreach (var claim in identity.Claims.ToList())
         {
-            if (claim.Type is ClaimTypes.NameIdentifier or ClaimTypes.Name or ClaimTypes.Role
+            if (claim.Type is ClaimTypes.NameIdentifier or ClaimTypes.Role
                 or UserIdentity.IdentityProviderClaim or UserIdentity.EmailLinkClaim)
                 continue;
             identity.RemoveClaim(claim);
@@ -262,9 +272,40 @@ public static class AuthenticationSetup
     }
 
     /// <summary>
-    /// The provider returned an identity with nothing usable as a display
-    /// name. With only the email scope requested this means the account has no
-    /// email address (some Entra work accounts); such accounts cannot sign in.
+    /// Sign-in is also sign-up: once the provider has identified the person,
+    /// find their account or create it, so every signed-in session has one.
+    /// A failure here fails the sign-in (OnRemoteFailure sends the browser
+    /// back to the frontend with the reason).
+    /// </summary>
+    public static void EnsureAccount(HttpContext httpContext, ClaimsPrincipal principal)
+    {
+        httpContext.RequestServices.GetRequiredService<RssApp.ComponentServices.IUserResolver>()
+            .ResolveOrCreateUser(principal);
+    }
+
+    /// <summary>
+    /// Cookies issued before the email was dropped still carry it in the Name
+    /// claim. Remove it and reissue the cookie on the next request, so active
+    /// sessions are cleaned without signing anyone out.
+    /// </summary>
+    public static bool StripLegacyClaims(ClaimsPrincipal principal)
+    {
+        var stripped = false;
+        foreach (var identity in principal.Identities)
+        {
+            foreach (var claim in identity.FindAll(ClaimTypes.Name).ToList())
+            {
+                identity.RemoveClaim(claim);
+                stripped = true;
+            }
+        }
+        return stripped;
+    }
+
+    /// <summary>
+    /// The provider returned no email (or GitHub login). With only the email
+    /// scope requested this means the account has no email address (some
+    /// Entra work accounts); such accounts cannot sign in.
     /// </summary>
     public sealed class NoEmailException(string provider)
         : InvalidOperationException($"{provider} returned no email address for this account; the app cannot sign it in")

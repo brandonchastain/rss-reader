@@ -117,6 +117,24 @@ internal sealed class ApiTestHost : IDisposable
         return client;
     }
 
+    /// <summary>
+    /// Creates the account for a client from <see cref="As"/>, the way the
+    /// sign-in callback does (the test header scheme has no sign-in step), and
+    /// returns its id as GET /api/user reports it.
+    /// </summary>
+    public async Task<int> SignUpAsync(HttpClient client)
+    {
+        var loginId = client.DefaultRequestHeaders.GetValues(TestUserHeader).Single().Split('|')[0];
+        var identity = new System.Security.Claims.ClaimsIdentity(TestHeaderAuthHandler.SchemeName);
+        identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, loginId));
+        var created = this.Services.GetRequiredService<RssApp.ComponentServices.IUserResolver>()
+            .ResolveOrCreateUser(new System.Security.Claims.ClaimsPrincipal(identity));
+
+        var me = await client.GetFromJsonAsync<RssUser>("/api/user", new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.AreEqual(created.Id, me!.Id);
+        return me.Id;
+    }
+
     public void Dispose()
     {
         this.factory.Dispose();
@@ -207,8 +225,8 @@ public sealed class ApiContractTests
         alice = host.As("github:alice", "alice");
         bob = host.As("github:bob", "bob");
 
-        aliceId = await RegisterAsync(alice);
-        bobId = await RegisterAsync(bob);
+        aliceId = await SignUpAsync(alice);
+        bobId = await SignUpAsync(bob);
         Assert.AreNotEqual(aliceId, bobId);
 
         await AddFeedAsync(alice, aliceId, AliceFeed);
@@ -290,13 +308,12 @@ public sealed class ApiContractTests
         }
     }
 
-    private static async Task<int> RegisterAsync(HttpClient client)
+    private static async Task<int> SignUpAsync(HttpClient client)
     {
-        var response = await client.PostAsync("/api/user/register", content: null);
-        Assert.AreEqual(HttpStatusCode.Created, response.StatusCode);
-        using var doc = await ReadJsonAsync(response);
+        var id = await host.SignUpAsync(client);
+        using var doc = await ReadJsonAsync(await client.GetAsync("/api/user"));
         AssertShape(doc.RootElement, UserShape);
-        return doc.RootElement.GetProperty("id").GetInt32();
+        return id;
     }
 
     private static async Task AddFeedAsync(HttpClient client, int userId, string href)
@@ -418,10 +435,9 @@ public sealed class ApiContractTests
         {
             ("identityProvider", [JsonValueKind.String]),
             ("userId", [JsonValueKind.String]),
-            ("userDetails", [JsonValueKind.String]),
             ("userRoles", [JsonValueKind.Array]),
         });
-        Assert.AreEqual("github:alice", principal.GetProperty("userId").GetString());
+        Assert.AreEqual(aliceId.ToString(), principal.GetProperty("userId").GetString(), "the account id, not the login id or email");
         CollectionAssert.Contains(principal.GetProperty("userRoles").EnumerateArray().Select(r => r.GetString()).ToList(), "authenticated");
     }
 
@@ -459,21 +475,21 @@ public sealed class ApiContractTests
     public async Task DeleteAccount_RemovesTheUser_AndEndsTheSession()
     {
         using var carol = host.As("github:carol-deletes", "carol");
-        var carolId = await RegisterAsync(carol);
+        var carolId = await SignUpAsync(carol);
         Assert.AreEqual(HttpStatusCode.OK, (await carol.GetAsync("/api/user")).StatusCode);
 
         var delete = await carol.DeleteAsync("/api/user");
         Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode);
 
         // The session cookie is expired in the same response, so the reload
-        // that follows is anonymous instead of re-registering the login.
+        // that follows is signed out.
         var cookieName = host.Services.GetRequiredService<RssApp.Config.RssAppConfig>().Auth.CookieName;
         Assert.IsTrue(delete.Headers.TryGetValues("Set-Cookie", out var cookies), "no Set-Cookie on the delete response");
         var cleared = cookies.FirstOrDefault(c => c.StartsWith(cookieName + "=", StringComparison.Ordinal));
         Assert.IsNotNull(cleared, $"the {cookieName} cookie was not cleared");
         StringAssert.Contains(cleared.ToLowerInvariant(), "expires=thu, 01 jan 1970");
 
-        Assert.AreEqual(HttpStatusCode.NotFound, (await carol.GetAsync("/api/user")).StatusCode);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await carol.GetAsync("/api/user")).StatusCode);
         Assert.IsNull(host.Services.GetRequiredService<IUserRepository>().GetUserById(carolId));
     }
 
@@ -482,7 +498,7 @@ public sealed class ApiContractTests
     {
         // The Development settings the in-process host runs with list this id as admin.
         using var admin = host.As("024d97a14bc74c58b9a83e88b919a92c", "admin");
-        var adminId = await RegisterAsync(admin);
+        var adminId = await SignUpAsync(admin);
 
         var delete = await admin.DeleteAsync("/api/user");
         Assert.AreEqual(HttpStatusCode.Forbidden, delete.StatusCode);
@@ -746,18 +762,31 @@ public sealed class ApiContractTests
     }
 
     [TestMethod]
-    public async Task SignedInWithoutAnAccount_UserScopedRoutesAre404()
+    public async Task SignedInWithoutAnAccount_UserScopedRoutesAre401_AndAuthMeIsSignedOut()
     {
-        // The client answers this 404 by calling register, so the status and the
-        // message are part of the contract the CurrentUser filter now owns.
+        // Sign-in creates the account, so a session without one belongs to a
+        // deleted account. The client answers a 401 by sending the browser to
+        // sign in, and /auth/me reports signed out so that is where it lands.
         using var stranger = host.As("github:never-registered", "stranger");
         foreach (var path in new[] { "/api/user", "/api/feed", "/api/item/timeline", "/api/item/contentBatch?itemIds=1" })
         {
             var response = await stranger.GetAsync(path);
-            Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode, path);
+            Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode, path);
         }
-        StringAssert.Contains(await (await stranger.GetAsync("/api/feed")).Content.ReadAsStringAsync(), "Authenticated user not found.");
-        Assert.IsNull(host.Services.GetRequiredService<IUserRepository>().GetUserByName("github:never-registered"), "a read never creates the account");
+        StringAssert.Contains(await (await stranger.GetAsync("/api/feed")).Content.ReadAsStringAsync(), Server.Authentication.RequireRssUserAttribute.NoAccountMessage);
+
+        using var me = await ReadJsonAsync(await stranger.GetAsync("/auth/me"));
+        Assert.AreEqual(JsonValueKind.Null, me.RootElement.GetProperty("clientPrincipal").ValueKind);
+        Assert.IsNull(host.Services.GetRequiredService<IUserRepository>().GetUserByName("github:never-registered"), "only sign-in creates the account");
+    }
+
+    [TestMethod]
+    public async Task Register_IsGone()
+    {
+        using var client = host.As("github:tries-register", "x");
+        var response = await client.PostAsync("/api/user/register", content: null);
+        Assert.IsTrue(response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed, response.StatusCode.ToString());
+        Assert.IsNull(host.Services.GetRequiredService<IUserRepository>().GetUserByName("github:tries-register"));
     }
 
     [TestMethod]
@@ -773,7 +802,7 @@ public sealed class ApiContractTests
         Assert.IsNotNull(host.Services.GetRequiredService<IUserRepository>().GetUserById(aliceId));
 
         using var admin = host.As("024d97a14bc74c58b9a83e88b919a92c", "admin");
-        await admin.PostAsync("/api/user/register", content: null);
+        await host.SignUpAsync(admin);
         Assert.AreEqual(HttpStatusCode.OK, (await admin.GetAsync("/api/admin/users")).StatusCode);
     }
 
@@ -904,7 +933,7 @@ public sealed class ApiContractTests
         // A user of its own: subscribing Bob to alpha would let a concurrent
         // search test see Alice's zebrafish post in Bob's results.
         using var erin = host.As("github:erin", "erin");
-        var erinId = await RegisterAsync(erin);
+        var erinId = await SignUpAsync(erin);
         var response = await erin.PostAsJsonAsync("/api/feed", new NewsFeed(AliceFeed, erinId));
         Assert.AreEqual(HttpStatusCode.Created, response.StatusCode);
 
@@ -922,7 +951,7 @@ public sealed class ApiContractTests
         // read of Bob's list from another test could race the tag write.
         const string href = "https://tagged.example.com/feed.xml";
         using var dave = host.As("github:dave", "dave");
-        var daveId = await RegisterAsync(dave);
+        var daveId = await SignUpAsync(dave);
         await AddFeedAsync(dave, daveId, href);
         await host.Services.GetRequiredService<IItemRepository>().AddItemsAsync(Posts(daveId, href, "tagged", 4, orderBase: 4_000_000));
 
@@ -983,7 +1012,7 @@ public sealed class ApiContractTests
         StringAssert.Contains(opml, "category=\"");
 
         using var carol = host.As("github:carol", "carol");
-        var carolId = await RegisterAsync(carol);
+        var carolId = await SignUpAsync(carol);
         var import = await carol.PostAsJsonAsync("/api/feed/importOpml", new OpmlImport { OpmlContent = opml, UserId = carolId });
         Assert.AreEqual(HttpStatusCode.OK, import.StatusCode, await import.Content.ReadAsStringAsync());
 
@@ -1036,10 +1065,9 @@ public sealed class ApiContractTestUserModeTests
     [TestMethod]
     public async Task DeleteAll_RemovesEveryPostOfTheTestUser()
     {
+        // Test-user mode has no sign-in step, so the first request creates the account.
         using var client = host.Anonymous();
-        var register = await client.PostAsync("/api/user/register", content: null);
-        Assert.AreEqual(HttpStatusCode.Created, register.StatusCode);
-        var user = (await register.Content.ReadFromJsonAsync<RssUser>(new JsonSerializerOptions(JsonSerializerDefaults.Web)))!;
+        var user = (await client.GetFromJsonAsync<RssUser>("/api/user", new JsonSerializerOptions(JsonSerializerDefaults.Web)))!;
 
         const string href = "https://solo.example.com/feed.xml";
         var add = await client.PostAsJsonAsync("/api/feed", new NewsFeed(href, user.Id));

@@ -22,12 +22,6 @@ namespace Server.Controllers
         private readonly IItemRepository itemRepository;
         private readonly ILogger<UserController> logger;
         private readonly RssAppConfig config;
-        // Static: controllers are created per request, so an instance lock never
-        // serialized anything. A new user's first page load registers from
-        // several places at once (nav menu, toolbar tags, the timeline's retry
-        // after a 404), and two concurrent creates would both pass the "existing"
-        // check and the second would fail on Users.Username UNIQUE with a 500.
-        private static readonly SemaphoreSlim locker = new SemaphoreSlim(1, 1);
 
         public UserController(
             IUserRepository userRepository,
@@ -53,38 +47,6 @@ namespace Server.Controllers
 
             user.IsAdmin = Server.Authentication.AdminPolicy.IsAdmin(config, User, user);
             return Ok(user);
-        }
-
-        // POST: api/user/register
-        [HttpPost("register")]
-        [AllowUnregisteredUser]
-        public async Task<IActionResult> RegisterAsync()
-        {
-            var aadId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-            if (string.IsNullOrEmpty(aadId))
-            {
-                return Unauthorized("User is not authenticated.");
-            }
-
-            await locker.WaitAsync();
-            try
-            {
-                var existing = this.UserResolver.ResolveUser(User);
-                if (existing != null)
-                {
-                    existing.IsAdmin = Server.Authentication.AdminPolicy.IsAdmin(config, User, existing);
-                    return Ok(existing);
-                }
-
-                var newUser = this.UserResolver.ResolveOrCreateUser(User);
-                newUser.IsAdmin = Server.Authentication.AdminPolicy.IsAdmin(config, User, newUser);
-                return Created(nameof(RegisterAsync), newUser);
-            }
-            finally
-            {
-                locker.Release();
-            }
         }
 
         // GET: api/user/report
@@ -131,9 +93,8 @@ namespace Server.Controllers
             feedRepository.DeleteAllFeeds(user);
             userRepository.DeleteUser(user.Id);
 
-            // End the session too. A still-valid cookie makes the next page
-            // load call register, which silently creates a fresh account for
-            // the same login, so the delete looked like it never happened.
+            // End the session too, so the next page load shows sign-in
+            // instead of a session with no account behind it.
             await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
             logger.LogWarning("User {UserId} deleted their account", user.Id);

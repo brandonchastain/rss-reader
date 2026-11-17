@@ -19,8 +19,8 @@ public interface IUserResolver
     RssUser? ResolveUser(ClaimsPrincipal principal);
 
     /// <summary>
-    /// Resolves or creates the authenticated user during registration.
-    /// New users are created with the login id as their username (email never stored).
+    /// Resolves or creates the authenticated user. Called at sign-in, which is
+    /// also sign-up. New users get the login id as their username (email never stored).
     /// </summary>
     RssUser ResolveOrCreateUser(ClaimsPrincipal principal);
 }
@@ -105,12 +105,26 @@ public class UserResolver : IUserResolver
         }
     }
 
+    // Static: the resolver is created per request. Two requests for a login
+    // with no account yet (a double-clicked sign-in, or concurrent requests in
+    // local test-user mode) would both miss the lookup, and the second create
+    // would fail on Users.Username UNIQUE.
+    private static readonly object CreateLock = new();
+
     public RssUser ResolveOrCreateUser(ClaimsPrincipal principal)
     {
         var existing = ResolveUser(principal);
         if (existing != null)
             return existing;
 
+        lock (CreateLock)
+        {
+            return ResolveUser(principal) ?? CreateUser(principal);
+        }
+    }
+
+    private RssUser CreateUser(ClaimsPrincipal principal)
+    {
         var loginId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(loginId))
             throw new InvalidOperationException("Cannot create user without a login identifier");

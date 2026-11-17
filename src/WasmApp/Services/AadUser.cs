@@ -8,8 +8,9 @@ public class AadUser
 public class ClientPrincipal
 {
     public string IdentityProvider { get; set; }
+
+    // The account's database id. Also the browser cache's partition key.
     public string UserId { get; set; }
-    public string UserDetails { get; set; }
 
     // This is a list of roles the user has, e.g., "anonymous", "authenticated"
     public IEnumerable<string> UserRoles { get; set; }

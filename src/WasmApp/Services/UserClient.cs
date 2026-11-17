@@ -7,12 +7,6 @@ namespace WasmApp.Services;
 
 public class UserClient : IUserClient
 {
-    private static readonly string[][] DefaultFeeds = [
-        ["https://api.quantamagazine.org/feed/", "sci"],
-        ["https://css-tricks.com/feed", "tech"],
-        ["https://www.theguardian.com/us-news/rss", "news"]
-    ];
-
     private readonly HttpClient _apiClient;
     private readonly RssWasmConfig _config;
     private readonly IAuthClient _authClient;
@@ -25,42 +19,15 @@ public class UserClient : IUserClient
         logger.LogInformation(_config.ApiBaseUrl);
     }
 
-    public async Task<string> GetUsernameAsync()
+    public async Task<string> GetAccountIdAsync()
     {
         var principal = await _authClient.GetMeAsync();
-        return principal?.UserDetails ?? "Guest";
+        return string.IsNullOrEmpty(principal?.UserId) ? null : principal.UserId;
     }
 
     public async Task<RssUser> GetFeedUserAsync()
     {
-        string username = await this.GetUsernameAsync();
-        (RssUser user, bool isNew) = await this.RegisterUserAsync(username);
-
-        if (isNew)
-        {
-            foreach (string[] parts in DefaultFeeds)
-            {
-                var href = parts[0];
-                var tag = parts[1];
-                var newFeed = new NewsFeed(href, user.Id);
-                newFeed.Tags = new List<string> { tag };
-                // TODO: fix adding default feeds
-                //await this.AddFeedAsync(newFeed);
-            }
-        }
-        return user;
-    }
-
-    public async Task<(RssUser, bool)> RegisterUserAsync(string username)
-    {
-        var response = await _apiClient.PostAsync($"api/user/register", null);
-        var user = await response.Content.ReadFromJsonAsync<RssUser>();
-
-        if (response.StatusCode == System.Net.HttpStatusCode.Created)
-        {
-            return (user, true);
-        }
-        return (user, false);
+        return await _apiClient.GetFromJsonAsync<RssUser>("api/user");
     }
 
     public async Task<UserDataReport> GetDataReportAsync()

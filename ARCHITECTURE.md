@@ -13,7 +13,8 @@ Browser ── static files ──▶ Frontend   src/WasmApp   rss.brandonchasta
 Blazor WebAssembly, served as static files. It calls the API at `ApiBaseUrl`
 (`wwwroot/appsettings.json`) with the session cookie. The last-seen timeline, tags and
 post bodies are cached in `localStorage`, so the page paints at once and then refreshes.
-Read/saved toggles that fail are queued and replayed later.
+Cache keys carry the account id from `/auth/me`, never the email. Read/saved toggles that
+fail are queued and replayed later.
 
 ## API
 
@@ -21,6 +22,8 @@ ASP.NET Core with SQLite. Exactly one replica runs, because SQLite has one write
 
 - `/auth/*`: sign-in. The API is the OpenID Connect client for Google, Microsoft and
   GitHub, and issues its own encrypted session cookie (`.rss.session`, 30 days sliding).
+  Sign-in is also sign-up: the callback finds or creates the account. The email is checked
+  and discarded; the cookie keeps only `provider:subject`.
 - `/api/feed`, `/api/item`, `/api/user`, `/api/admin`: the app (`src/Server/Controllers`).
   Every endpoint declares its authorization; `ApiContractTests` enforces it.
 - `/api/healthz`, `/api/health/feeds`: anonymous health checks.

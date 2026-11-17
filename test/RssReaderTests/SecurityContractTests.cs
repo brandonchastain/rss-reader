@@ -29,10 +29,7 @@ public sealed class SecurityContractTests
     {
         host = new ApiTestHost(isTestUserEnabled: false, loginRateLimit: 5, addFeedRateLimit: 4);
         user = host.As("github:carol", "carol");
-        var register = await user.PostAsync("/api/user/register", content: null);
-        Assert.AreEqual(HttpStatusCode.Created, register.StatusCode, await register.Content.ReadAsStringAsync());
-        var me = await user.GetFromJsonAsync<RssUser>("/api/user");
-        userId = me!.Id;
+        userId = await host.SignUpAsync(user);
     }
 
     [ClassCleanup]
@@ -63,7 +60,6 @@ public sealed class SecurityContractTests
     /// </summary>
     private static IEnumerable<object[]> MutatingRoutes()
     {
-        yield return new object[] { "POST", "/api/user/register", "" };
         yield return new object[] { "POST", "/api/feed", "{\"href\":\"https://csrf.example.com/feed.xml\",\"userId\":0}" };
         yield return new object[] { "POST", "/api/feed/importOpml", "{\"opmlContent\":\"<opml/>\",\"userId\":0}" };
         yield return new object[] { "POST", "/api/feed/tags", "{\"href\":\"https://csrf.example.com/feed.xml\",\"userId\":0,\"tags\":[\"x\"]}" };
@@ -215,18 +211,25 @@ public sealed class SecurityContractTests
     {
         // The single-user, no-login self-hosting setup.
         using var optedIn = new ApiTestHost(isTestUserEnabled: true, environment: "Production", allowTestUserInProduction: true);
-        var response = await optedIn.Anonymous().GetAsync("/auth/me");
-        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-        StringAssert.Contains(await response.Content.ReadAsStringAsync(), "test-user-id");
+        await AssertSignedInWithAnAccountAsync(optedIn);
     }
 
     [TestMethod]
     public async Task TestUserMode_InDevelopment_StillWorksForLocalRuns()
     {
         using var dev = new ApiTestHost(isTestUserEnabled: true, environment: "Development");
-        var response = await dev.Anonymous().GetAsync("/auth/me");
+        await AssertSignedInWithAnAccountAsync(dev);
+    }
+
+    // Test-user mode has no sign-in step, so the first request creates the
+    // account, and /auth/me reports its id.
+    private static async Task AssertSignedInWithAnAccountAsync(ApiTestHost testHost)
+    {
+        var response = await testHost.Anonymous().GetAsync("/auth/me");
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-        StringAssert.Contains(await response.Content.ReadAsStringAsync(), "test-user-id");
+        using var doc = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var userId = doc.RootElement.GetProperty("clientPrincipal").GetProperty("userId").GetString();
+        Assert.IsTrue(int.TryParse(userId, out var id) && id > 0, $"userId '{userId}' is not an account id");
     }
 
     [TestMethod]
@@ -260,8 +263,7 @@ public sealed class SecurityContractTests
     {
         // A fresh user, so permits used by the other tests in this class do not count.
         var dave = host.As("github:dave", "dave");
-        var register = await dave.PostAsync("/api/user/register", content: null);
-        var daveId = (await register.Content.ReadFromJsonAsync<RssUser>())!.Id;
+        var daveId = await host.SignUpAsync(dave);
         var statuses = new List<HttpStatusCode>();
         for (var i = 0; i < 6; i++)
         {

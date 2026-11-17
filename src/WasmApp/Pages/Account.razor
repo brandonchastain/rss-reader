@@ -146,8 +146,7 @@
         }
         catch
         {
-            // Fallback to auth provider display name
-            username = await userClient.GetUsernameAsync();
+            username = "Unavailable";
         }
     }
 

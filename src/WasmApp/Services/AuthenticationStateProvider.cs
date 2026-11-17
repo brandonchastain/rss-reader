@@ -37,7 +37,6 @@ public class MyAuthenticationStateProvider : AuthenticationStateProvider
             // re-login can go straight back to the same one.
             var identity = new ClaimsIdentity(principal.IdentityProvider);
             identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, principal.UserId));
-            identity.AddClaim(new Claim(ClaimTypes.Name, principal.UserDetails ?? string.Empty));
             identity.AddClaims(roles.Select(r => new Claim(ClaimTypes.Role, r)));
 
             return new AuthenticationState(new ClaimsPrincipal(identity));

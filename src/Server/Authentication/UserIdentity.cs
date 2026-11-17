@@ -128,15 +128,13 @@ public static class UserIdentity
             ?? principal.FindFirst("sub")?.Value;
     }
 
-    /// <summary>A display name that never falls back to storing nothing.</summary>
-    public static string ResolveDisplayName(ClaimsPrincipal principal) =>
-        principal.FindFirst(ClaimTypes.Email)?.Value
-        ?? principal.FindFirst("email")?.Value
-        ?? principal.FindFirst("preferred_username")?.Value
-        ?? principal.FindFirst(ClaimTypes.Name)?.Value
-        ?? principal.FindFirst("name")?.Value
-        ?? principal.FindFirst("urn:github:login")?.Value
-        ?? string.Empty;
+    /// <summary>
+    /// The sign-in gate: the provider must report an email (or, for GitHub, a
+    /// login). Only checked; the value is never stored, not even in the cookie.
+    /// </summary>
+    public static bool HasEmailOrLogin(ClaimsPrincipal principal) =>
+        new[] { ClaimTypes.Email, "email", "preferred_username", ClaimTypes.Name, "name", "urn:github:login" }
+            .Any(type => !string.IsNullOrWhiteSpace(principal.FindFirst(type)?.Value));
 }
 
 /// <summary>
@@ -195,8 +193,9 @@ public static class ReturnUrlValidator
 }
 
 /// <summary>
-/// The shape /auth/me returns: the same clientPrincipal envelope Static Web
-/// Apps' /.auth/me used, so the frontend only changes the URL.
+/// The shape /auth/me returns: a clientPrincipal envelope (null when signed
+/// out). userId is the account's database id, which the browser uses as its
+/// cache key; it never carries the email or the provider's subject.
 /// </summary>
 public sealed class ClientPrincipalResponse
 {
@@ -204,13 +203,11 @@ public sealed class ClientPrincipalResponse
 
     public static ClientPrincipalResponse Anonymous { get; } = new() { ClientPrincipal = null };
 
-    public static ClientPrincipalResponse From(ClaimsPrincipal? principal)
+    /// <param name="principal">The session principal.</param>
+    /// <param name="account">The principal's account; null reads as signed out.</param>
+    public static ClientPrincipalResponse From(ClaimsPrincipal? principal, RssApp.Contracts.RssUser? account)
     {
-        if (principal?.Identity?.IsAuthenticated != true)
-            return Anonymous;
-
-        var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(userId))
+        if (principal?.Identity?.IsAuthenticated != true || account == null)
             return Anonymous;
 
         var roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value)
@@ -226,8 +223,7 @@ public sealed class ClientPrincipalResponse
             {
                 IdentityProvider = principal.FindFirst(UserIdentity.IdentityProviderClaim)?.Value
                     ?? principal.Identity.AuthenticationType ?? string.Empty,
-                UserId = userId,
-                UserDetails = principal.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty,
+                UserId = account.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 UserRoles = roles,
             }
         };
@@ -238,6 +234,5 @@ public sealed class ClientPrincipal
 {
     public string IdentityProvider { get; init; } = string.Empty;
     public string UserId { get; init; } = string.Empty;
-    public string UserDetails { get; init; } = string.Empty;
     public IReadOnlyList<string> UserRoles { get; init; } = Array.Empty<string>();
 }

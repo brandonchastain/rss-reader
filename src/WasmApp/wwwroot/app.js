@@ -432,8 +432,12 @@ window.rssApp = {
     // per post -- a 50-post page of bodies is ~25KB. The caps below exist only so
     // one pathological post (the largest in the live DB is 2.7MB) can't fill the
     // ~5MB origin budget.
+    //
+    // Keys are rssApp.cache.<VERSION>.<user>.<slot>, where <user> is the
+    // account id from /auth/me. It must never be anything personal: v1 keys
+    // held the email, which is why VERSION moved and sweepOldVersions exists.
     cache: {
-        VERSION: 'v1',
+        VERSION: 'v2',
         MAX_ITEM_BYTES: 64 * 1024,
         MAX_CONTENT_BYTES: 2 * 1024 * 1024,
 
@@ -539,7 +543,7 @@ window.rssApp = {
         setOutbox: function (user, json) { return window.rssApp.cache._set(user, 'outbox', json); },
 
         // The user whose slots the synchronous link handler patches; set from
-        // PostCache.Username so the two sides always agree on the partition.
+        // PostCache.UserId so the two sides always agree on the partition.
         _activeUser: null,
         setActiveUser: function (user) { window.rssApp.cache._activeUser = user || null; },
 
@@ -643,6 +647,15 @@ window.rssApp = {
             });
         },
 
+        // Runs on every page load, signed in or not, so keys from an older
+        // cache version never outlive a browser that stops signing in.
+        sweepOldVersions: function () {
+            var current = 'rssApp.cache.' + window.rssApp.cache.VERSION + '.';
+            window.rssApp.cache._removeMatching(function (k) {
+                return k.indexOf('rssApp.cache.') === 0 && k.indexOf(current) !== 0;
+            });
+        },
+
         _removeMatching: function (predicate) {
             try {
                 var doomed = [];
@@ -655,6 +668,8 @@ window.rssApp = {
         }
     }
 };
+
+window.rssApp.cache.sweepOldVersions();
 
 document.addEventListener('DOMContentLoaded', () => {
     const contentContainer = document.getElementById('focus-post-content-container');

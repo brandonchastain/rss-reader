@@ -46,22 +46,40 @@ public sealed class ApiLoginTests
     }
 
     [TestMethod]
-    public void NormalizeIdentity_LeavesOnlyTheFourAppClaims()
+    public void NormalizeIdentity_LeavesOnlyTheAppClaims_AndNoEmail()
     {
         var identity = new ClaimsIdentity("oidc");
         identity.AddClaim(new Claim("sub", "pairwise"));
         identity.AddClaim(new Claim("oid", "obj-1"));
         identity.AddClaim(new Claim("email", "person@example.com"));
+        identity.AddClaim(new Claim("name", "Person Example"));
         identity.AddClaim(new Claim("tid", "tenant"));
         var principal = new ClaimsPrincipal(identity);
 
         AuthenticationSetup.NormalizeIdentity(principal, "microsoft");
 
         Assert.AreEqual("microsoft:obj-1", principal.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-        Assert.AreEqual("person@example.com", principal.FindFirst(ClaimTypes.Name)!.Value);
+        Assert.IsNull(principal.FindFirst(ClaimTypes.Name), "the cookie must not carry a display name");
         Assert.AreEqual("authenticated", principal.FindFirst(ClaimTypes.Role)!.Value);
         Assert.AreEqual("microsoft", principal.FindFirst(UserIdentity.IdentityProviderClaim)!.Value);
-        Assert.AreEqual(5, identity.Claims.Count(), "provider claims must not bloat the cookie (4 app claims + the email link)");
+        Assert.AreEqual(4, identity.Claims.Count(), "3 app claims + the email link");
+        Assert.IsFalse(identity.Claims.Any(c => c.Value.Contains('@') || c.Value.Contains("Person")),
+            "no claim may carry the email or the name");
+    }
+
+    [TestMethod]
+    public void StripLegacyClaims_RemovesTheEmailFromAnOldCookie()
+    {
+        var identity = new ClaimsIdentity("cookie");
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "google:1"));
+        identity.AddClaim(new Claim(ClaimTypes.Name, "person@example.com"));
+        identity.AddClaim(new Claim(ClaimTypes.Role, "authenticated"));
+        var principal = new ClaimsPrincipal(identity);
+
+        Assert.IsTrue(AuthenticationSetup.StripLegacyClaims(principal), "an old cookie must be reissued");
+        Assert.IsNull(principal.FindFirst(ClaimTypes.Name));
+        Assert.AreEqual("google:1", principal.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        Assert.IsFalse(AuthenticationSetup.StripLegacyClaims(principal), "a clean cookie is left alone");
     }
 
     [TestMethod]
@@ -104,7 +122,7 @@ public sealed class ApiLoginTests
     public void NormalizeIdentity_NoEmail_RejectsTheSignIn()
     {
         // Only openid + email are requested, so an account without an email
-        // address yields no display name at all; refuse rather than store "".
+        // address arrives with nothing but its subject; refuse it.
         var identity = new ClaimsIdentity("oidc");
         identity.AddClaim(new Claim("sub", "pairwise"));
         identity.AddClaim(new Claim("oid", "obj-1"));
@@ -149,7 +167,7 @@ public sealed class ApiLoginTests
         Assert.IsNotNull(viaApi);
         Assert.AreEqual(7, viaApi.Id, "direct login must land on the pre-migration row");
 
-        // And it must not create a duplicate on register.
+        // And signing in again must not create a duplicate.
         Assert.AreEqual(7, resolver.ResolveOrCreateUser(new ClaimsPrincipal(direct)).Id);
         Assert.AreEqual(0, fake.AddUserCallCount);
     }
@@ -320,28 +338,38 @@ public sealed class ApiLoginTests
     [TestMethod]
     public void AuthMe_Anonymous_IsNullClientPrincipal()
     {
-        var json = JsonSerializer.Serialize(ClientPrincipalResponse.From(new ClaimsPrincipal(new ClaimsIdentity())), Json);
+        var json = JsonSerializer.Serialize(ClientPrincipalResponse.From(new ClaimsPrincipal(new ClaimsIdentity()), null), Json);
         Assert.AreEqual("{\"clientPrincipal\":null}", json);
     }
 
     [TestMethod]
-    public void AuthMe_Authenticated_MatchesStaticWebAppsEnvelope()
+    public void AuthMe_SignedInWithoutAnAccount_IsNullClientPrincipal()
     {
         var identity = new ClaimsIdentity("cookie");
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "github:4242"));
-        identity.AddClaim(new Claim(ClaimTypes.Name, "octocat"));
+
+        Assert.IsNull(ClientPrincipalResponse.From(new ClaimsPrincipal(identity), null).ClientPrincipal);
+    }
+
+    [TestMethod]
+    public void AuthMe_Authenticated_ReturnsTheAccountId_NeverTheEmailOrSubject()
+    {
+        var identity = new ClaimsIdentity("cookie");
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "github:4242"));
+        identity.AddClaim(new Claim(ClaimTypes.Name, "octocat@example.com"));
         identity.AddClaim(new Claim(ClaimTypes.Role, "authenticated"));
         identity.AddClaim(new Claim(UserIdentity.IdentityProviderClaim, "github"));
 
-        var json = JsonSerializer.Serialize(ClientPrincipalResponse.From(new ClaimsPrincipal(identity)), Json);
+        var json = JsonSerializer.Serialize(ClientPrincipalResponse.From(new ClaimsPrincipal(identity), new RssUser("github:4242", 17)), Json);
         using var doc = JsonDocument.Parse(json);
         var cp = doc.RootElement.GetProperty("clientPrincipal");
 
         Assert.AreEqual("github", cp.GetProperty("identityProvider").GetString());
-        Assert.AreEqual("github:4242", cp.GetProperty("userId").GetString());
-        Assert.AreEqual("octocat", cp.GetProperty("userDetails").GetString());
+        Assert.AreEqual("17", cp.GetProperty("userId").GetString());
+        Assert.IsFalse(cp.TryGetProperty("userDetails", out _), "the display name (the email) is not returned");
         CollectionAssert.AreEqual(new[] { "authenticated" },
             cp.GetProperty("userRoles").EnumerateArray().Select(e => e.GetString()).ToArray());
+        StringAssert.DoesNotMatch(json, new System.Text.RegularExpressions.Regex("@|4242"));
     }
 
     [TestMethod]
@@ -352,7 +380,7 @@ public sealed class ApiLoginTests
         identity.AddClaim(new Claim(ClaimTypes.Role, "anonymous"));
         identity.AddClaim(new Claim(ClaimTypes.Role, "admin"));
 
-        var roles = ClientPrincipalResponse.From(new ClaimsPrincipal(identity)).ClientPrincipal!.UserRoles;
+        var roles = ClientPrincipalResponse.From(new ClaimsPrincipal(identity), new RssUser("google:1", 1)).ClientPrincipal!.UserRoles;
         CollectionAssert.AreEqual(new[] { "authenticated", "admin" }, roles.ToArray());
     }
 
